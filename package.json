@@ -1,0 +1,19 @@
+{
+  "name": "pocket-motion",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Deterministic video rendering for PocketJS compositions \u2014 no browser",
+  "scripts": {
+    "test": "bun test ./tests/",
+    "typecheck": "tsc --noEmit",
+    "vendor": "bun scripts/vendor.ts",
+    "motion": "bun src/cli/main.ts",
+    "catalog": "bun scripts/catalog.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2",
+    "typescript": "^5"
+  }
+}

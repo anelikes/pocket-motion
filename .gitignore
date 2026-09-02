@@ -1,0 +1,65 @@
+# dependencies
+node_modules/
+.bun/
+
+# build output
+dist/
+out/
+target/
+*.wasm
+
+# render artifacts — 帧、视频、瓦片缓存都是可重生成的
+renders/
+frames/
+*.mp4
+*.webm
+*.mov
+*.png
+!docs/**/*.png
+# 例外：assets/synthetic/ 的合成片段是渲染的**输入**，不是产物。字节是渲染身份
+# 的一部分（构建期解进 pak），忽略它等于让所有用到它的摘要只在一台机器上复现。
+# 重建它们的 ffmpeg 命令和 ffmpeg 版本首行都记在 assets/synthetic/manifest.json 里。
+!assets/synthetic/*.mp4
+
+# 素材缓存（footage 解码中间产物）
+.cache/
+.media/
+
+# vendored 上游 — 由 scripts/vendor.ts 从 patches/ 在钉住的 commit 上重建
+/vendor/
+
+# 第三方媒体：源码进库，字节不进。规矩和 vendor/ 一样——被忽略的东西必须有
+# 一条命令能重建，否则它就是只有作者满足得了的依赖，而且缺席时的表现是安静的。
+# 由 scripts/assets.ts 按各个 assets/*/manifest.json 取回并校验 sha256。
+# 渲染与帧哈希从不读音频（音频是单独一遍 mux），所以没有验证依赖这些字节。
+assets/audio/**/*.mp3
+# 中文字体同理：Noto Sans SC 一对 17 MB，而入库的源码总共 1.6 MB。字体是构建期
+# 烤进 pak 的，所以缺席不会安静——构建当场就失败，这正是可以忽略它的理由。
+# 拉丁字体只有 290 KB，留在库里（许可见 assets/fonts/）。
+assets/fonts/NotoSansSC-*.otf
+
+# 基准的原始日志留本地，结论进 baselines/*.md
+baselines/**/raw/
+*.log
+
+# 第三方压缩库，不入库：基准要重跑时按 README 里钉住的版本取回
+baselines/**/gsap.min.js
+
+# 隔离 worktree：每个都带一份自己重建的 vendor 和 node_modules，内容靠分支
+# 或 cherry-pick 进主线，所以这里没有任何东西是唯一副本。
+.claude/worktrees/
+
+# 临时工作目录：草稿和一次性脚本不入库。锚在仓库根，不是 `scratchpad/`——
+# 后者匹配任意深度，而 discoverCompositions 走的是 `git ls-files
+# --exclude-standard`，一个叫这名字的合成目录会就此从三个门里静默消失。
+/scratchpad/
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# 环境
+.env
+.env.local

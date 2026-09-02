@@ -1,0 +1,37 @@
+[
+ {
+  "artifact": "dist/compositions/footage-tracks/footage/portrait-cover/manifest.json",
+  "src": "assets/synthetic/bars-9x16-30fps.mp4",
+  "frames": 179,
+  "sha256": "54b06d78851d73418c36221766043bea3b34c9f1b45b5a73a51c5f4dd4808732",
+  "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
+ },
+ {
+  "artifact": "dist/compositions/footage-tracks/footage/wide-contain/manifest.json",
+  "src": "assets/synthetic/wide-2x1-30fps.mp4",
+  "frames": 89,
+  "sha256": "fb40e716ff49eb031113ed51c405ccdf78e12d980a5727f87385b3cfcb962716",
+  "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
+ },
+ {
+  "artifact": "dist/compositions/footage-tracks/footage/wide-open/manifest.json",
+  "src": "assets/synthetic/bars-16x9-24fps.mp4",
+  "frames": 179,
+  "sha256": "297f4b27ee5c0e01ac70ab986c3bdd135db1902f0463f22d27a1505b8a3d0754",
+  "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
+ },
+ {
+  "artifact": "dist/compositions/footage-tracks/footage/wide-return/manifest.json",
+  "src": "assets/synthetic/bars-16x9-24fps.mp4",
+  "frames": 179,
+  "sha256": "297f4b27ee5c0e01ac70ab986c3bdd135db1902f0463f22d27a1505b8a3d0754",
+  "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
+ },
+ {
+  "artifact": "dist/compositions/sound-roles/footage/clip/manifest.json",
+  "src": "assets/synthetic/bars-16x9-24fps.mp4",
+  "frames": 179,
+  "sha256": "297f4b27ee5c0e01ac70ab986c3bdd135db1902f0463f22d27a1505b8a3d0754",
+  "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
+ }
+]

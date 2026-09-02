@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+      .bar { position: absolute; width: 120px; height: 800px; background: #fff; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="5"
+         data-width="1920" data-height="1080">
+      <div id="stage" class="clip" data-start="0" data-duration="5" data-track-index="1">
+      <div class="bar" style="left:240px; top:140px; transform: rotate(4deg);"></div>
+      <div class="bar" style="left:420px; top:140px; transform: rotate(5deg);"></div>
+      <div class="bar" style="left:600px; top:140px; transform: rotate(6deg);"></div>
+      <div class="bar" style="left:780px; top:140px; transform: rotate(7deg);"></div>
+      <div class="bar" style="left:960px; top:140px; transform: rotate(8deg);"></div>
+      <div class="bar" style="left:1140px; top:140px; transform: rotate(9deg);"></div>
+      <div class="bar" style="left:1320px; top:140px; transform: rotate(10deg);"></div>
+      <div class="bar" style="left:1500px; top:140px; transform: rotate(11deg);"></div>
+      </div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-textcmp-liga",
+  "name": "pocketjs-motion-textcmp-liga",
+  "title": "PocketJS Motion: ligature sequences",
+  "version": "0.0.0",
+  "engine": {
+    "capabilities": {
+      "requires": [
+        "text.glyphs.baked"
+      ]
+    }
+  },
+  "app": {
+    "entry": "compositions/textcmp-liga/main.tsx",
+    "output": "motion-textcmp-liga",
+    "framework": "solid",
+    "viewport": {
+      "fixed": {
+        "logical": [
+          1920,
+          1080
+        ],
+        "presentation": "native"
+      }
+    }
+  }
+}

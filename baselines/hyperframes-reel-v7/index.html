@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>PocketJS Motion reel — HyperFrames port</title>
+    <!-- Local GSAP: jsdelivr returns 403 on this machine (see baselines/hyperframes-m4.md). -->
+    <script src="./gsap.min.js"></script>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        width: 1920px; height: 1080px; overflow: hidden;
+        background: #09090b; /* zinc-950 */
+        font-family: Inter, "Helvetica Neue", Helvetica, Arial, sans-serif;
+        color: #fafafa;
+      }
+      #root { position: relative; width: 1920px; height: 1080px; }
+      .scene {
+        position: absolute; inset: 0;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        opacity: 0; pointer-events: none;
+      }
+      .scene.on { pointer-events: auto; }
+
+      /* ── title ── */
+      .title-hero {
+        font-size: 112px; font-weight: 700; letter-spacing: -0.02em;
+        display: flex; flex-wrap: nowrap;
+      }
+      .title-hero .ch { display: inline-block; opacity: 0; transform: translateY(48px); }
+      .title-rule {
+        width: 0; height: 6px; margin-top: 36px; border-radius: 3px;
+        background: linear-gradient(90deg, #3b82f6, #22d3ee);
+      }
+      .title-sub {
+        margin-top: 28px; font-size: 34px; color: #d4d4d8; /* zinc-300 */
+        opacity: 0; transform: translateY(24px);
+      }
+
+      /* ── remove the browser ── */
+      .sect {
+        font-size: 72px; font-weight: 700; letter-spacing: -0.02em;
+        margin-bottom: 44px; opacity: 0; transform: translateY(40px);
+      }
+      .deck { width: 920px; display: flex; flex-direction: column; gap: 10px; }
+      .slab {
+        height: 72px; border-radius: 10px; background: #18181b;
+        display: flex; align-items: center; padding: 0 32px; gap: 20px;
+        opacity: 0; transform: translateY(36px);
+        position: relative;
+      }
+      .slab .dash { width: 14px; height: 3px; border-radius: 2px; background: #3f3f46; flex-shrink: 0; }
+      .slab .label { font-size: 34px; color: #52525b; position: relative; }
+      .slab .strike {
+        position: absolute; left: 0; right: 0; top: 50%; height: 3px;
+        background: #52525b; transform: scaleX(0); transform-origin: left center;
+      }
+      .slab.core {
+        border: 1px solid #3f3f46;
+        opacity: 0; transform: translateY(36px);
+      }
+      .slab.core .accent {
+        width: 10px; height: 32px; border-radius: 4px;
+        background: linear-gradient(180deg, #3b82f6, #22d3ee);
+      }
+      .slab.core .label { color: #fafafa; font-weight: 700; }
+      .slab.core .meta { margin-left: auto; font-size: 24px; color: #71717a; }
+      .ops-row {
+        margin-top: 36px; display: flex; align-items: flex-end; gap: 16px;
+        opacity: 0; transform: translateY(20px);
+      }
+      .ops-zero { font-size: 64px; font-weight: 700; color: #22d3ee; line-height: 1; }
+      .ops-text { font-size: 34px; font-weight: 700; color: #fafafa; }
+      .ops-sub { font-size: 24px; color: #71717a; margin-top: 4px; }
+
+      /* ── numbers ── */
+      .chart-head {
+        font-size: 34px; font-weight: 700; color: #71717a;
+        letter-spacing: 0.08em; margin-bottom: 48px;
+        opacity: 0; transform: translateY(20px);
+      }
+      .chart-row {
+        display: flex; align-items: center; gap: 64px;
+      }
+      .bars { display: flex; flex-direction: column; gap: 14px; }
+      .bar-row {
+        display: flex; align-items: center; gap: 24px; height: 56px;
+        opacity: 0; transform: translateY(20px);
+      }
+      .bar-label {
+        width: 420px; text-align: right; font-size: 34px; color: #d4d4d8;
+      }
+      .bar-track { height: 24px; border-radius: 6px; width: 0; }
+      .bar-track.dim { background: #3f3f46; }
+      .bar-track.accent {
+        background: linear-gradient(90deg, #3b82f6, #22d3ee);
+      }
+      .bar-val {
+        font-size: 34px; font-weight: 700; color: #d4d4d8;
+        opacity: 0; min-width: 140px;
+      }
+      .bar-val.hi { color: #22d3ee; }
+      .ring-wrap {
+        display: flex; flex-direction: column; align-items: center; gap: 12px;
+        opacity: 0;
+      }
+      .ring {
+        width: 220px; height: 220px; position: relative;
+      }
+      .ring svg { width: 220px; height: 220px; transform: rotate(-90deg); }
+      .ring .num {
+        position: absolute; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 64px; font-weight: 700; color: #fafafa;
+        opacity: 0;
+      }
+      .ring-cap { font-size: 24px; color: #71717a; opacity: 0; }
+      .env {
+        position: absolute; bottom: 56px; left: 0; right: 0;
+        display: flex; flex-direction: column; align-items: center; gap: 8px;
+        font-size: 20px; color: #71717a;
+      }
+      .env .line { opacity: 0; transform: translateY(10px); }
+      .env .rule {
+        width: 0; height: 2px; background: #3f3f46; margin-bottom: 8px;
+      }
+
+      /* ── trade ── */
+      .trade-h {
+        font-size: 72px; font-weight: 700; margin-bottom: 48px;
+        opacity: 0; transform: translateY(40px);
+      }
+      .chip {
+        width: 820px; height: 64px; border-radius: 10px;
+        background: #18181b; border: 1px solid #27272a;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 34px; color: #d4d4d8;
+        margin-bottom: 16px;
+        opacity: 0; transform: translateY(24px);
+      }
+
+      /* ── lockup ── */
+      .lock-corners { position: absolute; inset: 48px; pointer-events: none; }
+      .lock-corners .c {
+        position: absolute; width: 64px; height: 64px;
+        opacity: 0;
+      }
+      .lock-corners .c::before, .lock-corners .c::after {
+        content: ""; position: absolute;
+        background: linear-gradient(90deg, #3b82f6, #22d3ee);
+        border-radius: 2px;
+      }
+      .lock-corners .c::before { width: 64px; height: 4px; }
+      .lock-corners .c::after { width: 4px; height: 64px; }
+      .lock-corners .tl { top: 0; left: 0; }
+      .lock-corners .tr { top: 0; right: 0; }
+      .lock-corners .tr::before { right: 0; left: auto; }
+      .lock-corners .tr::after { right: 0; left: auto; }
+      .lock-corners .bl { bottom: 0; left: 0; }
+      .lock-corners .bl::before { bottom: 0; top: auto; }
+      .lock-corners .bl::after { bottom: 0; top: auto; }
+      .lock-corners .br { bottom: 0; right: 0; }
+      .lock-corners .br::before { bottom: 0; top: auto; right: 0; left: auto; }
+      .lock-corners .br::after { bottom: 0; top: auto; right: 0; left: auto; }
+      .lock-word {
+        font-size: 72px; font-weight: 700;
+        opacity: 0; transform: translateY(36px);
+      }
+      .lock-rule {
+        width: 0; height: 5px; margin: 28px 0 24px;
+        border-radius: 3px;
+        background: linear-gradient(90deg, #3b82f6, #22d3ee);
+      }
+      .lock-sub {
+        font-size: 34px; color: #d4d4d8;
+        opacity: 0; transform: translateY(16px);
+      }
+      .lock-brand {
+        margin-top: 28px; font-size: 24px; color: #71717a;
+        opacity: 0;
+      }
+
+      .flash {
+        position: absolute; inset: 0; background: #fafafa;
+        opacity: 0; pointer-events: none; z-index: 50;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="28.2"
+      data-width="1920"
+      data-height="1080"
+    >
+      <div class="flash" id="flash"></div>
+
+      <!-- 1 · title -->
+      <div class="scene" id="s1">
+        <div class="title-hero" id="title-hero"></div>
+        <div class="title-rule" id="title-rule"></div>
+        <div class="title-sub" id="title-sub">Deterministic video. Zero browser.</div>
+      </div>
+
+      <!-- 2 · remove the browser -->
+      <div class="scene" id="s2">
+        <div class="sect" id="s2-head">remove the browser</div>
+        <div class="deck" id="deck">
+          <div class="slab" data-layer="0">
+            <div class="dash"></div>
+            <div class="label">CDP round trip<span class="strike"></span></div>
+          </div>
+          <div class="slab" data-layer="1">
+            <div class="dash"></div>
+            <div class="label">CSS engine<span class="strike"></span></div>
+          </div>
+          <div class="slab" data-layer="2">
+            <div class="dash"></div>
+            <div class="label">vsync<span class="strike"></span></div>
+          </div>
+          <div class="slab core" id="core-slab">
+            <div class="accent"></div>
+            <div class="label">Rust core</div>
+            <div class="meta">layout · raster · text</div>
+          </div>
+        </div>
+        <div class="ops-row" id="ops-row">
+          <div class="ops-zero">0</div>
+          <div>
+            <div class="ops-text">guest ops per frame</div>
+            <div class="ops-sub">every motion is a baked timeline the core plays itself</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 · the numbers -->
+      <div class="scene" id="s3">
+        <div class="chart-head">THE SAME MACHINE</div>
+        <div class="chart-row">
+          <div class="bars">
+            <div class="bar-row" data-w="700">
+              <div class="bar-label">Remotion · 1 worker</div>
+              <div class="bar-track dim"></div>
+              <div class="bar-val">52.36 ms</div>
+            </div>
+            <div class="bar-row" data-w="511">
+              <div class="bar-label">HyperFrames · 1 worker</div>
+              <div class="bar-track dim"></div>
+              <div class="bar-val">38.19 ms</div>
+            </div>
+            <div class="bar-row" data-w="77">
+              <div class="bar-label">PocketJS Motion · 1 thread</div>
+              <div class="bar-track accent"></div>
+              <div class="bar-val hi">5.75 ms</div>
+            </div>
+          </div>
+          <div class="ring-wrap" id="ring-wrap">
+            <div class="ring">
+              <svg viewBox="0 0 220 220">
+                <circle cx="110" cy="110" r="96" fill="none" stroke="#27272a" stroke-width="14" />
+                <circle id="arc" cx="110" cy="110" r="96" fill="none" stroke="#22d3ee" stroke-width="14"
+                  stroke-linecap="round"
+                  stroke-dasharray="603" stroke-dashoffset="603" />
+              </svg>
+              <div class="num" id="ring-num">6.6x</div>
+            </div>
+            <div class="ring-cap">vs HyperFrames</div>
+          </div>
+        </div>
+        <div class="env">
+          <div class="rule" id="env-rule"></div>
+          <div class="line">Apple M4 · 1920×1080 · 30 fps · 450 frames · single worker</div>
+          <div class="line">median of 3 runs · H.264 encode included · same machine</div>
+        </div>
+      </div>
+
+      <!-- 4 · the trade -->
+      <div class="scene" id="s4">
+        <div class="trade-h">Faster because smaller.</div>
+        <div class="chip">no blur · no glow · no blend</div>
+        <div class="chip">Tailwind subset · not all of CSS</div>
+        <div class="chip">one composition · MP4 and device</div>
+      </div>
+
+      <!-- 5 · lockup -->
+      <div class="scene" id="s5">
+        <div class="lock-corners" id="corners">
+          <div class="c tl"></div><div class="c tr"></div>
+          <div class="c bl"></div><div class="c br"></div>
+        </div>
+        <div class="lock-word">ONE COMPOSITION</div>
+        <div class="lock-rule" id="lock-rule"></div>
+        <div class="lock-sub">server MP4 · device 60 FPS · MIT</div>
+        <div class="lock-brand">pocketjs-motion</div>
+      </div>
+    </div>
+
+    <script>
+      // Beat grid from compositions/reel/beats.ts — measured 127.7 BPM.
+      const BPM = 127.7;
+      const BEAT = 60_000 / BPM; // ~469.85 ms
+      const BAR = BEAT * 4;      // ~1879.4 ms
+      const beat = (n) => (n * BEAT) / 1000;
+      const bar = (n) => (n * BAR) / 1000;
+      const DRIVE = "cubic-bezier(0.9, 0, 0.1, 1)";
+      const GATHER = "cubic-bezier(0.7, 0, 1, 0.35)";
+      const DEPART = "cubic-bezier(0.5, 0, 0.85, 0.2)";
+
+      // Build title characters
+      const title = "POCKETJS MOTION";
+      const hero = document.getElementById("title-hero");
+      for (const ch of title) {
+        const span = document.createElement("span");
+        span.className = "ch";
+        span.textContent = ch === " " ? "\u00a0" : ch;
+        hero.appendChild(span);
+      }
+
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // ── scene visibility helpers ─────────────────────────────────────────
+      function show(id, t) {
+        tl.set(id, { opacity: 1 }, t);
+      }
+      function hide(id, t) {
+        tl.to(id, { opacity: 0, duration: 0.28, ease: "power2.in" }, t);
+      }
+
+      // ── 1 · title (bar 0 → bar 2) ───────────────────────────────────────
+      const A = beat(1);
+      const A_OUT = bar(2) - 0.2;
+      show("#s1", 0);
+      tl.to("#flash", { opacity: 1, duration: 0.04 }, 0);
+      tl.to("#flash", { opacity: 0, duration: 0.09 }, 0.07);
+
+      gsap.utils.toArray("#title-hero .ch").forEach((el, i) => {
+        tl.to(el, {
+          opacity: 1, y: 0, duration: 0.52, ease: DRIVE,
+        }, A + i * 0.032);
+      });
+      tl.to("#title-rule", { width: 720, duration: 0.9, ease: DRIVE }, A + 0.62);
+      tl.to("#title-sub", { opacity: 1, y: 0, duration: 0.5, ease: DRIVE }, A + 0.9);
+      hide("#s1", A_OUT);
+
+      // ── 2 · remove the browser (bar 2 → bar 7) ──────────────────────────
+      const B = bar(2);
+      const B_OUT = bar(7) - 0.3;
+      show("#s2", B);
+      tl.to("#s2-head", { opacity: 1, y: 0, duration: 0.52, ease: DRIVE }, B + 0.05);
+
+      gsap.utils.toArray("#deck .slab:not(.core)").forEach((el, i) => {
+        tl.to(el, { opacity: 1, y: 0, duration: 0.48, ease: DRIVE }, B + 0.4 + i * 0.09);
+      });
+
+      // strike + eject one beat apart starting bar 3
+      const layers = gsap.utils.toArray("#deck .slab:not(.core)");
+      layers.forEach((el, i) => {
+        const t = bar(3) + i * beat(1);
+        const strike = el.querySelector(".strike");
+        tl.to(strike, { scaleX: 1, duration: 0.18, ease: "power2.out" }, t);
+        tl.to(el, { x: -48, duration: 0.24, ease: GATHER }, t + 0.05);
+        tl.to(el, {
+          x: 1600, opacity: 0, duration: 0.56, ease: DEPART,
+        }, t + 0.29);
+      });
+
+      // core arrives after layers gone (bar 4)
+      tl.to("#core-slab", {
+        opacity: 1, y: 0, duration: 0.52, ease: DRIVE,
+      }, bar(4));
+      tl.to("#ops-row", {
+        opacity: 1, y: 0, duration: 0.5, ease: DRIVE,
+      }, bar(5) + 0.12);
+      hide("#s2", B_OUT);
+
+      // flash into light act / numbers
+      tl.to("#flash", { opacity: 1, duration: 0.04 }, bar(7) - 0.08);
+      tl.to("#flash", { opacity: 0, duration: 0.08 }, bar(7) - 0.02);
+
+      // ── 3 · the numbers (bar 7 → bar 11) ────────────────────────────────
+      // room turn was 900ms in motion — skip true 3D, jump into light ground
+      const C = bar(7) + 0.9;
+      const C_OUT = bar(11) - 0.26;
+      // light ground for this act
+      tl.set("#s3", { backgroundColor: "#fafafa", color: "#18181b" }, C);
+      tl.set("#s3 .chart-head", { color: "#a1a1aa" }, C);
+      tl.set("#s3 .bar-label", { color: "#52525b" }, C);
+      tl.set("#s3 .bar-val", { color: "#52525b" }, C);
+      tl.set("#s3 .bar-val.hi", { color: "#2563eb" }, C);
+      tl.set("#s3 .ring .num", { color: "#18181b" }, C);
+      tl.set("#s3 .ring-cap", { color: "#a1a1aa" }, C);
+      tl.set("#s3 .env", { color: "#a1a1aa" }, C);
+
+      show("#s3", C);
+      tl.to("#s3 .chart-head", { opacity: 1, y: 0, duration: 0.45, ease: DRIVE }, C + 0.1);
+
+      gsap.utils.toArray("#s3 .bar-row").forEach((row, i) => {
+        const w = Number(row.dataset.w);
+        const track = row.querySelector(".bar-track");
+        const val = row.querySelector(".bar-val");
+        tl.to(row, { opacity: 1, y: 0, duration: 0.45, ease: DRIVE }, C + 0.35 + i * 0.06);
+        tl.to(track, { width: w, duration: 1.4, ease: DRIVE }, C + 0.9);
+        tl.to(val, { opacity: 1, duration: 0.3 }, C + 0.9 + 1.15);
+      });
+
+      // ring: 300/360 of circumference ≈ 502.65 of 603
+      const ARC_FULL = 603;
+      const ARC_TARGET = ARC_FULL * (1 - 300 / 360); // remaining offset
+      tl.to("#ring-wrap", { opacity: 1, duration: 0.4 }, C + 1.4);
+      tl.to("#arc", {
+        strokeDashoffset: ARC_TARGET, duration: 1.2, ease: DRIVE,
+      }, C + 1.6);
+      tl.to("#ring-num", { opacity: 1, duration: 0.35 }, C + 2.1);
+      tl.to("#s3 .ring-cap", { opacity: 1, duration: 0.3 }, C + 2.3);
+      tl.to("#env-rule", { width: 120, duration: 0.4, ease: DRIVE }, C + 2.5);
+      gsap.utils.toArray("#s3 .env .line").forEach((el, i) => {
+        tl.to(el, { opacity: 1, y: 0, duration: 0.35, ease: DRIVE }, C + 2.65 + i * 0.13);
+      });
+      hide("#s3", C_OUT);
+
+      tl.to("#flash", { opacity: 1, duration: 0.04 }, bar(11) - 0.06);
+      tl.to("#flash", { opacity: 0, duration: 0.08 }, bar(11));
+
+      // ── 4 · the trade (bar 11 → bar 13) ─────────────────────────────────
+      const D = bar(11) + 0.9 + 0.16;
+      const D_OUT = bar(13) - 0.2;
+      show("#s4", D);
+      tl.to("#s4 .trade-h", { opacity: 1, y: 0, duration: 0.52, ease: DRIVE }, D + 0.05);
+      gsap.utils.toArray("#s4 .chip").forEach((el, i) => {
+        tl.to(el, { opacity: 1, y: 0, duration: 0.45, ease: DRIVE }, D + 0.55 + i * 0.22);
+      });
+      hide("#s4", D_OUT);
+
+      // ── 5 · lockup (bar 13 → end) ───────────────────────────────────────
+      const E = bar(13);
+      const END = bar(15);
+      show("#s5", E);
+      tl.to("#flash", { opacity: 1, duration: 0.04 }, E);
+      tl.to("#flash", { opacity: 0, duration: 0.08 }, E + 0.06);
+      gsap.utils.toArray("#corners .c").forEach((el, i) => {
+        tl.to(el, { opacity: 1, duration: 0.32, ease: DRIVE }, E + 0.08 + i * 0.04);
+      });
+      tl.to("#s5 .lock-word", { opacity: 1, y: 0, duration: 0.52, ease: DRIVE }, E + 0.2);
+      tl.to("#lock-rule", { width: 420, duration: 0.7, ease: DRIVE }, E + 0.7);
+      tl.to("#s5 .lock-sub", { opacity: 1, y: 0, duration: 0.45, ease: DRIVE }, E + 0.9);
+      tl.to("#s5 .lock-brand", { opacity: 1, duration: 0.4 }, E + 1.2);
+      // hold to end
+      tl.to({}, { duration: 0.01 }, END);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

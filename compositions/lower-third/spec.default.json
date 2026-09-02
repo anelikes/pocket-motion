@@ -1,0 +1,23 @@
+{
+  "spec": 1,
+  "template": "lower-third",
+  "viewport": [1920, 1080],
+  "fps": 30,
+  "durationFrames": 1,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/NotoSansSC-Regular.otf",
+    "bold": "assets/fonts/NotoSansSC-Bold.otf"
+  },
+  "copy": {
+    "name": "林知远",
+    "title": "城南市图书馆 · 讲解员"
+  },
+  "palette": {
+    "ground": "#020617",
+    "ink": "#f8fafc",
+    "muted": "#cbd5e1",
+    "accent": "#22d3ee",
+    "bar": "#06b6d4"
+  }
+}

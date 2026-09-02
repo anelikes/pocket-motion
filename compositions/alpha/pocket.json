@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-alpha",
+  "name": "pocketjs-motion-alpha",
+  "title": "PocketJS Motion: no declared ground",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/alpha/main.tsx",
+    "output": "motion-alpha",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [320, 180], "presentation": "native" } }
+  }
+}

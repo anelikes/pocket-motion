@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-spanned",
+  "name": "pocketjs-motion-spanned",
+  "title": "PocketJS Motion: a caption spanning two shots",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/spanned/main.tsx",
+    "output": "motion-spanned",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

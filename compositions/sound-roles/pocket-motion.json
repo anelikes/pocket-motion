@@ -1,0 +1,60 @@
+{
+  "motion": 1,
+  "durationFrames": 180,
+  "fps": 30,
+  "supersample": 1,
+  "footage": [
+    {
+      "id": "clip",
+      "src": "assets/synthetic/bars-16x9-24fps.mp4",
+      "nodePrefix": "footage:clip",
+      "tile": 512,
+      "grid": [
+        2,
+        1
+      ],
+      "startFrame": 30,
+      "endFrame": 150,
+      "sourceFrame": 20
+    }
+  ],
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf"
+  },
+  "sound": {
+    "bed": {
+      "src": "assets/synthetic/bed-220hz-8000ms.wav",
+      "startAt": 0,
+      "gain": 0.3,
+      "fadeInMs": 600,
+      "fadeOutMs": 1200
+    },
+    "narration": [
+      {
+        "id": "narration-1",
+        "src": "assets/synthetic/narration-440hz-2000ms.wav",
+        "startFrame": 15,
+        "gain": 1,
+        "duck": 0.2
+      }
+    ],
+    "dialogue": [
+      {
+        "id": "dialogue-1",
+        "src": "assets/synthetic/dialogue-660hz-1500ms.wav",
+        "track": "clip",
+        "sourceFrame": 80,
+        "gain": 1
+      }
+    ],
+    "cues": [
+      {
+        "id": "cue-1",
+        "src": "assets/synthetic/cue-880hz-300ms.wav",
+        "atFrame": 150,
+        "gain": 1
+      }
+    ]
+  }
+}

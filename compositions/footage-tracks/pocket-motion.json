@@ -1,0 +1,66 @@
+{
+  "motion": 1,
+  "durationFrames": 150,
+  "fps": 30,
+  "supersample": 1,
+  "footage": [
+    {
+      "id": "wide-open",
+      "src": "assets/synthetic/bars-16x9-24fps.mp4",
+      "nodePrefix": "footage:wide-open",
+      "tile": 512,
+      "grid": [
+        2,
+        1
+      ],
+      "startFrame": 0,
+      "endFrame": 60,
+      "sourceFrame": 0
+    },
+    {
+      "id": "wide-return",
+      "src": "assets/synthetic/bars-16x9-24fps.mp4",
+      "nodePrefix": "footage:wide-return",
+      "tile": 512,
+      "grid": [
+        2,
+        1
+      ],
+      "startFrame": 60,
+      "endFrame": 150,
+      "sourceFrame": 89
+    },
+    {
+      "id": "portrait-cover",
+      "src": "assets/synthetic/bars-9x16-30fps.mp4",
+      "nodePrefix": "footage:portrait-cover",
+      "tile": 512,
+      "grid": [
+        1,
+        1
+      ],
+      "startFrame": 0,
+      "endFrame": 150,
+      "sourceFrame": 0,
+      "fit": "cover"
+    },
+    {
+      "id": "wide-contain",
+      "src": "assets/synthetic/wide-2x1-30fps.mp4",
+      "nodePrefix": "footage:wide-contain",
+      "tile": 512,
+      "grid": [
+        2,
+        1
+      ],
+      "startFrame": 0,
+      "endFrame": 89,
+      "sourceFrame": 0,
+      "fit": "contain"
+    }
+  ],
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf"
+  }
+}

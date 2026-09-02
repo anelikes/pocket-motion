@@ -1,0 +1,219 @@
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index a38d08c..dbe3757 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -1032,8 +1032,9 @@ impl<'a> Walker<'a> {
+ 
+         // -- image / animated sprite -------------------------------------------
+         if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
+-            // Plain image samples the whole texture; a sprite samples the
+-            // current frame's atlas cell (auto-played from the vblank counter).
++            // Plain image samples `node.uv` — the whole texture unless
++            // set_image_uv narrowed it. A sprite samples the current frame's
++            // atlas cell instead (auto-played from the vblank counter).
+             let (fu0, fv0, fu1, fv1) = if node.sprite_frames > 0 {
+                 let cols = node.sprite_cols.max(1) as u32;
+                 let rows = (node.sprite_frames as u32).div_ceil(cols);
+@@ -1048,7 +1049,7 @@ impl<'a> Walker<'a> {
+                     (cy + 1) as f32 / rows as f32,
+                 )
+             } else {
+-                (0.0, 0.0, 1.0, 1.0)
++                (node.uv[0], node.uv[1], node.uv[2], node.uv[3])
+             };
+             self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip, fu0, fv0, fu1, fv1);
+         }
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index fd71ee6..6c3ddc1 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -644,6 +644,45 @@ impl Ui {
+         if node.node_type == spec::NodeType::Image as u8 {
+             node.tex = if tex < 0 { -1 } else { tex };
+             node.sprite_frames = 0; // set_image reverts a sprite to a static image
++            // node.uv is deliberately NOT reset — see set_image_uv.
++        }
++    }
++
++    /// Narrow a PLAIN image node to a sub-rect of its texture, in normalized
++    /// UV. The default (0, 0, 1, 1) is the whole texture, which is what every
++    /// image drew before this existed.
++    ///
++    /// The DrawList has always carried per-quad UVs and every backend already
++    /// honors them (`hosts/psp/src/ge.rs` converts them to raw texels); the only
++    /// caller that ever passed anything but the whole texture was the animated
++    /// sprite, whose cell the core derives from its own frame counter. So a
++    /// caller wanting a STATIC sub-rect had no way to ask, and a one-frame
++    /// sprite cannot substitute — its index is always 0.
++    ///
++    /// The motivating case is a picture too large for one texture
++    /// (`TEX_MAX_DIM`): split it into tiles and each tile is its own texture, so
++    /// bilinear at a tile's edge clamps against itself instead of blending with
++    /// the neighbour and the joins show. Give each tile a texel of the
++    /// neighbour's pixels, inset its UV by that texel, and the joins sample
++    /// exactly as one large texture would.
++    ///
++    /// Sticky across `set_image`: the sub-rect describes the node's geometry,
++    /// not the binding, so a host streaming a new texture into the node every
++    /// frame states it once. A bound sprite ignores it.
++    pub fn set_image_uv(&mut self, id: i32, u0: f32, v0: f32, u1: f32, v1: f32) {
++        // Reject anything that is not a usable rect rather than clamping into
++        // one: a non-finite or inverted edge means the caller computed it wrong,
++        // and quietly drawing some other crop would hide that.
++        if !(u0.is_finite() && v0.is_finite() && u1.is_finite() && v1.is_finite()) {
++            return;
++        }
++        if u1 <= u0 || v1 <= v0 {
++            return;
++        }
++        let Some(slot) = self.tree.resolve(id) else { return };
++        let node = &mut self.tree.slots[slot as usize];
++        if node.node_type == spec::NodeType::Image as u8 {
++            node.uv = [u0, v0, u1, v1];
+         }
+     }
+ 
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index ec7a45a..6dc837c 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -1243,6 +1243,62 @@ fn image_tex_quad_clips_with_uv_reinterpolation() {
+     assert_eq!(f32::from_bits(words[i + 7]), 1.0); // v1
+ }
+ 
++#[test]
++fn set_image_uv_narrows_a_plain_image_and_survives_rebinding() {
++    let mut ui = Ui::new();
++    let pixels = alloc::vec![0xffu8; 16 * 16 * 4];
++    let tex = ui.upload_texture(&pixels, 16, 16, spec::psm::PSM_8888);
++    let other = ui.upload_texture(&pixels, 16, 16, spec::psm::PSM_8888);
++
++    let img = ui.create_node(spec::NodeType::Image as u8);
++    ui.set_prop(img, spec::prop::WIDTH, 100.0);
++    ui.set_prop(img, spec::prop::HEIGHT, 100.0);
++    ui.set_prop(img, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(img, spec::prop::INSET_T, 0.0);
++    ui.set_prop(img, spec::prop::INSET_L, 0.0);
++    ui.set_image(img, tex);
++    ui.insert_before(spec::ROOT_ID, img, 0);
++
++    fn uv_of(ui: &mut Ui) -> (f32, f32, f32, f32) {
++        ui.tick();
++        let words = ui.draw().words.clone();
++        validate_drawlist(&words);
++        let i = words.iter().position(|&w| w == spec::draw_op::TEX_QUAD).unwrap();
++        (
++            f32::from_bits(words[i + 4]),
++            f32::from_bits(words[i + 5]),
++            f32::from_bits(words[i + 6]),
++            f32::from_bits(words[i + 7]),
++        )
++    }
++
++    // Default is the whole texture — what every image drew before this existed.
++    assert_eq!(uv_of(&mut ui), (0.0, 0.0, 1.0, 1.0));
++
++    // The tile case: one texel of a 16-wide texture inset on each side.
++    let inset = (1.0 / 16.0, 1.0 / 16.0, 15.0 / 16.0, 15.0 / 16.0);
++    ui.set_image_uv(img, inset.0, inset.1, inset.2, inset.3);
++    assert_eq!(uv_of(&mut ui), inset);
++
++    // Sticky across set_image: the sub-rect describes the node, not the
++    // binding, so a host streaming a new texture in every frame states it once.
++    ui.set_image(img, other);
++    assert_eq!(uv_of(&mut ui), inset);
++
++    // Degenerate, inverted and non-finite rects are rejected rather than
++    // clamped: each means the caller computed wrong, and quietly drawing some
++    // other crop would hide that.
++    ui.set_image_uv(img, 0.5, 0.0, 0.5, 1.0);
++    ui.set_image_uv(img, 0.9, 0.0, 0.1, 1.0);
++    ui.set_image_uv(img, f32::NAN, 0.0, 1.0, 1.0);
++    assert_eq!(uv_of(&mut ui), inset);
++
++    // A bound sprite computes its own cell and ignores uv. The step is slow
++    // enough that the tick inside uv_of cannot advance it off cell 0.
++    ui.set_sprite(img, tex, 4, 2, 60);
++    assert_eq!(uv_of(&mut ui), (0.0, 0.0, 0.5, 0.5));
++}
++
+ #[test]
+ fn root_is_a_full_screen_flex_column() {
+     let mut ui = Ui::new();
+diff --git a/engine/core/src/tree.rs b/engine/core/src/tree.rs
+index 6de7052..70f50c9 100644
+--- a/engine/core/src/tree.rs
++++ b/engine/core/src/tree.rs
+@@ -67,6 +67,13 @@ pub struct Node {
+     /// Uploaded texture handle (image nodes only; -1 = none). For an animated
+     /// sprite this is the ATLAS texture; the drawn frame is a UV sub-rect of it.
+     pub tex: i32,
++    /// Sub-rect of `tex` a PLAIN image samples, normalized (u0, v0, u1, v1).
++    /// Defaults to the whole texture; a bound sprite computes its own cell and
++    /// ignores this. Sticky across `set_image`, like a style property and unlike
++    /// the sprite fields — rebinding pixels does not re-describe the geometry,
++    /// which is what lets a host swap a streamed texture every frame while the
++    /// sub-rect is stated once at mount.
++    pub uv: [f32; 4],
+     /// Animated-sprite frame count over `tex` (0 = plain image, no animation).
+     pub sprite_frames: u16,
+     /// Atlas grid columns (frame i sits at col i%cols, row i/cols).
+@@ -99,6 +106,7 @@ impl Node {
+             anim_values: Vec::new(),
+             text: String::new(),
+             tex: -1,
++            uv: [0.0, 0.0, 1.0, 1.0],
+             sprite_frames: 0,
+             sprite_cols: 0,
+             sprite_step: 0,
+diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
+index 7eaadd1..47664a8 100644
+--- a/engine/wasm/src/lib.rs
++++ b/engine/wasm/src/lib.rs
+@@ -180,6 +180,13 @@ pub extern "C" fn ui_set_image(id: i32, tex: i32) {
+     ui().set_image(id, tex)
+ }
+ 
++/// Narrow a plain image node to a normalized sub-rect of its texture
++/// (`Ui::set_image_uv`). The whole texture, (0,0,1,1), stays the default.
++#[no_mangle]
++pub extern "C" fn ui_set_image_uv(id: i32, u0: f32, v0: f32, u1: f32, v1: f32) {
++    ui().set_image_uv(id, u0, v0, u1, v1)
++}
++
+ #[no_mangle]
+ pub extern "C" fn ui_set_sprite(id: i32, atlas: i32, frames: u32, cols: u32, step: u32) {
+     ui().set_sprite(id, atlas, frames, cols, step)
+diff --git a/framework/src/host.ts b/framework/src/host.ts
+index b34ab62..50f675a 100644
+--- a/framework/src/host.ts
++++ b/framework/src/host.ts
+@@ -135,6 +135,10 @@ export interface HostOps {
+    *  the pixel stream PackBits-RLE. The only route to filtered sampling for
+    *  pixels the caller produced rather than baked into a pak entry. */
+   uploadTextureFlags?(buf: Uint8Array, w: number, h: number, psm: number, flags: number): number;
++  /** Narrow a plain image node to a normalized sub-rect of its texture; the
++   *  default (0,0,1,1) is the whole texture. Sticky across `setImage`, since it
++   *  describes the node rather than the binding. A bound sprite ignores it. */
++  setImageUv?(id: number, u0: number, v0: number, u1: number, v1: number): void;
+ 
+   // -- host service channel + video plane (spec ops 30..37). Optional: only
+   //    native hosts with a tethered companion process (PSPLINK usbhostfs,
+diff --git a/hosts/web/wasm-ops.js b/hosts/web/wasm-ops.js
+index 8a3b43c..2c09321 100644
+--- a/hosts/web/wasm-ops.js
++++ b/hosts/web/wasm-ops.js
+@@ -121,6 +121,13 @@ export async function createWasmUi(wasm, options = {}) {
+       withBytes(buf, (p, l) => ex.ui_upload_texture_flags(p, l, w, h, psm, flags));
+   }
+ 
++  // Static UV sub-rect on a plain image node. Feature-detected: a stale
++  // pocketjs.wasm simply has no way to narrow an image, and every image draws
++  // the whole texture as it always did.
++  if (ex.ui_set_image_uv) {
++    ops.setImageUv = (id, u0, v0, u1, v1) => ex.ui_set_image_uv(id, u0, v0, u1, v1);
++  }
++
+   // Virtual cursor ops (spec ops 27..29, input.cursor) — feature-detected so
+   // a stale pocketjs.wasm predating them still boots (enableCursor falls
+   // back to the classic d-pad focus model when the host lacks them).

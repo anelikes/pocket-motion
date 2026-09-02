@@ -1,0 +1,27 @@
+diff --git a/framework/compiler/bake-font.ts b/framework/compiler/bake-font.ts
+index 55a43f4..bab47cd 100644
+--- a/framework/compiler/bake-font.ts
++++ b/framework/compiler/bake-font.ts
+@@ -250,7 +250,21 @@ export function bakeSlot(
+   const ascent = font.ascender * scale;
+   const descent = -font.descender * scale; // positive px below baseline
+   const baseline = Math.round(ascent);
+-  const cellH = Math.min(255, Math.max(1, baseline + Math.ceil(descent)));
++  // The atlas header stores cellW/cellH as u8, so a cell cannot exceed 255
++  // logical px. Clamping silently truncates the glyph — the failure looks like
++  // a rendering bug rather than a size that does not fit, so refuse instead.
++  const wantCellH = Math.max(1, baseline + Math.ceil(descent));
++  if (wantCellH > 255) {
++    const maxPx = Math.floor((px * 255) / wantCellH);
++    throw new Error(
++      `PocketJS bake-font: ${px}px needs a ${wantCellH}px cell, over the 255px ` +
++        `limit the FONT ATLAS header can express (cellH is a u8). ` +
++        `The largest size this font can bake is about ${maxPx}px. ` +
++        `For larger display type, render at a larger logical viewport instead of ` +
++        `a larger font.`,
++    );
++  }
++  const cellH = wantCellH;
+   const hhea = (font.tables as Record<string, any>).hhea;
+   const lineGap: number = (hhea?.lineGap ?? 0) * scale;
+   const lineHeight = Math.min(255, Math.round(ascent + descent + lineGap));

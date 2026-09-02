@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-shutter",
+  "name": "pocketjs-motion-shutter",
+  "title": "PocketJS Motion: curved slat shutter",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/shutter/main.tsx",
+    "output": "motion-shutter",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [3840, 2160], "presentation": "native" } }
+  }
+}

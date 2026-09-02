@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-sound-roles",
+  "name": "pocketjs-motion-sound-roles",
+  "title": "PocketJS Motion: sound roles",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/sound-roles/main.tsx",
+    "output": "motion-sound-roles",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1280, 720], "presentation": "native" } }
+  }
+}

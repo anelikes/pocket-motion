@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-glow-column",
+  "name": "pocketjs-motion-glow-column",
+  "title": "PocketJS Motion: the column veil at two stack heights",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/glow-column/main.tsx",
+    "output": "motion-glow-column",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

@@ -1,0 +1,64 @@
+Pocket Motion
+Copyright (c) 2026 Pocket Motion contributors
+
+This product is licensed under the MIT License. See LICENSE.
+
+The MIT License covers the source in this repository. It does not cover the
+third-party components below, each of which keeps its own terms. The
+per-directory files named here are authoritative; this file is a summary.
+
+
+## Vendored engine
+
+`vendor/pocketjs` is not in this repository. `scripts/vendor.ts` clones
+https://github.com/pocket-stack/pocketjs at the commit pinned in
+`UPSTREAM.commit` and applies the patches in `patches/` in sorted order.
+
+  PocketJS — MIT License, Copyright (c) 2026 Yifeng "Evan" Wang.
+
+The patches under `patches/` are part of this repository and are MIT. Each is
+a diff against that upstream commit and carries no third-party code of its own.
+
+
+## Typefaces
+
+HarmonyOS Sans (Regular, Bold) — checked in at `assets/fonts/`.
+  Copyright 2021 Huawei Device Co., Ltd.
+  HarmonyOS Sans Fonts License Agreement, vendored verbatim at
+  `assets/fonts/HarmonyOS_Sans_LICENSE.txt`.
+
+Noto Sans SC (Regular, Bold) — not checked in; fetched by SHA-256 by
+`scripts/assets.ts`.
+  SIL Open Font License, Version 1.1, vendored verbatim at
+  `assets/fonts/NotoSansSC_LICENSE.txt`.
+
+Both are pinned rather than resolved from the system, because a render's
+identity includes the exact font bytes (`src/render/identity.ts`).
+See `assets/fonts/README.md`.
+
+
+## Audio
+
+Not checked in. `scripts/assets.ts` fetches each file and verifies it against
+the SHA-256 in `assets/audio/manifest.json`. Every file carries a resolvable
+source URL in `assets/audio/ATTRIBUTION.md`, which is the authoritative record
+of where each one came from and under what terms.
+
+
+## Footage and tones
+
+Seven files are tracked under `assets/synthetic/`: three video clips and four
+sine tones, produced by ffmpeg from its own `lavfi` sources. No third-party
+material is involved, and they are the only moving pictures and the only
+sound this repository carries as bytes.
+
+Tracking them is a deliberate exception to the rule that media bytes stay out
+of the repository, and the reason is not size: footage is decoded into the pak
+at build time, so its bytes are one of the inputs `src/render/identity.ts`
+hashes. A digest taken against a clip only one machine has is a digest only
+that machine can reproduce.
+
+A command does rebuild them. `assets/synthetic/manifest.json` records the
+exact invocation and the first line of `ffmpeg -version` from the run that
+produced the committed bytes, beside the SHA-256 `scripts/assets.ts` verifies.
+See `assets/synthetic/README.md`.

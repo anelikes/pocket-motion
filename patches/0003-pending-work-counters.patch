@@ -1,0 +1,167 @@
+diff --git a/framework/src/clock.ts b/framework/src/clock.ts
+index cd0a080..467a7b1 100644
+--- a/framework/src/clock.ts
++++ b/framework/src/clock.ts
+@@ -80,6 +80,18 @@ export function after(seconds: number, cb: () => void): () => void {
+   };
+ }
+ 
++/**
++ * Timers still waiting to fire.
++ *
++ * Read-only, for hosts and DevTools. A timer's deadline can be arbitrarily far
++ * away, so no finite observation window proves it absent: `after(10, …)` is
++ * invisible for 600 frames and then mutates the world. Counting native ops
++ * cannot see it; this can.
++ */
++export function __pendingTimerCount(): number {
++  return timers.length;
++}
++
+ /** Fresh clock for a fresh mount; latches the host's `__simHz` policy. */
+ export function resetClock(): void {
+   const raw = (globalThis as { __simHz?: unknown }).__simHz;
+diff --git a/framework/src/effects.ts b/framework/src/effects.ts
+index f117c78..d859a6f 100644
+--- a/framework/src/effects.ts
++++ b/framework/src/effects.ts
+@@ -91,6 +91,17 @@ export function runEffect<T>(kind: string, payload: unknown, onResult: (result:
+   return id;
+ }
+ 
++/**
++ * Effect shell depth: commands awaiting a driver result, and results awaiting
++ * the next frame boundary.
++ *
++ * Read-only, for hosts and DevTools. Either being non-zero means the world is
++ * mid-transaction — a delivery is going to land on some future frame.
++ */
++export function __effectDepth(): { pending: number; queued: number } {
++  return { pending: pending.size, queued: queue.length };
++}
++
+ /** Fresh queues for a fresh mount. Keeps the installed driver: demo bundles
+  *  install theirs at module scope, before render() runs. */
+ export function resetEffects(): void {
+diff --git a/framework/src/frame.ts b/framework/src/frame.ts
+index 9f2538d..030d1cc 100644
+--- a/framework/src/frame.ts
++++ b/framework/src/frame.ts
+@@ -24,6 +24,18 @@ export function runFrameHooks(buttons: number): void {
+   for (const cb of [...callbacks]) cb(buttons);
+ }
+ 
++/**
++ * How many app frame callbacks are registered right now.
++ *
++ * Read-only, for hosts and DevTools that need to assert a mounted app has no
++ * per-frame work outstanding (docs/DETERMINISM.md). A registered callback runs
++ * every frame whether or not it reaches a native op, so counting ops cannot
++ * see it.
++ */
++export function __frameHookCount(): number {
++  return callbacks.size;
++}
++
+ export function onFrame(callback: FrameCallback): void {
+   callbacks.add(callback);
+   onCleanup(() => callbacks.delete(callback));
+diff --git a/framework/src/index.ts b/framework/src/index.ts
+index 0d79aea..4c6d89e 100644
+--- a/framework/src/index.ts
++++ b/framework/src/index.ts
+@@ -43,11 +43,11 @@ import { registerStyles, resolveStyle } from "./styles.ts";
+ import { handleFrame, setHitRoot, setInputRoot } from "./input.ts";
+ import { __runGestures, resetGestures } from "./gesture.ts";
+ import { installTouchActivation } from "./touch-activation.ts";
+-import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
++import { __frameHookCount, __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
+ import { __resetTouches, __setTouches } from "./touch.ts";
+-import { __advanceClock, resetClock } from "./clock.ts";
+-import { __drainEffects, resetEffects } from "./effects.ts";
+-import { runServicePumps } from "./services.ts";
++import { __advanceClock, __pendingTimerCount, resetClock } from "./clock.ts";
++import { __drainEffects, __effectDepth, resetEffects } from "./effects.ts";
++import { __servicePumpCount, runServicePumps } from "./services.ts";
+ import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
+ import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
+ import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
+@@ -165,6 +165,44 @@ export function resizeViewport(w: number, h: number): void {
+   ops.__viewport = { w, h };
+ }
+ 
++/**
++ * Work a mounted app still has outstanding, by registry.
++ *
++ * All zero means the next frame is a pure function of the next input: nothing
++ * is scheduled, nothing is mid-flight, and no callback runs. Any non-zero
++ * entry names which registry is holding something.
++ */
++export interface PendingWork {
++  /** App callbacks registered via onFrame/onButtonPress — run every frame. */
++  frameHooks: number;
++  /** after() timers awaiting their deadline frame. */
++  timers: number;
++  /** Effect commands awaiting a driver result. */
++  effectsPending: number;
++  /** Driver results awaiting the next frame boundary. */
++  effectsQueued: number;
++  /** Modules with async work outstanding. */
++  servicePumps: number;
++}
++
++/**
++ * Read every scheduled-work registry the frame pump drains.
++ *
++ * Deliberately excludes gesture and focus state: those hold no scheduled work
++ * and can only act in response to contacts or button edges, which are input,
++ * not something the world does on its own.
++ */
++export function pendingWork(): PendingWork {
++  const effects = __effectDepth();
++  return {
++    frameHooks: __frameHookCount(),
++    timers: __pendingTimerCount(),
++    effectsPending: effects.pending,
++    effectsQueued: effects.queued,
++    servicePumps: __servicePumpCount(),
++  };
++}
++
+ /**
+  * Mount the app into the native root node and wire the frame loop. Returns a
+  * disposer that unmounts and destroys the app subtree.
+@@ -263,6 +301,11 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
+   installTouchActivation();
+   resetClock(); // latches the host's __simHz clock policy (docs/DETERMINISM.md)
+   resetEffects();
++  // Publish the pending-work readers (docs/DETERMINISM.md). Every registry the
++  // frame pump below drains is module-private, so a host that wants to assert
++  // "this mounted app has nothing outstanding" has no way to look. One property
++  // and one closure, installed once at mount.
++  (globalThis as { __pocketPendingWork?: () => PendingWork }).__pocketPendingWork = pendingWork;
+   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md): flight recorder +
+   // debug channel; one branch per frame when no transport is connected.
+   installFrameHandler(
+diff --git a/framework/src/services.ts b/framework/src/services.ts
+index e90f044..f9f1143 100644
+--- a/framework/src/services.ts
++++ b/framework/src/services.ts
+@@ -14,6 +14,17 @@ export function registerServicePump(pump: ServicePump): () => void {
+   return () => pumps.delete(pump);
+ }
+ 
++/**
++ * How many modules currently have pending async work.
++ *
++ * Read-only, for hosts and DevTools. The set is normally empty; a module joins
++ * it only while it has work outstanding, so a non-zero count is exactly the
++ * statement "something in this world is not finished".
++ */
++export function __servicePumpCount(): number {
++  return pumps.size;
++}
++
+ export function runServicePumps(): void {
+   if (pumps.size === 0) return;
+   // A pump may remove itself while running; Set iteration safely advances to

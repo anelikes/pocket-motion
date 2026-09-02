@@ -1,0 +1,255 @@
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 4a4d64a..4e5e6c1 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -813,6 +813,8 @@ struct Walker<'a> {
+     inspect_slot: u32,
+     /// World AABB of `inspect_slot`, set when the walk reaches it.
+     inspect_hit: Option<Clip>,
++    /// Draw-time skip: this slot and its subtree emit nothing (u32::MAX = none).
++    hide_slot: u32,
+ }
+ 
+ /// Build the full DrawList for the current (laid-out) tree. `frame` is the
+@@ -833,6 +835,7 @@ pub fn build(
+     raster_density: u32,
+     dl: &mut DrawList,
+     inspect_id: i32,
++    hide_id: i32,
+     inspect_prev: Option<(f32, f32, f32, f32)>,
+     cursor: Option<(u32, f32, f32, f32, f32)>,
+ ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>, bool) {
+@@ -845,6 +848,11 @@ pub fn build(
+     } else {
+         u32::MAX
+     };
++    let hide_slot = if hide_id != 0 {
++        tree.resolve(hide_id).unwrap_or(u32::MAX)
++    } else {
++        u32::MAX
++    };
+     let mut w = Walker {
+         tree,
+         styles,
+@@ -858,6 +866,7 @@ pub fn build(
+         raster_density,
+         inspect_slot,
+         inspect_hit: None,
++        hide_slot,
+         in_3d: false,
+         provider_stale: false,
+     };
+@@ -921,6 +930,12 @@ impl<'a> Walker<'a> {
+         in_transform: bool,
+         dl: &mut DrawList,
+     ) {
++        // Hide is a draw-time skip, never a layout-time one: returning here
++        // emits nothing for this slot or its children, but the node's box is
++        // still whatever layout last wrote.
++        if slot == self.hide_slot {
++            return;
++        }
+         let node = &self.tree.slots[slot as usize];
+         let r = style::resolve(node, self.styles, true);
+         // The provider gate accumulates EXACTLY like layout.rs build() —
+@@ -1217,6 +1232,12 @@ impl<'a> Walker<'a> {
+         items: &mut Vec<(f32, Item3)>,
+         tex_cells: &mut Vec<TexCell>,
+     ) {
++        // 3D descendants never re-enter paint(), so the same skip lives here
++        // too — otherwise hiding a child of a perspective root would be a
++        // silent no-op.
++        if slot == self.hide_slot {
++            return;
++        }
+         let node = &self.tree.slots[slot as usize];
+         let r = style::resolve(node, self.styles, true);
+         if r.display == spec::Display::None as u8 {
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index d0f9be6..339ff97 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -275,6 +275,9 @@ pub struct Ui {
+     tick_hz: u32,
+     /// DevTools (spec ops 18..22, docs/DEVTOOLS.md). All default-off.
+     inspect_id: i32,
++    /// Draw-time skip: this node and its subtree emit nothing. 0 = nothing
++    /// hidden. Layout is not involved — other nodes' boxes stay put.
++    hide_id: i32,
+     /// World AABB (x, y, w, h) of the inspected node, captured by the last
+     /// `draw()` that painted it.
+     inspect_rect: Option<(f32, f32, f32, f32)>,
+@@ -330,6 +333,7 @@ impl Ui {
+             dt: spec::FIXED_DT,
+             tick_hz: DEFAULT_TICK_HZ,
+             inspect_id: 0,
++            hide_id: 0,
+             inspect_rect: None,
+             inspect_drawn: None,
+             paused: false,
+@@ -1222,6 +1226,7 @@ impl Ui {
+             self.raster_density,
+             &mut self.draw_list,
+             self.inspect_id,
++            self.hide_id,
+             self.inspect_drawn,
+             cursor,
+         );
+@@ -1248,6 +1253,7 @@ impl Ui {
+                 self.raster_density,
+                 &mut self.draw_list,
+                 self.inspect_id,
++                self.hide_id,
+                 self.inspect_drawn,
+                 cursor,
+             );
+@@ -1325,6 +1331,12 @@ impl Ui {
+         }
+     }
+ 
++    /// Set (0 = clear) the hidden node. The next `draw()` skips that slot
++    /// and its subtree. Layout is not re-run, so other nodes' boxes stay put.
++    pub fn debug_hide(&mut self, id: i32) {
++        self.hide_id = id;
++    }
++
+     /// Packed `x | y << 16` (i16 halves) of the inspected node's last-drawn
+     /// world AABB; -1 if it hasn't been painted since `debug_inspect`.
+     pub fn debug_rect_xy(&self) -> i32 {
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 954c2de..c2e7642 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -2180,6 +2180,116 @@ fn debug_inspect_glides_between_targets() {
+     assert_eq!(ui.draw().words.len(), baseline, "clear hides the overlay");
+ }
+ 
++fn raster_fb(ui: &mut Ui) -> alloc::vec::Vec<u8> {
++    let words = ui.draw().words.clone();
++    let mut fb = alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
++    crate::raster::render(ui, &words, &mut fb);
++    fb
++}
++
++fn sample_rgba(fb: &[u8], x: usize, y: usize) -> [u8; 4] {
++    let i = (y * spec::SCREEN_W as usize + x) * 4;
++    [fb[i], fb[i + 1], fb[i + 2], fb[i + 3]]
++}
++
++#[test]
++fn debug_hide_removes_pixels_and_clears_byte_for_byte() {
++    let mut ui = Ui::new();
++    let mk = |x: f32, color: u32| {
++        let mut s = StyleSpec::new();
++        s.base = alloc::vec![
++            (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
++            (spec::prop::WIDTH, 40f32.to_bits()),
++            (spec::prop::HEIGHT, 40f32.to_bits()),
++            (spec::prop::INSET_L, x.to_bits()),
++            (spec::prop::INSET_T, 10f32.to_bits()),
++            (spec::prop::BG_COLOR, color),
++        ];
++        s
++    };
++    let red = abgr(0xcc, 0x20, 0x20, 0xff);
++    let blue = abgr(0x20, 0x20, 0xcc, 0xff);
++    assert!(ui.load_styles(&encode_styles(&[mk(10.0, red), mk(80.0, blue)])));
++    let a = ui.create_node(0);
++    let b = ui.create_node(0);
++    ui.insert_before(spec::ROOT_ID, a, 0);
++    ui.insert_before(spec::ROOT_ID, b, 0);
++    ui.set_style(a, 0);
++    ui.set_style(b, 1);
++    ui.tick();
++
++    let baseline = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&baseline, 20, 20), [0xcc, 0x20, 0x20, 0xff]);
++    assert_eq!(sample_rgba(&baseline, 90, 20), [0x20, 0x20, 0xcc, 0xff]);
++
++    ui.debug_hide(a);
++    let hidden = raster_fb(&mut ui);
++    assert_ne!(hidden, baseline, "hiding a painted node must change a pixel");
++    assert_eq!(sample_rgba(&hidden, 20, 20), [0, 0, 0, 0xff], "A's pixels are gone");
++    assert_eq!(sample_rgba(&hidden, 90, 20), [0x20, 0x20, 0xcc, 0xff], "B is untouched");
++
++    // Other nodes' inspect rects must not move: hide is draw-time only.
++    ui.debug_inspect(b);
++    ui.draw();
++    let xy = ui.debug_rect_xy();
++    let wh = ui.debug_rect_wh();
++    ui.debug_inspect(0);
++    ui.debug_hide(0);
++    ui.debug_inspect(b);
++    ui.draw();
++    assert_eq!(ui.debug_rect_xy(), xy);
++    assert_eq!(ui.debug_rect_wh(), wh);
++    ui.debug_inspect(0);
++
++    ui.debug_hide(0);
++    let restored = raster_fb(&mut ui);
++    assert_eq!(restored, baseline, "debug_hide(0) must reproduce the original framebuffer");
++}
++
++#[test]
++fn debug_hide_parent_removes_children() {
++    let mut ui = Ui::new();
++    let mut parent_s = StyleSpec::new();
++    parent_s.base = alloc::vec![
++        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
++        (spec::prop::WIDTH, 80f32.to_bits()),
++        (spec::prop::HEIGHT, 80f32.to_bits()),
++        (spec::prop::INSET_L, 10f32.to_bits()),
++        (spec::prop::INSET_T, 10f32.to_bits()),
++        (spec::prop::BG_COLOR, abgr(0x10, 0x10, 0x10, 0xff)),
++    ];
++    let mut child_s = StyleSpec::new();
++    child_s.base = alloc::vec![
++        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
++        (spec::prop::WIDTH, 20f32.to_bits()),
++        (spec::prop::HEIGHT, 20f32.to_bits()),
++        (spec::prop::INSET_L, 20f32.to_bits()),
++        (spec::prop::INSET_T, 20f32.to_bits()),
++        (spec::prop::BG_COLOR, abgr(0xee, 0xee, 0x20, 0xff)),
++    ];
++    assert!(ui.load_styles(&encode_styles(&[parent_s, child_s])));
++    let parent = ui.create_node(0);
++    let child = ui.create_node(0);
++    ui.insert_before(spec::ROOT_ID, parent, 0);
++    ui.insert_before(parent, child, 0);
++    ui.set_style(parent, 0);
++    ui.set_style(child, 1);
++    ui.tick();
++
++    let baseline = raster_fb(&mut ui);
++    // Child sits at parent origin + inset = (30, 30).
++    assert_eq!(sample_rgba(&baseline, 35, 35), [0xee, 0xee, 0x20, 0xff]);
++    assert_eq!(sample_rgba(&baseline, 15, 15), [0x10, 0x10, 0x10, 0xff]);
++
++    ui.debug_hide(parent);
++    let hidden = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&hidden, 35, 35), [0, 0, 0, 0xff], "child must go with its parent");
++    assert_eq!(sample_rgba(&hidden, 15, 15), [0, 0, 0, 0xff], "parent fill must go too");
++
++    ui.debug_hide(0);
++    assert_eq!(raster_fb(&mut ui), baseline);
++}
++
+ /// set_text rides the incremental style path — and skips relayout entirely
+ /// inside a FIXED cell (definite px width AND height), where the measure
+ /// result cannot move layout. Empty <-> non-empty stays structural (the
+diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
+index 47664a8..c1a2ecf 100644
+--- a/engine/wasm/src/lib.rs
++++ b/engine/wasm/src/lib.rs
+@@ -293,6 +293,11 @@ pub extern "C" fn ui_debug_inspect(id: i32) {
+     ui().debug_inspect(id)
+ }
+ 
++#[no_mangle]
++pub extern "C" fn ui_debug_hide(id: i32) {
++    ui().debug_hide(id)
++}
++
+ #[no_mangle]
+ pub extern "C" fn ui_debug_rect_xy() -> i32 {
+     ui().debug_rect_xy()

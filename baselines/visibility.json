@@ -1,0 +1,215 @@
+{
+  "samples": 24,
+  "compositions": {
+    "compositions/alpha": {
+      "failures": [],
+      "nodes": 1,
+      "named": 1,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/copy": {
+      "failures": [],
+      "nodes": 3,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/curves": {
+      "failures": [],
+      "nodes": 28,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/curves-race": {
+      "failures": [],
+      "nodes": 33,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/fit": {
+      "failures": [],
+      "nodes": 3,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/footage-tracks": {
+      "failures": [],
+      "nodes": 11,
+      "named": 11,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/glow": {
+      "failures": [],
+      "nodes": 2,
+      "named": 1,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/glow-column": {
+      "failures": [],
+      "nodes": 16,
+      "named": 6,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/kenburns": {
+      "failures": [],
+      "nodes": 2,
+      "named": 2,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/late-anim": {
+      "failures": [],
+      "nodes": 3,
+      "named": 3,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/late-timer": {
+      "failures": [],
+      "nodes": 2,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/layout-codes": {
+      "failures": [
+        "buried"
+      ],
+      "nodes": 12,
+      "named": 12,
+      "neverShown": 1,
+      "buriedAfterShown": 0
+    },
+    "compositions/lower-third": {
+      "failures": [],
+      "nodes": 2,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/nested/a/9x16": {
+      "failures": [],
+      "nodes": 2,
+      "named": 2,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/nested/b/9x16": {
+      "failures": [],
+      "nodes": 2,
+      "named": 2,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/occluded": {
+      "failures": [
+        "buried"
+      ],
+      "nodes": 3,
+      "named": 3,
+      "neverShown": 1,
+      "buriedAfterShown": 0
+    },
+    "compositions/open": {
+      "failures": [],
+      "nodes": 8,
+      "named": 8,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/probe": {
+      "failures": [],
+      "nodes": 3,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/reel": {
+      "failures": [],
+      "nodes": 631,
+      "named": 0,
+      "neverShown": 19,
+      "buriedAfterShown": 5
+    },
+    "compositions/shimmer": {
+      "failures": [],
+      "nodes": 2,
+      "named": 2,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/shutter": {
+      "failures": [],
+      "nodes": 2,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/smoke": {
+      "failures": [],
+      "nodes": 7,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/sound-roles": {
+      "failures": [],
+      "nodes": 7,
+      "named": 7,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/spanned": {
+      "failures": [
+        "spanning",
+        "trailing"
+      ],
+      "nodes": 7,
+      "named": 7,
+      "neverShown": 0,
+      "buriedAfterShown": 2
+    },
+    "compositions/textcmp-cjk": {
+      "failures": [],
+      "nodes": 5,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/textcmp-kern": {
+      "failures": [],
+      "nodes": 14,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/textcmp-latin": {
+      "failures": [],
+      "nodes": 5,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/textcmp-liga": {
+      "failures": [],
+      "nodes": 9,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/typography": {
+      "failures": [],
+      "nodes": 5,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    }
+  }
+}

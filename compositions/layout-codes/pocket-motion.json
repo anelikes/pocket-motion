@@ -1,0 +1,19 @@
+{
+  "motion": 1,
+  "durationFrames": 30,
+  "fps": 30,
+  "supersample": 1,
+  "layoutAllow": [
+    {
+      "node": "wing",
+      "allow": "overflow",
+      "reason": "the cap is drawn wider than the frame it hangs on, the way a glow cap is; leaving the box is the shape, not a mistake"
+    }
+  ],
+  "assertions": [
+    { "node": "overlap-a", "inPicture": [0, 29] },
+    { "node": "cut-off", "entersBy": 0 },
+    { "node": "too-long", "dwellFrames": 30 },
+    { "node": "pane", "insideBox": true }
+  ]
+}

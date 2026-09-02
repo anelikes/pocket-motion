@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-footage-tracks",
+  "name": "pocketjs-motion-footage-tracks",
+  "title": "PocketJS Motion: footage tracks",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/footage-tracks/main.tsx",
+    "output": "motion-footage-tracks",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1280, 720], "presentation": "native" } }
+  }
+}

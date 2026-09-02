@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-smoke",
+  "name": "pocketjs-motion-smoke",
+  "title": "PocketJS Motion: Phase 0 smoke",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/smoke/main.tsx",
+    "output": "motion-smoke",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

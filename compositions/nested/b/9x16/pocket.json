@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-nested",
+  "name": "pocketjs-motion-nested-b",
+  "title": "PocketJS Motion: nested cut b",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/nested/b/9x16/main.tsx",
+    "output": "motion-nested",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1080, 1920], "presentation": "native" } }
+  }
+}

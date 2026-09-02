@@ -1,0 +1,66 @@
+diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
+index 4292d59..7eaadd1 100644
+--- a/engine/wasm/src/lib.rs
++++ b/engine/wasm/src/lib.rs
+@@ -138,6 +138,26 @@ pub extern "C" fn ui_upload_texture(ptr: *const u8, len: usize, w: u32, h: u32,
+     ui().upload_texture(unsafe { bytes(ptr, len) }, w, h, psm)
+ }
+ 
++/// `ui_upload_texture` carrying spec::img flags — FLAG_LINEAR (2) requests
++/// bilinear sampling, FLAG_RLE (1) marks the pixel stream PackBits-RLE.
++///
++/// `Ui::upload_texture_flags` has always been able to do this; every other
++/// route to it goes through a pak entry (`ui_upload_img_entry`) or a tileset,
++/// so a host uploading raw pixels it produced itself could only get the
++/// flagless default, which is nearest sampling. That is the right default for
++/// pixel art drawn 1:1 and the wrong one for anything the rasteriser resamples.
++#[no_mangle]
++pub extern "C" fn ui_upload_texture_flags(
++    ptr: *const u8,
++    len: usize,
++    w: u32,
++    h: u32,
++    psm: u32,
++    flags: u32,
++) -> i32 {
++    ui().upload_texture_flags(unsafe { bytes(ptr, len) }, w, h, psm, flags as u8)
++}
++
+ /// Upload a self-contained IMG pak entry (spec op uploadImgEntry;
+ /// framework/compiler/pak.ts layout — v2 PSM_T8 palette + optional RLE + filter flags
+ /// parsed core-side). Returns the generation-tagged handle or -1.
+diff --git a/framework/src/host.ts b/framework/src/host.ts
+index 266d9c9..b34ab62 100644
+--- a/framework/src/host.ts
++++ b/framework/src/host.ts
+@@ -130,6 +130,11 @@ export interface HostOps {
+   /** Upload a self-contained IMG entry blob (framework/compiler/pak.ts layout, incl.
+    *  PSM_T8 palette + RLE/filter flags). → handle or -1. */
+   uploadImgEntry?(blob: Uint8Array): number;
++  /** `uploadTexture` carrying spec::img flags — IMG_FLAG_LINEAR (2) selects
++   *  bilinear sampling instead of the nearest default, IMG_FLAG_RLE (1) marks
++   *  the pixel stream PackBits-RLE. The only route to filtered sampling for
++   *  pixels the caller produced rather than baked into a pak entry. */
++  uploadTextureFlags?(buf: Uint8Array, w: number, h: number, psm: number, flags: number): number;
+ 
+   // -- host service channel + video plane (spec ops 30..37). Optional: only
+   //    native hosts with a tethered companion process (PSPLINK usbhostfs,
+diff --git a/hosts/web/wasm-ops.js b/hosts/web/wasm-ops.js
+index 40d3a89..8a3b43c 100644
+--- a/hosts/web/wasm-ops.js
++++ b/hosts/web/wasm-ops.js
+@@ -113,6 +113,14 @@ export async function createWasmUi(wasm, options = {}) {
+     ops.uploadImgEntry = (blob) => withBytes(blob, (p, l) => ex.ui_upload_img_entry(p, l));
+   }
+ 
++  // uploadTexture carrying spec::img flags — same feature-detection, same
++  // reason. Callers that want IMG_FLAG_LINEAR (bilinear) on pixels they built
++  // themselves have no other route: uploadImgEntry needs a pak-entry blob.
++  if (ex.ui_upload_texture_flags) {
++    ops.uploadTextureFlags = (buf, w, h, psm, flags) =>
++      withBytes(buf, (p, l) => ex.ui_upload_texture_flags(p, l, w, h, psm, flags));
++  }
++
+   // Virtual cursor ops (spec ops 27..29, input.cursor) — feature-detected so
+   // a stale pocketjs.wasm predating them still boots (enableCursor falls
+   // back to the classic d-pad focus model when the host lacks them).

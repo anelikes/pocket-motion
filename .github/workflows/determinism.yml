@@ -1,0 +1,195 @@
+# The determinism claim, checked on every push, on a machine that is not the
+# author's.
+#
+# This repository's central claim is that the same input produces byte-identical
+# frames anywhere. Until this workflow existed that was proven by a person
+# running commands by hand: `baselines/phase0-acceptance.md` is a snapshot of
+# one afternoon in August, and nothing re-verified it afterwards.
+#
+# The runner is Linux on x86-64 and the ledger is recorded on macOS on ARM, so
+# every green run is a cross-platform reproduction — different OS, different
+# architecture, different rustc build of the same core — per composition, per
+# commit. That is the portability half of the determinism claim, checked
+# continuously instead of once.
+#
+# Nothing here renders an MP4, so the ENCODER is outside the claim: frame hashes
+# are taken before the encode leg. The DECODER is not. Ingest turns each footage
+# source into raw RGBA beside the bundle, `src/footage/ingest.ts` hashes that
+# artifact, and the render draws it — `src/render/identity.ts` leaves ffmpeg's
+# version out of input identity for exactly that reason, because the frozen
+# artifact stands in front of it. So which ffmpeg runs here is an input to the
+# digest of every composition that declares footage — 2 of the ledger's 22
+# today — and it is pinned below rather than installed.
+
+name: determinism
+
+on:
+  # Every branch, not only `main`. A push is the cheapest moment to learn that a
+  # composition no longer rebuilds to its recorded digest, and a branch that
+  # waits for a PR to be checked has already had work stacked on it.
+  # `pull_request` stays because it is what covers a fork, whose pushes never
+  # reach this repository's event stream; on a same-repo PR the two overlap and
+  # the job runs twice.
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  digests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned, not `latest`. Bun can move a pixel: four delivered cuts rebuilt
+      # to different digests after a Bun change with the tracked source held
+      # fixed, which is why `src/render/identity.ts` hashes `Bun.version` as the
+      # `toolchain` component of input identity and `trace` prints it. Every
+      # digest in `baselines/digests.json` was recorded on 1.3.11, so `latest`
+      # would move the toolchain under the ledger and report a renderer
+      # disagreement that was a Bun upgrade.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      # The runner image ships no ffmpeg. Run 33590798439 — the first push of
+      # `main` in three weeks — failed 12 of the 476 tests it ran, every one on
+      # `Executable not found in $PATH: "ffmpeg"`, and `tsc` and the ledger
+      # never ran at all. Footage ingest, `sound --verify`, `render --spec` and
+      # `tests/preview.test.ts`'s `beforeAll` all shell out to it.
+      #
+      # Pinned to one immutable release asset rather than to whatever a package
+      # index serves, because the decoder decides the bytes the ledger compares.
+      # `baselines/ingest-bytes.json` records `ffmpeg version 8.0` against all
+      # 15 of its artifacts, and `baselines/digests.json` was recorded against
+      # what that decoder produced. An ffmpeg that decodes differently produces
+      # a different frame digest and `bun scripts/digests.ts` goes red naming
+      # the composition. That is the wanted behaviour and not a thing to route
+      # around: nothing reads `baselines/ingest-bytes.json` automatically, and it
+      # is the record that lets such a red be attributed to the decoder rather
+      # than to the renderer.
+      #
+      # This is the nearest published Linux build to that 8.0, not the same
+      # build: BtbN builds the release BRANCHES rather than the release tags, so
+      # it is 16 commits past `n8.0` (johnvansickle's newest release build is
+      # 7.0.2, checked 2026-09-02). It therefore names itself
+      # `n8.0-16-gd8605a6b55`, and an ingest manifest written here will not carry
+      # the literal string `ffmpeg version 8.0` even when the decoded bytes
+      # agree — read the DIGESTS, not that field, when comparing.
+      #
+      # The sha256 is the digest GitHub reports for the asset, read from the
+      # release API on 2026-09-02 and not computed from these bytes here — the
+      # first run either confirms it at `sha256sum -c` or fails printing the
+      # mismatch.
+      - name: ffmpeg, pinned by sha256
+        env:
+          FFMPEG_URL: https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-09-30-13-19/ffmpeg-n8.0-16-gd8605a6b55-linux64-gpl-8.0.tar.xz
+          FFMPEG_SHA256: cea7c0845fb8ac78b06f94cdd7282d3e7ddb960e20d91d5c07cd9b43f3a04504
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSL --retry 3 -o ffmpeg.tar.xz "$FFMPEG_URL"
+          echo "$FFMPEG_SHA256  ffmpeg.tar.xz" | sha256sum -c -
+          mkdir -p ffmpeg
+          tar -xJf ffmpeg.tar.xz -C ffmpeg --strip-components=1
+          # ffprobe as well as ffmpeg: `src/cli/footage.ts` reads the source
+          # dimensions with ffprobe and refuses a drifting aspect before it pays
+          # for the ingest, so a tarball with only ffmpeg would fail later and
+          # further away.
+          test -x ffmpeg/bin/ffmpeg
+          test -x ffmpeg/bin/ffprobe
+          echo "$RUNNER_TEMP/ffmpeg/bin" >> "$GITHUB_PATH"
+          # Written to a file first: `ffmpeg -version | head -1` under
+          # `pipefail` can fail on the SIGPIPE `head` sends.
+          ffmpeg/bin/ffmpeg -version > version.txt
+          head -1 version.txt
+
+      # `vendor/` is gitignored and rebuilt from patches/ at a pinned upstream
+      # commit, so the core this job runs is compiled here rather than shipped.
+      - name: Rust toolchain for the wasm core
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            vendor/pocketjs/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('patches/*.patch', 'scripts/vendor.ts') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Rebuild the vendored core
+        run: bun run vendor
+
+      # Digest-pinned third-party bytes: the CJK faces the Chinese compositions
+      # bake and the audio `reel` muxes, every one verified against its
+      # `assets/<kind>/manifest.json`. It runs before `bun test`, not only before
+      # the ledger, because `tests/sound.test.ts` reads `assets/audio/` and
+      # nothing tracks those bytes in git.
+      - name: Fetch pinned assets
+        run: bun scripts/assets.ts
+
+      - run: bun test ./tests/
+      - run: bunx tsc --noEmit
+
+      # The whole ledger, never a subset. A full run decodes every footage track
+      # to raw RGBA beside its bundle, and that is what decides whether this
+      # step fits on a hosted runner: today the two footage compositions leave
+      # 688 MiB over five files against about 12 GiB free. A tree carrying
+      # recorded material at film length once left 64 GiB, which is what this
+      # step could not fit — `src/cli/disk.ts` carried that as a high-water mark
+      # long after the footage was gone, and `doctor` gated on it, so every run
+      # here failed on disk. `FULL_RUN_RGBA_BYTES` is now the measured figure
+      # instead. When the disk does run out, ffmpeg reports `No space left on
+      # device` and nothing above it mentions capacity, so the script prints
+      # what `df` actually reports before it starts and the run states the real
+      # number rather than this comment's.
+      #
+      # `--only` over a subset, or gating the step off `main`, would turn the
+      # workflow green while it checked less than its name claims.
+      - name: Every composition matches the ledger
+        run: bun scripts/digests.ts
+
+      # The second ledger. `scripts/digests.ts` compares frames; this one
+      # compares what `visibility` reports per composition — the failing node
+      # names, how many nodes carry a debugName, how many paint and are never
+      # shown — against baselines/visibility.json, and the fixtures whose red
+      # case is pinned there (occluded, spanned, layout-codes) have to come
+      # back red. Until 2026-09-02 nothing on a second machine ran it.
+      - name: Every composition matches the visibility ledger
+        run: bun scripts/visibility.ts
+
+      # A failure here is the interesting one: it means this machine and the
+      # author's machine disagree about what the renderer produces. Keep the
+      # evidence rather than only the exit code.
+      #
+      # `smoke` and `reel` are the two ends of the ledger: `smoke` is the
+      # smallest thing that renders at all — no generator, no sound, no
+      # footage — and `reel` is the long one at 1071 frames, generated by
+      # `gen.ts` and the only composition of film length here. A divergence
+      # that shows in `smoke` is in the core or the harness; one that shows
+      # only in `reel` is in something a long generated composition reaches
+      # and a short hand-written one does not. Neither carries footage, so
+      # neither trace is about the decoder.
+      #
+      # `trace` does not build, so a composition the ledger never reached has no
+      # bundle and its trace fails — hence `|| true`, and hence an empty JSON
+      # file is itself a reading.
+      - name: Traces, on failure
+        if: failure()
+        run: |
+          mkdir -p /tmp/traces
+          for d in compositions/smoke compositions/reel; do
+            bun src/cli/main.ts trace "$d" --json \
+              > "/tmp/traces/$(basename "$d").json" || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: traces
+          path: /tmp/traces

@@ -1,0 +1,62 @@
+[
+  {
+    "path": "bars-16x9-24fps.mp4",
+    "bytes": 282516,
+    "sha256": "a01805bf07221e1b3ae41d10838d750f99ccaca49cb59fcdc4ffb0df37d3d761",
+    "format": "1280x720 24/1 6.000s h264 yuv420p, no audio",
+    "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers",
+    "command": "ffmpeg -nostdin -y -hide_banner -v error -fflags +bitexact -flags +bitexact -f lavfi -i \"testsrc2=size=1280x720:rate=24:duration=6\" -an -c:v libx264 -preset veryslow -crf 40 -pix_fmt yuv420p bars-16x9-24fps.mp4",
+    "why": "24 fps does not divide 60, so a composition at 30 fps ingests it through ffmpeg's resampler rather than frame-for-frame. testsrc2 moves in every region of the frame, so a tile that stops updating is visible in the picture rather than only in a hash."
+  },
+  {
+    "path": "bars-9x16-30fps.mp4",
+    "bytes": 44385,
+    "sha256": "1b54ffd9eaa09c7412c704ba4ad3d3dfc871d7b229cb86d06b1350e2483a85a4",
+    "format": "720x1280 30/1 6.000s h264 yuv420p, no audio",
+    "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers",
+    "command": "ffmpeg -nostdin -y -hide_banner -v error -fflags +bitexact -flags +bitexact -f lavfi -i \"testsrc=size=720x1280:rate=30:duration=6\" -an -c:v libx264 -preset veryslow -crf 30 -pix_fmt yuv420p bars-9x16-30fps.mp4",
+    "why": "Portrait against a landscape box: 9:16 drawn into 4:3 drifts 278 destination pixels, which is what `fit: \"cover\"` is declared for."
+  },
+  {
+    "path": "wide-2x1-30fps.mp4",
+    "bytes": 9006,
+    "sha256": "6b8e3fa25d6671635378525f5e849a818d408f0bff317d4515491ef8255c30ef",
+    "format": "1024x512 30/1 3.000s h264 yuv420p, no audio",
+    "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers",
+    "command": "ffmpeg -nostdin -y -hide_banner -v error -fflags +bitexact -flags +bitexact -f lavfi -i \"color=c=0x101820:size=1024x512:rate=30:duration=3[bg];color=c=0xf2c14e:size=192x192:rate=30:duration=3[fg];[bg][fg]overlay=x='(1024-192)*t/3':y=160\" -an -c:v libx264 -preset veryslow -crf 30 -pix_fmt yuv420p wide-2x1-30fps.mp4",
+    "why": "2:1 against a 20:9 box drifts 80 destination pixels — over the one-pixel rounding floor and under a cover crop, so it is the clip `fit: \"contain\"` is declared for. A single moving box on flat colour is the smallest thing whose position states which source frame is on screen. The box moves by `overlay` and not by `drawbox`: on ffmpeg 8.0 a `drawbox` whose `x` is an expression rather than a literal draws nothing at all, silently, so the version above is not interchangeable with the obvious one."
+  },
+  {
+    "path": "bed-220hz-8000ms.wav",
+    "bytes": 768078,
+    "sha256": "d0c89cd7b8a046becbcfd5650ba3034dad10bff86dabdf27d156251741210e8a",
+    "format": "48000 Hz mono s16 8.000s",
+    "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers",
+    "command": "ffmpeg -nostdin -y -hide_banner -v error -fflags +bitexact -flags +bitexact -f lavfi -i \"sine=frequency=220:sample_rate=48000:duration=8\" -c:a pcm_s16le bed-220hz-8000ms.wav",
+    "why": "Longer than the composition it beds, so the mix trims it rather than running out."
+  },
+  {
+    "path": "narration-440hz-2000ms.wav",
+    "bytes": 192078,
+    "sha256": "232d15a895325c45a274df94eec2ca4fe309847338c9c1dd259c3a6da038430e",
+    "format": "48000 Hz mono s16 2.000s",
+    "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers",
+    "command": "ffmpeg -nostdin -y -hide_banner -v error -fflags +bitexact -flags +bitexact -f lavfi -i \"sine=frequency=440:sample_rate=48000:duration=2\" -c:a pcm_s16le narration-440hz-2000ms.wav"
+  },
+  {
+    "path": "dialogue-660hz-1500ms.wav",
+    "bytes": 144078,
+    "sha256": "face5cd4a59d4c28ca6e510e816998eb736fb81c12cc01652dcc0d2bfa8334b6",
+    "format": "48000 Hz mono s16 1.500s",
+    "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers",
+    "command": "ffmpeg -nostdin -y -hide_banner -v error -fflags +bitexact -flags +bitexact -f lavfi -i \"sine=frequency=660:sample_rate=48000:duration=1.5\" -c:a pcm_s16le dialogue-660hz-1500ms.wav"
+  },
+  {
+    "path": "cue-880hz-300ms.wav",
+    "bytes": 28878,
+    "sha256": "b6d4ac40320a09bab40fc1994d66371c4d0f1c202e0bc08fd552f4a6a26a46ae",
+    "format": "48000 Hz mono s16 0.300s",
+    "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers",
+    "command": "ffmpeg -nostdin -y -hide_banner -v error -fflags +bitexact -flags +bitexact -f lavfi -i \"sine=frequency=880:sample_rate=48000:duration=0.3\" -c:a pcm_s16le cue-880hz-300ms.wav"
+  }
+]

@@ -1,0 +1,68 @@
+[
+  {
+    "path": "cat-walk.mp3",
+    "url": "https://assets.mixkit.co/music/371/371.mp3",
+    "bytes": 3969820,
+    "sha256": "e241cba000ce12e52cadd4c9956274e391ef1f66d1e48a5dd40bfc21645aa489"
+  },
+  {
+    "path": "silent-descent.mp3",
+    "url": "https://assets.mixkit.co/music/614/614.mp3",
+    "bytes": 5134509,
+    "sha256": "601955cacab6c38417687b144754c914f392f6508c35c241372695ad3987ec2b"
+  },
+  {
+    "path": "sfx/sweep-fast-small.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/166/166-preview.mp3",
+    "bytes": 27247,
+    "sha256": "5d8153579cfbd4ec23738494dff8dec95b3737981578222b793eff9e3fdd4ca8"
+  },
+  {
+    "path": "sfx/air-woosh-quick.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/2605/2605-preview.mp3",
+    "bytes": 48543,
+    "sha256": "faa42dd877dcdbbd0362e9623a22c847dffd5392d1389274a5607be47bfcdc26"
+  },
+  {
+    "path": "sfx/bass-hit-short.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/2299/2299-preview.mp3",
+    "bytes": 36222,
+    "sha256": "8bd0c7fd63fbb8a4442ffe1176aa41b260d1fafbcf728e3c63648eb5bcd4e16b"
+  },
+  {
+    "path": "sfx/hit-fast-exciting.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/2180/2180-preview.mp3",
+    "bytes": 58464,
+    "sha256": "51138c1aa0f61a77bc4975691d81da287dd4075979d83e7f9b35c22c58e45bac"
+  },
+  {
+    "path": "sfx/switch-click-quick.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/2582/2582-preview.mp3",
+    "bytes": 35439,
+    "sha256": "a3a7579e0a6c04acb6e8da3f87136a1f4addb8b0b3bf55099b9b0bb6fdcf57ca"
+  },
+  {
+    "path": "sfx/hitech-touch-magnet.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/3171/3171-preview.mp3",
+    "bytes": 55004,
+    "sha256": "645758cbf8b2c050feea28723ae2bd9709763d07401dd9c208a64165e7e5208e"
+  },
+  {
+    "path": "sfx/clock-tick-single.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/1061/1061-preview.mp3",
+    "bytes": 20508,
+    "sha256": "70d0e0fe1d930949e1f86e24bfb9a6521ad4cb6c5e1a07190cc6d1f3e7603d37"
+  },
+  {
+    "path": "sfx/lock-digital.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/2859/2859-preview.mp3",
+    "bytes": 34035,
+    "sha256": "79887829cc9e2b1e2346a9f952607fb95ddb8f93305977959ebe4ab8b7c2c3f3"
+  },
+  {
+    "path": "sfx/shimmer-sparkle-sweep.mp3",
+    "url": "https://assets.mixkit.co/active_storage/sfx/2633/2633-preview.mp3",
+    "bytes": 94788,
+    "sha256": "8228e373de20a738b3ca74cd08bac181434f72ea0a6f9d75f499e58e7a7fabe3"
+  }
+]

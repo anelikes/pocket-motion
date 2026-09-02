@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-layout-codes",
+  "name": "pocketjs-motion-layout-codes",
+  "title": "PocketJS Motion: one node per layout finding code",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/layout-codes/main.tsx",
+    "output": "motion-layout-codes",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

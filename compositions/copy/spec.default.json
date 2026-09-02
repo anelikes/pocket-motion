@@ -1,0 +1,24 @@
+{
+  "spec": 1,
+  "template": "copy",
+  "viewport": [1920, 1080],
+  "fps": 30,
+  "durationFrames": 1,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/NotoSansSC-Regular.otf",
+    "bold": "assets/fonts/NotoSansSC-Bold.otf"
+  },
+  "copy": {
+    "eyebrow": "POCKETJS MOTION · 确定性视频渲染",
+    "headline": "把网页那套写法用来写视频，但不要浏览器",
+    "body": "文字的断行在构建期就定好了：先问渲染器每个字形的步进宽度，再决定每一行到哪里断、标题能用多大的字号，然后把带着换行符的字符串写进生成的源码。核心一行没改——它依然没有自动换行——而每一帧都还是同样的字节。"
+  },
+  "palette": {
+    "ground": "#020617",
+    "ink": "#f8fafc",
+    "muted": "#cbd5e1",
+    "accent": "#22d3ee",
+    "rule": "#06b6d4"
+  }
+}

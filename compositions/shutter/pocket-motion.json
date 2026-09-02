@@ -1,0 +1,10 @@
+{
+  "motion": 1,
+  "durationFrames": 150,
+  "fps": 30,
+  "supersample": 2,
+  "fonts": {
+    "regular": "assets/fonts/NotoSansSC-Regular.otf",
+    "bold": "assets/fonts/NotoSansSC-Bold.otf"
+  }
+}

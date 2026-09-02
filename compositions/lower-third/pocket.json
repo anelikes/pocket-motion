@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-lower-third",
+  "name": "pocketjs-motion-lower-third",
+  "title": "PocketJS Motion: measured lower third",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/lower-third/main.tsx",
+    "output": "motion-lower-third",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

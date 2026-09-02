@@ -1,0 +1,94 @@
+{
+  "hash": "sha256",
+  "bun": "1.3.11",
+  "compositions": {
+    "compositions/alpha": {
+      "frames": 2,
+      "digest": "d6e5c9c1e9291a3d6d692be9e93dc830c887314b38a79dcb15a9346e81df1849"
+    },
+    "compositions/copy": {
+      "frames": 1,
+      "digest": "a32a0abcfdf2120b861af550cc74a19fd6d6eea34d23ae40dcf0fa327d65a964"
+    },
+    "compositions/curves": {
+      "frames": 420,
+      "digest": "daa2fef960a289c9d7f3943fb7c1d3a160f9514ae233548f9083b3271d002ac0"
+    },
+    "compositions/curves-race": {
+      "frames": 342,
+      "digest": "40ae1820615583beaaee3febc2b269e9b4bc312265cc75832cdaad20db02d283"
+    },
+    "compositions/footage-tracks": {
+      "frames": 150,
+      "digest": "3808eae81de304e259ebe1887f6ae259d5d037a86615e097d2c91325f3235b8d"
+    },
+    "compositions/glow": {
+      "frames": 30,
+      "digest": "c8a74da628ccb0a535b4b7a6a3f72419848c3fa1231909e7eaaa72f035adc08c"
+    },
+    "compositions/glow-column": {
+      "frames": 1,
+      "digest": "c5e814edd762d5d236783b57a783c9d83c4eb426dcc5985552e6e42aca2f50f3"
+    },
+    "compositions/late-timer": {
+      "frames": 900,
+      "digest": "e09bb4f07eb27006a89842191b2516b5f3a39a7b0cb48080d63226fe701292f4"
+    },
+    "compositions/lower-third": {
+      "frames": 1,
+      "digest": "0459571a0be4d133c569fa0a6ac243ed3898e4455b804a13c846650399f34295"
+    },
+    "compositions/nested/a/9x16": {
+      "frames": 30,
+      "digest": "3ca712dd05aec4be4ecfe0cdb4d3efb0a69a36942e21c8cee69a9213633a8fc5"
+    },
+    "compositions/nested/b/9x16": {
+      "frames": 30,
+      "digest": "7accb79919a5a526340b435f3a31b35f38a9819472422a9450e05c3e5bbdcc4f"
+    },
+    "compositions/open": {
+      "frames": 90,
+      "digest": "fefd5493b8dd398734ffaf9b10a57bbb608b4f239c7519e3d4320504b54f0f04"
+    },
+    "compositions/probe": {
+      "frames": 2,
+      "digest": "e18c4e77d9874b7f0a67fda24dc9cb47146af1af8e1dfe013ca473e49e2e00e4"
+    },
+    "compositions/reel": {
+      "frames": 1071,
+      "digest": "93f9b758141d7ced8e28203a0b4760798816d29556caacee1eb0ddf98b3a7434"
+    },
+    "compositions/shutter": {
+      "frames": 150,
+      "digest": "9253ff2407872b6053ee947b2bb25815a608b9e5dee33f26620b3839f2620fe4"
+    },
+    "compositions/smoke": {
+      "frames": 450,
+      "digest": "947ec6d2c3b946802ea3e7be16d9c1412c6fc28b2225ba5ca7e60af9ee21f36f"
+    },
+    "compositions/sound-roles": {
+      "frames": 180,
+      "digest": "41cb13594b51603a3319c372f8a99666b345e393ab7906fb281d9c3edc7c3e22"
+    },
+    "compositions/textcmp-cjk": {
+      "frames": 1,
+      "digest": "ac863a9238f1bbc7eef94944c4020bf612db0230153791d58ea079c59c82c092"
+    },
+    "compositions/textcmp-kern": {
+      "frames": 1,
+      "digest": "b1e7bf26ec22ee644c0dba57e03a419963dc8e4443949cbdf9926450e904649b"
+    },
+    "compositions/textcmp-latin": {
+      "frames": 1,
+      "digest": "028ecffe7cdbc7dce511ef4b7c2246e4a7fdfdf81256c0126ca0fd754ce0ed82"
+    },
+    "compositions/textcmp-liga": {
+      "frames": 1,
+      "digest": "de8ccf00c2526c762111cb1348d6665edd760f476de498a9cb081b3c1e78d067"
+    },
+    "compositions/typography": {
+      "frames": 30,
+      "digest": "84a75e5f096f3273909b3cf2d201360dd52e0a92e126727c8d47debf7246aab9"
+    }
+  }
+}

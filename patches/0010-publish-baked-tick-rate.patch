@@ -1,0 +1,30 @@
+diff --git a/framework/src/index.ts b/framework/src/index.ts
+index 4c6d89e..24393b5 100644
+--- a/framework/src/index.ts
++++ b/framework/src/index.ts
+@@ -45,7 +45,7 @@ import { __runGestures, resetGestures } from "./gesture.ts";
+ import { installTouchActivation } from "./touch-activation.ts";
+ import { __frameHookCount, __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
+ import { __resetTouches, __setTouches } from "./touch.ts";
+-import { __advanceClock, __pendingTimerCount, resetClock } from "./clock.ts";
++import { __advanceClock, __pendingTimerCount, TICKS_PER_SECOND, resetClock } from "./clock.ts";
+ import { __drainEffects, __effectDepth, resetEffects } from "./effects.ts";
+ import { __servicePumpCount, runServicePumps } from "./services.ts";
+ import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
+@@ -306,6 +306,16 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
+   // "this mounted app has nothing outstanding" has no way to look. One property
+   // and one closure, installed once at mount.
+   (globalThis as { __pocketPendingWork?: () => PendingWork }).__pocketPendingWork = pendingWork;
++  // Publish the rate this bundle was baked at. `--hz` is compiled in as a
++  // constant (tools/build.ts) and every ms-to-frame conversion resolves against
++  // it, including the compiler's keyframe baker: a timeline's endpoints are
++  // frame counts at that rate, so the same bundle on a surface driven at
++  // another rate plays every animation at the wrong speed. A native host is
++  // told to declare `ui.__tickHz` and assertNativeHostContract compares the
++  // two, but the web/wasm adapter is strict-injected and never reaches that
++  // check, so the rate is unreadable from outside the bundle. One property,
++  // installed once at mount.
++  (globalThis as { __pocketTickHz?: number }).__pocketTickHz = TICKS_PER_SECOND;
+   initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md): flight recorder +
+   // debug channel; one branch per frame when no transport is connected.
+   installFrameHandler(

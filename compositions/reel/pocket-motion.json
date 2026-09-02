@@ -1,0 +1,19 @@
+{
+  "motion": 1,
+  "durationFrames": 1071,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf"
+  },
+  "sound": {
+    "bed": {
+      "src": "assets/audio/cat-walk.mp3",
+      "startAt": 15.46,
+      "gain": 0.3,
+      "fadeInMs": 600,
+      "fadeOutMs": 1800
+    }
+  }
+}

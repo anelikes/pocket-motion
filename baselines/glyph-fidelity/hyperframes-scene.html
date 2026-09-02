@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "HOS";  src: url("assets/HarmonyOS_Sans_Regular.ttf") format("truetype"); }
+      @font-face { font-family: "NSSC"; src: url("assets/NotoSansSC-Regular.otf") format("opentype"); }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+      .t { position: absolute; left: 60px; color: #fff; white-space: nowrap;
+           -webkit-font-smoothing: antialiased; }
+      /* No generic fallback: a miss must render tofu, not a system face, so a
+         coverage gap cannot masquerade as a rendering difference. */
+      .latin { font-family: "HOS"; }
+      .cjk   { font-family: "NSSC"; }
+      #tick { position: absolute; left: -50px; top: -50px; width: 1px; height: 1px; background: #000; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="2"
+         data-width="1920" data-height="1080">
+      <div id="stage" class="clip" data-start="0" data-duration="2" data-track-index="1">
+      <div class="t latin" style="top:60px; font-size:16px;">Hamburgefonstiv 0123456789</div>
+      <div class="t cjk" style="top:116px; font-size:16px;">港湾食物银行 全年影响力报告</div>
+      <div class="t latin" style="top:188px; font-size:24px;">Hamburgefonstiv 0123456789</div>
+      <div class="t cjk" style="top:252px; font-size:24px;">港湾食物银行 全年影响力报告</div>
+      <div class="t latin" style="top:332px; font-size:32px;">Hamburgefonstiv 0123456789</div>
+      <div class="t cjk" style="top:404px; font-size:32px;">港湾食物银行 全年影响力报告</div>
+      <div class="t latin" style="top:492px; font-size:48px;">Hamburgefonstiv 0123456789</div>
+      <div class="t cjk" style="top:580px; font-size:48px;">港湾食物银行 全年影响力报告</div>
+      <div class="t latin" style="top:684px; font-size:64px;">Hamburgefonstiv 0123456789</div>
+      <div class="t cjk" style="top:788px; font-size:64px;">港湾食物银行 全年影响力报告</div>
+        <div id="tick"></div>
+      </div>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.to("#tick", { x: 1, duration: 2, ease: "none" }, 0);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

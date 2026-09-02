@@ -1,0 +1,147 @@
+diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
+index b69ce0c..0640886 100644
+--- a/framework/compiler/animation.ts
++++ b/framework/compiler/animation.ts
+@@ -574,6 +574,17 @@ export function loopToFrames(loop: string | number, where: string): number {
+  * ANIM TABLE. Returns null when the name is not in the theme (the literal is
+  * then not a class string — consistent with every other utility).
+  */
++/**
++ * Every name `animate-<name>` can resolve: the app's `theme.animation` and the
++ * framework built-ins it was merged over, sorted.
++ *
++ * Read from the same object `resolveAnimation` looks in, so a message built
++ * from this cannot list a set the resolver does not use.
++ */
++export function declaredAnimationNames(): string[] {
++  return Object.keys(themeAnimation).sort();
++}
++
+ export function resolveAnimation(name: string): { anims: number[]; loopFrames: number } | null {
+   const memo = resolved.get(name);
+   if (memo !== undefined) return memo;
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index efbbb99..c5e1d79 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -33,7 +33,7 @@ import {
+   type StyleRecord,
+   type StyleTransition,
+ } from "../../contracts/spec/spec.ts";
+-import { bakedTimelines, loopToFrames, resolveAnimation } from "./animation.ts";
++import { bakedTimelines, declaredAnimationNames, loopToFrames, resolveAnimation } from "./animation.ts";
+ 
+ // ---------------------------------------------------------------------------
+ // Font slots (build-assigned, pinned here — bake-font.ts uses the same table)
+@@ -565,13 +565,27 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+ interface AnimAcc {
+   ids: number[];
+   loopFrames: number;
++  /** `animate-<name>` tokens naming nothing the theme declares. */
++  unknownName: string[];
++  /** `animate-loop-*` tokens that are not a period. */
++  badLoop: string[];
+ }
+ 
+ /**
+  * Parse an `animate-*` token. `animate-<name>` bakes the theme animation
+  * (comma list) into the ANIM TABLE; `animate-loop-[4s]`/`animate-loop-[4000ms]`
+- * sets the whole-choreography loop period (PocketJS extension). Unknown names
+- * make the literal a non-class string, like every other utility.
++ * sets the whole-choreography loop period (PocketJS extension).
++ *
++ * A token that resolves to neither is recorded rather than rejected here, and
++ * decided once the whole literal has parsed. Rejecting it on the spot would
++ * make it "not a utility", which drops the ENTIRE literal — the node then
++ * loses every other class in it and the build says nothing, so a one-letter
++ * typo in an animation name reads as a layout bug. Deferring it lets the
++ * decision use the same rule the `hover:` and bevel/rounded errors use: every
++ * other token parsed, so this IS a class literal and the mistake is loud.
++ * That matters because the collector offers every string literal in the module
++ * as a candidate, so prose can reach this function too — and prose has other
++ * tokens that do not parse.
+  */
+ function parseAnimation(tok: string, acc: AnimAcc): boolean {
+   if (!tok.startsWith("animate-")) return false;
+@@ -582,12 +596,20 @@ function parseAnimation(tok: string, acc: AnimAcc): boolean {
+     return true;
+   }
+   const resolved = resolveAnimation(rest);
+-  if (resolved === null) return false;
++  if (resolved === null) {
++    (rest.startsWith("loop-") ? acc.badLoop : acc.unknownName).push(tok);
++    return true;
++  }
+   acc.ids.push(...resolved.anims);
+   if (resolved.loopFrames > 0) acc.loopFrames = resolved.loopFrames;
+   return true;
+ }
+ 
++/** `` `a`, `b` `` — tokens as an author would recognise them in a message. */
++function quoteTokens(tokens: readonly string[]): string {
++  return tokens.map((t) => `\`${t}\``).join(", ");
++}
++
+ /** Parse a motion token into the transition accumulator (base variant only). */
+ function parseMotion(tok: string, tr: TransitionAcc): boolean {
+   switch (tok) {
+@@ -639,9 +661,12 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
+     base: { decls: [] }, focus: { decls: [] }, active: { decls: [] },
+   };
+   const tr: TransitionAcc = {};
+-  const anim: AnimAcc = { ids: [], loopFrames: 0 };
++  const anim: AnimAcc = { ids: [], loopFrames: 0, unknownName: [], badLoop: [] };
+   let sawMotion = false;
+   let sawHover = false;
++  /** Tokens that parsed as something other than `animate-*`. See the unknown-
++   *  name error below: it is the evidence that this literal is a class. */
++  let utilityTokens = 0;
+ 
+   for (const tok of tokens) {
+     let variant: "base" | "focus" | "active" = "base";
+@@ -660,9 +685,10 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
+       }
+     }
+     if (body.length === 0) return null;
+-    if (variant === "base" && parseMotion(body, tr)) { sawMotion = true; continue; }
++    if (variant === "base" && parseMotion(body, tr)) { sawMotion = true; utilityTokens++; continue; }
+     if (variant === "base" && parseAnimation(body, anim)) continue;
+     if (!parseUtility(body, acc[variant])) return null;
++    utilityTokens++;
+   }
+ 
+   // Every token parsed => this IS a class literal; unsupported-by-design
+@@ -683,6 +709,33 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
+       );
+     }
+   }
++  // An `animate-*` token that resolves to nothing, in a literal whose OTHER
++  // tokens all parsed. That combination is the evidence: `animate-rise-n`
++  // beside `text-[38px] absolute left-[100px]` was written as a class, and
++  // dropping it silently costs the node every one of those utilities, so a
++  // one-letter typo reads as a layout bug rather than a naming one.
++  //
++  // A literal with no other utility token stays silent, which is upstream's
++  // `animate-imagination` prose-safety case: every string literal in the module
++  // is offered here as a candidate, and a lone `animate-<word>` carries no
++  // evidence that it was ever meant as a class. The residue is a node whose
++  // only class is its animation — that one still drops without a word.
++  if (utilityTokens > 0) {
++    if (anim.badLoop.length > 0) {
++      throw new Error(
++        `PocketJS tailwind: ${quoteTokens(anim.badLoop)} in "${literal}" is not a loop period — ` +
++          "write `animate-loop-[4s]` or `animate-loop-[4000ms]`.",
++      );
++    }
++    if (anim.unknownName.length > 0) {
++      const declared = declaredAnimationNames();
++      throw new Error(
++        `PocketJS tailwind: ${quoteTokens(anim.unknownName)} in "${literal}" names no animation. ` +
++          `theme.animation declares ${declared.length > 0 ? declared.join(", ") : "(nothing)"} ` +
++          "(framework built-ins included).",
++      );
++    }
++  }
+ 
+   // resolve pseudo-utilities per variant (font slot / tracking / rounded-full)
+   const base = acc.base;

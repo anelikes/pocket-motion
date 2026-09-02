@@ -1,0 +1,8 @@
+[package]
+name = "tribench"
+version = "0.0.0"
+edition = "2021"
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

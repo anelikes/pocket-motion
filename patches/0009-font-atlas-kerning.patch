@@ -1,0 +1,788 @@
+Font atlas v3 → v4: a kerning-pair section appended after coverage. The baker
+walks GPOS lookupType 2 (format 1 pair sets and format 2 class defs, class 0
+reconstructed from coverage) and writes i8 logical-px deltas. The core applies
+them in measure_run and layout_run. A core that cannot apply the pairs refuses
+the blob; v2 and v3 still load.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 9734b68..5331e37 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -75,6 +75,7 @@ import {
+   FONT_CMAP_ENTRY_SIZE,
+   FONT_FLAG_BOLD,
+   FONT_HEADER_SIZE,
++  FONT_KERN_PAIR_SIZE,
+   FONT_MAGIC,
+   FONT_VERSION,
+   ID_SLOT_BITS,
+@@ -423,6 +424,7 @@ export function generateRust(): string {
+   put(`    pub const VERSION: u16 = ${FONT_VERSION};`);
+   put(`    pub const HEADER_SIZE: usize = ${FONT_HEADER_SIZE};`);
+   put(`    pub const CMAP_ENTRY_SIZE: usize = ${FONT_CMAP_ENTRY_SIZE};`);
++  put(`    pub const KERN_PAIR_SIZE: usize = ${FONT_KERN_PAIR_SIZE};`);
+   put(`    pub const FLAG_BOLD: u8 = ${FONT_FLAG_BOLD};`);
+   put("}");
+   put("");
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 03d3ef9..88e190c 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -1265,7 +1265,7 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
+ }
+ 
+ // ---------------------------------------------------------------------------
+-// FONT ATLAS binary format  (version 3)
++// FONT ATLAS binary format  (version 4)
+ // ---------------------------------------------------------------------------
+ // One blob per font slot, baked by framework/compiler/bake-font.ts, parsed by
+ // engine/core/src/text.rs. Glyph coverage is stored in fixed-size cells as one
+@@ -1274,7 +1274,7 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
+ //
+ //   Header (16 bytes):
+ //     off  0  u32  magic      = 0x41464344  bytes 'D','C','F','A'
+-//     off  4  u16  version    = 3
++//     off  4  u16  version    = 4
+ //     off  6  u16  glyphCount (including gid 0 = tofu box)
+ //     off  8  u8   cellW      LOGICAL cell width in px
+ //     off  9  u8   cellH      LOGICAL cell height in px
+@@ -1303,17 +1303,34 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
+ //     Glyph g's rows start at
+ //     coverageOffset + g * (cellH*density) * (cellW*density).
+ //
++//   kern section, immediately after the coverage region
++//   (HEADER_SIZE + glyphCount*8 + glyphCount*(cellH*density)*(cellW*density)):
++//     +0   u32  pairCount
++//     +4   pairCount x 5 bytes, SORTED ASCENDING by packed (leftGid << 16) | rightGid:
++//           +0  u16  leftGid    atlas-local gid (0..glyphCount-1)
++//           +2  u16  rightGid   atlas-local gid
++//           +4  i8   delta      LOGICAL px, same units and scale as cmap advance
++//     5-byte stride, no padding. pairCount == 0 is legal (this face has no
++//     pairs in this subset) and the section is still emitted so a v4 blob is
++//     identified by its version, not by length. A truncated section is
++//     rejected. A v4 blob is byte-identical to a v3 blob up to the end of
++//     coverage.
++//
+ //   gid 0 MUST be the tofu box (drawn for unmapped codepoints).
+ //
+ // Version 2 used the same 16-byte header and 8-byte cmap, with bytes 14..15
+ // reserved and all dimensions/metrics serving as both logical and raster px.
+-// New cores accept v2 as density=1; v3 separates raster coverage from stable
+-// logical layout metrics so a 2x target can sharpen text without relayout.
++// Version 3 separated raster coverage from stable logical layout metrics so a
++// 2x target can sharpen text without relayout. Version 4 appends the kern
++// section; a core that cannot apply the pairs refuses the blob rather than
++// laying the text out differently. New cores accept v2 (density=1), v3 (no
++// pairs) and v4.
+ 
+ export const FONT_MAGIC = 0x41464344; // 'DCFA' LE
+-export const FONT_VERSION = 3;
++export const FONT_VERSION = 4;
+ export const FONT_HEADER_SIZE = 16;
+ export const FONT_CMAP_ENTRY_SIZE = 8;
++export const FONT_KERN_PAIR_SIZE = 5;
+ export const FONT_FLAG_BOLD = 1 << 0;
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/engine/backends/esp32p4-ppa/tests/strip_parity.rs b/engine/backends/esp32p4-ppa/tests/strip_parity.rs
+index 539e982..0fd8c9e 100644
+--- a/engine/backends/esp32p4-ppa/tests/strip_parity.rs
++++ b/engine/backends/esp32p4-ppa/tests/strip_parity.rs
+@@ -132,6 +132,9 @@ fn density_two_font() -> Vec<u8> {
+     atlas.extend_from_slice(&0u16.to_le_bytes());
+     atlas.extend_from_slice(&[2, 0]);
+     atlas.extend_from_slice(&coverage);
++    if spec::font_atlas::VERSION >= 4 {
++        atlas.extend_from_slice(&0u32.to_le_bytes());
++    }
+     atlas
+ }
+ 
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index 6527345..60740b5 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -2116,6 +2116,9 @@ mod tests {
+         atlas.extend_from_slice(&0u16.to_le_bytes());
+         atlas.extend_from_slice(&[2, 0]);
+         atlas.extend_from_slice(&coverage);
++        if spec::font_atlas::VERSION >= 4 {
++            atlas.extend_from_slice(&0u32.to_le_bytes());
++        }
+         atlas
+     }
+ 
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 36ccb22..9920a77 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -412,9 +412,10 @@ pub mod style_table {
+ /// FONT ATLAS blob format constants — full layout in spec.ts.
+ pub mod font_atlas {
+     pub const MAGIC: u32 = 0x41464344; // 'DCFA' LE
+-    pub const VERSION: u16 = 3;
++    pub const VERSION: u16 = 4;
+     pub const HEADER_SIZE: usize = 16;
+     pub const CMAP_ENTRY_SIZE: usize = 8;
++    pub const KERN_PAIR_SIZE: usize = 5;
+     pub const FLAG_BOLD: u8 = 1;
+ }
+ 
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 56cbf58..33168e5 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -181,6 +181,44 @@ fn encode_atlas_version_density(
+     let bytes_per_row = cell_w as usize * raster_density.max(1) as usize;
+     let coverage_h = cell_h as usize * raster_density.max(1) as usize;
+     out.extend_from_slice(&alloc::vec![0u8; glyph_count as usize * coverage_h * bytes_per_row]);
++    if version >= 4 {
++        out.extend_from_slice(&0u32.to_le_bytes());
++    }
++    out
++}
++
++/// v4 atlas with an explicit kern section. `pairs` must be sorted by
++/// `(left, right)` and refer to atlas-local gids.
++fn encode_atlas_with_kern(
++    slot: u8,
++    cell_w: u8,
++    cell_h: u8,
++    baseline: u8,
++    line_height: u8,
++    glyph_count: u16,
++    glyphs: &[(u32, u16, u8)],
++    pairs: &[(u16, u16, i8)],
++) -> Vec<u8> {
++    let mut out = encode_atlas_version_density(
++        spec::font_atlas::VERSION,
++        1,
++        slot,
++        cell_w,
++        cell_h,
++        baseline,
++        line_height,
++        glyph_count,
++        glyphs,
++    );
++    if spec::font_atlas::VERSION >= 4 {
++        out.truncate(out.len() - 4);
++    }
++    out.extend_from_slice(&(pairs.len() as u32).to_le_bytes());
++    for &(left, right, delta) in pairs {
++        out.extend_from_slice(&left.to_le_bytes());
++        out.extend_from_slice(&right.to_le_bytes());
++        out.push(delta as u8);
++    }
+     out
+ }
+ 
+@@ -1098,6 +1136,70 @@ fn font_atlas_v3_scales_coverage_without_scaling_layout_metrics() {
+     assert!(!ui.load_font_atlas(&hd[..hd.len() - 1]));
+ }
+ 
++#[test]
++fn measure_run_and_layout_run_agree_on_a_kerned_string() {
++    use crate::text::Fonts;
++    let glyphs = &[(0xfffd, 0, 8), ('A' as u32, 1, 10), ('V' as u32, 2, 10)];
++    // AV −3, matching the apply-before-place rule: V sits at 7, width is 17.
++    let blob = encode_atlas_with_kern(0, 8, 8, 7, 10, 3, glyphs, &[(1, 2, -3)]);
++    let mut fonts = Fonts::new();
++    assert!(fonts.load(&blob));
++    let (w, h) = fonts.measure_run("AV", 0, 0.0, f32::NAN);
++    assert_eq!((w, h), (17.0, 10.0));
++    let mut pos = Vec::new();
++    fonts.layout_run("AV", 0, 0.0, f32::NAN, 0, w, &mut pos);
++    assert_eq!(pos.len(), 2);
++    assert_eq!(pos[0].gid, 1);
++    assert_eq!(pos[1].gid, 2);
++    assert_eq!(pos[0].x, 0.0);
++    assert_eq!(pos[1].x, 7.0);
++    assert_eq!(pos[1].x + 10.0, w);
++
++    let (w2, h2) = fonts.measure_run("AVA", 0, 1.0, f32::NAN);
++    // A +track, AV −3, V +track, VA 0, A +track = 10+1-3+10+1+10+1 = 30
++    assert_eq!((w2, h2), (30.0, 10.0));
++    pos.clear();
++    fonts.layout_run("AVA", 0, 1.0, f32::NAN, 0, w2, &mut pos);
++    assert_eq!(pos.len(), 3);
++    assert_eq!(pos[0].x, 0.0);
++    assert_eq!(pos[1].x, 8.0); // 10+1-3
++    assert_eq!(pos[2].x, 19.0); // 8+10+1
++    assert_eq!(pos[2].x + 10.0 + 1.0, w2);
++
++    // A newline resets the previous gid — "A\nV" does not apply AV.
++    let (wn, hn) = fonts.measure_run("A\nV", 0, 0.0, f32::NAN);
++    assert_eq!((wn, hn), (10.0, 20.0));
++}
++
++#[test]
++fn font_atlas_v3_parses_and_kerns_to_zero() {
++    use crate::text::Fonts;
++    let glyphs = &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)];
++    let blob = encode_atlas_version_density(3, 1, 2, 8, 8, 7, 10, 3, glyphs);
++    let mut fonts = Fonts::new();
++    assert!(fonts.load(&blob));
++    let atlas = fonts.atlas(2).unwrap();
++    assert_eq!(atlas.kern(1, 2), 0);
++    assert_eq!(fonts.measure_run("AB", 2, 0.0, f32::NAN).0, 11.0);
++}
++
++#[test]
++fn font_atlas_v4_rejects_a_truncated_kern_section() {
++    use crate::text::Fonts;
++    let glyphs = &[(0xfffd, 0, 8), ('A' as u32, 1, 6), ('B' as u32, 2, 5)];
++    let blob = encode_atlas_with_kern(2, 8, 8, 7, 10, 3, glyphs, &[(1, 2, -4)]);
++    assert!(Fonts::new().load(&blob));
++    assert!(!Fonts::new().load(&blob[..blob.len() - 1]));
++    let bitmap_end = spec::font_atlas::HEADER_SIZE
++        + glyphs.len() * spec::font_atlas::CMAP_ENTRY_SIZE
++        + 3 * 8 * 8;
++    assert!(!Fonts::new().load(&blob[..bitmap_end]));
++    assert!(!Fonts::new().load(&blob[..bitmap_end + 2]));
++    let mut overclaimed = blob.clone();
++    overclaimed[bitmap_end..bitmap_end + 4].copy_from_slice(&99u32.to_le_bytes());
++    assert!(!Fonts::new().load(&overclaimed));
++}
++
+ #[test]
+ fn glyph_runs_render_with_alignment_and_color() {
+     let mut ui = Ui::new();
+diff --git a/engine/core/src/text.rs b/engine/core/src/text.rs
+index af9fa68..cbda74e 100644
+--- a/engine/core/src/text.rs
++++ b/engine/core/src/text.rs
+@@ -7,7 +7,7 @@
+ //!
+ //! v1 line model (documented limitation): NO automatic word wrap — a run
+ //! breaks only on explicit '\n'. Measurement is the max line width (sum of
+-//! advances + tracking per glyph) by lines x line height.
++//! pair adjustments + advances + tracking per glyph) by lines x line height.
+ 
+ use alloc::vec::Vec;
+ use core::cell::Cell;
+@@ -61,6 +61,8 @@ pub struct Atlas {
+     /// Coverage cells: glyphCount x (cellH*density) x (cellW*density)
+     /// alpha bytes, left-to-right.
+     pub bitmap: Vec<u8>,
++    /// Sorted `(leftGid << 16 | rightGid, delta)` pairs. Empty on v2/v3.
++    kern: Vec<(u32, i8)>,
+ }
+ 
+ impl Atlas {
+@@ -73,10 +75,11 @@ impl Atlas {
+         }
+         let version = rd_u16(bytes, 4)?;
+         // Atlas v2 used bytes 14..15 as reserved and had one coverage sample
+-        // per logical pixel. Keep loading it so old packs remain usable.
++        // per logical pixel. v3 added density in byte 14. v4 appends a kern
++        // section after coverage; cores that cannot apply pairs refuse it.
+         let raster_density = if version == 2 {
+             1
+-        } else if version == fa::VERSION {
++        } else if version == 3 || version == 4 {
+             let density = *bytes.get(14)?;
+             if density == 0 {
+                 return None;
+@@ -124,6 +127,35 @@ impl Atlas {
+         }
+         let mut bitmap = Vec::with_capacity(bitmap_len);
+         bitmap.extend_from_slice(&bytes[bitmap_off..bitmap_end]);
++        let kern = if version == 4 {
++            let pair_count = rd_u32(bytes, bitmap_end)? as usize;
++            let kern_bytes = pair_count.checked_mul(fa::KERN_PAIR_SIZE)?;
++            let kern_end = bitmap_end.checked_add(4)?.checked_add(kern_bytes)?;
++            if bytes.len() < kern_end {
++                return None;
++            }
++            let mut kern = Vec::with_capacity(pair_count);
++            let mut o = bitmap_end + 4;
++            for _ in 0..pair_count {
++                let left = rd_u16(bytes, o)?;
++                let right = rd_u16(bytes, o + 2)?;
++                let delta = *bytes.get(o + 4)? as i8;
++                if left >= glyph_count || right >= glyph_count {
++                    return None;
++                }
++                let key = ((left as u32) << 16) | (right as u32);
++                if let Some((prev, _)) = kern.last() {
++                    if key <= *prev {
++                        return None;
++                    }
++                }
++                kern.push((key, delta));
++                o += fa::KERN_PAIR_SIZE;
++            }
++            kern
++        } else {
++            Vec::new()
++        };
+         Some(Atlas {
+             cell_w,
+             cell_h,
+@@ -135,9 +167,20 @@ impl Atlas {
+             glyph_count,
+             cmap,
+             bitmap,
++            kern,
+         })
+     }
+ 
++    /// Logical-px pair adjustment, 0 when absent. Binary search, same
++    /// discipline as the cmap.
++    pub fn kern(&self, left: u16, right: u16) -> i32 {
++        let key = ((left as u32) << 16) | (right as u32);
++        match self.kern.binary_search_by(|p| p.0.cmp(&key)) {
++            Ok(i) => self.kern[i].1 as i32,
++            Err(_) => 0,
++        }
++    }
++
+     /// Binary-search the cmap. `None` = unmapped codepoint (caller decides
+     /// whether that bumps the miss counter).
+     pub fn lookup(&self, codepoint: u32) -> Option<(u16, u8)> {
+@@ -330,15 +373,22 @@ impl Fonts {
+         let mut max_w = 0.0f32;
+         let mut line_w = 0.0f32;
+         let mut lines = 1u32;
++        let mut prev_gid: Option<u16> = None;
+         for ch in text.chars() {
+             if ch == '\n' {
+                 max_w = max_w.max(line_w);
+                 line_w = 0.0;
+                 lines += 1;
++                prev_gid = None;
+                 continue;
+             }
+-            let (_, adv, _) = self.glyph(atlas, ch as u32);
+-            line_w += adv + tracking;
++            let (gid, adv, _) = self.glyph(atlas, ch as u32);
++            let pair = match prev_gid {
++                Some(prev) => atlas.kern(prev, gid) as f32,
++                None => 0.0,
++            };
++            line_w += pair + adv + tracking;
++            prev_gid = Some(gid);
+         }
+         max_w = max_w.max(line_w);
+         (max_w, lines as f32 * lh)
+@@ -373,13 +423,18 @@ impl Fonts {
+             // at pen-from-0, then shift the whole line by the align offset.
+             let line_start = out.len();
+             let mut pen = 0.0f32;
++            let mut prev_gid: Option<u16> = None;
+             let y = line_top + (lh - cell_h) * 0.5;
+             for ch in line.chars() {
+                 let (gid, adv, xoff) = self.glyph(atlas, ch as u32);
++                if let Some(prev) = prev_gid {
++                    pen += atlas.kern(prev, gid) as f32;
++                }
+                 // The cell holds the outline shifted right by xoff (negative
+                 // LSB accents) — place it at pen - xoff so ink lands at pen.
+                 out.push(GlyphPos { gid, x: pen - xoff, y });
+                 pen += adv + tracking;
++                prev_gid = Some(gid);
+             }
+             let offset = match align {
+                 a if a == spec::TextAlign::Center as u8 => (box_w - pen) * 0.5,
+diff --git a/engine/pocket3d/examples/note-widget/src/cjk.rs b/engine/pocket3d/examples/note-widget/src/cjk.rs
+index b28022d..0fdb249 100644
+--- a/engine/pocket3d/examples/note-widget/src/cjk.rs
++++ b/engine/pocket3d/examples/note-widget/src/cjk.rs
+@@ -2,9 +2,10 @@
+ //! the pak's baked atlases only cover what the build saw. Instead of
+ //! guessing a charset at build time (and shipping megabytes of hanzi the
+ //! user may never type), the host rasterizes missing glyphs from a system
+-//! CJK font on first sight, appends them to the slot's FONT ATLAS v3 blob
++//! CJK font on first sight, appends them to the slot's FONT ATLAS blob
+ //! (spec.ts — cmap stays codepoint-sorted, coverage is gid-linear, so
+-//! appending is cheap), and reloads the slot through the spec
++//! appending is cheap; a v4 kern section is rewritten unchanged because
++//! appended gids are new), and reloads the slot through the spec
+ //! `loadFontAtlas` op. The renderer re-uploads a slot whose glyph count
+ //! moved; layout re-measures on the reload's dirty flag. Latin keeps its
+ //! baked Inter forms — only unseen codepoints go through the fallback.
+@@ -17,6 +18,7 @@ use ab_glyph::{Font, FontRef, PxScale, ScaleFont, point};
+ const FONT_MAGIC: u32 = 0x4146_4344; // 'DCFA' LE
+ const HEADER: usize = 16;
+ const CMAP_ENTRY: usize = 8;
++const KERN_PAIR: usize = 5;
+ /// Appended-glyph ceiling per slot — far above any real typing session,
+ /// well under the u16 gid space and GPU texture limits at 64 columns.
+ const MAX_GLYPHS: u16 = 6000;
+@@ -89,10 +91,14 @@ struct SlotAtlas {
+     line_height: u8,
+     flags: u8,
+     density: u8,
++    version: u16,
+     /// (codepoint, gid, advance, xoff) — serialized codepoint-sorted.
+     cmap: Vec<(u32, u16, u8, u8)>,
+     /// gid-linear coverage cells.
+     coverage: Vec<u8>,
++    /// Atlas-local pairs from a v4 kern section. Empty on v2/v3. Appended
++    /// glyphs get new gids, so existing pairs stay valid.
++    kern: Vec<(u16, u16, i8)>,
+     known: HashSet<u32>,
+     dirty: bool,
+ }
+@@ -107,16 +113,17 @@ impl SlotAtlas {
+             return None;
+         }
+         let version = u16at(4);
+-        if version != 2 && version != 3 {
++        if version != 2 && version != 3 && version != 4 {
+             return None;
+         }
+         let glyph_count = u16at(6) as usize;
+         let (cell_w, cell_h, baseline, line_height, slot, flags) =
+             (blob[8], blob[9], blob[10], blob[11], blob[12], blob[13]);
+-        let density = if version == 3 { blob[14].max(1) } else { 1 };
++        let density = if version >= 3 { blob[14].max(1) } else { 1 };
+         let cmap_end = HEADER + glyph_count * CMAP_ENTRY;
+         let cell_bytes = cell_w as usize * cell_h as usize * (density as usize).pow(2);
+-        if blob.len() < cmap_end + glyph_count * cell_bytes {
++        let coverage_end = cmap_end + glyph_count * cell_bytes;
++        if blob.len() < coverage_end {
+             return None;
+         }
+         let mut cmap = Vec::with_capacity(glyph_count);
+@@ -127,6 +134,27 @@ impl SlotAtlas {
+             cmap.push((cp, u16at(o + 4), blob[o + 6], blob[o + 7]));
+             known.insert(cp);
+         }
++        let mut kern = Vec::new();
++        if version == 4 {
++            if blob.len() < coverage_end + 4 {
++                return None;
++            }
++            let pair_count = u32::from_le_bytes([
++                blob[coverage_end],
++                blob[coverage_end + 1],
++                blob[coverage_end + 2],
++                blob[coverage_end + 3],
++            ]) as usize;
++            let kern_end = coverage_end + 4 + pair_count * KERN_PAIR;
++            if blob.len() < kern_end {
++                return None;
++            }
++            kern.reserve(pair_count);
++            for i in 0..pair_count {
++                let o = coverage_end + 4 + i * KERN_PAIR;
++                kern.push((u16at(o), u16at(o + 2), blob[o + 4] as i8));
++            }
++        }
+         Some(SlotAtlas {
+             slot,
+             cell_w,
+@@ -135,8 +163,10 @@ impl SlotAtlas {
+             line_height,
+             flags,
+             density,
++            version,
+             cmap,
+-            coverage: blob[cmap_end..cmap_end + glyph_count * cell_bytes].to_vec(),
++            coverage: blob[cmap_end..coverage_end].to_vec(),
++            kern,
+             known,
+             dirty: false,
+         })
+@@ -189,14 +219,23 @@ impl SlotAtlas {
+         self.dirty = true;
+     }
+ 
+-    /// Serialize back to a v3 blob (cmap re-sorted by codepoint).
++    /// Serialize back to a v3 or v4 blob (cmap re-sorted by codepoint).
++    /// A v4 input stays v4 so the kern section is not dropped; v2 is
++    /// rewritten as v3, matching the previous rewrite.
+     fn blob(&self) -> Vec<u8> {
+         let count = self.glyph_count();
++        let version: u16 = if self.version >= 4 { 4 } else { 3 };
+         let mut cmap = self.cmap.clone();
+         cmap.sort_by_key(|&(cp, ..)| cp);
+-        let mut out = Vec::with_capacity(HEADER + cmap.len() * CMAP_ENTRY + self.coverage.len());
++        let kern_bytes = if version == 4 {
++            4 + self.kern.len() * KERN_PAIR
++        } else {
++            0
++        };
++        let mut out =
++            Vec::with_capacity(HEADER + cmap.len() * CMAP_ENTRY + self.coverage.len() + kern_bytes);
+         out.extend_from_slice(&FONT_MAGIC.to_le_bytes());
+-        out.extend_from_slice(&3u16.to_le_bytes());
++        out.extend_from_slice(&version.to_le_bytes());
+         out.extend_from_slice(&count.to_le_bytes());
+         out.extend_from_slice(&[
+             self.cell_w,
+@@ -215,6 +254,14 @@ impl SlotAtlas {
+             out.push(xoff);
+         }
+         out.extend_from_slice(&self.coverage);
++        if version == 4 {
++            out.extend_from_slice(&(self.kern.len() as u32).to_le_bytes());
++            for &(left, right, delta) in &self.kern {
++                out.extend_from_slice(&left.to_le_bytes());
++                out.extend_from_slice(&right.to_le_bytes());
++                out.push(delta as u8);
++            }
++        }
+         out
+     }
+ }
+diff --git a/framework/compiler/bake-font.ts b/framework/compiler/bake-font.ts
+index 22d12ad..99d1e5b 100644
+--- a/framework/compiler/bake-font.ts
++++ b/framework/compiler/bake-font.ts
+@@ -9,7 +9,7 @@
+ //
+ // Rasterization: opentype.js outlines, flattened to polylines, scanline
+ // non-zero winding fill with horizontally-biased supersampling into 8-bit coverage
+-// cells. Atlas v3 keeps cell/line/cmap metrics in LOGICAL px while baking the
++// cells. Atlas v4 keeps cell/line/cmap metrics in LOGICAL px while baking the
+ // bitmap at `rasterDensity` samples per logical px. A Vita density-2 build can
+ // therefore draw sharp 2x coverage without changing PSP-compatible layout.
+ // Cells are tight in logical space: cellW = max inked logical width over the
+@@ -26,6 +26,7 @@ import {
+   FONT_CMAP_ENTRY_SIZE,
+   FONT_FLAG_BOLD,
+   FONT_HEADER_SIZE,
++  FONT_KERN_PAIR_SIZE,
+   FONT_MAGIC,
+   FONT_VERSION,
+   MAX_FONT_SLOTS,
+@@ -51,6 +52,8 @@ export interface BakedAtlas {
+   cellH: number;
+   coverageW: number;
+   coverageH: number;
++  /** Non-zero pair adjustments that survived subsetting and rounding. */
++  pairCount: number;
+ }
+ 
+ export interface BakeOptions {
+@@ -256,6 +259,130 @@ function tofu(
+   return [out, Math.min(255, w + 2)];
+ }
+ 
++// ---------------------------------------------------------------------------
++// GPOS pair extraction
++// ---------------------------------------------------------------------------
++// opentype.js getKerningValue() returns 0 for GPOS-only faces, so the baker
++// walks lookupType 2 subtables directly: format 1 pair sets, and format 2
++// class-based pairs expanded through their class definitions. Class 0 is
++// "in coverage but in no other class" and has to be reconstructed from
++// coverage rather than read from the ClassDef.
++
++function coverageGlyphs(cov: {
++  format: number;
++  glyphs?: number[];
++  ranges?: { start: number; end: number; index: number }[];
++}): number[] {
++  if (cov.format === 1) return cov.glyphs ?? [];
++  const out: number[] = [];
++  for (const r of cov.ranges ?? []) for (let g = r.start; g <= r.end; g++) out.push(g);
++  return out;
++}
++
++function classMap(
++  cd:
++    | {
++        format: number;
++        startGlyph?: number;
++        classes?: number[];
++        ranges?: { start: number; end: number; classId: number }[];
++      }
++    | undefined,
++): Map<number, number[]> {
++  const out = new Map<number, number[]>();
++  const put = (cls: number, gid: number) => {
++    const a = out.get(cls);
++    if (a) a.push(gid);
++    else out.set(cls, [gid]);
++  };
++  if (!cd) return out;
++  if (cd.format === 1) {
++    (cd.classes ?? []).forEach((cls, i) => put(cls, (cd.startGlyph ?? 0) + i));
++  } else {
++    for (const r of cd.ranges ?? []) for (let g = r.start; g <= r.end; g++) put(r.classId, g);
++  }
++  return out;
++}
++
++/** Font-gid pair → x-advance adjustment in font units. Later lookups win. */
++function extractGposPairs(font: Font): Map<number, number> {
++  const byPair = new Map<number, number>();
++  const gpos = (font.tables as Record<string, unknown> | undefined)?.gpos as
++    | { lookups?: { lookupType: number; subtables?: unknown[] }[] }
++    | undefined;
++  const note = (l: number, r: number, v: number) => {
++    if (v === 0) return;
++    byPair.set(((l & 0xffff) << 16) | (r & 0xffff), v);
++  };
++  for (const lookup of gpos?.lookups ?? []) {
++    if (lookup.lookupType !== 2) continue;
++    for (const sub of (lookup.subtables ?? []) as Record<string, never>[]) {
++      const st = sub as unknown as {
++        posFormat: number;
++        coverage: Parameters<typeof coverageGlyphs>[0];
++        pairSets?: { secondGlyph: number; value1?: { xAdvance?: number } }[][];
++        classDef1?: Parameters<typeof classMap>[0];
++        classDef2?: Parameters<typeof classMap>[0];
++        classRecords?: { value1?: { xAdvance?: number } }[][];
++      };
++      if (st.posFormat === 1) {
++        const first = coverageGlyphs(st.coverage);
++        (st.pairSets ?? []).forEach((set, i) => {
++          const l = first[i];
++          if (l === undefined) return;
++          for (const rec of set) note(l, rec.secondGlyph, rec.value1?.xAdvance ?? 0);
++        });
++      } else if (st.posFormat === 2) {
++        const c1 = classMap(st.classDef1);
++        const c2 = classMap(st.classDef2);
++        const covered = coverageGlyphs(st.coverage);
++        const inAClass = new Set([...c1.values()].flat());
++        c1.set(0, [...(c1.get(0) ?? []), ...covered.filter((g) => !inAClass.has(g))]);
++        (st.classRecords ?? []).forEach((row, i) => {
++          row.forEach((rec, j) => {
++            const v = rec.value1?.xAdvance ?? 0;
++            if (v === 0) return;
++            for (const l of c1.get(i) ?? []) for (const r of c2.get(j) ?? []) note(l, r, v);
++          });
++        });
++      }
++    }
++  }
++  return byPair;
++}
++
++function atlasKernPairs(
++  font: Font,
++  glyphs: { fontGid: number }[],
++  scale: number,
++): { left: number; right: number; delta: number }[] {
++  const byFont = extractGposPairs(font);
++  const atlasOf = new Map<number, number[]>();
++  glyphs.forEach((g, i) => {
++    const list = atlasOf.get(g.fontGid);
++    if (list) list.push(i + 1);
++    else atlasOf.set(g.fontGid, [i + 1]);
++  });
++  const byAtlas = new Map<number, number>();
++  for (const [packed, units] of byFont) {
++    const lefts = atlasOf.get(packed >>> 16);
++    const rights = atlasOf.get(packed & 0xffff);
++    if (!lefts || !rights) continue;
++    let delta = Math.round(units * scale);
++    if (delta === 0) continue;
++    if (delta > 127) delta = 127;
++    else if (delta < -128) delta = -128;
++    for (const left of lefts) {
++      for (const right of rights) {
++        byAtlas.set(((left & 0xffff) << 16) | (right & 0xffff), delta);
++      }
++    }
++  }
++  return [...byAtlas.entries()]
++    .map(([key, delta]) => ({ left: key >>> 16, right: key & 0xffff, delta }))
++    .sort((a, b) => a.left - b.left || a.right - b.right);
++}
++
+ // ---------------------------------------------------------------------------
+ // Atlas baking
+ // ---------------------------------------------------------------------------
+@@ -311,6 +438,7 @@ export function bakeSlot(
+   // resolve glyphs first (skips codepoints the font doesn't map)
+   interface G {
+     cp: number;
++    fontGid: number;
+     contours: Contour[];
+     advance: number;
+     maxX: number;
+@@ -352,7 +480,7 @@ export function bakeSlot(
+         p.y *= rasterDensity;
+       }
+     }
+-    glyphs.push({ cp, contours, advance, maxX, xoff });
++    glyphs.push({ cp, fontGid: gi, contours, advance, maxX, xoff });
+   }
+ 
+   const tofuW = Math.max(4, Math.round(px * 0.55));
+@@ -369,7 +497,9 @@ export function bakeSlot(
+   if (!Number.isSafeInteger(coverageBytes)) {
+     throw new RangeError("PocketJS bake-font: atlas coverage is too large");
+   }
+-  const size = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE + coverageBytes;
++  const pairs = atlasKernPairs(font, glyphs, scale);
++  const kernBytes = 4 + pairs.length * FONT_KERN_PAIR_SIZE;
++  const size = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE + coverageBytes + kernBytes;
+   const out = new Uint8Array(size);
+   const dv = new DataView(out.buffer);
+ 
+@@ -415,6 +545,16 @@ export function bakeSlot(
+     out.set(rasterize(g.contours, coverageW, coverageH), coverageOff + (i + 1) * cellBytes);
+   });
+ 
++  const kernOff = coverageOff + coverageBytes;
++  dv.setUint32(kernOff, pairs.length, true);
++  let ko = kernOff + 4;
++  for (const p of pairs) {
++    dv.setUint16(ko, p.left, true);
++    dv.setUint16(ko + 2, p.right, true);
++    out[ko + 4] = p.delta & 0xff;
++    ko += FONT_KERN_PAIR_SIZE;
++  }
++
+   return {
+     slot,
+     px,
+@@ -426,6 +566,7 @@ export function bakeSlot(
+     cellH,
+     coverageW,
+     coverageH,
++    pairCount: pairs.length,
+   };
+ }
+ 
+diff --git a/tests/font-bake.test.ts b/tests/font-bake.test.ts
+index f252040..9c6180c 100644
+--- a/tests/font-bake.test.ts
++++ b/tests/font-bake.test.ts
+@@ -4,6 +4,7 @@ import { bakeSlot, DEFAULT_REGULAR } from "../framework/compiler/bake-font.ts";
+ import {
+   FONT_CMAP_ENTRY_SIZE,
+   FONT_HEADER_SIZE,
++  FONT_KERN_PAIR_SIZE,
+   FONT_MAGIC,
+   FONT_VERSION,
+ } from "../contracts/spec/spec.ts";
+@@ -35,12 +36,11 @@ describe("font atlas density", () => {
+     expect([...two.bytes.subarray(FONT_HEADER_SIZE, cmapEnd)]).toEqual([
+       ...one.bytes.subarray(FONT_HEADER_SIZE, cmapEnd),
+     ]);
+-    expect(two.bytes.length).toBe(
+-      cmapEnd + two.glyphCount * two.coverageW * two.coverageH,
+-    );
++    const coverageEnd = cmapEnd + two.glyphCount * two.coverageW * two.coverageH;
++    expect(two.bytes.length).toBe(coverageEnd + 4 + two.pairCount * FONT_KERN_PAIR_SIZE);
+     expect(two.bytes.length).toBeGreaterThan(one.bytes.length);
+ 
+-    const coverage = two.bytes.subarray(cmapEnd);
++    const coverage = two.bytes.subarray(cmapEnd, coverageEnd);
+     expect(coverage.some((sample) => sample > 0)).toBe(true);
+     expect(coverage.some((sample) => sample > 0 && sample < 255)).toBe(true);
+   });
+diff --git a/tools/build.ts b/tools/build.ts
+index 58ed61d..35db878 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -319,7 +319,8 @@ const atlases = await bakeAtlases({
+ for (const a of atlases) {
+   console.log(
+     `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}) ${a.glyphCount} glyphs, ` +
+-      `cell ${a.cellW}x${a.cellH}, coverage ${a.coverageW}x${a.coverageH} @${a.rasterDensity}x, ${a.bytes.length} bytes`,
++      `cell ${a.cellW}x${a.cellH}, coverage ${a.coverageW}x${a.coverageH} @${a.rasterDensity}x, ` +
++      `${a.pairCount} kern pair(s), ${a.bytes.length} bytes`,
+   );
+ }
+ 
