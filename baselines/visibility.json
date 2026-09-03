@@ -253,6 +253,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/transitions": {
+      "failures": [],
+      "nodes": 33,
+      "named": 0,
+      "neverShown": 3,
+      "buriedAfterShown": 3
+    },
     "compositions/typography": {
       "failures": [],
       "nodes": 5,

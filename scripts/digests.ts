@@ -117,6 +117,12 @@ const ENTRIES = [
   "compositions/captions/pill-karaoke",
   "compositions/captions/clip-wipe",
   "compositions/captions/matrix-decode",
+  // transitions. Nine scene-to-scene transitions ported from the HyperFrames
+  // catalog in one film: a velocity-matched cut, a clip wipe, a wash, a tile
+  // grid, a match cut, a rubber band, a whip pan with echoes, and two flat
+  // reveals standing in for a mask. 557 animations over 756 frames — the
+  // widest sweep of the baker's fill and ordering rules in the tree.
+  "compositions/transitions",
   // The mechanism fixtures. Each is here for one thing and carries no film.
   "compositions/footage-tracks", // four windows over three clips: two mappings of one clip, cover, contain
   "compositions/sound-roles", // one of each sound role; the digest is its PICTURE, sound being outside identity

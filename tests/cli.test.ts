@@ -277,7 +277,11 @@ describe("lint", () => {
     expect(seen).toContain("real.png");
     expect(seen).not.toContain("commented.png");
     expect(seen.some((v) => v.includes("built-"))).toBe(false);
-  });
+  // Every generator in the tree runs first, and six of them open a
+  // measurement build (`copy`, `rename-card`, the five under `captions/`),
+  // so this is minutes on a cold transform cache rather than bun's 5 s
+  // default.
+  }, 600_000);
 
   test("malformed sidecar → exit 1, diagnostic path present", async () => {
     const badDir = join(TMP, "bad-sidecar");

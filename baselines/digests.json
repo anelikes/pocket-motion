@@ -114,6 +114,10 @@
       "frames": 854,
       "digest": "c4dde9b21a134f593de8de944c447a223dc184c0b13379e255b7e438494e93f7"
     },
+    "compositions/transitions": {
+      "frames": 756,
+      "digest": "890cace729e050c47ff3b67e1c215459a3f9ab7b6e135356938ba3c466a2606e"
+    },
     "compositions/typography": {
       "frames": 30,
       "digest": "84a75e5f096f3273909b3cf2d201360dd52e0a92e126727c8d47debf7246aab9"

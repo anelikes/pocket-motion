@@ -153,6 +153,13 @@ Worked examples, roughly in reading order:
   scramble, a directional entrance. `compositions/captions/NOTES.md` states
   what each source did and what it became — and the face lesson: measure
   against the face the build actually bakes.
+- `compositions/transitions` — nine scene-to-scene transitions from the
+  HyperFrames catalog in one film: a velocity-matched cut, a clip wipe, a
+  wash, a tile grid, a match cut, a rubber band, a whip pan with echoes
+  standing in for blur, and two flat reveals standing in for a mask. Its
+  `NOTES.md` states per segment what the source did, what it became and what
+  was lost, and two rules of the baker it ran into: the later animation in a
+  comma list wins a shared property, and a shrinking scene shows the root.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
