@@ -6,18 +6,25 @@
  * quarter labels behind everything move at less than half the strip's speed.
  * A wordmark with a light sweep closes it. 1920x1080, 28s @ 30fps.
  *
- * The cadence was measured off a recording (see NOTES.md): the ruler ticks
- * were tracked frame by frame, which gave a hold of ~0.9s, a move of ~0.85s
- * over one card pitch, and a velocity that peaks a fifth of the way in and
- * decays for the rest — a snap, not a symmetric ease. The card bodies here
- * are placeholders drawn from rectangles; the recording's are screenshots.
+ * Everything that moves was measured off a recording (see NOTES.md). The
+ * ruler ticks tracked frame by frame gave the cadence — a hold of ~0.9s, a
+ * move of ~0.85s over one card pitch, a velocity that peaks a fifth of the
+ * way in — and their SPACING gave the zoom: the whole strip pulls back to
+ * 0.883 in the middle of every move and returns. One card tracked through
+ * its whole pass gave the per-card scale: 1 on the right, growing to 1.58 at
+ * the centre on its own slower clock, shrinking to 0.93 on the left. The card
+ * bodies here are placeholders drawn from rectangles; the recording's are
+ * screenshots.
  *
- * Three mechanisms this exercises:
+ * Four mechanisms this exercises:
  *
  *   - ONE translateX timeline moves the whole strip. Its keyframes are the
  *     hold/move boundaries as percentages of the film, and the easing applies
  *     per segment, so a hold is a flat segment and a move is a snap — no card
  *     carries its own position.
+ *   - The zoom is a `scale` timeline on a wrapper round the strip, about the
+ *     canvas centre, with a dip at every move — three animations on three
+ *     nested nodes (zoom, strip, card) compose without reading each other.
  *   - The centre pop is a per-card `scale` about the node's centre, and every
  *     caption is OUTSIDE the scaled node: a scale moves glyphs and never
  *     resizes them, so the large and small captions are two Text nodes
@@ -63,7 +70,7 @@ interface Card {
 }
 const SIZE: Record<Kind, { w: number; h: number }> = {
   phone: { w: 260, h: 520 },
-  wide: { w: 480, h: 330 },
+  wide: { w: 360, h: 320 },
   square: { w: 380, h: 380 },
 };
 const CARDS: readonly Card[] = [
@@ -87,9 +94,10 @@ const N = CARDS.length;
 // ── geometry ────────────────────────────────────────────────────────────
 const CY = 600; // every card body is centred on this line
 const GAP = 190; // edge to edge, holding the five ruler ticks
-const POP = 1.38; // centre scale, measured 519/375 on one card seen both ways
-const DIM = 0.55; // a card that is not at the centre
 const CX = VIEW.w / 2;
+/** The recording dims cards within ~400px of either edge; a card at x=442 was
+ *  still full brightness and one at x=300 was not. */
+const VIGNETTE = 380;
 
 /** x of each card's centre on the strip, card 0 at the canvas centre. */
 const centres: number[] = [];
@@ -132,39 +140,71 @@ animation["strip"] = `strip ${stripDur}ms ${EASE} 0ms both`;
 keyframes["stripBack"] = stripKeyframes(0.42);
 animation["stripBack"] = `stripBack ${stripDur}ms ${EASE} 0ms both`;
 
-// ── per-card pop and caption crossfade ──────────────────────────────────
-// A card arrives during the move into it, holds, and leaves during the move
-// out of it: 2*MOVE + HOLD, starting when the move in starts. Card 0 starts
-// at the centre and only leaves.
-const POP_DUR = 2 * MOVE + HOLD;
-const p1 = ((MOVE / POP_DUR) * 100).toFixed(3);
-const p2 = (((MOVE + HOLD) / POP_DUR) * 100).toFixed(3);
-keyframes["pop"] = {
-  from: { scale: "1", opacity: `${DIM}` },
-  [`${p1}%,${p2}%`]: { scale: `${POP}`, opacity: "1" },
-  to: { scale: "1", opacity: `${DIM}` },
-};
-keyframes["capL"] = { from: { opacity: "0" }, [`${p1}%,${p2}%`]: { opacity: "1" }, to: { opacity: "0" } };
-keyframes["capS"] = { from: { opacity: "1" }, [`${p1}%,${p2}%`]: { opacity: "0" }, to: { opacity: "1" } };
-const POP0_DUR = HOLD + MOVE;
-const p0 = ((HOLD / POP0_DUR) * 100).toFixed(3);
-keyframes["pop0"] = { [`from,${p0}%`]: { scale: `${POP}`, opacity: "1" }, to: { scale: "1", opacity: `${DIM}` } };
-keyframes["capL0"] = { [`from,${p0}%`]: { opacity: "1" }, to: { opacity: "0" } };
-keyframes["capS0"] = { [`from,${p0}%`]: { opacity: "0" }, to: { opacity: "1" } };
+// ── the zoom: the whole strip pulls back on every move ──────────────────
+// Measured on the ruler ticks: 30px apart at rest, 26.5px at the middle of
+// every move — the strip scales to 0.883 about the canvas centre, reaching
+// it ~300ms after the move starts, holding ~150ms, and back to 1 about 200ms
+// after the move ends. The quarter labels behind move less: 0.94.
+const ZOOM = 0.883;
+const ZOOM_BACK = 0.94;
+const Z_OUT = 300, Z_HOLD = 150, Z_IN = 600;
+function zoomKeyframes(z: number): Record<string, Record<string, string>> {
+  const kf: Record<string, Record<string, string>> = { from: { scale: "1" }, to: { scale: "1" } };
+  const moves: number[] = [];
+  for (let k = 1; k < N; k++) moves.push((k - 1) * PERIOD + HOLD);
+  moves.push((N - 1) * PERIOD + HOLD); // the exit
+  for (const m of moves) {
+    kf[pct(m)] = { scale: "1" };
+    kf[pct(m + Z_OUT)] = { scale: `${z}` };
+    kf[pct(m + Z_OUT + Z_HOLD)] = { scale: `${z}` };
+    if (m + Z_OUT + Z_HOLD + Z_IN < stripDur) kf[pct(m + Z_OUT + Z_HOLD + Z_IN)] = { scale: "1" };
+  }
+  return kf;
+}
+keyframes["zoom"] = zoomKeyframes(ZOOM);
+animation["zoom"] = `zoom ${stripDur}ms cubic-bezier(0.4,0,0.2,1) 0ms both`;
+keyframes["zoomBack"] = zoomKeyframes(ZOOM_BACK);
+animation["zoomBack"] = `zoomBack ${stripDur}ms cubic-bezier(0.4,0,0.2,1) 0ms both`;
+
+// ── per-card scale and caption crossfade ────────────────────────────────
+// Measured on one card seen at every position (NOTES.md): a card arrives at
+// scale 1, starts growing ~250ms into the move, is at 1.5 by 800ms and creeps
+// to 1.58 over the next 700ms; it starts shrinking ~100ms into the move out,
+// is back to 1 by ~600ms and settles at 0.93 on the left — the past is
+// smaller than the future — and one slot further at 0.87.
+const S_CENTRE = 1.58;
+const S_LEFT = 0.93;
+const S_FAR = 0.87;
+const IN_LAG = 250, IN_DUR = 1250, IN_EASE = "cubic-bezier(0.15,0.7,0.1,1)";
+const OUT_LAG = 100, OUT_DUR = 950, OUT_EASE = "cubic-bezier(0.5,0,0.2,1)";
+const CAP_DUR = 500;
+keyframes["popIn"] = { from: { scale: "1" }, to: { scale: `${S_CENTRE}` } };
+keyframes["popOut"] = { from: { scale: `${S_CENTRE}` }, to: { scale: `${S_LEFT}` } };
+keyframes["popFar"] = { from: { scale: `${S_LEFT}` }, to: { scale: `${S_FAR}` } };
+keyframes["gout"] = { from: { opacity: "1" }, to: { opacity: "0" } };
 
 function cardAnims(k: number): { pop: string; capL: string; capS: string } {
-  if (k === 0) {
-    animation["pop_0"] = `pop0 ${POP0_DUR}ms ${EASE} 0ms both`;
-    animation["capL_0"] = `capL0 ${POP0_DUR}ms ${EASE} 0ms both`;
-    animation["capS_0"] = `capS0 ${POP0_DUR}ms ${EASE} 0ms both`;
-    return { pop: "pop_0", capL: "capL_0", capS: "capS_0" };
+  const moveIn = (k - 1) * PERIOD + HOLD; // negative for k = 0, which starts at the centre
+  const moveOut = k * PERIOD + HOLD;
+  const moveFar = (k + 1) * PERIOD + HOLD;
+  const pop: string[] = [];
+  const capL: string[] = [];
+  const capS: string[] = [];
+  if (k > 0) {
+    pop.push(`popIn ${IN_DUR}ms ${IN_EASE} ${moveIn + IN_LAG}ms both`);
+    capL.push(`gin ${CAP_DUR}ms ${IN_EASE} ${moveIn + IN_LAG}ms both`);
+    capS.push(`gout ${CAP_DUR}ms ${IN_EASE} ${moveIn + IN_LAG}ms both`);
   }
-  const delay = (k - 1) * PERIOD + HOLD;
-  animation[`pop_${k}`] = `pop ${POP_DUR}ms ${EASE} ${delay}ms both`;
-  animation[`capL_${k}`] = `capL ${POP_DUR}ms ${EASE} ${delay}ms both`;
-  animation[`capS_${k}`] = `capS ${POP_DUR}ms ${EASE} ${delay}ms both`;
+  pop.push(`popOut ${OUT_DUR}ms ${OUT_EASE} ${moveOut + OUT_LAG}ms ${k > 0 ? "forwards" : "both"}`);
+  capL.push(`gout ${CAP_DUR}ms ${OUT_EASE} ${moveOut + OUT_LAG}ms ${k > 0 ? "forwards" : "both"}`);
+  capS.push(`gin ${CAP_DUR}ms ${OUT_EASE} ${moveOut + OUT_LAG}ms ${k > 0 ? "forwards" : "both"}`);
+  if (moveFar < stripDur) pop.push(`popFar ${MOVE}ms ${EASE} ${moveFar}ms forwards`);
+  animation[`pop_${k}`] = pop.join(", ");
+  animation[`capL_${k}`] = capL.join(", ");
+  animation[`capS_${k}`] = capS.join(", ");
   return { pop: `pop_${k}`, capL: `capL_${k}`, capS: `capS_${k}` };
 }
+const POP = S_CENTRE;
 
 // ── placeholder bodies ──────────────────────────────────────────────────
 // Rectangles standing in for screenshots. Everything is absolute inside the
@@ -232,7 +272,7 @@ function body(kind: Kind, seed: number): string {
 }
 
 // ── the strip's children ────────────────────────────────────────────────
-const CAP = { dateS: 15, titleS: 19, dateL: 21, titleL: 27, likesS: 15, likesL: 21 };
+const CAP = { dateS: 15, titleS: 19, dateL: 22, titleL: 29, likesS: 15, likesL: 22 };
 const stripNodes: string[] = [];
 const backNodes: string[] = [];
 
@@ -330,13 +370,19 @@ import { Text, View } from "@pocketjs/framework/components";
 mount(() => (
   <View class="w-full h-full bg-[#000000]">
     <View class="absolute left-0 top-0 w-[${VIEW.w}px] h-[${VIEW.h}px]">
-      <View class="absolute left-0 top-0 w-[${VIEW.w}px] h-[${VIEW.h}px] animate-stripBack">
+      <View class="absolute left-0 top-0 w-[${VIEW.w}px] h-[${VIEW.h}px] animate-zoomBack">
+        <View class="absolute left-0 top-0 w-[${VIEW.w}px] h-[${VIEW.h}px] animate-stripBack">
 ${backNodes.join("\n")}
+        </View>
       </View>
       <View class="absolute left-[${px(CX - 0.5)}] top-0 w-[1px] h-[${VIEW.h}px] bg-[#2c2c2c]" />
-      <View class="absolute left-0 top-0 w-[${VIEW.w}px] h-[${VIEW.h}px] animate-strip">
+      <View class="absolute left-0 top-0 w-[${VIEW.w}px] h-[${VIEW.h}px] animate-zoom">
+        <View class="absolute left-0 top-0 w-[${VIEW.w}px] h-[${VIEW.h}px] animate-strip">
 ${stripNodes.join("\n")}
+        </View>
       </View>
+      <View class="absolute left-0 top-0 w-[${VIGNETTE}px] h-[${VIEW.h}px] bg-gradient-to-r from-[#000000ff] to-[#00000000]" />
+      <View class="absolute left-[${VIEW.w - VIGNETTE}px] top-0 w-[${VIGNETTE}px] h-[${VIEW.h}px] bg-gradient-to-l from-[#000000ff] to-[#00000000]" />
 ${logo}
     </View>
   </View>

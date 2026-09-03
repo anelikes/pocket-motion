@@ -20,85 +20,85 @@ export default definePocketConfig({
                     "translateX": "0.00px"
               },
               "7.0994%": {
-                    "translateX": "-560.00px"
+                    "translateX": "-500.00px"
               },
               "10.7505%": {
-                    "translateX": "-560.00px"
+                    "translateX": "-500.00px"
               },
               "14.1988%": {
-                    "translateX": "-1120.00px"
+                    "translateX": "-1000.00px"
               },
               "17.8499%": {
-                    "translateX": "-1120.00px"
+                    "translateX": "-1000.00px"
               },
               "21.2982%": {
-                    "translateX": "-1740.00px"
+                    "translateX": "-1560.00px"
               },
               "24.9493%": {
-                    "translateX": "-1740.00px"
+                    "translateX": "-1560.00px"
               },
               "28.3976%": {
-                    "translateX": "-2360.00px"
+                    "translateX": "-2120.00px"
               },
               "32.0487%": {
-                    "translateX": "-2360.00px"
+                    "translateX": "-2120.00px"
               },
               "35.4970%": {
-                    "translateX": "-2920.00px"
+                    "translateX": "-2620.00px"
               },
               "39.1481%": {
-                    "translateX": "-2920.00px"
+                    "translateX": "-2620.00px"
               },
               "42.5963%": {
-                    "translateX": "-3480.00px"
+                    "translateX": "-3120.00px"
               },
               "46.2475%": {
-                    "translateX": "-3480.00px"
+                    "translateX": "-3120.00px"
               },
               "49.6957%": {
-                    "translateX": "-4040.00px"
+                    "translateX": "-3620.00px"
               },
               "53.3469%": {
-                    "translateX": "-4040.00px"
+                    "translateX": "-3620.00px"
               },
               "56.7951%": {
-                    "translateX": "-4550.00px"
+                    "translateX": "-4130.00px"
               },
               "60.4462%": {
-                    "translateX": "-4550.00px"
+                    "translateX": "-4130.00px"
               },
               "63.8945%": {
-                    "translateX": "-5060.00px"
+                    "translateX": "-4640.00px"
               },
               "67.5456%": {
-                    "translateX": "-5060.00px"
+                    "translateX": "-4640.00px"
               },
               "70.9939%": {
-                    "translateX": "-5620.00px"
+                    "translateX": "-5140.00px"
               },
               "74.6450%": {
-                    "translateX": "-5620.00px"
+                    "translateX": "-5140.00px"
               },
               "78.0933%": {
-                    "translateX": "-6240.00px"
+                    "translateX": "-5700.00px"
               },
               "81.7444%": {
-                    "translateX": "-6240.00px"
+                    "translateX": "-5700.00px"
               },
               "85.1927%": {
-                    "translateX": "-6750.00px"
+                    "translateX": "-6210.00px"
               },
               "88.8438%": {
-                    "translateX": "-6750.00px"
+                    "translateX": "-6210.00px"
               },
               "92.2921%": {
-                    "translateX": "-7310.00px"
+                    "translateX": "-6710.00px"
               },
               "95.9432%": {
-                    "translateX": "-7310.00px"
+                    "translateX": "-6710.00px"
               },
               "to": {
-                    "translateX": "-9100.00px"
+                    "translateX": "-8440.00px"
               }
         },
         "stripBack": {
@@ -109,147 +109,463 @@ export default definePocketConfig({
                     "translateX": "0.00px"
               },
               "7.0994%": {
-                    "translateX": "-235.20px"
+                    "translateX": "-210.00px"
               },
               "10.7505%": {
-                    "translateX": "-235.20px"
+                    "translateX": "-210.00px"
               },
               "14.1988%": {
-                    "translateX": "-470.40px"
+                    "translateX": "-420.00px"
               },
               "17.8499%": {
-                    "translateX": "-470.40px"
+                    "translateX": "-420.00px"
               },
               "21.2982%": {
-                    "translateX": "-730.80px"
+                    "translateX": "-655.20px"
               },
               "24.9493%": {
-                    "translateX": "-730.80px"
+                    "translateX": "-655.20px"
               },
               "28.3976%": {
-                    "translateX": "-991.20px"
+                    "translateX": "-890.40px"
               },
               "32.0487%": {
-                    "translateX": "-991.20px"
+                    "translateX": "-890.40px"
               },
               "35.4970%": {
-                    "translateX": "-1226.40px"
+                    "translateX": "-1100.40px"
               },
               "39.1481%": {
-                    "translateX": "-1226.40px"
+                    "translateX": "-1100.40px"
               },
               "42.5963%": {
-                    "translateX": "-1461.60px"
+                    "translateX": "-1310.40px"
               },
               "46.2475%": {
-                    "translateX": "-1461.60px"
+                    "translateX": "-1310.40px"
               },
               "49.6957%": {
-                    "translateX": "-1696.80px"
+                    "translateX": "-1520.40px"
               },
               "53.3469%": {
-                    "translateX": "-1696.80px"
+                    "translateX": "-1520.40px"
               },
               "56.7951%": {
-                    "translateX": "-1911.00px"
+                    "translateX": "-1734.60px"
               },
               "60.4462%": {
-                    "translateX": "-1911.00px"
+                    "translateX": "-1734.60px"
               },
               "63.8945%": {
-                    "translateX": "-2125.20px"
+                    "translateX": "-1948.80px"
               },
               "67.5456%": {
-                    "translateX": "-2125.20px"
+                    "translateX": "-1948.80px"
               },
               "70.9939%": {
-                    "translateX": "-2360.40px"
+                    "translateX": "-2158.80px"
               },
               "74.6450%": {
-                    "translateX": "-2360.40px"
+                    "translateX": "-2158.80px"
               },
               "78.0933%": {
-                    "translateX": "-2620.80px"
+                    "translateX": "-2394.00px"
               },
               "81.7444%": {
-                    "translateX": "-2620.80px"
+                    "translateX": "-2394.00px"
               },
               "85.1927%": {
-                    "translateX": "-2835.00px"
+                    "translateX": "-2608.20px"
               },
               "88.8438%": {
-                    "translateX": "-2835.00px"
+                    "translateX": "-2608.20px"
               },
               "92.2921%": {
-                    "translateX": "-3070.20px"
+                    "translateX": "-2818.20px"
               },
               "95.9432%": {
-                    "translateX": "-3070.20px"
+                    "translateX": "-2818.20px"
               },
               "to": {
-                    "translateX": "-3822.00px"
+                    "translateX": "-3544.80px"
               }
         },
-        "pop": {
+        "zoom": {
               "from": {
-                    "scale": "1",
-                    "opacity": "0.55"
-              },
-              "32.692%,67.308%": {
-                    "scale": "1.38",
-                    "opacity": "1"
+                    "scale": "1"
               },
               "to": {
-                    "scale": "1",
-                    "opacity": "0.55"
+                    "scale": "1"
+              },
+              "3.6511%": {
+                    "scale": "1"
+              },
+              "4.8682%": {
+                    "scale": "0.883"
+              },
+              "5.4767%": {
+                    "scale": "0.883"
+              },
+              "7.9108%": {
+                    "scale": "1"
+              },
+              "10.7505%": {
+                    "scale": "1"
+              },
+              "11.9675%": {
+                    "scale": "0.883"
+              },
+              "12.5761%": {
+                    "scale": "0.883"
+              },
+              "15.0101%": {
+                    "scale": "1"
+              },
+              "17.8499%": {
+                    "scale": "1"
+              },
+              "19.0669%": {
+                    "scale": "0.883"
+              },
+              "19.6755%": {
+                    "scale": "0.883"
+              },
+              "22.1095%": {
+                    "scale": "1"
+              },
+              "24.9493%": {
+                    "scale": "1"
+              },
+              "26.1663%": {
+                    "scale": "0.883"
+              },
+              "26.7748%": {
+                    "scale": "0.883"
+              },
+              "29.2089%": {
+                    "scale": "1"
+              },
+              "32.0487%": {
+                    "scale": "1"
+              },
+              "33.2657%": {
+                    "scale": "0.883"
+              },
+              "33.8742%": {
+                    "scale": "0.883"
+              },
+              "36.3083%": {
+                    "scale": "1"
+              },
+              "39.1481%": {
+                    "scale": "1"
+              },
+              "40.3651%": {
+                    "scale": "0.883"
+              },
+              "40.9736%": {
+                    "scale": "0.883"
+              },
+              "43.4077%": {
+                    "scale": "1"
+              },
+              "46.2475%": {
+                    "scale": "1"
+              },
+              "47.4645%": {
+                    "scale": "0.883"
+              },
+              "48.0730%": {
+                    "scale": "0.883"
+              },
+              "50.5071%": {
+                    "scale": "1"
+              },
+              "53.3469%": {
+                    "scale": "1"
+              },
+              "54.5639%": {
+                    "scale": "0.883"
+              },
+              "55.1724%": {
+                    "scale": "0.883"
+              },
+              "57.6065%": {
+                    "scale": "1"
+              },
+              "60.4462%": {
+                    "scale": "1"
+              },
+              "61.6633%": {
+                    "scale": "0.883"
+              },
+              "62.2718%": {
+                    "scale": "0.883"
+              },
+              "64.7059%": {
+                    "scale": "1"
+              },
+              "67.5456%": {
+                    "scale": "1"
+              },
+              "68.7627%": {
+                    "scale": "0.883"
+              },
+              "69.3712%": {
+                    "scale": "0.883"
+              },
+              "71.8053%": {
+                    "scale": "1"
+              },
+              "74.6450%": {
+                    "scale": "1"
+              },
+              "75.8621%": {
+                    "scale": "0.883"
+              },
+              "76.4706%": {
+                    "scale": "0.883"
+              },
+              "78.9047%": {
+                    "scale": "1"
+              },
+              "81.7444%": {
+                    "scale": "1"
+              },
+              "82.9615%": {
+                    "scale": "0.883"
+              },
+              "83.5700%": {
+                    "scale": "0.883"
+              },
+              "86.0041%": {
+                    "scale": "1"
+              },
+              "88.8438%": {
+                    "scale": "1"
+              },
+              "90.0609%": {
+                    "scale": "0.883"
+              },
+              "90.6694%": {
+                    "scale": "0.883"
+              },
+              "93.1034%": {
+                    "scale": "1"
+              },
+              "95.9432%": {
+                    "scale": "1"
+              },
+              "97.1602%": {
+                    "scale": "0.883"
+              },
+              "97.7688%": {
+                    "scale": "0.883"
               }
         },
-        "capL": {
+        "zoomBack": {
               "from": {
-                    "opacity": "0"
-              },
-              "32.692%,67.308%": {
-                    "opacity": "1"
+                    "scale": "1"
               },
               "to": {
-                    "opacity": "0"
+                    "scale": "1"
+              },
+              "3.6511%": {
+                    "scale": "1"
+              },
+              "4.8682%": {
+                    "scale": "0.94"
+              },
+              "5.4767%": {
+                    "scale": "0.94"
+              },
+              "7.9108%": {
+                    "scale": "1"
+              },
+              "10.7505%": {
+                    "scale": "1"
+              },
+              "11.9675%": {
+                    "scale": "0.94"
+              },
+              "12.5761%": {
+                    "scale": "0.94"
+              },
+              "15.0101%": {
+                    "scale": "1"
+              },
+              "17.8499%": {
+                    "scale": "1"
+              },
+              "19.0669%": {
+                    "scale": "0.94"
+              },
+              "19.6755%": {
+                    "scale": "0.94"
+              },
+              "22.1095%": {
+                    "scale": "1"
+              },
+              "24.9493%": {
+                    "scale": "1"
+              },
+              "26.1663%": {
+                    "scale": "0.94"
+              },
+              "26.7748%": {
+                    "scale": "0.94"
+              },
+              "29.2089%": {
+                    "scale": "1"
+              },
+              "32.0487%": {
+                    "scale": "1"
+              },
+              "33.2657%": {
+                    "scale": "0.94"
+              },
+              "33.8742%": {
+                    "scale": "0.94"
+              },
+              "36.3083%": {
+                    "scale": "1"
+              },
+              "39.1481%": {
+                    "scale": "1"
+              },
+              "40.3651%": {
+                    "scale": "0.94"
+              },
+              "40.9736%": {
+                    "scale": "0.94"
+              },
+              "43.4077%": {
+                    "scale": "1"
+              },
+              "46.2475%": {
+                    "scale": "1"
+              },
+              "47.4645%": {
+                    "scale": "0.94"
+              },
+              "48.0730%": {
+                    "scale": "0.94"
+              },
+              "50.5071%": {
+                    "scale": "1"
+              },
+              "53.3469%": {
+                    "scale": "1"
+              },
+              "54.5639%": {
+                    "scale": "0.94"
+              },
+              "55.1724%": {
+                    "scale": "0.94"
+              },
+              "57.6065%": {
+                    "scale": "1"
+              },
+              "60.4462%": {
+                    "scale": "1"
+              },
+              "61.6633%": {
+                    "scale": "0.94"
+              },
+              "62.2718%": {
+                    "scale": "0.94"
+              },
+              "64.7059%": {
+                    "scale": "1"
+              },
+              "67.5456%": {
+                    "scale": "1"
+              },
+              "68.7627%": {
+                    "scale": "0.94"
+              },
+              "69.3712%": {
+                    "scale": "0.94"
+              },
+              "71.8053%": {
+                    "scale": "1"
+              },
+              "74.6450%": {
+                    "scale": "1"
+              },
+              "75.8621%": {
+                    "scale": "0.94"
+              },
+              "76.4706%": {
+                    "scale": "0.94"
+              },
+              "78.9047%": {
+                    "scale": "1"
+              },
+              "81.7444%": {
+                    "scale": "1"
+              },
+              "82.9615%": {
+                    "scale": "0.94"
+              },
+              "83.5700%": {
+                    "scale": "0.94"
+              },
+              "86.0041%": {
+                    "scale": "1"
+              },
+              "88.8438%": {
+                    "scale": "1"
+              },
+              "90.0609%": {
+                    "scale": "0.94"
+              },
+              "90.6694%": {
+                    "scale": "0.94"
+              },
+              "93.1034%": {
+                    "scale": "1"
+              },
+              "95.9432%": {
+                    "scale": "1"
+              },
+              "97.1602%": {
+                    "scale": "0.94"
+              },
+              "97.7688%": {
+                    "scale": "0.94"
               }
         },
-        "capS": {
+        "popIn": {
+              "from": {
+                    "scale": "1"
+              },
+              "to": {
+                    "scale": "1.58"
+              }
+        },
+        "popOut": {
+              "from": {
+                    "scale": "1.58"
+              },
+              "to": {
+                    "scale": "0.93"
+              }
+        },
+        "popFar": {
+              "from": {
+                    "scale": "0.93"
+              },
+              "to": {
+                    "scale": "0.87"
+              }
+        },
+        "gout": {
               "from": {
                     "opacity": "1"
               },
-              "32.692%,67.308%": {
-                    "opacity": "0"
-              },
-              "to": {
-                    "opacity": "1"
-              }
-        },
-        "pop0": {
-              "from,51.429%": {
-                    "scale": "1.38",
-                    "opacity": "1"
-              },
-              "to": {
-                    "scale": "1",
-                    "opacity": "0.55"
-              }
-        },
-        "capL0": {
-              "from,51.429%": {
-                    "opacity": "1"
-              },
               "to": {
                     "opacity": "0"
-              }
-        },
-        "capS0": {
-              "from,51.429%": {
-                    "opacity": "0"
-              },
-              "to": {
-                    "opacity": "1"
               }
         },
         "sweepWin": {
@@ -272,48 +588,50 @@ export default definePocketConfig({
     animation: {
         "strip": "strip 24650ms cubic-bezier(0.45,0,0.1,1) 0ms both",
         "stripBack": "stripBack 24650ms cubic-bezier(0.45,0,0.1,1) 0ms both",
-        "pop_0": "pop0 1750ms cubic-bezier(0.45,0,0.1,1) 0ms both",
-        "capL_0": "capL0 1750ms cubic-bezier(0.45,0,0.1,1) 0ms both",
-        "capS_0": "capS0 1750ms cubic-bezier(0.45,0,0.1,1) 0ms both",
-        "pop_1": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 900ms both",
-        "capL_1": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 900ms both",
-        "capS_1": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 900ms both",
-        "pop_2": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 2650ms both",
-        "capL_2": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 2650ms both",
-        "capS_2": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 2650ms both",
-        "pop_3": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 4400ms both",
-        "capL_3": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 4400ms both",
-        "capS_3": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 4400ms both",
-        "pop_4": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 6150ms both",
-        "capL_4": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 6150ms both",
-        "capS_4": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 6150ms both",
-        "pop_5": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 7900ms both",
-        "capL_5": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 7900ms both",
-        "capS_5": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 7900ms both",
-        "pop_6": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 9650ms both",
-        "capL_6": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 9650ms both",
-        "capS_6": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 9650ms both",
-        "pop_7": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 11400ms both",
-        "capL_7": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 11400ms both",
-        "capS_7": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 11400ms both",
-        "pop_8": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 13150ms both",
-        "capL_8": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 13150ms both",
-        "capS_8": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 13150ms both",
-        "pop_9": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 14900ms both",
-        "capL_9": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 14900ms both",
-        "capS_9": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 14900ms both",
-        "pop_10": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 16650ms both",
-        "capL_10": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 16650ms both",
-        "capS_10": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 16650ms both",
-        "pop_11": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 18400ms both",
-        "capL_11": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 18400ms both",
-        "capS_11": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 18400ms both",
-        "pop_12": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 20150ms both",
-        "capL_12": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 20150ms both",
-        "capS_12": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 20150ms both",
-        "pop_13": "pop 2600ms cubic-bezier(0.45,0,0.1,1) 21900ms both",
-        "capL_13": "capL 2600ms cubic-bezier(0.45,0,0.1,1) 21900ms both",
-        "capS_13": "capS 2600ms cubic-bezier(0.45,0,0.1,1) 21900ms both",
+        "zoom": "zoom 24650ms cubic-bezier(0.4,0,0.2,1) 0ms both",
+        "zoomBack": "zoomBack 24650ms cubic-bezier(0.4,0,0.2,1) 0ms both",
+        "pop_0": "popOut 950ms cubic-bezier(0.5,0,0.2,1) 1000ms both, popFar 850ms cubic-bezier(0.45,0,0.1,1) 2650ms forwards",
+        "capL_0": "gout 500ms cubic-bezier(0.5,0,0.2,1) 1000ms both",
+        "capS_0": "gin 500ms cubic-bezier(0.5,0,0.2,1) 1000ms both",
+        "pop_1": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 1150ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 2750ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 4400ms forwards",
+        "capL_1": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 1150ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 2750ms forwards",
+        "capS_1": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 1150ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 2750ms forwards",
+        "pop_2": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 2900ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 4500ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 6150ms forwards",
+        "capL_2": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 2900ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 4500ms forwards",
+        "capS_2": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 2900ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 4500ms forwards",
+        "pop_3": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 4650ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 6250ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 7900ms forwards",
+        "capL_3": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 4650ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 6250ms forwards",
+        "capS_3": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 4650ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 6250ms forwards",
+        "pop_4": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 6400ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 8000ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 9650ms forwards",
+        "capL_4": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 6400ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 8000ms forwards",
+        "capS_4": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 6400ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 8000ms forwards",
+        "pop_5": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 8150ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 9750ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 11400ms forwards",
+        "capL_5": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 8150ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 9750ms forwards",
+        "capS_5": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 8150ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 9750ms forwards",
+        "pop_6": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 9900ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 11500ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 13150ms forwards",
+        "capL_6": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 9900ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 11500ms forwards",
+        "capS_6": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 9900ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 11500ms forwards",
+        "pop_7": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 11650ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 13250ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 14900ms forwards",
+        "capL_7": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 11650ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 13250ms forwards",
+        "capS_7": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 11650ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 13250ms forwards",
+        "pop_8": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 13400ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 15000ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 16650ms forwards",
+        "capL_8": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 13400ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 15000ms forwards",
+        "capS_8": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 13400ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 15000ms forwards",
+        "pop_9": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 15150ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 16750ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 18400ms forwards",
+        "capL_9": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 15150ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 16750ms forwards",
+        "capS_9": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 15150ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 16750ms forwards",
+        "pop_10": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 16900ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 18500ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 20150ms forwards",
+        "capL_10": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 16900ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 18500ms forwards",
+        "capS_10": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 16900ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 18500ms forwards",
+        "pop_11": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 18650ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 20250ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 21900ms forwards",
+        "capL_11": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 18650ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 20250ms forwards",
+        "capS_11": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 18650ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 20250ms forwards",
+        "pop_12": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 20400ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 22000ms forwards, popFar 850ms cubic-bezier(0.45,0,0.1,1) 23650ms forwards",
+        "capL_12": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 20400ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 22000ms forwards",
+        "capS_12": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 20400ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 22000ms forwards",
+        "pop_13": "popIn 1250ms cubic-bezier(0.15,0.7,0.1,1) 22150ms both, popOut 950ms cubic-bezier(0.5,0,0.2,1) 23750ms forwards",
+        "capL_13": "gin 500ms cubic-bezier(0.15,0.7,0.1,1) 22150ms both, gout 500ms cubic-bezier(0.5,0,0.2,1) 23750ms forwards",
+        "capS_13": "gout 500ms cubic-bezier(0.15,0.7,0.1,1) 22150ms both, gin 500ms cubic-bezier(0.5,0,0.2,1) 23750ms forwards",
         "logoIn": "gin 400ms cubic-bezier(0.45,0,0.1,1) 24950ms both",
         "sweepWin": "sweepWin 1200ms cubic-bezier(0.4,0,0.2,1) 25850ms both",
         "sweepText": "sweepText 1200ms cubic-bezier(0.4,0,0.2,1) 25850ms both"

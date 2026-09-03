@@ -137,12 +137,14 @@ Worked examples, roughly in reading order:
   reading taken off the recording, and the gate length is the lesson: a 34ms
   gate sampled at 30fps lands on its own midpoint.
 - `compositions/timeline` — fourteen cards on one strip, each sliding to the
-  centre, growing, holding and leaving. One `translateX` timeline with 29
-  stops moves the strip, the easing applying per segment; every card's pop
-  and caption crossfade is timed against it by arithmetic. The captions are
-  two `Text` nodes at two sizes outside the scaled body, because a scale moves
-  glyphs and never resizes them. Its `NOTES.md` records the cadence tracked
-  off a recording's ruler ticks.
+  centre, growing, holding and leaving, while the whole strip pulls back and
+  returns on every move. Three nested wrappers carry three clocks — a `scale`
+  for the zoom, one `translateX` with 29 stops for the strip, a `scale` per
+  card for the pop — timed against each other by arithmetic alone. The
+  captions are two `Text` nodes at two sizes outside the scaled body, because
+  a scale moves glyphs and never resizes them. Its `NOTES.md` records every
+  number tracked off a recording: the ruler ticks for cadence and zoom, one
+  card followed through its whole pass for the pop.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
