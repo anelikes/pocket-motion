@@ -138,6 +138,13 @@
       "neverShown": 19,
       "buriedAfterShown": 5
     },
+    "compositions/rename-card": {
+      "failures": [],
+      "nodes": 18,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/shimmer": {
       "failures": [],
       "nodes": 2,

@@ -97,6 +97,11 @@ const ENTRIES = [
   // its cadence is five frames wide — both are exactly the kind of thing a
   // change elsewhere moves without anyone noticing.
   "compositions/shutter",
+  // rename-card. shutter's opening carried six seconds further: a typed name
+  // whose caret sits at a measured width, and a close built from the arc
+  // primitive and one-tick step gates — the gates are what a change to the
+  // bake rate or the sampling grid would move first.
+  "compositions/rename-card",
   // The mechanism fixtures. Each is here for one thing and carries no film.
   "compositions/footage-tracks", // four windows over three clips: two mappings of one clip, cover, contain
   "compositions/sound-roles", // one of each sound role; the digest is its PICTURE, sound being outside identity

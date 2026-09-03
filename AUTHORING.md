@@ -130,6 +130,12 @@ Worked examples, roughly in reading order:
   the column veil at a 140px and a 656px stack, which is what puts
   `rotate-180` on the lower cap into the digest ledger — every assertion about
   the generated source passes with the picture upside down.
+- `compositions/rename-card` — shutter's opening carried six seconds further:
+  a dialog, a name typed into it with the caret at each prefix's *measured*
+  width (`openMeasurer` again, one `Text` per prefix), and a close built from
+  the arc primitive and one-tick step gates. Its `NOTES.md` records every
+  reading taken off the recording, and the gate length is the lesson: a 34ms
+  gate sampled at 30fps lands on its own midpoint.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
