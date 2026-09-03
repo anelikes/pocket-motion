@@ -59,7 +59,7 @@ const jsx = (s: string) => JSON.stringify(s);
 // ── the name that gets typed ─────────────────────────────────────────────
 const NAME = "pocket motion";
 const NAME_PX = 16;
-const TYPE_START = 1900; // ms; the dialog is fully in at 1424 and the reference holds until 3797
+const TYPE_START = 1900; // ms; the dialog has landed by 1684 and the reference holds until 3797
 const TYPE_STEP = 90; // ms per character
 
 // ── panel geometry (shutter, unchanged) ─────────────────────────────────
@@ -106,11 +106,14 @@ const T = {
   combHold: 100,
   combFall: 34,
   combWipe: 33,
-  // reference 11.017s: the dialog appears dim over the settled hairlines;
-  // 11.424s: hairlines and walls cut out, the dialog is full.
-  contentDim: 1017,
-  contentFull: 1424,
+  // reference 11.424s: hairlines and walls cut out. The reference shows the
+  // dialog dim over the hairlines for the 12 frames before that cut; here the
+  // dialog enters AFTER it, so the two never share a frame — the overlap read
+  // as a defect rather than a cadence.
+  hairDim: 897,
   slatsOut: 1424,
+  contentIn: 1424,
+  contentDur: 260,
   // reference 13.797s: the dialog is gone and two thick arcs stand
   dialogOut: 3797,
 } as const;
@@ -125,7 +128,7 @@ const animation: Record<string, string> = {};
 keyframes["gin"] = { from: { opacity: "0" }, to: { opacity: "1" } };
 keyframes["gout"] = { from: { opacity: "1" }, to: { opacity: "0" } };
 keyframes["dim"] = { from: { opacity: "1" }, to: { opacity: "0.36" } };
-animation["dimwrap"] = `dim 260ms linear ${T.contentDim - 120}ms both, gout 34ms linear ${T.slatsOut}ms forwards`;
+animation["dimwrap"] = `dim 260ms linear ${T.hairDim}ms both, gout 34ms linear ${T.slatsOut}ms forwards`;
 
 /** A step gate: nothing before `at`, painted from `at`, gone from `until`.
  *  17ms is one tick at the realm's 60Hz, so the step completes before the
@@ -264,10 +267,12 @@ for (let i = 0; i < RAIL_TICKS; i++) {
 // mark at y 257, the title at y 288, a dots row at 311, an input box
 // x 403–747 / y 341–366, a hint line at y 397, and two buttons y 435–463 at
 // x 415–561 (filled) and x 590–735 (outlined).
-keyframes["cdim"] = { from: { opacity: "0" }, to: { opacity: "0.4" } };
-keyframes["cfull"] = { from: { opacity: "0.4" }, to: { opacity: "1" } };
+keyframes["crise"] = {
+  from: { translateY: "14px", opacity: "0" },
+  to: { translateY: "0px", opacity: "1" },
+};
 animation["dialog"] =
-  `cdim 34ms linear ${T.contentDim}ms both, cfull 34ms linear ${T.contentFull}ms forwards, ` +
+  `crise ${T.contentDur}ms cubic-bezier(0.2,0,0,1) ${T.contentIn}ms both, ` +
   `gout 17ms linear ${T.dialogOut}ms forwards`;
 
 // caret: 1s period, half on

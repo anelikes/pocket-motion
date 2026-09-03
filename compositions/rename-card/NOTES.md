@@ -17,17 +17,21 @@ each with its presentation timestamp. **Every duration below is quantised to
 33.9ms**, and where the source shows one transition frame the 60 fps original
 may have held two.
 
-The opening is shutter's geometry unchanged, including its `T` constants. Two
-readings were added to it:
+The opening is shutter's geometry unchanged, including its `T` constants. One
+reading was added to it, and one was deliberately not followed:
 
 | reference | this composition | what |
 |---|---|---|
-| 11.017s | 1017ms | dialog content appears at 0.4 opacity over the settled hairlines |
-| 11.424s | 1424ms | hairlines and both walls cut out; content goes to 1.0 |
+| 11.017s | — | the dialog appears at ~0.4 opacity over the settled hairlines and holds 12 frames |
+| 11.424s | 1424ms | hairlines and both walls cut out |
+| — | 1424–1684ms | the dialog rises 14px and fades in, ease-out, starting at the cut |
 
-The second one is the reason this is not simply shutter with a longer clock:
+The reference overlaps the dim dialog with the hairlines for those 12 frames.
+Reproduced, that overlap read as a defect — text and a caret behind a comb of
+lines — so here the dialog enters after the cut and the two never share a
+frame. The cut is the reason this is not simply shutter with a longer clock:
 shutter holds its hairlines at 0.36 under the title because its measured
-stretch ends at 11.45s, and the cut at 11.42s is one frame before that end.
+stretch ends at 11.45s, one frame after the cut.
 
 ## The dialog
 

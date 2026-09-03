@@ -1122,19 +1122,13 @@ export default definePocketConfig({
                     "translateX": "-8.51px"
               }
         },
-        "cdim": {
+        "crise": {
               "from": {
+                    "translateY": "14px",
                     "opacity": "0"
               },
               "to": {
-                    "opacity": "0.4"
-              }
-        },
-        "cfull": {
-              "from": {
-                    "opacity": "0.4"
-              },
-              "to": {
+                    "translateY": "0px",
                     "opacity": "1"
               }
         },
@@ -1314,7 +1308,7 @@ export default definePocketConfig({
         "rt1841_145": "rt1841 120ms cubic-bezier(0.2,0,0,1) 445.23809523809524ms both, gin 34ms linear 445.23809523809524ms both, gout 60ms linear 440ms forwards",
         "rt1841_148": "rt1841 120ms cubic-bezier(0.2,0,0,1) 447.6190476190476ms both, gin 34ms linear 447.6190476190476ms both, gout 60ms linear 440ms forwards",
         "rt1841_150": "rt1841 120ms cubic-bezier(0.2,0,0,1) 450ms both, gin 34ms linear 450ms both, gout 60ms linear 440ms forwards",
-        "dialog": "cdim 34ms linear 1017ms both, cfull 34ms linear 1424ms forwards, gout 17ms linear 3797ms forwards",
+        "dialog": "crise 260ms cubic-bezier(0.2,0,0,1) 1424ms both, gout 17ms linear 3797ms forwards",
         "caret": "blink 1000ms linear 0ms infinite",
         "g0_1900": "gin 17ms linear 0ms both, gout 17ms linear 1900ms forwards",
         "g1900_1990": "gin 17ms linear 1900ms both, gout 17ms linear 1990ms forwards",
