@@ -90,6 +90,10 @@
       "frames": 1,
       "digest": "de8ccf00c2526c762111cb1348d6665edd760f476de498a9cb081b3c1e78d067"
     },
+    "compositions/timeline": {
+      "frames": 854,
+      "digest": "407948ed66fd8d590357eef40bb1dc1346de019b0a8f05907fc6af2a2fb43bd8"
+    },
     "compositions/typography": {
       "frames": 30,
       "digest": "84a75e5f096f3273909b3cf2d201360dd52e0a92e126727c8d47debf7246aab9"

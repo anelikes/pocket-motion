@@ -102,6 +102,11 @@ const ENTRIES = [
   // primitive and one-tick step gates — the gates are what a change to the
   // bake rate or the sampling grid would move first.
   "compositions/rename-card",
+  // timeline. One translateX timeline with 29 stops moves a 8700px strip;
+  // fourteen per-card scale pops and caption crossfades are timed against it
+  // by arithmetic alone, so a drift in how a delay or a percentage bakes
+  // shows up here first.
+  "compositions/timeline",
   // The mechanism fixtures. Each is here for one thing and carries no film.
   "compositions/footage-tracks", // four windows over three clips: two mappings of one clip, cover, contain
   "compositions/sound-roles", // one of each sound role; the digest is its PICTURE, sound being outside identity
