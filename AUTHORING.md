@@ -145,6 +145,14 @@ Worked examples, roughly in reading order:
   a scale moves glyphs and never resizes them. Its `NOTES.md` records every
   number tracked off a recording: the ruler ticks for cadence and zoom, one
   card followed through its whole pass for the pop.
+- `compositions/captions/*` — five caption styles ported from the HyperFrames
+  catalog (highlight, kinetic-slam, pill-karaoke, clip-wipe, matrix-decode),
+  one transcript, every word at a measured x. Each is a different treatment
+  of word timestamps as delays: a `width` growing behind the word, an
+  `overflow-hidden` window revealing it, a `color` timeline, a one-tick-gated
+  scramble, a directional entrance. `compositions/captions/NOTES.md` states
+  what each source did and what it became — and the face lesson: measure
+  against the face the build actually bakes.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
@@ -337,8 +345,10 @@ build time *is* layout, not an approximation of it.
 Faces: pass `--font-regular` / `--font-bold` to the build. In-repo:
 HarmonyOS Sans (`assets/fonts/HarmonyOS_Sans_*.ttf`); fetched by
 `scripts/assets.ts`: Noto Sans SC (`assets/fonts/NotoSansSC-*.otf`) — the only
-face here with CJK coverage; upstream's default: Inter Display
-(`vendor/pocketjs/assets/fonts/InterDisplay-*.ttf`). The atlas bakes only
+face here with CJK coverage; upstream's default: Inter
+(`vendor/pocketjs/assets/fonts/Inter-*.ttf` — `DEFAULT_REGULAR` in
+`framework/compiler/bake-font.ts`; the Inter Display files beside them are
+not the default, and measuring against them lands every width 7% short). The atlas bakes only
 codepoints that appear in the module's string literals; the measurer refuses
 to measure a string its build did not bake, so an unbaked character is a loud
 error, not a plausible-looking wrong width.
@@ -675,7 +685,7 @@ Paths are repo-relative, both weights or neither. With the field present the
 build command every command prints carries `--font-regular` / `--font-bold`,
 and a declared face that is not on disk fails with the fetch command rather
 than building against upstream's default without saying so. Omit the field and
-you get that default (Inter Display), which is the right answer for a
+you get that default (Inter), which is the right answer for a
 composition that has no opinion.
 
 Then the command surface — every command takes a composition directory and

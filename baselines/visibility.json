@@ -8,6 +8,41 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/captions/clip-wipe": {
+      "failures": [],
+      "nodes": 28,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/captions/highlight": {
+      "failures": [],
+      "nodes": 28,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/captions/kinetic-slam": {
+      "failures": [],
+      "nodes": 28,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/captions/matrix-decode": {
+      "failures": [],
+      "nodes": 84,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/captions/pill-karaoke": {
+      "failures": [],
+      "nodes": 28,
+      "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/copy": {
       "failures": [],
       "nodes": 3,

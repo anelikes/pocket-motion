@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-captions-highlight",
+  "name": "pocketjs-motion-captions-highlight",
+  "title": "PocketJS Motion: captions / highlight",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/captions/highlight/main.tsx",
+    "output": "motion-captions-highlight",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

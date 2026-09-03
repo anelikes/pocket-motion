@@ -6,6 +6,26 @@
       "frames": 2,
       "digest": "d6e5c9c1e9291a3d6d692be9e93dc830c887314b38a79dcb15a9346e81df1849"
     },
+    "compositions/captions/clip-wipe": {
+      "frames": 240,
+      "digest": "9aa91339233aa1ed105de49526427778638958b23afd13bfb6026205248e3d33"
+    },
+    "compositions/captions/highlight": {
+      "frames": 240,
+      "digest": "373a740254bde1b2a857a8118f89c1e78b7aeeabef4d426d6f0e4d8ebb28dea9"
+    },
+    "compositions/captions/kinetic-slam": {
+      "frames": 240,
+      "digest": "e4eac95f0a8577964e5f0d9de1059c45d5b2e8f7c05622e26ef8bde679bb17ab"
+    },
+    "compositions/captions/matrix-decode": {
+      "frames": 240,
+      "digest": "9adc3336c77732ef2f95efd6497a6654f9151722f629d7f099d164fb1a0802b2"
+    },
+    "compositions/captions/pill-karaoke": {
+      "frames": 240,
+      "digest": "b6395d0421ce2a0d6ec3911a43768eb2d4e3287d0aa713162e0d84ba172b44e0"
+    },
     "compositions/copy": {
       "frames": 1,
       "digest": "a32a0abcfdf2120b861af550cc74a19fd6d6eea34d23ae40dcf0fa327d65a964"

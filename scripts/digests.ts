@@ -107,6 +107,16 @@ const ENTRIES = [
   // by arithmetic alone, so a drift in how a delay or a percentage bakes
   // shows up here first.
   "compositions/timeline",
+  // captions/*. Five caption styles ported from the HyperFrames catalog, one
+  // transcript, every word at a measured x. Each is a different treatment of
+  // word timestamps — a box growing behind the word, a clip window, a colour
+  // timeline, a step-gated scramble, a directional entrance — so a change to
+  // how width, color or a one-tick gate bakes moves one of them first.
+  "compositions/captions/highlight",
+  "compositions/captions/kinetic-slam",
+  "compositions/captions/pill-karaoke",
+  "compositions/captions/clip-wipe",
+  "compositions/captions/matrix-decode",
   // The mechanism fixtures. Each is here for one thing and carries no film.
   "compositions/footage-tracks", // four windows over three clips: two mappings of one clip, cover, contain
   "compositions/sound-roles", // one of each sound role; the digest is its PICTURE, sound being outside identity

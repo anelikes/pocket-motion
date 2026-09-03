@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-captions-kinetic-slam",
+  "name": "pocketjs-motion-captions-kinetic-slam",
+  "title": "PocketJS Motion: captions / kinetic-slam",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/captions/kinetic-slam/main.tsx",
+    "output": "motion-captions-kinetic-slam",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

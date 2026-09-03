@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-captions-clip-wipe",
+  "name": "pocketjs-motion-captions-clip-wipe",
+  "title": "PocketJS Motion: captions / clip-wipe",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/captions/clip-wipe/main.tsx",
+    "output": "motion-captions-clip-wipe",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

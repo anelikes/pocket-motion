@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-captions-matrix-decode",
+  "name": "pocketjs-motion-captions-matrix-decode",
+  "title": "PocketJS Motion: captions / matrix-decode",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/captions/matrix-decode/main.tsx",
+    "output": "motion-captions-matrix-decode",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}
