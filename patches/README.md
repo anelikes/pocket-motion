@@ -32,7 +32,7 @@ two classes, in the `class` column below and checked by
   draw. Never submitted. The patch's own header carries a line
   `pocket-motion-only: <why>` naming the target-side reason, so the class is
   readable from the file and the test refuses a `motion` patch without one.
-  **There is no patch of this class yet**; the first will be a mask op.
+  `0013`, the mask op, is the first.
 
 Whichever the class, an op is declared in the class literal and emitted by
 `draw.rs`. A host-side pass over the finished frame is not a substitute:
@@ -55,7 +55,7 @@ own ops out of the way of the next one.
 
 `0008` is class `upstream` and numbered 10 here; #301's head (`20b663c`)
 numbers it 11 to clear `surfaceQuad`. Moving the pin means taking that number
-with it.
+with it. `0013`'s MASK_PUSH and MASK_POP are 64 and 65, and move with nothing.
 
 ## What each one does, and where it stands upstream
 
@@ -73,15 +73,17 @@ with it.
 | 0010 | upstream | publishes the baked tick rate out of the bundle as `__pocketTickHz`, so `assertBakedTickRate` can refuse a bundle baked at a rate this realm does not step | unsubmitted | **no** — `framework/src/index.ts` |
 | 0011 | upstream | an `animate-<name>` naming nothing is a build error listing the declared names, instead of dropping the whole class literal silently | unsubmitted | yes |
 | 0012 | upstream | records which string literals are, on some execution, the WHOLE value of a `class=` attribute, so 0011 can refuse a bad animation name in one of them whatever else the literal holds — and prose stays safe by where it was written rather than by token count | unsubmitted | **no** — `framework/compiler/tailwind.ts` |
+| 0013 | motion | `overflow-mask`: a node's children and its own ground clipped to its outline — the rounded rectangle under its transform — through two draw-list ops at 64 and 65 whose coverage is POLY's own; design in `0013-mask-op.design.md` | never; the header says why | — (not measured: a `motion` patch is not rebased) |
 
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Every patch today is class `upstream`, which says what the table has been
-saying since it was first measured: nothing here has yet needed the paint
-layer to diverge, and eight of the twelve are unsubmitted declaration-layer
-changes that have drifted from main. That is the real cost of the pin, and it
-is the `upstream` class's cost, not the `motion` class's.
+Twelve patches are class `upstream`, which says what the table has been
+saying since it was first measured: eight of them are unsubmitted
+declaration-layer changes that have drifted from main, and that is the real
+cost of the pin — the `upstream` class's cost. `0013` is the first `motion`
+patch: the point where the paint layer diverges on purpose, and the first
+patch whose last column is not a measurement because it is never rebased.
 
 ## How the last column was measured
 

@@ -1,0 +1,1605 @@
+pocket-motion-only: a mask is per-pixel coverage applied to every op that follows, which the software rasteriser can do by wrapping its framebuffer target and the PSP GE, ESP32 PPA, Symbian GLES2 and Vita GXM backends cannot — they draw ops, not coverage over ops. No upstream backend is taught the two ops; a stream carrying them stops at the first MASK_PUSH there.
+
+0013 — `overflow-mask`: a node's children (and its own ground) clipped to the
+node's outline — its rounded rectangle under its transform — rather than to
+the axis-aligned bounding box `overflow-hidden` gives. Design and the tests'
+red cases: `patches/0013-mask-op.design.md`.
+
+What the patch adds, by file:
+
+- `contracts/spec/spec.ts`, `gen-rust.ts`, `engine/core/src/spec.rs`
+  (regenerated): `Overflow.Mask = 2`; `DRAW_OP.maskPush = 64`,
+  `maskPop = 65` — the first codes in the range this project reserves
+  (`src/vendor/draw-ops.ts`); `MASK_MAX_VERTS = 256`; the op format.
+- `framework/compiler/tailwind.ts`: the `overflow-mask` token.
+- `engine/core/src/layout.rs`: Mask lays out as Hidden.
+- `engine/core/src/draw.rs`: Mask hit-tests as Hidden; `paint` emits
+  SCISSOR (the AABB, as Hidden) then MASK_PUSH (the outline, clipped to the
+  VIEWPORT — not the scissor, so a window's polygon does not depend on what
+  it sits in and nested masks multiply exactly) before the node's ground,
+  MASK_POP after its children; the ground under a mask is a plain box; a
+  square-cornered axis-aligned window emits no mask and is `overflow-hidden`
+  word for word. `mask_outline` flattens the corners by a radius table
+  through the Taylor `sinf` every rotation already uses.
+- `engine/core/src/raster.rs`: the POLY row walk is now `PolyScan`, shared
+  by `poly()` and `mask_level()`, so a mask's coverage is POLY's by
+  construction; `Masked`, a target over `&mut dyn RenderTarget` that scales
+  every write by the top level's hits (`a * hits / 16`, POLY's own
+  boundary expression) and multiplies levels under nesting; the dispatch
+  loop (`render_ops`) wraps a plain target for the span up to the matching
+  MASK_POP and re-enters itself once, whatever the nesting depth.
+- `engine/core/src/damage.rs`: the two word counts and a bbox bound.
+- `engine/core/src/tests.rs`, `damage.rs` tests: 14 tests. The ones that
+  carry the claim: a white full-bleed child under a rotated square-cornered
+  window is byte-identical to a white rotated box of the same geometry over
+  54 size/angle cases (red with the level builder made binary); nested masks
+  equal the product of the two single masks read back from their own
+  renders (red with a minimum in place of the product).
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 5331e37..3deed2f 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -70,6 +70,7 @@ import {
+   PAK_MAGIC,
+   PAK_VERSION,
+   DRAW_OP,
++  MASK_MAX_VERTS,
+   ENUMS,
+   FIXED_DT,
+   FONT_CMAP_ENTRY_SIZE,
+@@ -300,7 +301,7 @@ export function generateRust(): string {
+     Align: "align-items.",
+     PosType: "position type.",
+     Display: "display (None removes from layout AND paint).",
+-    Overflow: "overflow (Hidden => scissor in draw).",
++    Overflow: "overflow (Hidden => scissor in draw; Mask => the same scissor plus a MASK_PUSH of the node's outline).",
+     TextAlign: "text alignment within the node box.",
+     GradDir: "gradient direction (`bg-gradient-to-t|b|l|r`).",
+     Easing:
+@@ -432,11 +433,14 @@ export function generateRust(): string {
+   // --- drawlist ------------------------------------------------------------------
+   put("/// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).");
+   put("/// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,");
+-  put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N.");
++  put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N,");
++  put("/// MASK_PUSH 2+N, MASK_POP 1 (64 and up: software-rasteriser-only ops).");
+   put("pub mod draw_op {");
+   for (const [name, v] of Object.entries(DRAW_OP)) {
+     put(`    pub const ${screaming(name)}: u32 = ${v};`);
+   }
++  put("    /// Largest vertex count a MASK_PUSH may carry.");
++  put(`    pub const MASK_MAX_VERTS: usize = ${MASK_MAX_VERTS};`);
+   put("}");
+   put("");
+ 
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 88e190c..2233c3f 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -498,7 +498,7 @@ export const ENUMS = {
+   Align: { Start: 0, Center: 1, End: 2, Stretch: 3 },
+   PosType: { Relative: 0, Absolute: 1 },
+   Display: { Flex: 0, None: 1 },
+-  Overflow: { Visible: 0, Hidden: 1 },
++  Overflow: { Visible: 0, Hidden: 1, Mask: 2 },
+   TextAlign: { Left: 0, Center: 1, Right: 2 },
+   /** Gradient direction: `bg-gradient-to-t|b|l|r`. */
+   GradDir: { ToTop: 0, ToBottom: 1, ToLeft: 2, ToRight: 3 },
+@@ -1401,6 +1401,22 @@ export const FONT_FLAG_BOLD = 1 << 0;
+ //                           polygon (interior run + boundary pixels) so a
+ //                           box's shared diagonal is not an interior edge.
+ //                           N > 8 falls back to a TRI fan.
++//   MASK_PUSH   (2 + N):    op, N (3..=MASK_MAX_VERTS), then N x xy — one
++//                           screen-space convex polygon clipped to the
++//                           VIEWPORT (not to the scissor, so that nesting
++//                           multiplies exactly): the outline of an
++//                           `overflow-mask` node (its rounded rectangle under
++//                           its transform), emitted INSIDE that node's
++//                           SCISSOR and before its own ground.
++//                           Until the matching MASK_POP every op blends at
++//                           `a * hits / 16`, hits being the pixel's 4×4
++//                           sample count inside the polygon — exactly the
++//                           coverage a POLY of the same vertices would get.
++//                           Nested masks multiply (hits_outer * hits_inner
++//                           / 16). Drawn by the software rasteriser only;
++//                           no other backend knows the op, and a stream
++//                           carrying it stops there on them.
++//   MASK_POP    (1 word):   op — restore the previous mask (none if empty).
+ //   TEXT_RUN    (8 + ceil(n/4) words):
+ //                           op,
+ //                           word1: bits 0-7 fontSlot,
+@@ -1437,8 +1453,17 @@ export const DRAW_OP = {
+   texTri: 8,
+   textRun: 9,
+   poly: 10,
++  // 64 and up: ops the pocket-motion software rasteriser draws and no
++  // upstream backend does. Upstream allocates densely from 1; these stay
++  // out of its way (pocket-motion `src/vendor/draw-ops.ts`).
++  maskPush: 64,
++  maskPop: 65,
+ } as const;
+ 
++/** Largest vertex count a MASK_PUSH may carry. A rounded rectangle flattens
++ *  to at most 4 × 48 chords + 4, and clipping to a rectangle adds at most 4. */
++export const MASK_MAX_VERTS = 256;
++
+ // ---------------------------------------------------------------------------
+ // PAK container constants
+ // ---------------------------------------------------------------------------
+diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
+index 1705ff8..72b79eb 100644
+--- a/engine/core/src/damage.rs
++++ b/engine/core/src/damage.rs
+@@ -436,6 +436,14 @@ impl<'a> DamageDecoder<'a> {
+                 let bytes = *self.words.get(start + 7).ok_or(())? as usize;
+                 8usize.checked_add(bytes.div_ceil(4)).ok_or(())?
+             }
++            spec::draw_op::MASK_PUSH => {
++                let n = self.words.get(start + 1).copied().ok_or(())? as usize;
++                if !(3..=spec::draw_op::MASK_MAX_VERTS).contains(&n) {
++                    return Err(());
++                }
++                2usize.checked_add(n).ok_or(())?
++            }
++            spec::draw_op::MASK_POP => 1,
+             _ => return Err(()),
+         };
+         let end = start.checked_add(len).ok_or(())?;
+@@ -468,6 +476,10 @@ impl<'a> DamageDecoder<'a> {
+             spec::draw_op::TRI => triangle_bounds([words[1], words[2], words[3]], self.clip),
+             spec::draw_op::TEX_TRI => triangle_bounds([words[2], words[5], words[8]], self.clip),
+             spec::draw_op::POLY => polygon_bounds(&words[3..], self.clip),
++            // A mask draws nothing itself; its bbox is a sound bound for the
++            // span it shapes, and the ops inside carry their own.
++            spec::draw_op::MASK_PUSH => polygon_bounds(&words[2..], self.clip),
++            spec::draw_op::MASK_POP => DamageRect::empty(),
+             // Native-text runs carry no glyph geometry the tracker can
+             // measure; the core keeps every partially-clipped run inside a
+             // scissor, so the current clip is a sound (conservative) bound.
+@@ -663,6 +675,44 @@ mod tests {
+         assert_eq!(changed.area(), 32);
+     }
+ 
++    /// A frame with a MASK_PUSH/MASK_POP around one rect (pocket-motion
++    /// patch 0013). `n` is the vertex count the push claims.
++    fn masked_frame(n: u32, color: u32) -> Vec<u32> {
++        let mut words = vec![
++            spec::draw_op::SCISSOR,
++            xy_word(0, 0),
++            wh_word(32, 16),
++            spec::draw_op::MASK_PUSH,
++            n,
++        ];
++        for &(x, y) in &[(2i16, 2i16), (30, 2), (30, 14), (2, 14)] {
++            words.push(xy_word(x, y));
++        }
++        words.extend_from_slice(&[
++            spec::draw_op::RECT,
++            xy_word(4, 4),
++            wh_word(8, 8),
++            color,
++            spec::draw_op::MASK_POP,
++            spec::draw_op::SCISSOR_POP,
++        ]);
++        words
++    }
++
++    #[test]
++    fn mask_ops_decode_and_a_bad_vertex_count_is_refused() {
++        let mut ui = Ui::new();
++        ui.set_viewport(32.0, 16.0);
++        let mut tracker = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
++        tracker.commit(&ui, &masked_frame(4, 0xff00_00ff), target(32, 16, 1));
++        let plan = tracker.prepare(&ui, &masked_frame(4, 0xffff_0000), target(32, 16, 1)).unwrap();
++        assert!(!plan.is_full_redraw(), "a colour change under a well-formed mask is a partial redraw");
++        // The op after a push claiming two vertices cannot be found: the
++        // decoder refuses, and the tracker falls back to a full redraw.
++        let plan = tracker.prepare(&ui, &masked_frame(2, 0xffff_0000), target(32, 16, 1));
++        assert!(plan.map(|p| p.is_full_redraw()).unwrap_or(true));
++    }
++
+     #[test]
+     fn structure_target_and_invalidation_force_full_redraws() {
+         let mut ui = Ui::new();
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index ce80177..9c3c059 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -765,7 +765,10 @@ fn hit_walk(
+         return;
+     }
+     let mut child_clip = clip;
+-    if r.overflow == spec::Overflow::Hidden as u8 {
++    if r.overflow != spec::Overflow::Visible as u8 {
++        // Hidden and Mask both clip hits to the AABB (a mask's outline is
++        // inside it; a hit in the AABB but outside the outline is accepted,
++        // which is conservative in the same direction the scissor is).
+         child_clip = clip.intersect(&world_aabb_of(screen, &world, l.w, l.h));
+         if !child_clip.contains(px, py) {
+             return;
+@@ -972,6 +975,52 @@ impl<'a> Walker<'a> {
+             self.emit_shadow(dl, &world, l.w, l.h, r.radius, r.shadow, op, &clip);
+         }
+ 
++        // -- overflow-mask: the node's own outline clips its ground and its
++        //    children. SCISSOR (the AABB, as overflow-hidden) then MASK_PUSH
++        //    (the rounded rectangle under the transform, clipped to that
++        //    AABB), both before the ground so a rotated or rounded window is
++        //    shaped by one polygon rather than by the box painter's
++        //    degradations. Radius 0 on an axis-aligned world is the AABB
++        //    itself: no mask, and the subtree takes the overflow-hidden path
++        //    below unchanged. The shadow stays outside, above.
++        let mut child_clip = clip;
++        let mut scissored = false;
++        let mut masked = false;
++        if r.overflow == spec::Overflow::Mask as u8 {
++            let rect = self.world_aabb(&world, l.w, l.h);
++            child_clip = clip.intersect(&rect);
++            if child_clip.is_empty() {
++                return; // nothing of the node or its subtree can be visible
++            }
++            // The outline is clipped to the VIEWPORT, not to the scissor: a
++            // vertex made by clipping rounds to a pixel, and against an
++            // ancestor's unrounded AABB that moves an edge by up to half a
++            // pixel — so a window's polygon would depend on what it sits in,
++            // and two nested masks would not multiply. The scissor still
++            // pixel-clips exactly, and the rasteriser bounds the level's
++            // buffer by the scissor, so nothing is lost by clipping wider.
++            match mask_outline(&world, l.w, l.h, r.radius, &Clip::viewport(self.screen), self.screen) {
++                MaskOutline::Aabb => {}
++                MaskOutline::Empty => return,
++                MaskOutline::Poly(verts) => {
++                    dl.words.push(spec::draw_op::SCISSOR);
++                    dl.words.push(xy_word(child_clip.x0, child_clip.y0));
++                    dl.words.push(wh_word(child_clip.x1 - child_clip.x0, child_clip.y1 - child_clip.y0));
++                    scissored = true;
++                    dl.words.push(spec::draw_op::MASK_PUSH);
++                    dl.words.push(verts.len() as u32);
++                    for &(x, y) in &verts {
++                        dl.words.push(xy_word(x, y));
++                    }
++                    masked = true;
++                }
++            }
++        }
++        // Under a mask the ground is a plain box and the mask shapes it;
++        // the rounded-box painter's own corner coverage would attenuate the
++        // edge a second time.
++        let ground_radius = if masked { 0.0 } else { r.radius };
++
+         let is_arc = r.arc_width > 0.0 && r.arc_sweep != 0.0;
+         if is_arc {
+             // Arc primitive: the bg color strokes an annular sector instead
+@@ -1008,9 +1057,9 @@ impl<'a> Walker<'a> {
+                 to: scale_alpha(r.grad_to, op),
+                 dir: r.grad_dir,
+             };
+-            self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, fill, &clip);
++            self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, ground_radius, fill, &clip);
+         } else if alpha(bg_color) > 0 {
+-            self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, Fill::Flat(bg_color), &clip);
++            self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, ground_radius, Fill::Flat(bg_color), &clip);
+         }
+ 
+         // -- border: 4 inset strips ------------------------------------------
+@@ -1073,6 +1122,10 @@ impl<'a> Walker<'a> {
+         if node.node_type == spec::NodeType::Text as u8 {
+             self.emit_text(dl, node, &r, &world, op, &clip, l.w, in_transform);
+             // Text children are absorbed into the run — do not recurse.
++            if masked {
++                dl.words.push(spec::draw_op::MASK_POP);
++                dl.words.push(spec::draw_op::SCISSOR_POP);
++            }
+             return;
+         }
+ 
+@@ -1102,11 +1155,10 @@ impl<'a> Walker<'a> {
+ 
+         // -- children (overflow-hidden scissor around them; z-index stable
+         //    sort within siblings) ---------------------------------------------
+-        let mut child_clip = clip;
+-        let mut scissored = false;
+-        if r.overflow == spec::Overflow::Hidden as u8 {
++        if !masked && r.overflow != spec::Overflow::Visible as u8 {
+             // Scissor rects are axis-aligned: rotated clip boxes use the AABB
+-            // of the transformed rect (conservative).
++            // of the transformed rect (conservative). A Mask whose outline IS
++            // the AABB lands here too and is overflow-hidden exactly.
+             let rect = self.world_aabb(&world, l.w, l.h);
+             child_clip = clip.intersect(&rect);
+             if child_clip.is_empty() {
+@@ -1122,6 +1174,9 @@ impl<'a> Walker<'a> {
+             // 3D context root: the subtree composes 3x4 matrices, projects
+             // through r.perspective about this node's center and painter-sorts.
+             self.paint_3d(slot, &world, op, &child_clip, dl, r.perspective, l.w, l.h);
++            if masked {
++                dl.words.push(spec::draw_op::MASK_POP);
++            }
+             if scissored {
+                 dl.words.push(spec::draw_op::SCISSOR_POP);
+             }
+@@ -1135,6 +1190,9 @@ impl<'a> Walker<'a> {
+             self.paint(cs, world, op, child_clip, in_transform, dl);
+         });
+ 
++        if masked {
++            dl.words.push(spec::draw_op::MASK_POP);
++        }
+         if scissored {
+             dl.words.push(spec::draw_op::SCISSOR_POP);
+         }
+@@ -2581,6 +2639,114 @@ fn sutherland_hodgman(poly: &[ClipVert], clip: &Clip) -> Vec<ClipVert> {
+     cur
+ }
+ 
++// ---- overflow-mask outline ------------------------------------------------------
++
++/// What `mask_outline` decided for a node.
++enum MaskOutline {
++    /// Radius 0 on an axis-aligned world: the outline is the AABB, and the
++    /// SCISSOR already says that. No mask op.
++    Aabb,
++    /// Nothing of the outline survives the clip; the subtree is invisible.
++    Empty,
++    /// The clipped outline, rounded to pixels, ready for MASK_PUSH.
++    Poly(Vec<(f32, f32)>),
++}
++
++/// Chords per quarter-arc for a corner of `screen_r` pixels, chosen so the
++/// sagitta stays under a quarter of a pixel. A table rather than a formula
++/// because the formula wants a square root and this crate carries none.
++fn mask_chords(screen_r: f32) -> usize {
++    if screen_r < 8.0 {
++        3
++    } else if screen_r < 32.0 {
++        6
++    } else if screen_r < 128.0 {
++        12
++    } else if screen_r < 512.0 {
++        24
++    } else {
++        48
++    }
++}
++
++/// The node's rounded rectangle (`radius` clamped to half the shorter side,
++/// as the box painter clamps it) flattened to a convex polygon in local
++/// space, taken through `world`, clipped to `clip` (the viewport — see the
++/// caller for why not the scissor), rounded to pixels and deduplicated. The corner arcs go through the same Taylor `sinf` every
++/// rotation goes through, so a circle's vertices come from the arithmetic a
++/// rotated box's corners already come from.
++fn mask_outline(
++    world: &Affine,
++    w: f32,
++    h: f32,
++    radius: f32,
++    clip: &Clip,
++    screen: (f32, f32),
++) -> MaskOutline {
++    let r = clampf(radius, 0.0, (w.min(h) * 0.5).max(0.0));
++    if r <= 0.0 && world.is_axis_aligned() {
++        return MaskOutline::Aabb;
++    }
++    let mut local: Vec<(f32, f32)> = Vec::new();
++    if r <= 0.0 {
++        local.push((0.0, 0.0));
++        local.push((w, 0.0));
++        local.push((w, h));
++        local.push((0.0, h));
++    } else {
++        let scale = world.a.abs().max(world.b.abs()).max(world.c.abs()).max(world.d.abs());
++        let chords = mask_chords(r * scale);
++        // Corner centres and the quarter each covers, y-down, so the loop
++        // runs top-left, top-right, bottom-right, bottom-left.
++        let corners: [((f32, f32), f32); 4] = [
++            ((r, r), PI),
++            ((w - r, r), 1.5 * PI),
++            ((w - r, h - r), 0.0),
++            ((r, h - r), 0.5 * PI),
++        ];
++        for &((cx, cy), a0) in corners.iter() {
++            for k in 0..=chords {
++                let t = a0 + (0.5 * PI) * (k as f32 / chords as f32);
++                local.push((cx + r * cosf(t), cy + r * sinf(t)));
++            }
++        }
++    }
++    let verts: Vec<ClipVert> = local
++        .iter()
++        .map(|&(lx, ly)| {
++            let (x, y) = world.apply(lx, ly);
++            ClipVert { x, y, color: [0.0; 4], u: 0.0, v: 0.0 }
++        })
++        .collect();
++    let clipped = sutherland_hodgman(&verts, clip);
++    let mut out: Vec<(f32, f32)> = Vec::with_capacity(clipped.len());
++    for v in &clipped {
++        let p = (
++            clampf(roundf(clampf(v.x, clip.x0, clip.x1)), 0.0, screen.0),
++            clampf(roundf(clampf(v.y, clip.y0, clip.y1)), 0.0, screen.1),
++        );
++        if out.last() != Some(&p) {
++            out.push(p);
++        }
++    }
++    while out.len() > 1 && out.first() == out.last() {
++        out.pop();
++    }
++    if out.len() < 3 || out.len() > spec::draw_op::MASK_MAX_VERTS {
++        return MaskOutline::Empty;
++    }
++    let mut area2 = 0.0f32;
++    for i in 0..out.len() {
++        let (x0, y0) = out[i];
++        let (x1, y1) = out[(i + 1) % out.len()];
++        area2 += x0 * y1 - x1 * y0;
++    }
++    if area2 == 0.0 {
++        return MaskOutline::Empty;
++    }
++    MaskOutline::Poly(out)
++}
++
+ /// Emit one POLY op (flat colour). N is capped at 8 — Sutherland-Hodgman
+ /// clipping a quad against a rect yields at most 8 vertices; anything
+ /// larger falls back to the TRI fan. Degenerate polygons after rounding
+diff --git a/engine/core/src/layout.rs b/engine/core/src/layout.rs
+index 07c5778..91d4b0c 100644
+--- a/engine/core/src/layout.rs
++++ b/engine/core/src/layout.rs
+@@ -162,12 +162,13 @@ pub fn to_taffy(r: &Resolved) -> taffy::Style {
+         taffy::Position::Relative
+     };
+     s.overflow = taffy::Point {
+-        x: if r.overflow == spec::Overflow::Hidden as u8 {
++        // Hidden and Mask both clip; Mask additionally shapes the clip in draw.
++        x: if r.overflow != spec::Overflow::Visible as u8 {
+             taffy::Overflow::Hidden
+         } else {
+             taffy::Overflow::Visible
+         },
+-        y: if r.overflow == spec::Overflow::Hidden as u8 {
++        y: if r.overflow != spec::Overflow::Visible as u8 {
+             taffy::Overflow::Hidden
+         } else {
+             taffy::Overflow::Visible
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index d0c57a0..c9730a8 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -42,6 +42,7 @@
+ use crate::damage::{
+     DamageError, DamagePlan, DamagePolicy, DamageRect, DamageTarget, DamageTracker,
+ };
++use alloc::vec::Vec;
+ use crate::spec::{self, draw_op};
+ use crate::{TexView, Ui};
+ 
+@@ -137,6 +138,17 @@ trait RenderTarget {
+     fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32);
+     fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32);
+ 
++    /// MASK_PUSH support (pocket-motion patch 0013). A plain target accepts
++    /// none: the dispatch loop wraps it in a `Masked` for the span up to the
++    /// matching MASK_POP. `Masked` accepts, multiplies the new level into
++    /// the one on top, and pushes.
++    #[inline]
++    fn accepts_mask(&self) -> bool {
++        false
++    }
++    fn push_mask(&mut self, _level: MaskLevel) {}
++    fn pop_mask(&mut self) {}
++
+     #[inline]
+     fn clear_black(&mut self) {
+         let len = self.pixel_len();
+@@ -686,16 +698,36 @@ fn render_scaled_clipped<T: RenderTarget>(
+     scale: i32,
+     screen: Clip,
+ ) {
++    render_ops(ui, words, target, width, scale, screen, screen);
++}
++
++/// The op loop. Returns how many words it consumed: all of them, or up to
++/// and including a MASK_POP that closes a mask pushed by the CALLER — which
++/// is how a plain target's span under a mask is run: the loop wraps the
++/// target in a `Masked`, re-enters itself on the words after the push, and
++/// resumes after the pop the inner call stopped at. A `Masked` target takes
++/// further pushes onto its own stack instead, so the recursion is one level
++/// deep whatever the nesting.
++fn render_ops<T: RenderTarget>(
++    ui: &Ui,
++    words: &[u32],
++    target: &mut T,
++    width: i32,
++    scale: i32,
++    screen: Clip,
++    clip0: Clip,
++) -> usize {
+     let mut stack: [Clip; 32] = [screen; 32];
+     let mut depth: usize = 0;
+-    let mut clip = screen;
++    let mut clip = clip0;
++    let mut mask_depth: usize = 0;
+ 
+     let mut i = 0usize;
+     while i < words.len() {
+         match words[i] {
+             draw_op::RECT => {
+                 if i + 4 > words.len() {
+-                    return;
++                    return i;
+                 }
+                 let (x, y) = xy(words[i + 1], scale);
+                 let (w, h) = wh(words[i + 2], scale);
+@@ -712,7 +744,7 @@ fn render_scaled_clipped<T: RenderTarget>(
+             }
+             draw_op::GRAD_RECT => {
+                 if i + 6 > words.len() {
+-                    return;
++                    return i;
+                 }
+                 let (x, y) = xy(words[i + 1], scale);
+                 let (w, h) = wh(words[i + 2], scale);
+@@ -732,13 +764,13 @@ fn render_scaled_clipped<T: RenderTarget>(
+             }
+             draw_op::GLYPH_RUN => {
+                 if i + 3 > words.len() {
+-                    return;
++                    return i;
+                 }
+                 let slot = (words[i + 1] & 0xff) as u8;
+                 let n = (words[i + 1] >> 16) as usize;
+                 let color = words[i + 2];
+                 if i + 3 + 2 * n > words.len() {
+-                    return;
++                    return i;
+                 }
+                 glyph_run(
+                     ui,
+@@ -754,14 +786,14 @@ fn render_scaled_clipped<T: RenderTarget>(
+             }
+             draw_op::TEX_QUAD => {
+                 if i + 9 > words.len() {
+-                    return;
++                    return i;
+                 }
+                 tex_quad(ui, target, width, scale, clip, &words[i + 1..i + 9]);
+                 i += 9;
+             }
+             draw_op::SCISSOR => {
+                 if i + 3 > words.len() || depth >= stack.len() {
+-                    return;
++                    return i;
+                 }
+                 stack[depth] = clip;
+                 depth += 1;
+@@ -788,25 +820,25 @@ fn render_scaled_clipped<T: RenderTarget>(
+             }
+             draw_op::TRI => {
+                 if i + 7 > words.len() {
+-                    return;
++                    return i;
+                 }
+                 tri(target, width, scale, clip, &words[i + 1..i + 7]);
+                 i += 7;
+             }
+             draw_op::TEX_TRI => {
+                 if i + 12 > words.len() {
+-                    return;
++                    return i;
+                 }
+                 tex_tri(ui, target, width, scale, clip, &words[i + 1..i + 12]);
+                 i += 12;
+             }
+             draw_op::POLY => {
+                 if i + 3 > words.len() {
+-                    return;
++                    return i;
+                 }
+                 let n = words[i + 1] as usize;
+                 if n < 3 || n > POLY_MAX_VERTS || i + 3 + n > words.len() {
+-                    return;
++                    return i;
+                 }
+                 poly(target, width, scale, clip, words[i + 2], &words[i + 3..i + 3 + n]);
+                 i += 3 + n;
+@@ -818,16 +850,48 @@ fn render_scaled_clipped<T: RenderTarget>(
+                 // stop: the op is a known member of the closed set. Variable
+                 // length: 8 header words + the packed UTF-8 payload.
+                 if i + 8 > words.len() {
+-                    return;
++                    return i;
+                 }
+                 let payload = (words[i + 7] as usize).div_ceil(4);
+                 i += 8 + payload;
+             }
++            draw_op::MASK_PUSH => {
++                if i + 2 > words.len() {
++                    return i;
++                }
++                let n = words[i + 1] as usize;
++                if n < 3 || n > draw_op::MASK_MAX_VERTS || i + 2 + n > words.len() {
++                    return i;
++                }
++                let level = mask_level(scale, clip, &words[i + 2..i + 2 + n]);
++                i += 2 + n;
++                if target.accepts_mask() {
++                    target.push_mask(level);
++                    mask_depth += 1;
++                } else {
++                    let mut masked = Masked { inner: target, stride: width, levels: Vec::new() };
++                    masked.push_mask(level);
++                    i += render_ops(ui, &words[i..], &mut masked, width, scale, screen, clip);
++                }
++            }
++            draw_op::MASK_POP => {
++                if mask_depth > 0 {
++                    target.pop_mask();
++                    mask_depth -= 1;
++                    i += 1;
++                } else {
++                    // Closes the mask the caller pushed; hand the rest back.
++                    // At the top level this is a pop with no push, which is
++                    // corrupt data and stops the stream like any other.
++                    return i + 1;
++                }
++            }
+             // The op set is closed per DrawList version; anything else means
+             // corrupt data — stop instead of misinterpreting the stream.
+-            _ => return,
++            _ => return i,
+         }
+     }
++    i
+ }
+ 
+ // ---- GRAD_RECT: per-axis gouraud lerp ---------------------------------------------
+@@ -977,14 +1041,7 @@ const POLY_MAX_VERTS: usize = 8;
+ const POLY_SAMPLE_OFF: [i64; 4] = [-3, -1, 1, 3];
+ 
+ #[inline]
+-fn poly_hits(
+-    n: usize,
+-    f0: &[i64; POLY_MAX_VERTS],
+-    step: &[i64; POLY_MAX_VERTS],
+-    dx: &[i64; POLY_MAX_VERTS],
+-    dy: &[i64; POLY_MAX_VERTS],
+-    px: i32,
+-) -> u32 {
++fn poly_hits(n: usize, f0: &[i64], step: &[i64], dx: &[i64], dy: &[i64], px: i32) -> u32 {
+     let mut hits = 0u32;
+     for &oy in &POLY_SAMPLE_OFF {
+         for &ox in &POLY_SAMPLE_OFF {
+@@ -1003,96 +1060,125 @@ fn poly_hits(
+     hits
+ }
+ 
+-fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, color: u32, verts: &[u32]) {
+-    let n = verts.len();
+-    if n < 3 || n > POLY_MAX_VERTS {
+-        return;
+-    }
+-    let (r, g, b, a) = channels(color);
+-    if a == 0 {
+-        return;
+-    }
++/// The edge functions of one convex polygon — set up once, then asked per
++/// row for the run every sample falls inside (`il..ih`, filled without
++/// sampling) and the run any sample falls inside (`tl..th`, sampled). POLY
++/// and MASK_PUSH share it, which is what makes a mask's coverage a POLY's
++/// coverage by construction rather than by agreement.
++struct PolyScan {
++    n: usize,
++    min_x: i32,
++    max_x: i32,
++    min_y: i32,
++    max_y: i32,
++    e_c: [i64; draw_op::MASK_MAX_VERTS],
++    e_dx: [i64; draw_op::MASK_MAX_VERTS],
++    e_dy: [i64; draw_op::MASK_MAX_VERTS],
++    bound: [i64; draw_op::MASK_MAX_VERTS],
++    step: [i64; draw_op::MASK_MAX_VERTS],
++}
+ 
+-    let mut xs = [0i32; POLY_MAX_VERTS];
+-    let mut ys = [0i32; POLY_MAX_VERTS];
+-    let mut min_x = i32::MAX;
+-    let mut max_x = i32::MIN;
+-    let mut min_y = i32::MAX;
+-    let mut max_y = i32::MIN;
+-    for i in 0..n {
+-        let (x, y) = xy(verts[i], scale);
+-        xs[i] = x;
+-        ys[i] = y;
+-        min_x = min_x.min(x);
+-        max_x = max_x.max(x);
+-        min_y = min_y.min(y);
+-        max_y = max_y.max(y);
+-    }
+-    min_x = min_x.max(clip.x0);
+-    max_x = max_x.min(clip.x1);
+-    min_y = min_y.max(clip.y0);
+-    max_y = max_y.min(clip.y1);
+-    if min_x >= max_x || min_y >= max_y {
+-        return;
+-    }
++struct PolyRow {
++    f0: [i64; draw_op::MASK_MAX_VERTS],
++    /// Columns relative to `min_x`: sampled `tl..il`, full `il..ih`, sampled `ih..th`.
++    tl: i32,
++    il: i32,
++    ih: i32,
++    th: i32,
++}
+ 
+-    // Doubled screen coords. F(px,py) = c + dx·px + dy·py, wound so inside is F >= 0.
+-    let mut vx = [0i64; POLY_MAX_VERTS];
+-    let mut vy = [0i64; POLY_MAX_VERTS];
+-    for i in 0..n {
+-        vx[i] = 2 * xs[i] as i64;
+-        vy[i] = 2 * ys[i] as i64;
+-    }
+-    let mut area = 0i64;
+-    for i in 0..n {
+-        let j = if i + 1 == n { 0 } else { i + 1 };
+-        area += vx[i] * vy[j] - vx[j] * vy[i];
+-    }
+-    if area == 0 {
+-        return;
+-    }
+-    let ccw = area > 0;
++impl PolyScan {
++    /// None when the polygon is degenerate or wholly outside `clip`.
++    fn new(scale: i32, clip: Clip, verts: &[u32]) -> Option<PolyScan> {
++        let n = verts.len();
++        if n < 3 || n > draw_op::MASK_MAX_VERTS {
++            return None;
++        }
++        let mut xs = [0i32; draw_op::MASK_MAX_VERTS];
++        let mut ys = [0i32; draw_op::MASK_MAX_VERTS];
++        let mut min_x = i32::MAX;
++        let mut max_x = i32::MIN;
++        let mut min_y = i32::MAX;
++        let mut max_y = i32::MIN;
++        for i in 0..n {
++            let (x, y) = xy(verts[i], scale);
++            xs[i] = x;
++            ys[i] = y;
++            min_x = min_x.min(x);
++            max_x = max_x.max(x);
++            min_y = min_y.min(y);
++            max_y = max_y.max(y);
++        }
++        min_x = min_x.max(clip.x0);
++        max_x = max_x.min(clip.x1);
++        min_y = min_y.max(clip.y0);
++        max_y = max_y.min(clip.y1);
++        if min_x >= max_x || min_y >= max_y {
++            return None;
++        }
+ 
+-    let mut e_c = [0i64; POLY_MAX_VERTS];
+-    let mut e_dx = [0i64; POLY_MAX_VERTS];
+-    let mut e_dy = [0i64; POLY_MAX_VERTS];
+-    for i in 0..n {
+-        let (ia, ib) = if ccw {
+-            (i, if i + 1 == n { 0 } else { i + 1 })
+-        } else {
+-            (if i + 1 == n { 0 } else { i + 1 }, i)
+-        };
+-        let (ax, ay, bx, by) = (vx[ia], vy[ia], vx[ib], vy[ib]);
+-        let dx = -(by - ay);
+-        let dy = bx - ax;
+-        e_c[i] = -(dx * ax + dy * ay);
+-        e_dx[i] = dx;
+-        e_dy[i] = dy;
+-    }
++        // Doubled screen coords. F(px,py) = c + dx·px + dy·py, wound so inside is F >= 0.
++        let mut vx = [0i64; draw_op::MASK_MAX_VERTS];
++        let mut vy = [0i64; draw_op::MASK_MAX_VERTS];
++        for i in 0..n {
++            vx[i] = 2 * xs[i] as i64;
++            vy[i] = 2 * ys[i] as i64;
++        }
++        let mut area = 0i64;
++        for i in 0..n {
++            let j = if i + 1 == n { 0 } else { i + 1 };
++            area += vx[i] * vy[j] - vx[j] * vy[i];
++        }
++        if area == 0 {
++            return None;
++        }
++        let ccw = area > 0;
++
++        let mut e_c = [0i64; draw_op::MASK_MAX_VERTS];
++        let mut e_dx = [0i64; draw_op::MASK_MAX_VERTS];
++        let mut e_dy = [0i64; draw_op::MASK_MAX_VERTS];
++        for i in 0..n {
++            let (ia, ib) = if ccw {
++                (i, if i + 1 == n { 0 } else { i + 1 })
++            } else {
++                (if i + 1 == n { 0 } else { i + 1 }, i)
++            };
++            let (ax, ay, bx, by) = (vx[ia], vy[ia], vx[ib], vy[ib]);
++            let dx = -(by - ay);
++            let dy = bx - ax;
++            e_c[i] = -(dx * ax + dy * ay);
++            e_dx[i] = dx;
++            e_dy[i] = dy;
++        }
+ 
+-    // Work in 4·F so the ±1/±3 sample offsets stay integral.
+-    let mut bound = [0i64; POLY_MAX_VERTS];
+-    let mut step = [0i64; POLY_MAX_VERTS];
+-    for i in 0..n {
+-        bound[i] = 3 * (e_dx[i].abs() + e_dy[i].abs());
+-        step[i] = 8 * e_dx[i];
++        // Work in 4·F so the ±1/±3 sample offsets stay integral.
++        let mut bound = [0i64; draw_op::MASK_MAX_VERTS];
++        let mut step = [0i64; draw_op::MASK_MAX_VERTS];
++        for i in 0..n {
++            bound[i] = 3 * (e_dx[i].abs() + e_dy[i].abs());
++            step[i] = 8 * e_dx[i];
++        }
++        Some(PolyScan { n, min_x, max_x, min_y, max_y, e_c, e_dx, e_dy, bound, step })
+     }
+-    let opaque = a >= 255;
+-    let mut f0 = [0i64; POLY_MAX_VERTS];
+-    for row in min_y..max_y {
++
++    /// None when no sample on this row is inside.
++    fn row(&self, row: i32) -> Option<PolyRow> {
++        let n = self.n;
++        let mut f0 = [0i64; draw_op::MASK_MAX_VERTS];
+         let sy = 2 * row as i64 + 1;
+-        let sx = 2 * min_x as i64 + 1;
++        let sx = 2 * self.min_x as i64 + 1;
+         for i in 0..n {
+-            f0[i] = 4 * (e_c[i] + e_dx[i] * sx + e_dy[i] * sy);
++            f0[i] = 4 * (self.e_c[i] + self.e_dx[i] * sx + self.e_dy[i] * sy);
+         }
+-        let span = max_x - min_x;
++        let span = self.max_x - self.min_x;
+         let solve = |e: usize, thr: i64| -> (i32, i32) {
+-            let (f, s) = (f0[e], step[e]);
++            let (f, s) = (f0[e], self.step[e]);
+             if s == 0 {
+                 return if f >= thr { (0, span) } else { (0, 0) };
+             }
+             let k = thr - f;
+             if s > 0 {
++                // First col with f >= thr is ceil(k/s); div_euclid floors for s > 0.
+                 (((k + s - 1).div_euclid(s)).clamp(0, span as i64) as i32, span)
+             } else {
+                 // s < 0 flips the inequality: cols satisfying it are 0..=floor(k/s).
+@@ -1104,44 +1190,71 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
+         };
+         let (mut il, mut ih, mut tl, mut th) = (0, span, 0, span);
+         for e in 0..n {
+-            let (l, h) = solve(e, bound[e]);
++            let (l, h) = solve(e, self.bound[e]);
+             il = il.max(l);
+             ih = ih.min(h);
+-            let (l, h) = solve(e, -bound[e]);
++            let (l, h) = solve(e, -self.bound[e]);
+             tl = tl.max(l);
+             th = th.min(h);
+         }
+         if th <= tl {
+-            continue;
++            return None;
+         }
+         if ih < il {
+             il = tl;
+             ih = tl;
+         }
+-        for col in tl..il {
+-            let hits = poly_hits(n, &f0, &step, &e_dx, &e_dy, col);
++        Some(PolyRow { f0, tl, il, ih, th })
++    }
++
++    #[inline]
++    fn hits(&self, r: &PolyRow, col: i32) -> u32 {
++        poly_hits(self.n, &r.f0, &self.step, &self.e_dx, &self.e_dy, col)
++    }
++}
++
++fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, color: u32, verts: &[u32]) {
++    let n = verts.len();
++    if n < 3 || n > POLY_MAX_VERTS {
++        return;
++    }
++    let (r, g, b, a) = channels(color);
++    if a == 0 {
++        return;
++    }
++    let Some(scan) = PolyScan::new(scale, clip, verts) else {
++        return;
++    };
++    let min_x = scan.min_x;
++    let opaque = a >= 255;
++    for row in scan.min_y..scan.max_y {
++        let Some(pr) = scan.row(row) else {
++            continue;
++        };
++        for col in pr.tl..pr.il {
++            let hits = scan.hits(&pr, col);
+             if hits == 0 {
+                 continue;
+             }
+             target.blend((row * stride + min_x + col) as usize, r, g, b, a * hits / 16);
+         }
+-        if ih > il {
++        if pr.ih > pr.il {
+             if opaque {
+                 target.fill_opaque(
+-                    (row * stride + min_x + il) as usize,
+-                    (ih - il) as usize,
++                    (row * stride + min_x + pr.il) as usize,
++                    (pr.ih - pr.il) as usize,
+                     r,
+                     g,
+                     b,
+                 );
+             } else {
+-                for col in il..ih {
++                for col in pr.il..pr.ih {
+                     target.blend((row * stride + min_x + col) as usize, r, g, b, a);
+                 }
+             }
+         }
+-        for col in ih..th {
+-            let hits = poly_hits(n, &f0, &step, &e_dx, &e_dy, col);
++        for col in pr.ih..pr.th {
++            let hits = scan.hits(&pr, col);
+             if hits == 0 {
+                 continue;
+             }
+@@ -1150,6 +1263,145 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
+     }
+ }
+ 
++// ---- MASK_PUSH / MASK_POP: a convex polygon as coverage over what follows --------------
++// (pocket-motion patch 0013; the software rasteriser only.)
++
++/// One mask level: per-pixel hits (0..=16) over the polygon's bbox at
++/// physical resolution, already multiplied by the level under it. Outside
++/// the bbox the mask is 0.
++pub struct MaskLevel {
++    x0: i32,
++    y0: i32,
++    w: i32,
++    h: i32,
++    hits: Vec<u8>,
++}
++
++impl MaskLevel {
++    fn empty() -> MaskLevel {
++        MaskLevel { x0: 0, y0: 0, w: 0, h: 0, hits: Vec::new() }
++    }
++
++    #[inline]
++    fn at(&self, x: i32, y: i32) -> u32 {
++        if x < self.x0 || y < self.y0 || x >= self.x0 + self.w || y >= self.y0 + self.h {
++            return 0;
++        }
++        self.hits[((y - self.y0) * self.w + (x - self.x0)) as usize] as u32
++    }
++}
++
++/// Sample the polygon's coverage once into a level — the same rows and the
++/// same 16 samples POLY would use to draw it.
++fn mask_level(scale: i32, clip: Clip, verts: &[u32]) -> MaskLevel {
++    let Some(scan) = PolyScan::new(scale, clip, verts) else {
++        return MaskLevel::empty();
++    };
++    let w = scan.max_x - scan.min_x;
++    let h = scan.max_y - scan.min_y;
++    let mut hits = alloc::vec![0u8; (w as usize) * (h as usize)];
++    for row in scan.min_y..scan.max_y {
++        let Some(pr) = scan.row(row) else {
++            continue;
++        };
++        let base = ((row - scan.min_y) * w) as usize;
++        for col in pr.tl..pr.il {
++            hits[base + col as usize] = scan.hits(&pr, col) as u8;
++        }
++        for col in pr.il..pr.ih {
++            hits[base + col as usize] = 16;
++        }
++        for col in pr.ih..pr.th {
++            hits[base + col as usize] = scan.hits(&pr, col) as u8;
++        }
++    }
++    MaskLevel { x0: scan.min_x, y0: scan.min_y, w, h, hits }
++}
++
++/// A target under one or more masks. Every write is scaled by the top
++/// level's hits at that pixel — `a * hits / 16`, the expression POLY's own
++/// boundary uses — so a mask reaches every op without any op knowing.
++struct Masked<'a> {
++    inner: &'a mut dyn RenderTarget,
++    stride: i32,
++    levels: Vec<MaskLevel>,
++}
++
++impl Masked<'_> {
++    #[inline]
++    fn top(&self, offset: usize) -> u32 {
++        let Some(top) = self.levels.last() else {
++            return 16;
++        };
++        let o = offset as i32;
++        top.at(o % self.stride, o / self.stride)
++    }
++}
++
++impl RenderTarget for Masked<'_> {
++    #[inline]
++    fn pixel_len(&self) -> usize {
++        self.inner.pixel_len()
++    }
++
++    #[inline]
++    fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32) {
++        let hits = self.top(offset);
++        if hits == 0 {
++            return;
++        }
++        if hits >= 16 {
++            self.inner.blend(offset, r, g, b, a);
++        } else {
++            self.inner.blend(offset, r, g, b, a * hits / 16);
++        }
++    }
++
++    fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
++        let mut i = 0usize;
++        while i < len {
++            let hits = self.top(start + i);
++            if hits >= 16 {
++                let mut j = i + 1;
++                while j < len && self.top(start + j) >= 16 {
++                    j += 1;
++                }
++                self.inner.fill_opaque(start + i, j - i, r, g, b);
++                i = j;
++            } else {
++                if hits > 0 {
++                    self.inner.blend(start + i, r, g, b, 255 * hits / 16);
++                }
++                i += 1;
++            }
++        }
++    }
++
++    #[inline]
++    fn accepts_mask(&self) -> bool {
++        true
++    }
++
++    fn push_mask(&mut self, mut level: MaskLevel) {
++        if let Some(top) = self.levels.last() {
++            for y in 0..level.h {
++                for x in 0..level.w {
++                    let i = (y * level.w + x) as usize;
++                    let h = level.hits[i] as u32;
++                    if h != 0 {
++                        level.hits[i] = (h * top.at(level.x0 + x, level.y0 + y) / 16) as u8;
++                    }
++                }
++            }
++        }
++        self.levels.push(level);
++    }
++
++    fn pop_mask(&mut self) {
++        self.levels.pop();
++    }
++}
++
+ // ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
+ 
+ /// Map a scaled destination pixel (relative to its glyph cell origin) to the
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 9920a77..c42636a 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -272,12 +272,13 @@ pub enum Display {
+     None = 1,
+ }
+ 
+-/// overflow (Hidden => scissor in draw).
++/// overflow (Hidden => scissor in draw; Mask => the same scissor plus a MASK_PUSH of the node's outline).
+ #[repr(u8)]
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+ pub enum Overflow {
+     Visible = 0,
+     Hidden = 1,
++    Mask = 2,
+ }
+ 
+ /// text alignment within the node box.
+@@ -421,7 +422,8 @@ pub mod font_atlas {
+ 
+ /// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).
+ /// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,
+-/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N.
++/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N,
++/// MASK_PUSH 2+N, MASK_POP 1 (64 and up: software-rasteriser-only ops).
+ pub mod draw_op {
+     pub const RECT: u32 = 1;
+     pub const GRAD_RECT: u32 = 2;
+@@ -433,6 +435,10 @@ pub mod draw_op {
+     pub const TEX_TRI: u32 = 8;
+     pub const TEXT_RUN: u32 = 9;
+     pub const POLY: u32 = 10;
++    pub const MASK_PUSH: u32 = 64;
++    pub const MASK_POP: u32 = 65;
++    /// Largest vertex count a MASK_PUSH may carry.
++    pub const MASK_MAX_VERTS: usize = 256;
+ }
+ 
+ /// .pak container constants (byte-compatible with dreamcart's format;
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 33168e5..0815535 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -239,7 +239,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
+ /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
+ /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
+ /// balanced, only known ops. Returns per-op counts (indexed by op code).
+-fn validate_drawlist(words: &[u32]) -> [u32; 11] {
++fn validate_drawlist(words: &[u32]) -> [u32; 66] {
+     let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
+     let xy_ok = |w: u32| {
+         let (x, y) = decode_xy(w);
+@@ -251,8 +251,9 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+         let (w, h) = decode_wh(whw);
+         assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
+     };
+-    let mut counts = [0u32; 11];
++    let mut counts = [0u32; 66];
+     let mut depth = 0i32;
++    let mut mask_depth = 0i32;
+     let mut i = 0usize;
+     while i < words.len() {
+         let op = words[i];
+@@ -319,6 +320,25 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+                 }
+                 i += 3 + n;
+             }
++            spec::draw_op::MASK_PUSH => {
++                let n = words[i + 1] as usize;
++                assert!(
++                    (3..=spec::draw_op::MASK_MAX_VERTS).contains(&n),
++                    "MASK_PUSH vertex count {n} not in 3..=MASK_MAX_VERTS"
++                );
++                assert!(i + 2 + n <= words.len(), "truncated MASK_PUSH");
++                assert!(depth > 0, "MASK_PUSH outside any SCISSOR");
++                for k in 0..n {
++                    xy_ok(words[i + 2 + k]);
++                }
++                mask_depth += 1;
++                i += 2 + n;
++            }
++            spec::draw_op::MASK_POP => {
++                mask_depth -= 1;
++                assert!(mask_depth >= 0, "unbalanced MASK_POP");
++                i += 1;
++            }
+             spec::draw_op::TEXT_RUN => {
+                 // Native-text op: origin is f32 (exempt from the i16 clip
+                 // guarantee), box width is finite and non-negative, and the
+@@ -336,6 +356,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+         }
+     }
+     assert_eq!(depth, 0, "unbalanced SCISSOR/SCISSOR_POP");
++    assert_eq!(mask_depth, 0, "unbalanced MASK_PUSH/MASK_POP");
+     counts
+ }
+ 
+@@ -4189,3 +4210,387 @@ fn clearing_native_measure_restores_baked_goldens_path() {
+     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
+     assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
+ }
++
++// ---- overflow-mask (pocket-motion patch 0013) -----------------------------------
++
++/// A window with `overflow` set, holding one child that overhangs it.
++fn mask_window(ui: &mut Ui, overflow: spec::Overflow, w: f64, h: f64) -> (i32, i32) {
++    let win = place_box(ui, w, h, 240.0 - w / 2.0, 136.0 - h / 2.0);
++    ui.set_prop(win, spec::prop::OVERFLOW, overflow as u32 as f64);
++    let child = ui.create_node(0);
++    ui.set_prop(child, spec::prop::WIDTH, w * 2.0);
++    ui.set_prop(child, spec::prop::HEIGHT, h * 2.0);
++    ui.set_prop(child, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(child, spec::prop::INSET_L, -w / 2.0);
++    ui.set_prop(child, spec::prop::INSET_T, -h / 2.0);
++    ui.set_prop(child, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.insert_before(win, child, 0);
++    (win, child)
++}
++
++/// The ops of a draw list in order, one code per op.
++fn op_sequence(words: &[u32]) -> Vec<u32> {
++    let mut ops = Vec::new();
++    let mut i = 0usize;
++    while i < words.len() {
++        let op = words[i];
++        ops.push(op);
++        i += match op {
++            spec::draw_op::RECT => 4,
++            spec::draw_op::GRAD_RECT => 6,
++            spec::draw_op::GLYPH_RUN => 3 + 2 * ((words[i + 1] >> 16) as usize),
++            spec::draw_op::TEX_QUAD => 9,
++            spec::draw_op::SCISSOR => 3,
++            spec::draw_op::SCISSOR_POP => 1,
++            spec::draw_op::TRI => 7,
++            spec::draw_op::TEX_TRI => 12,
++            spec::draw_op::POLY => 3 + words[i + 1] as usize,
++            spec::draw_op::MASK_PUSH => 2 + words[i + 1] as usize,
++            spec::draw_op::MASK_POP => 1,
++            other => panic!("unknown op {other}"),
++        };
++    }
++    ops
++}
++
++fn first_mask_verts(words: &[u32]) -> Vec<(i32, i32)> {
++    let mut i = 0usize;
++    while i < words.len() {
++        if words[i] == spec::draw_op::MASK_PUSH {
++            let n = words[i + 1] as usize;
++            return words[i + 2..i + 2 + n].iter().map(|&w| decode_xy(w)).collect();
++        }
++        i += match words[i] {
++            spec::draw_op::RECT => 4,
++            spec::draw_op::GRAD_RECT => 6,
++            spec::draw_op::GLYPH_RUN => 3 + 2 * ((words[i + 1] >> 16) as usize),
++            spec::draw_op::TEX_QUAD => 9,
++            spec::draw_op::SCISSOR => 3,
++            spec::draw_op::SCISSOR_POP => 1,
++            spec::draw_op::TRI => 7,
++            spec::draw_op::TEX_TRI => 12,
++            spec::draw_op::POLY => 3 + words[i + 1] as usize,
++            spec::draw_op::MASK_POP => 1,
++            _ => panic!("unknown op"),
++        };
++    }
++    Vec::new()
++}
++
++#[test]
++fn overflow_mask_on_an_axis_aligned_square_box_is_overflow_hidden_exactly() {
++    let mut hidden = Ui::new();
++    mask_window(&mut hidden, spec::Overflow::Hidden, 120.0, 56.0);
++    hidden.tick();
++    let mut masked = Ui::new();
++    mask_window(&mut masked, spec::Overflow::Mask, 120.0, 56.0);
++    masked.tick();
++    let a = hidden.draw().words.clone();
++    let b = masked.draw().words.clone();
++    let counts = validate_drawlist(&b);
++    assert_eq!(counts[spec::draw_op::MASK_PUSH as usize], 0, "radius 0 + axis-aligned needs no mask");
++    assert_eq!(a, b, "the draw lists must be identical word for word");
++}
++
++#[test]
++fn overflow_mask_rotated_emits_the_outline_inside_the_scissor_and_before_the_ground() {
++    let mut ui = Ui::new();
++    let (win, _) = mask_window(&mut ui, spec::Overflow::Mask, 120.0, 56.0);
++    ui.set_prop(win, spec::prop::ROTATE, 20.0);
++    ui.set_prop(win, spec::prop::BG_COLOR, abgr(40, 40, 40, 255) as f64);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let counts = validate_drawlist(&words);
++    assert_eq!(counts[spec::draw_op::MASK_PUSH as usize], 1);
++    assert_eq!(counts[spec::draw_op::MASK_POP as usize], 1);
++    let ops = op_sequence(&words);
++    // SCISSOR, MASK_PUSH, the window's own ground (a rotated box: POLY), the
++    // child (rotated with its parent: POLY), MASK_POP, SCISSOR_POP. The root
++    // has no ground of its own here.
++    let expected = [
++        spec::draw_op::SCISSOR,
++        spec::draw_op::MASK_PUSH,
++        spec::draw_op::POLY,
++        spec::draw_op::POLY,
++        spec::draw_op::MASK_POP,
++        spec::draw_op::SCISSOR_POP,
++    ];
++    assert_eq!(&ops[..], &expected[..], "op order: {ops:?}");
++    let verts = first_mask_verts(&words);
++    assert_eq!(verts.len(), 4, "a rotated rectangle wholly on screen is four vertices: {verts:?}");
++}
++
++#[test]
++fn overflow_mask_rounded_outline_vertex_count_follows_the_radius_table() {
++    // radius 4 -> 3 chords per corner -> 4 * (3 + 1) = 16 vertices;
++    // radius 12 -> 6 -> 28; radius 60 -> 12 -> 52. At r = half the side
++    // (rounded-full on a 200 square) consecutive arcs END on the same point,
++    // and the four duplicates are dropped: 48, a circle of 48 vertices.
++    for &(radius, chords, exact) in [(4.0, 3usize, None), (12.0, 6, Some(28usize)), (60.0, 12, Some(52)), (100.0, 12, Some(48))].iter() {
++        let mut ui = Ui::new();
++        let (win, _) = mask_window(&mut ui, spec::Overflow::Mask, 200.0, 200.0);
++        ui.set_prop(win, spec::prop::RADIUS, radius);
++        ui.tick();
++        let words = ui.draw().words.clone();
++        validate_drawlist(&words);
++        let verts = first_mask_verts(&words);
++        let expected = 4 * (chords + 1);
++        // Rounding to pixels can merge two chord ends on a small radius, so
++        // the count is at most the table's and never below 3 per corner.
++        assert!(
++            verts.len() <= expected && verts.len() >= 4 * 3,
++            "radius {radius}: {} vertices, table says {expected}",
++            verts.len()
++        );
++        if let Some(exact) = exact {
++            assert_eq!(verts.len(), exact, "radius {radius}");
++        }
++    }
++}
++
++#[test]
++fn overflow_mask_rounded_axis_aligned_ground_is_a_plain_rect_under_the_mask() {
++    let mut ui = Ui::new();
++    let (win, _) = mask_window(&mut ui, spec::Overflow::Mask, 120.0, 56.0);
++    ui.set_prop(win, spec::prop::RADIUS, 20.0);
++    ui.set_prop(win, spec::prop::BG_COLOR, abgr(40, 40, 40, 255) as f64);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let counts = validate_drawlist(&words);
++    assert_eq!(counts[spec::draw_op::MASK_PUSH as usize], 1);
++    let ops = op_sequence(&words);
++    // The ground is ONE RECT (no rounded-corner spans): the mask shapes it.
++    let expected = [
++        spec::draw_op::SCISSOR,
++        spec::draw_op::MASK_PUSH,
++        spec::draw_op::RECT,
++        spec::draw_op::RECT,
++        spec::draw_op::MASK_POP,
++        spec::draw_op::SCISSOR_POP,
++    ];
++    assert_eq!(&ops[..], &expected[..], "op order: {ops:?}");
++}
++
++#[test]
++fn overflow_mask_outline_off_screen_drops_the_subtree() {
++    let mut ui = Ui::new();
++    let win = place_box(&mut ui, 120.0, 56.0, 600.0, 400.0);
++    ui.set_prop(win, spec::prop::OVERFLOW, spec::Overflow::Mask as u32 as f64);
++    ui.set_prop(win, spec::prop::RADIUS, 20.0);
++    ui.set_prop(win, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let counts = validate_drawlist(&words);
++    assert_eq!(counts[spec::draw_op::MASK_PUSH as usize], 0);
++    assert_eq!(counts[spec::draw_op::SCISSOR as usize], 0);
++}
++
++#[test]
++fn overflow_mask_on_a_text_node_pops_before_the_run_returns() {
++    let mut ui = Ui::new();
++    let n = ui.create_node(spec::NodeType::Text as u8);
++    ui.set_prop(n, spec::prop::WIDTH, 200.0);
++    ui.set_prop(n, spec::prop::HEIGHT, 40.0);
++    ui.set_prop(n, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(n, spec::prop::INSET_L, 100.0);
++    ui.set_prop(n, spec::prop::INSET_T, 100.0);
++    ui.set_prop(n, spec::prop::OVERFLOW, spec::Overflow::Mask as u32 as f64);
++    ui.set_prop(n, spec::prop::RADIUS, 12.0);
++    ui.set_prop(n, spec::prop::BG_COLOR, abgr(30, 30, 30, 255) as f64);
++    // An EMPTY text node lays out at 0x0 and paints nothing at all; give it
++    // a run so the box exists (no atlas is loaded: the run may draw no glyph,
++    // which is fine — the mask brackets the node's ground either way).
++    ui.set_text(n, "AB");
++    ui.insert_before(spec::ROOT_ID, n, 0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    // validate_drawlist asserts both stacks are balanced.
++    let counts = validate_drawlist(&words);
++    assert_eq!(counts[spec::draw_op::MASK_PUSH as usize], 1);
++    assert_eq!(counts[spec::draw_op::MASK_POP as usize], 1);
++}
++
++#[test]
++fn overflow_mask_lays_out_and_hit_tests_like_overflow_hidden() {
++    let mut hidden = Ui::new();
++    let (_, hc) = mask_window(&mut hidden, spec::Overflow::Hidden, 120.0, 56.0);
++    hidden.tick();
++    let mut masked = Ui::new();
++    let (_, mc) = mask_window(&mut masked, spec::Overflow::Mask, 120.0, 56.0);
++    masked.tick();
++    assert_eq!(hidden.tree.slots[hc as usize].layout.w, masked.tree.slots[mc as usize].layout.w);
++    assert_eq!(hidden.tree.slots[hc as usize].layout.x, masked.tree.slots[mc as usize].layout.x);
++    // The child overhangs the window by half its size on every side; a hit
++    // there is clipped away under both.
++    assert_eq!(hidden.hit_test(240.0 - 100.0, 136.0), masked.hit_test(240.0 - 100.0, 136.0));
++    assert_eq!(hidden.hit_test(240.0, 136.0), masked.hit_test(240.0, 136.0));
++}
++
++// ---- overflow-mask: the rasteriser (pocket-motion patch 0013) ----------------------
++
++/// A white box four screens wide centred on `parent`, so whatever `parent`
++/// masks is covered edge to edge by an opaque, rotated-with-it child.
++fn full_bleed_white_under(ui: &mut Ui, parent: i32, pw: f64, ph: f64) -> i32 {
++    let c = ui.create_node(0);
++    let (w, h) = (spec::SCREEN_W as f64 * 4.0, spec::SCREEN_H as f64 * 4.0);
++    ui.set_prop(c, spec::prop::WIDTH, w);
++    ui.set_prop(c, spec::prop::HEIGHT, h);
++    ui.set_prop(c, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(c, spec::prop::INSET_L, pw / 2.0 - w / 2.0);
++    ui.set_prop(c, spec::prop::INSET_T, ph / 2.0 - h / 2.0);
++    ui.set_prop(c, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.insert_before(parent, c, 0);
++    c
++}
++
++/// A centred window with `overflow`, `rotate` and `radius`, over black.
++fn window(ui: &mut Ui, overflow: spec::Overflow, w: f64, h: f64, rotate: f64, radius: f64) -> i32 {
++    let n = place_box(ui, w, h, 240.0 - w / 2.0, 136.0 - h / 2.0);
++    ui.set_prop(n, spec::prop::OVERFLOW, overflow as u32 as f64);
++    if rotate != 0.0 {
++        ui.set_prop(n, spec::prop::ROTATE, rotate);
++    }
++    if radius > 0.0 {
++        ui.set_prop(n, spec::prop::RADIUS, radius);
++    }
++    n
++}
++
++fn fb_differs(a: &[u8], b: &[u8]) -> usize {
++    a.chunks(4).zip(b.chunks(4)).filter(|(p, q)| p != q).count()
++}
++
++#[test]
++fn mask_of_a_rotated_window_equals_poly_of_the_same_box() {
++    // The mask's coverage is POLY's coverage: a white full-bleed child under
++    // a rotated square-cornered window must rasterise to the same bytes as a
++    // white rotated box of the window's geometry. Sizes and angles from the
++    // POLY sweep, including the ones that straddle sample offsets.
++    let sizes: [(f64, f64); 6] = [(2.0, 3.0), (9.0, 4.0), (31.0, 17.0), (120.0, 56.0), (200.0, 100.0), (400.0, 260.0)];
++    let angles: [f64; 9] = [0.5, 7.0, 20.0, 33.3, 45.0, 89.0, 91.0, 150.0, 359.5];
++    let mut checked = 0usize;
++    for &(w, h) in sizes.iter() {
++        for &a in angles.iter() {
++            let mut masked = Ui::new();
++            let win = window(&mut masked, spec::Overflow::Mask, w, h, a, 0.0);
++            full_bleed_white_under(&mut masked, win, w, h);
++            masked.tick();
++            let mut plain = Ui::new();
++            let boxed = window(&mut plain, spec::Overflow::Visible, w, h, a, 0.0);
++            plain.set_prop(boxed, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++            plain.tick();
++            let mw = masked.draw().words.clone();
++            assert_eq!(validate_drawlist(&mw)[spec::draw_op::MASK_PUSH as usize], 1, "{w}x{h} rot {a}");
++            let fa = raster_fb(&mut masked);
++            let fb = raster_fb(&mut plain);
++            assert_eq!(fb_differs(&fa, &fb), 0, "{w}x{h} rot {a}: mask and POLY disagree");
++            checked += 1;
++        }
++    }
++    assert_eq!(checked, 54);
++}
++
++#[test]
++fn rounded_full_mask_is_a_circle_with_coverage_on_its_edge() {
++    let mut ui = Ui::new();
++    let win = window(&mut ui, spec::Overflow::Mask, 200.0, 200.0, 0.0, 100.0);
++    full_bleed_white_under(&mut ui, win, 200.0, 200.0);
++    ui.tick();
++    let fb = raster_fb(&mut ui);
++    // Centre (240,136): inside. The window's corner (140,36) is inside the
++    // AABB — the scissor lets it through — and outside the circle: the mask
++    // is what makes it black. Along the horizontal through the centre the
++    // edge is at x = 140 and x = 340; the pixel a hair inside is full and
++    // the one straddling it partial.
++    assert_eq!(sample_rgba(&fb, 240, 136), [255, 255, 255, 255]);
++    assert_eq!(sample_rgba(&fb, 141, 36), [0, 0, 0, 255], "corner outside the circle");
++    assert_eq!(sample_rgba(&fb, 339, 136), [255, 255, 255, 255]);
++    // The leftmost vertex lands on an integer x, so the exact edge pixel is
++    // full; the partial ones sit on the arc just above and below the centre
++    // row. Walk a row a little off centre and require a partial pixel.
++    let partial = (130..150).map(|x| sample_rgba(&fb, x, 120)[0]).filter(|&v| v > 0 && v < 255).count();
++    assert!(partial > 0, "the arc carries coverage where it crosses a row");
++    // Levels: more than binary along the arc.
++    let mut levels = alloc::collections::BTreeSet::new();
++    for x in 130..350 {
++        for y in 26..246 {
++            levels.insert(sample_rgba(&fb, x, y)[0]);
++        }
++    }
++    assert!(levels.len() > 4, "a circle's edge shows more than {} levels", levels.len());
++}
++
++#[test]
++fn nested_masks_multiply_their_coverage() {
++    // A rotated window holding a rotated window holding white. The pixel
++    // under both is `hits_a * hits_b / 16` of white, where each hits is
++    // what that window alone would give — read back from two single-mask
++    // renders with the same geometry (the other window set to Visible).
++    fn scene(outer: spec::Overflow, inner: spec::Overflow) -> alloc::vec::Vec<u8> {
++        let mut ui = Ui::new();
++        let a = window(&mut ui, outer, 160.0, 90.0, 20.0, 0.0);
++        let b = ui.create_node(0);
++        ui.set_prop(b, spec::prop::WIDTH, 120.0);
++        ui.set_prop(b, spec::prop::HEIGHT, 120.0);
++        ui.set_prop(b, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++        ui.set_prop(b, spec::prop::INSET_L, 30.0);
++        ui.set_prop(b, spec::prop::INSET_T, -20.0);
++        ui.set_prop(b, spec::prop::OVERFLOW, inner as u32 as f64);
++        ui.set_prop(b, spec::prop::ROTATE, -40.0);
++        ui.insert_before(a, b, 0);
++        full_bleed_white_under(&mut ui, b, 120.0, 120.0);
++        ui.tick();
++        raster_fb(&mut ui)
++    }
++    let both = scene(spec::Overflow::Mask, spec::Overflow::Mask);
++    let only_a = scene(spec::Overflow::Mask, spec::Overflow::Visible);
++    let only_b = scene(spec::Overflow::Visible, spec::Overflow::Mask);
++    let hits_of = |a: u8| (a as u32 * 16 + 254) / 255;
++    let mut partial = 0usize;
++    for y in 0..spec::SCREEN_H as usize {
++        for x in 0..spec::SCREEN_W as usize {
++            let ha = hits_of(sample_rgba(&only_a, x, y)[0]);
++            let hb = hits_of(sample_rgba(&only_b, x, y)[0]);
++            let expect = (255 * (ha * hb / 16) / 16) as u8;
++            let got = sample_rgba(&both, x, y)[0];
++            assert_eq!(got, expect, "({x},{y}): hits {ha}*{hb}");
++            if got > 0 && got < 255 {
++                partial += 1;
++            }
++        }
++    }
++    assert!(partial > 0, "the intersection has an edge with coverage on it");
++}
++
++#[test]
++fn mask_reaches_the_rgb565_target() {
++    let mut ui = Ui::new();
++    let win = window(&mut ui, spec::Overflow::Mask, 200.0, 200.0, 0.0, 100.0);
++    full_bleed_white_under(&mut ui, win, 200.0, 200.0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let mut fb = alloc::vec![0u16; spec::SCREEN_W as usize * spec::SCREEN_H as usize];
++    crate::raster::render_scaled_rgb565(&ui, &words, &mut fb, 1);
++    let at = |x: usize, y: usize| fb[y * spec::SCREEN_W as usize + x];
++    assert_eq!(at(240, 136), 0xffff);
++    assert_eq!(at(141, 36), 0x0000, "corner outside the circle");
++    let partial = (130..150).map(|x| at(x, 120)).filter(|&v| v != 0 && v != 0xffff).count();
++    assert!(partial > 0, "edge coverage survives the 565 pack");
++}
++
++#[test]
++fn a_mask_pop_with_no_push_stops_the_stream_like_any_corrupt_op() {
++    let mut ui = Ui::new();
++    let words = alloc::vec![
++        spec::draw_op::MASK_POP,
++        spec::draw_op::RECT,
++        0,
++        (100u32) | (100u32 << 16),
++        abgr(255, 255, 255, 255),
++    ];
++    let mut fb = alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
++    crate::raster::render(&ui, &words, &mut fb);
++    ui.tick();
++    assert_eq!(sample_rgba(&fb, 10, 10), [0, 0, 0, 255], "nothing after the stray pop is drawn");
++}
++
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index e2b5767..9c0916f 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -356,6 +356,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+     case "relative": D.push([PROP.posType, int(ENUMS.PosType.Relative)]); return true;
+     case "hidden": D.push([PROP.display, int(ENUMS.Display.None)]); return true;
+     case "overflow-hidden": D.push([PROP.overflow, int(ENUMS.Overflow.Hidden)]); return true;
++    case "overflow-mask": D.push([PROP.overflow, int(ENUMS.Overflow.Mask)]); return true;
+     case "w-full": D.push([PROP.width, px(SIZE_FULL)]); return true;
+     case "h-full": D.push([PROP.height, px(SIZE_FULL)]); return true;
+     case "rounded": D.push([PROP.radius, px(4)]); acc.sawRounded = true; return true;

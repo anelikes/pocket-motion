@@ -82,11 +82,21 @@ the ledger already reproduces across macOS/ARM and Linux/x86-64.
 of each other therefore give a boundary pixel less than one would — the same
 thing two alpha layers do — and that is stated rather than corrected.
 
+**The outline is clipped to the viewport, not to the scissor.** This was
+found in implementation, not planned: a vertex that clipping creates rounds
+to a pixel, and against an ancestor's unrounded AABB that moves an edge by up
+to half a pixel — a window's polygon then depends on what it sits in, and
+two nested masks do not multiply (the nesting test caught it at one pixel:
+0 hits alone, 15 nested). Clipping to the viewport keeps every vertex in
+range, keeps the polygon the same wherever the window is, and loses nothing:
+the scissor pixel-clips exactly and the level's buffer is bounded by the
+scissor at raster time.
+
 **MASK_PUSH inside the scissor, not instead of it.** Emission order for a
 node with `overflow-mask`:
 
     SCISSOR (the AABB, as today)
-      MASK_PUSH (the outline, clipped to that AABB)
+      MASK_PUSH (the outline, clipped to the viewport)
         the node's own background and border
         the children, in paint order (or the paint_3d subtree)
       MASK_POP
@@ -254,6 +264,28 @@ Order, each step green before the next:
 4. catalog row, documents, README row, `MOTION_DRAW_OPS`.
 5. separately: re-port the transitions' iris and halftone through the op,
    and the captions that need only a shaped clip.
+
+## What building it changed
+
+Recorded after the fact, so the document says what was built rather than
+what was planned:
+
+- The equality test lives in the core (54 size/angle cases) and not also in
+  `tests/mask.test.ts`; the repository-level test probes the fixture's
+  pixels, its assertions and its ledgers instead, and the fixture carries no
+  hidden equality pair.
+- The iris is `rounded-[350px]`, not `rounded-full`: the compiler resolves
+  `rounded-full` from the size written in the literal, 0px on an animated
+  window. A px radius is clamped at draw time and follows the box.
+- The wipe rotates about `origin-left` and animates only its width; the scene
+  inside is `rotate-340 origin-left` with its origin on the same pixel, so
+  nothing but the window's far edge moves. There is no spelling for a
+  negative angle.
+- `wipe-a-label`, the label the wipe covers, is a recorded `visibility`
+  failure in `baselines/visibility.json` — a wipe covers what it wipes, and
+  that reading is the one `spanned`'s trailing dissolve already has. The
+  sidecar asserts it `exitsBy` 27 instead.
+- The outline is clipped to the viewport, not the scissor (above).
 
 ## What it does not do, stated
 
