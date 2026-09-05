@@ -55,6 +55,15 @@ attribute is a build error listing the names that exist; one assembled out of
 pieces (`"animate-lid-" + which()`) carries no evidence and is silently
 dropped, so write whole literals.
 
+**A window has a shape.** `overflow-mask` clips a node's children and its own
+ground to its outline (rounded corners, rotation) where `overflow-hidden`
+clips to the box: a growing circle, a diagonal wipe, a rounded card. Write the
+radius in px on an animated window, spell a negative angle as 360 minus it,
+and keep a scene still inside a rotated window by rotating it back about the
+same `origin-*` point. `compositions/masked` is the worked example. It is this
+repository's op, not upstream's: keep to `overflow-hidden` where a composition
+must stay portable.
+
 **Timing is quantised twice.** A duration in ms bakes to whole frames at 60 Hz,
 and the render then samples every `60 / fps`-th tick. At 30 fps only even ticks
 are observed, so 45/90/135/180 ms land on frames 4/6/8/12 — gaps of 2, 2, 4

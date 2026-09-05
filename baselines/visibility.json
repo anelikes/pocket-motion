@@ -129,6 +129,15 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/masked": {
+      "failures": [
+        "wipe-a-label"
+      ],
+      "nodes": 19,
+      "named": 19,
+      "neverShown": 0,
+      "buriedAfterShown": 1
+    },
     "compositions/nested/a/9x16": {
       "failures": [],
       "nodes": 2,

@@ -1,0 +1,13 @@
+{
+  "motion": 1,
+  "durationFrames": 90,
+  "fps": 30,
+  "supersample": 1,
+  "assertions": [
+    { "node": "iris-b-title", "entersBy": 12 },
+    { "node": "wipe-b-label", "entersBy": 23 },
+    { "node": "wipe-a-label", "exitsBy": 27 },
+    { "node": "card-text", "inPicture": [0, 89] },
+    { "node": "nested-core", "inPicture": [0, 89] }
+  ]
+}

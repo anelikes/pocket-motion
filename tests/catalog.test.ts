@@ -314,9 +314,12 @@ describe("catalog gates", () => {
         literals: Iterable<string>,
         options?: { fromClassAttribute?: ReadonlySet<string> },
       ): {
-        records: Array<{ animation?: unknown }>;
+        records: Array<{ animation?: unknown; base?: Array<{ prop: number; value: number }> }>;
         ids: Record<string, number>;
       };
+    };
+    const { PROP } = (await import(`${ROOT}/vendor/pocketjs/contracts/spec/spec.ts`)) as {
+      PROP: Record<string, number>;
     };
     const { registerAnimationTheme } = (await import(`${compilerDir}/animation.ts`)) as {
       registerAnimationTheme(theme: unknown): void;
@@ -338,7 +341,7 @@ describe("catalog gates", () => {
         });
 
         let thrown: string | null = null;
-        let record: { animation?: unknown } | undefined;
+        let record: { animation?: unknown; base?: Array<{ prop: number; value: number }> } | undefined;
         try {
           const compiled = compileClasses(
             probe.literals,
@@ -377,7 +380,22 @@ describe("catalog gates", () => {
 
         if (record === undefined) {
           parts.push(`${where}: expected a style record, the literal was dropped`);
-        } else if (record.animation === undefined) {
+          continue;
+        }
+        if ("declares" in probe.outcome) {
+          const { prop, value } = probe.outcome.declares;
+          const id = PROP[prop];
+          if (id === undefined) {
+            parts.push(`${where}: the spec has no prop named ${prop}`);
+            continue;
+          }
+          const got = (record.base ?? []).find((e) => e.prop === id)?.value;
+          if (got !== value) {
+            parts.push(`${where}: expected ${prop} = ${value} in the record's base props, got ${got}`);
+          }
+          continue;
+        }
+        if (record.animation === undefined) {
           parts.push(`${where}: compiled to a record carrying no animation`);
         }
       }

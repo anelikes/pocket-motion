@@ -58,6 +58,10 @@
       "frames": 1,
       "digest": "0459571a0be4d133c569fa0a6ac243ed3898e4455b804a13c846650399f34295"
     },
+    "compositions/masked": {
+      "frames": 90,
+      "digest": "2b43d5e8c0ea600cbbfc378d7d08545d1e1eefe8a54f8836814050e3bc8a5722"
+    },
     "compositions/nested/a/9x16": {
       "frames": 30,
       "digest": "3ca712dd05aec4be4ecfe0cdb4d3efb0a69a36942e21c8cee69a9213633a8fc5"

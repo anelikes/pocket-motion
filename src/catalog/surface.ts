@@ -74,7 +74,12 @@ export type BakeOutcome =
   | { readonly dropsLiteral: true }
   /** Compiles to a record carrying an animation. Marks the accepted side of a
    *  boundary; it is not a violation, so it cannot by itself earn `probed`. */
-  | { readonly bakes: true };
+  | { readonly bakes: true }
+  /** Compiles to a record whose base props carry `prop` at exactly `value`
+   *  (the u32 the compiler wrote). For a utility token rather than an
+   *  animation: proves the token reached the style table as the number the
+   *  core reads, not merely that it parsed. */
+  | { readonly declares: { readonly prop: string; readonly value: number } };
 
 /**
  * A module, and exactly which of its literals the collector may vouch for.
@@ -1443,6 +1448,41 @@ export const SURFACE: readonly CapabilityRow[] = [
     bakeProbes: [
       { what: "animate-spin with an empty theme", literals: ["animate-spin"], outcome: { bakes: true } },
       { what: "animate-pulse with an empty theme", literals: ["animate-pulse"], outcome: { bakes: true } },
+    ],
+  },
+  {
+    id: "overflow.mask",
+    group: "animation",
+    declaredIn: "class literal",
+    key: "overflow-mask",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "clips the node's children AND its own ground to the node's outline — its rounded rectangle under its transform — where `overflow-hidden` clips to the axis-aligned bounding box. Lays out and hit-tests as `overflow-hidden`. A square-cornered, unrotated window emits no mask and is `overflow-hidden` word for word. Drawn by this repository's software rasteriser only (patches/0013, class motion): no upstream backend knows the op",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "overflow-mask compiles to Overflow.Mask (2) in the style table",
+        literals: ["overflow-mask rounded-full w-[200px] h-[200px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "overflow", value: 2 } },
+      },
+      {
+        what: "overflow-hidden still compiles to Overflow.Hidden (1)",
+        literals: ["overflow-hidden w-[200px] h-[200px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "overflow", value: 1 } },
+      },
+      {
+        what: "a misspelling drops the literal like any unknown utility",
+        literals: ["overflow-masked w-[200px] h-[200px]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
     ],
   },
   {

@@ -432,6 +432,27 @@ mechanisms with the file or test beside them.
   a picture of. The test that holds the overlay to a copy is the ZOOM one: the
   clean PNG is written before the overlay exists, so comparing clean files
   could never catch an overlay drawn in place, and a crop taken beside one can.
+- **`overflow-mask` is the first op this repository draws and upstream does
+  not** (`patches/0013-mask-op.patch`, class `motion`; the design and every
+  decision made against it in `patches/0013-mask-op.design.md`). A node's
+  children and its own ground are clipped to its outline — the rounded
+  rectangle under its transform — through MASK_PUSH/MASK_POP at 64 and 65,
+  whose coverage is POLY's own: the row walk is one `PolyScan` shared by both,
+  and a white full-bleed child under a rotated square-cornered window is
+  byte-identical to a white rotated box over 54 size/angle cases
+  (`engine/core/src/tests.rs`, red with the level builder made binary).
+  Nested masks multiply exactly, which is why the outline is clipped to the
+  viewport and not to the scissor: a vertex that clipping creates rounds to a
+  pixel, and against an ancestor's unrounded AABB that moved an edge by half
+  a pixel. The scissor stays in place around the mask, so every guarantee
+  built on it holds. Two things it does not do are stated in the design:
+  glyph or image masks, and any backend but this one. `compositions/masked`
+  is the fixture, in both ledgers, its sidecar asserting what each window is
+  for; its `wipe-a-label` is recorded as a `visibility` failure because a
+  wipe covers what it wipes, the same reading `spanned`'s trailing dissolve
+  gets. `verify`, `check`, `layout` and `visibility` see the op through the
+  draw list as they see a scissor; a node a mask leaves no pixel of reads as
+  covered, a third cause under an existing name.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one

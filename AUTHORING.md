@@ -160,6 +160,10 @@ Worked examples, roughly in reading order:
   `NOTES.md` states per segment what the source did, what it became and what
   was lost, and two rules of the baker it ran into: the later animation in a
   comma list wins a shared property, and a shrinking scene shows the root.
+- `compositions/masked` — four `overflow-mask` windows: a growing circle, a
+  rotated window whose width sweeps a diagonal edge, a rounded card clipping
+  its text, and a circle inside a rotated window. Its `NOTES.md` says what
+  each took; its sidecar asserts what each is for.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
@@ -321,6 +325,24 @@ on a wrapper, where opacities multiply instead of contending
 (`compositions/transitions` did). Neither reading fails the command; both are
 in its `--json` under `partialCuts` and `contended`, and `late-anim` carries
 one of each.
+
+**A window has a shape.** `overflow-hidden` clips children to the node's
+axis-aligned box; `overflow-mask` clips them, and the node's own ground, to
+the node's OUTLINE — its rounded rectangle under its transform. So a
+`rounded-[350px] overflow-mask` window whose `width`/`height` animate is a
+growing circle (iris), a `rotate-20 origin-left overflow-mask` window whose
+`width` animates is a diagonal wipe, and a `rounded-[40px] overflow-mask` card
+clips its text at the corners. Three things to know, each learned the hard
+way in `compositions/masked`: write the radius in px, because `rounded-full`
+is resolved by the compiler from the size WRITTEN in the literal (0px on an
+animated window), while a px radius is clamped to half the box at draw time;
+there is no spelling for a negative angle, and `rotate-340` is −20; and to
+keep a scene still inside a rotated window, rotate it back about the SAME
+point (`origin-left` on both, with the two origins placed on one pixel). A
+square-cornered, unrotated `overflow-mask` window is `overflow-hidden` word
+for word. The op is this repository's own (`patches/0013`, the design beside
+it): no upstream backend draws it, so a composition that must stay portable to
+one keeps to `overflow-hidden`.
 
 **What does not exist** (the checker will catch most of these, but knowing
 saves a round trip): per-frame callbacks (`onFrame`), timers (`after`),

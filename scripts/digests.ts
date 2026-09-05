@@ -124,6 +124,13 @@ const ENTRIES = [
   // widest sweep of the baker's fill and ordering rules in the tree.
   "compositions/transitions",
   // The mechanism fixtures. Each is here for one thing and carries no film.
+  // masked. Four `overflow-mask` windows (patches/0013): a growing circle, a
+  // rotated window whose width sweeps, a rounded card clipping its text, and
+  // a circle inside a rotated window. The first composition whose pixels go
+  // through MASK_PUSH — a change to the outline flattener, the coverage
+  // sampler or the nesting rule moves this digest first, and a mask that
+  // stopped multiplying would move only the nested quadrant.
+  "compositions/masked",
   "compositions/footage-tracks", // four windows over three clips: two mappings of one clip, cover, contain
   "compositions/sound-roles", // one of each sound role; the digest is its PICTURE, sound being outside identity
   "compositions/nested/a/9x16", // one compositionId, two paths differing only above the last segment;
