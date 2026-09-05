@@ -32,7 +32,10 @@ numbers below were read, not measured. Every segment is 2.8s: A holds for
   this.
 - **Two gradient stops, four directions.** The light band is two
   back-to-back gradients; a diagonal gradient (`to-br`) is not in the
-  compiler.
+  compiler, which has `to-t`, `to-b`, `to-l` and `to-r` only. A rotated
+  gradient box fans into gouraud triangles, though, so a diagonal band is an
+  oversized `bg-gradient-to-r` box under `rotate-45` inside an
+  `overflow-hidden` window; not tried here.
 - **No mask, so two reveals are flat.** The iris and the halftone reveal B
   *through* a growing clip in the catalog. Without a mask the growing shape
   can only be B's ground; when B is a flat card the pictures agree, and when
@@ -52,8 +55,17 @@ shader over the framebuffer, which is outside this rasteriser by design.
 The rest divide by the primitive they lack: a mask (iris, halftone, the
 radial and mechanical showcases, before/after and comparison wipes), a blur
 (text state swap, icon swap, number pop-in, the destruction showcase), or a
-perspective rotation of a whole scene (the 3D showcase; `rotateY` exists but
-image quads under it are culled). Push, cover, scale, dissolve and grid
+perspective rotation of a whole scene (the 3D showcase). That last one is a
+claim this port did not test and the code does not support: `perspective-[N]`
+and `rotate-y-[N]` compile, and a rotated or perspective-projected image is
+fanned into textured triangles (`emit_tex_quad` and `paint_3d` in
+`engine/core/src/draw.rs`; the header comment there saying rotated images are
+culled is older than the code under it, and the engine's own tests
+`rotated_3d_face_emits_poly_textured_still_tex_tri` and
+`perspective_subdivided_images_form_one_texture_run_per_image` pass). What
+stays outside the 3D contract is glyphs, which draw upright and unscaled, and
+radius, border and shadow. So the 3D showcase wants nothing the engine lacks
+and was left out with the rest. Push, cover, scale, dissolve and grid
 showcases, page slide, panel reveal, tabs indicator, card resize and the
 transitions.dev micro-transitions need nothing the vocabulary lacks and were
 left out only for size.

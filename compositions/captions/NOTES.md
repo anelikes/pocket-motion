@@ -34,9 +34,9 @@ sized for 187. AUTHORING.md was corrected in the same commit.
 
 | style | in the catalog | here | not reproduced |
 |---|---|---|---|
-| highlight | red box `scaleX` 0→1 from the left edge over 150ms `power2.out`, opacity out over 100ms at the word's end; group fades in 120ms and out 100ms; Montserrat 800 at 80px, padding 12/6/8, gap 8, 140px from the bottom | the box is an absolute node whose `width` bakes 0 → word width + 24, so no transform origin is needed; same times, same eases; Inter Bold | the text shadow, the box's drop shadow, a `brightness(1.05)` flash |
+| highlight | red box `scaleX` 0→1 from the left edge over 150ms `power2.out`, opacity out over 100ms at the word's end; group fades in 120ms and out 100ms; Montserrat 800 at 80px, padding 12/6/8, gap 8, 140px from the bottom | the box is an absolute node whose `width` bakes 0 → word width + 24, so no transform origin is needed; same times, same eases; Inter Bold | the text shadow and a `brightness(1.05)` flash; the box's drop shadow, which `shadow-lg` could draw (three stacked alpha boxes under an axis-aligned node with a background) and this port does not |
 | kinetic-slam | one word centred, Anton at 220px fitted to 1720px; entrances cycle: from above with `back.out(1.7)` 220ms, from the left `expo.out` 200ms, from the right, then `scale` 0.4→1 `back.out(2.2)` 240ms; out over 100ms; keywords `#ffd700` | a ladder 200/180/…/100 measured against 1720px (the atlas cell is a byte tall, so 200 is the ceiling); the fourth entrance rises 120px from below with the harder overshoot, because a `scale` moves baked glyphs and never resizes them | the scale entrance; Anton's condensed proportions |
-| pill-karaoke | a `#e7e5e7` pill, radius 22, padding 60/18/20; Poppins 700 at 72px, lowercase, gap 16; groups of at most four words broken at punctuation or a 100ms pause, shown until the next group or 300ms after the last word; each word `#a6a6a6` → `#1c1e1d` over 100ms linear, 50ms early | the same, with a `color` timeline per word and the pill's width from the measured row | the pill's soft shadow; the two-line split for long groups (no group here needs it) |
+| pill-karaoke | a `#e7e5e7` pill, radius 22, padding 60/18/20; Poppins 700 at 72px, lowercase, gap 16; groups of at most four words broken at punctuation or a 100ms pause, shown until the next group or 300ms after the last word; each word `#a6a6a6` → `#1c1e1d` over 100ms linear, 50ms early | the same, with a `color` timeline per word and the pill's width from the measured row | the pill's soft shadow, which `shadow-lg` could stand in for and this port does not; the two-line split for long groups (no group here needs it) |
 | clip-wipe | `clip-path: inset(0 100% 0 0)` → `inset(0 0 0 0)` over 300ms `power2.out`; keywords to `#ffd700` 50ms in; spoken words to 40% white over 200ms; the group wipes out with `inset(0 0 0 100%)` over 250ms `power2.in`, 40ms stagger; Poppins 800 at 88px, gap 24 | an `overflow-hidden` window whose `width` bakes 0 → word width; the exit is the window's left edge moving right (translateX up, width down) while the text inside moves left by the same amount, so the glyphs stay put and only the window closes | letter-spacing 0.04em |
 | matrix-decode | two 4-character scrambles at 100ms each, then the word; group in over 100ms, out over 120ms; Space Grotesk 700 at 96px in `#00ff41`; scrambles from mulberry32 seeded by word index | three Text nodes per word behind one-tick step gates; the same generator and seeds, run at build time | the scrambles reflow the line in the catalog (inline spans); here they sit at the real word's x, so a wide scramble can overlap its neighbour for 200ms |
 
@@ -48,9 +48,11 @@ sized for 187. AUTHORING.md was corrected in the same commit.
   not 'no data-driven timing'" describes.
 - **Colour is a timeline.** `color` and `backgroundColor` bake, so karaoke
   and the keyword flashes are keyframes, not swapped nodes.
-- **A reveal is a window, a box is a width.** There is no `clip-path` and
-  no transform origin utility; `overflow-hidden` on a node whose width
-  animates is the clip, and a box that grows from its left edge is a width.
+- **A reveal is a window, a box is a width.** There is no `clip-path`;
+  `overflow-hidden` on a node whose width animates is the clip. `origin-left`
+  and `scale-x` exist and would grow a box from its left edge too; a `width`
+  was chosen because it bakes to the measured pixel, so the box's edge is a
+  number `layout --at` reads back, where a scale is a factor over a rect.
 - **Scale never resizes glyphs**, so the one entrance that scales text in the
   catalog is a translation here, and every fitted size is a real atlas slot
   from a ladder rather than a scaled glyph.
