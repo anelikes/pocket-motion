@@ -11,6 +11,15 @@ identical: pocket-stack/pocketjs#301.
 `git apply` skips everything above the first `diff --git`, which was checked
 against a tree freshly cloned at the pin rather than assumed.
 
+2026-09-05: the interior-span bound for an edge with a negative step takes
+upstream's line from `1c7c914` (#301, the oracle-test commit). The first
+design wrote `k.div_euclid(s)` there, which rounds toward positive infinity
+for a negative divisor and so filled one boundary column per affected row at
+full coverage instead of its sampled coverage. `baselines/poly-301.md` is the
+measurement: 250 of 333 rotated-box scenes differed from #301's head on edge
+pixels, and with this line they all match. Everything else in the patch is
+still `759ffff`, #301's first commit.
+
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
 index 3fd2935..9734b68 100644
 --- a/contracts/spec/gen-rust.ts
@@ -499,7 +508,7 @@ index 165d51c..6527345 100644
              draw_op::TEXT_RUN => {
                  // Native-text op (host text system shapes the run); the
                  // software rasterizer has no shaper, so hosts that raster run
-@@ -955,6 +968,184 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p:
+@@ -955,6 +968,188 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p:
      }
  }
  
@@ -630,7 +639,11 @@ index 165d51c..6527345 100644
 +            if s > 0 {
 +                (((k + s - 1).div_euclid(s)).clamp(0, span as i64) as i32, span)
 +            } else {
-+                (0, ((k.div_euclid(s)) + 1).clamp(0, span as i64) as i32)
++                // s < 0 flips the inequality: cols satisfying it are 0..=floor(k/s).
++                // div_euclid CEILS for a negative divisor, so it must not be used
++                // here — it returned floor+1 and handed one boundary column to
++                // fill_opaque. floor(k/s) == (-k).div_euclid(-s), with -s > 0.
++                (0, (((-k).div_euclid(-s)) + 1).clamp(0, span as i64) as i32)
 +            }
 +        };
 +        let (mut il, mut ih, mut tl, mut th) = (0, span, 0, span);

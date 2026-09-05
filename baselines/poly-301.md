@@ -107,3 +107,32 @@ affected; nor is anything at 0, 90, 180 or 270 degrees.
 Deciding that is not this measurement's job. What it settles is the README's
 open sentence: the two designs are not byte-identical, the whole difference is
 that line, and the difference is a defect on this side.
+
+## Taken, 2026-09-05
+
+The line is in `patches/0008-poly-op-coverage.patch` now, with upstream's
+four-line comment above it and a paragraph in the patch header saying when and
+why. `bun scripts/vendor.ts` re-applied the set and rebuilt the wasm; the core
+crate's 132 tests pass under it.
+
+A full verify run of the digest ledger before re-recording moved exactly five
+of 38 and left 33 in place:
+
+| composition | frames | what rotates a solid box |
+|---|---:|---|
+| `shutter` | 150 | slats and rails, `rotate-[N]` on 2D boxes |
+| `rename-card` | 180 | the same opening, plus two rails of 48 segments each |
+| `timeline` | 854 | `rotate-[N]` on card decoration |
+| `reel` | 1071 | `perspective-[N]` roots with `rotate-y-[N]` children — a projected 3D face is emitted as POLY too |
+| `probe` | 2 | the same, `perspective-[1400]` and `rotate-y-[40]` |
+
+The source proxy above counted only 2D `rotate-[N]` and so named
+`glow-column` and missed `reel` and `probe`. `glow-column` did not move: its
+three rotations are `rotate-180`, which is axis-aligned and takes RECT. The
+33 that stayed are the check that nothing else in the toolchain moved with the
+re-vendor — every one of them reproduced its recorded digest through a fresh
+clone, patch application and wasm build.
+
+The five were re-recorded with `--write --only <name>`, one at a time, into
+`baselines/digests.json` in the same commit as the patch, so the diff carries
+both halves.
