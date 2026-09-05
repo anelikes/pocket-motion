@@ -175,7 +175,7 @@ browser.
 | `lint` | is the sidecar valid, the source mount-only, every referenced image on disk? |
 | `check` | does it boot, is the realm clean, is it mount-only at runtime? |
 | `build` | the bundle and pak, plus the record of what produced them |
-| `keyframes` | the baked timelines, and which declared instants fall between rendered frames |
+| `keyframes` | the baked timelines: which declared instants fall between rendered frames, which one-frame steps a frame lands inside, and which properties two animations of one comma list write at once |
 | `layout --at N` | where every node landed, whether it is in the picture, and the finding codes |
 | `visibility` | over sampled frames: is a node you named never shown, or shown and then buried? |
 | `assert` | do the sidecar's `assertions[]` hold? |

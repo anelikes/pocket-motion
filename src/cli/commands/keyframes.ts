@@ -16,19 +16,30 @@
  *   - the baked schedule: delay, period, iterations, properties, per timeline
  *   - which declared instants land between two rendered frames and are
  *     therefore never observed (`src/anim/timelines.ts` has the mechanism)
+ *   - which steps — segments no longer than one rendered frame — the render
+ *     takes a frame inside of, and so shows part-way
+ *   - which properties two animations of one comma list write at the same
+ *     time, the earlier one's motion going nowhere while the later writes
  *   - which timelines cannot play at all inside this composition's clock
  *
  * Only the last one fails. An unsampled instant is a real shift in what the
  * author asked for, but it is neither wrong nor avoidable at every fps, and
  * every delivered film here has some — a command that failed on it would be
  * red on the whole ledger from the day it landed, which is not a gate, only
- * noise. A timeline whose delay outlives its clock is unambiguous: it is a
- * declared animation that no frame of this composition can show.
+ * noise. A part-way step and a contended property are each the shape of a
+ * defect that shipped here (`compositions/rename-card`'s close arrived a frame
+ * late and grey; `compositions/transitions`' incoming scene showed at 0.72
+ * before its cut), and both are reported rather than failed for the same
+ * reason: the ledger was measured with the readings in place, and the number
+ * of each in the tree is in the commit that added them. A timeline whose
+ * delay outlives its clock is unambiguous: it is a declared animation that no
+ * frame of this composition can show.
  */
 
 import { existsSync } from "node:fs";
 import {
   readTimelines,
+  type PropContention,
   type TimelineReport,
   type TimelineUse,
 } from "../../anim/timelines.ts";
@@ -117,7 +128,14 @@ export async function run(options: KeyframesOptions): Promise<CommandResult> {
   if (!report) {
     return {
       exitCode: EXIT_OK,
-      json: { ok: true, timelines: [], bakedCount: 0, unreferenced: 0, note: "no style table in the pak" },
+      json: {
+        ok: true,
+        timelines: [],
+        contended: [],
+        bakedCount: 0,
+        unreferenced: 0,
+        note: "no style table in the pak",
+      },
       stdoutLines: [`keyframes — ${c.pakPath} carries no style table; nothing is baked`],
     };
   }
@@ -126,6 +144,7 @@ export async function run(options: KeyframesOptions): Promise<CommandResult> {
   const unsampled = report.timelines.filter((t) => t.unsampled.length > 0);
   const endsPast = report.timelines.filter((t) => t.endsPastWindow);
   const phaseDrift = report.timelines.filter((t) => t.periodOffGrid || t.loopOffGrid);
+  const partialCuts = report.timelines.filter((t) => t.partialCuts.length > 0);
   const ok = neverStarts.length === 0;
 
   const json = {
@@ -142,8 +161,11 @@ export async function run(options: KeyframesOptions): Promise<CommandResult> {
       unsampled: unsampled.length,
       endsPastWindow: endsPast.length,
       phaseDrift: phaseDrift.length,
+      partialCuts: partialCuts.length,
+      contended: report.contended.length,
     },
     timelines: report.timelines,
+    contended: report.contended,
   };
 
   const stdoutLines = summarise(report, {
@@ -151,6 +173,7 @@ export async function run(options: KeyframesOptions): Promise<CommandResult> {
     unsampled,
     endsPast,
     phaseDrift,
+    partialCuts,
     all: options.all,
   });
 
@@ -172,6 +195,7 @@ interface Buckets {
   readonly unsampled: readonly TimelineUse[];
   readonly endsPast: readonly TimelineUse[];
   readonly phaseDrift: readonly TimelineUse[];
+  readonly partialCuts: readonly TimelineUse[];
   readonly all: boolean;
 }
 
@@ -214,6 +238,24 @@ function summarise(report: TimelineReport, b: Buckets): string[] {
     }
   }
 
+  if (b.partialCuts.length > 0) {
+    lines.push(
+      `  ${b.partialCuts.length} timeline(s) carry a step no longer than one frame that a ` +
+        "rendered frame lands inside, so that frame shows the step part-way",
+    );
+  }
+  if (report.contended.length > 0) {
+    lines.push(
+      `  ${report.contended.length} propert${report.contended.length === 1 ? "y is" : "ies are"} ` +
+        "written by two animations of one comma list at once; the later one is what the node gets",
+    );
+    for (const c of report.contended.slice(0, b.all ? report.contended.length : EXAMPLES)) {
+      lines.push(`    ${describeContention(c, report)}`);
+    }
+    if (!b.all && report.contended.length > EXAMPLES) {
+      lines.push(`    … ${report.contended.length - EXAMPLES} more; --all lists every one`);
+    }
+  }
   if (b.endsPast.length > 0) {
     lines.push(`  ${b.endsPast.length} timeline(s) are cut off by the end of their clock`);
   }
@@ -223,10 +265,11 @@ function summarise(report: TimelineReport, b: Buckets): string[] {
       : `  ${b.neverStarts.length} NEVER START — see stderr`,
   );
 
-  const listed = b.all ? report.timelines : b.unsampled.slice(0, EXAMPLES);
+  const examples = [...new Set([...b.partialCuts, ...b.unsampled])];
+  const listed = b.all ? report.timelines : examples.slice(0, EXAMPLES);
   for (const t of listed) lines.push(`    ${describe(t)}`);
-  if (!b.all && b.unsampled.length > listed.length) {
-    lines.push(`    … ${b.unsampled.length - listed.length} more; --all lists every timeline`);
+  if (!b.all && examples.length > listed.length) {
+    lines.push(`    … ${examples.length - listed.length} more; --all lists every timeline`);
   }
 
   return lines;
@@ -243,7 +286,27 @@ function describe(t: TimelineUse): string {
     `delay ${t.delayFrames} period ${t.periodFrames} ${iterations}` +
     (t.loopFrames > 0 ? ` loop ${t.loopFrames}` : "") +
     (t.unsampled.length > 0 ? `  unsampled ticks ${shifted}` : "") +
-    (t.unsampled.length > 3 ? ` (+${t.unsampled.length - 3})` : "")
+    (t.unsampled.length > 3 ? ` (+${t.unsampled.length - 3})` : "") +
+    (t.partialCuts.length > 0
+      ? `  step ${t.partialCuts
+          .slice(0, 3)
+          .map((c) => `${c.t0}→${c.t1} shown ${c.fraction.toFixed(2)} at ${c.sampledTick}`)
+          .join(", ")}`
+      : "") +
+    (t.partialCuts.length > 3 ? ` (+${t.partialCuts.length - 3})` : "")
+  );
+}
+
+function describeContention(c: PropContention, report: TimelineReport): string {
+  const earlier = report.timelines.find((t) => t.animId === c.earlier && t.styleIndex === c.styleIndex);
+  const run = earlier
+    ? ` of its ${earlier.delayFrames}–${
+        earlier.iterations === 0 ? "∞" : earlier.delayFrames + earlier.periodFrames * earlier.iterations
+      }`
+    : "";
+  return (
+    `style ${c.styleIndex}: ${c.prop} — anim ${c.earlier} is written over for ticks ` +
+    `${c.fromTick}–${c.toTick}${run} by anim ${c.later}, later in the list`
   );
 }
 

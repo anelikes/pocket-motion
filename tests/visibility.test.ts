@@ -319,7 +319,15 @@ describe("compositions/late-anim", () => {
     expect(shifted.onScreen.length).toBeGreaterThan(0);
     expect(shifted.covered).toEqual([]);
 
-    expect(json.namedNodes).toBe(3);
+    // The two `keyframes` cases added later are on screen: `gated` after its
+    // step, `contended` from the first frame at the later animation's 0.72.
+    for (const name of ["gated", "contended"]) {
+      const node = byName.get(name)!;
+      expect(node.onScreen.length).toBeGreaterThan(0);
+      expect(node.covered).toEqual([]);
+    }
+
+    expect(json.namedNodes).toBe(5);
     expect(json.failures).toEqual([]);
     expect(json.impossible).toEqual([]);
     expect(result.exitCode).toBe(EXIT_OK);

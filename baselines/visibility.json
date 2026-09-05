@@ -101,8 +101,8 @@
     },
     "compositions/late-anim": {
       "failures": [],
-      "nodes": 3,
-      "named": 3,
+      "nodes": 5,
+      "named": 5,
       "neverShown": 0,
       "buriedAfterShown": 0
     },

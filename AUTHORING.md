@@ -306,6 +306,22 @@ an entrance declared 1500 ms into a 1000 ms film bakes, builds, renders and
 holds its first keyframe forever, and `lint`, `check` and `trace` are all green
 on it (`compositions/late-anim`).
 
+It reports two more things, each the shape of a defect a composition here
+shipped with. **A step the grid lands inside**: a segment no longer than one
+rendered frame is a cut, and when its two ticks straddle a sampled one, the
+frame taken there shows the cut half done — a `gin 34ms` gate at an odd tick,
+rendered at 30 fps, arrives a frame late and grey. A 17 ms gate is one tick
+and no frame can land inside it (`compositions/rename-card`'s close uses
+those). **A property two animations of one comma list write at once**: the
+core takes the LAST animation currently writing a property, and `both` or
+`backwards` fill means writing from tick 0, so `gin 34ms linear 0ms both,
+slide 600ms ease 400ms both` with opacity in `slide`'s `from` shows that
+opacity from the first frame and `gin` never reaches the picture. Put the gate
+on a wrapper, where opacities multiply instead of contending
+(`compositions/transitions` did). Neither reading fails the command; both are
+in its `--json` under `partialCuts` and `contended`, and `late-anim` carries
+one of each.
+
 **What does not exist** (the checker will catch most of these, but knowing
 saves a round trip): per-frame callbacks (`onFrame`), timers (`after`),
 effects, signals that change after mount — a composition mounts once and

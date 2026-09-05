@@ -7,15 +7,22 @@
 // the delay, so "never played" and "deliberately at opacity 0" look identical
 // in every frame.
 //
-// Three nodes, one clock (30 frames at 30 fps = 60 core ticks):
+// Five nodes, one clock (30 frames at 30 fps = 60 core ticks):
 //
-//   sampled   starts at tick 0, every endpoint on a rendered frame
-//   shifted   starts at tick 3, which no frame samples — it begins at tick 4
-//   unplayed  starts at tick 90, past the end of the film
+//   sampled    starts at tick 0, every endpoint on a rendered frame
+//   shifted    starts at tick 3, which no frame samples — it begins at tick 4
+//   unplayed   starts at tick 90, past the end of the film
+//   gated      a 34 ms step at tick 3: two ticks long, and the one frame the
+//              render takes inside it shows the step half done
+//   contended  two animations in one comma list both writing opacity, the
+//              later holding its first keyframe from tick 0 with `both`, so
+//              the earlier one's entrance is written over while it runs
 //
-// `keyframes` must report one timeline that never starts (exit 1) and one that
-// declares an unsampled instant (reported, not failed). The timing lives in
-// `pocket.config.ts`; the build picks that up because it sits next to the entry.
+// `keyframes` must report one timeline that never starts (exit 1), two that
+// declare an unsampled instant, one cut a frame lands inside, and one property
+// two animations contend for (the last three reported, not failed). The timing
+// lives in `pocket.config.ts`; the build picks that up because it sits next to
+// the entry.
 //
 // It is a fixture, not a film: no ledger digest, see `scripts/digests.ts`.
 
@@ -41,6 +48,18 @@ mount(() => (
       class="animate-appear-unplayed absolute left-[80px] top-[320px] text-[32px] text-slate-50"
     >
       {"never reached"}
+    </Text>
+    <Text
+      debugName="gated"
+      class="animate-appear-gated absolute left-[80px] top-[440px] text-[32px] text-slate-50"
+    >
+      {"a cut a frame lands inside"}
+    </Text>
+    <Text
+      debugName="contended"
+      class="animate-appear-contended absolute left-[80px] top-[560px] text-[32px] text-slate-50"
+    >
+      {"written over while it runs"}
     </Text>
   </View>
 ));

@@ -522,7 +522,29 @@ mechanisms with the file or test beside them.
   one, so a gate would be red on the ledger from the day it landed. A timeline
   whose delay outlives its clock **is** failed: it is a declared animation no
   frame of that composition can show. Fixture:
-  `compositions/late-anim`, which `lint`, `check` and `trace` all pass. The
+  `compositions/late-anim`, which `lint`, `check` and `trace` all pass.
+  **Two more readings come off the same table, both reported rather than
+  failed, and the tree was measured before that was decided.** A step no
+  longer than one rendered frame that a sampled tick lands strictly inside
+  is shown part-way by that frame — a `gin 34ms` gate at an odd tick at
+  30 fps arrives a frame late and grey, which is how `rename-card`'s close
+  first rendered; `shutter` carries 376 of them and `rename-card` 217, all
+  in the 34 ms cadence shutter measured off its recording, so failing on
+  them would fail two films for a frame each. And a property two animations
+  of one comma list write at once: the core takes the LAST animation
+  currently writing a property and `both`/`backwards` fill is writing from
+  tick 0 (`tick_timelines`, `engine/core/src/lib.rs`), so a later tween whose
+  `from` carries opacity under `both` shows that opacity from the first frame
+  and the earlier gate never reaches the picture — `transitions`' incoming
+  scene at 0.72 before its cut. The reading is the span where the earlier one
+  is RUNNING while the later one writes; a hand-off from a held end value is
+  not reported. 63 in `reel`, 18 each in `shutter` and `rename-card`, 20 over
+  the `captions/*` — every one checked is the last ticks of an earlier tween
+  or gate written over by the next animation on the same node (a word's exit
+  starting before its entrance has finished, a slide's eased tail under the
+  next slide), which is why it reports rather than fails.
+  `late-anim` carries one of each (`gated`, `contended`) and
+  `tests/keyframes.test.ts` is red on each with its predicate removed. The
   bake rate it places those timelines on is ASSUMED, not read: the rate is
   published by the bundle and this command does not boot. `readTimelines`
   takes it as a required input rather than defaulting to 60, so no caller can
