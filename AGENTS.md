@@ -861,7 +861,20 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
 - Conventional Commits for the subject line: `type(scope): summary`.
 - Never edit `vendor/`. It is rebuilt by `scripts/vendor.ts` from
   `patches/NNNN-*.patch` applied in sorted order against the pinned upstream
-  commit. A change to engine behaviour is a new patch.
+  commit. A change to engine behaviour is a new patch, and a patch is one of
+  two classes (`patches/README.md`): `upstream`, a change that belongs in
+  pocket-stack/pocketjs and is rebased onto its main when submitted — the
+  declaration layer, target-independent; or `motion`, a change this
+  rasteriser needs and no upstream target will draw, never submitted, with
+  the reason on a `pocket-motion-only:` line in the patch's own header —
+  the paint layer. A `motion` draw-list op takes a code at or above
+  `MOTION_DRAW_OP_BASE` (64, `src/vendor/draw-ops.ts`): upstream allocates
+  densely from 1 and took 10 for `surfaceQuad` after `0008` had given 10 to
+  POLY. `tests/patches.test.ts` holds the classification and the range, and
+  goes red on the number collision the day the pin moves onto one. Whatever
+  the class, an op is still declared in the class literal and emitted by
+  `draw.rs` — never a host-side pass over the finished frame, which `check`,
+  `visibility` and `ui_draw_hash` would not see.
 - **A guard only guards if the regression actually fails it.** Introduce the
   defect, watch the check go red, revert. A guard added without that step is
   an assertion about a guard, not a guard.
