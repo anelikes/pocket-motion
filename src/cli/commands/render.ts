@@ -266,14 +266,14 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
     ];
     if (result.alphaFloor !== undefined) {
-      // Reported every time, because the honest answer today is "the channel
-      // is there and it is empty" and a document saying so would go stale
-      // silently on the day the core's clear changes.
+      // Reported every time: the number is the evidence. The rasteriser
+      // clears to transparent black (patch 0014), so 255 now means the
+      // composition's own ground covers the canvas, and anything lower is
+      // a pixel no declared ground reached.
       stdoutLines.push(
         result.alphaFloor === 255
-          ? "alpha floor 255 — every pixel of every frame is opaque; the rasteriser clears " +
-            "to opaque black, so the channel is carried and carries nothing"
-          : `alpha floor ${result.alphaFloor} — the frames really are partly transparent`,
+          ? "alpha floor 255 — every pixel of every frame is opaque: the composition's ground covers the canvas"
+          : `alpha floor ${result.alphaFloor} — the frames are transparent where no ground was declared`,
       );
     }
 

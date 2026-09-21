@@ -32,7 +32,8 @@ two classes, in the `class` column below and checked by
   draw. Never submitted. The patch's own header carries a line
   `pocket-motion-only: <why>` naming the target-side reason, so the class is
   readable from the file and the test refuses a `motion` patch without one.
-  `0013`, the mask op, is the first.
+  `0013`, the mask op, was the first; `0014`, the transparent clear, is the
+  second.
 
 Whichever the class, an op is declared in the class literal and emitted by
 `draw.rs`. A host-side pass over the finished frame is not a substitute:
@@ -74,6 +75,7 @@ with it. `0013`'s MASK_PUSH and MASK_POP are 64 and 65, and move with nothing.
 | 0011 | upstream | an `animate-<name>` naming nothing is a build error listing the declared names, instead of dropping the whole class literal silently | unsubmitted | yes |
 | 0012 | upstream | records which string literals are, on some execution, the WHOLE value of a `class=` attribute, so 0011 can refuse a bad animation name in one of them whatever else the literal holds — and prose stays safe by where it was written rather than by token count | unsubmitted | **no** — `framework/compiler/tailwind.ts` |
 | 0013 | motion | `overflow-mask`: a node's children and its own ground clipped to its outline — the rounded rectangle under its transform — through two draw-list ops at 64 and 65 whose coverage is POLY's own; design in `0013-mask-op.design.md` | never; the header says why | — (not measured: a `motion` patch is not rebased) |
+| 0014 | motion | the framebuffer carries alpha: a frame clears to transparent black and a partial source over a partly covered destination composites straight-alpha src-over; over an opaque destination the arithmetic is the old expression verbatim, so only `compositions/alpha` moves in the ledger | never; the header says why | — |
 
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.

@@ -1,0 +1,353 @@
+pocket-motion-only: the framebuffer here is read back as RGBA and handed to codecs and PNGs that carry an alpha plane; every upstream target presents an opaque surface — the RGB565 hosts have no alpha byte and the ARGB blit path composites straight onto a screen — so a transparent clear buys them nothing and costs a per-pixel branch in blend.
+
+0014 — the framebuffer carries alpha: a frame clears to TRANSPARENT black
+instead of opaque black, and a partial source over a partially covered
+destination composites straight-alpha src-over in colour and alpha.
+
+Over an opaque destination the arithmetic is the expression the buffer always
+used, verbatim, so a composition that declares a ground renders byte for byte
+as before — the digest ledger is the check, and `compositions/alpha` is the
+one entry that moves. What changes is a pixel no op reached (alpha 0 where it
+was 255) and a pixel reached only with partial alpha (its own colour with the
+coverage in the alpha byte, where it was that colour mixed toward black under
+a 255).
+
+By file:
+- `engine/core/src/raster.rs`: `RenderTarget::fill_clear` and `clear`
+  (opaque black by default, zero bytes for `RgbaTarget`); `clear_rect` on the
+  incremental path; `RgbaTarget::blend` branches on destination alpha and
+  keeps the old expression for 255; `Masked` delegates the clear to its inner
+  target. The RGB565 targets are untouched.
+- `engine/core/src/tests.rs` and the tests in `raster.rs`: four new tests —
+  a transparent clear with an opaque box, a 50% box over transparent keeping
+  its colour, a declared ground opaque everywhere and blending as before, two
+  50% layers composing src-over. Nine existing assertions that read the clear
+  as opaque black are updated; three of them by declaring the black ground
+  they were written against, so coverage still reads as luminance.
+
+Red case: with the general blend path replaced by the opaque expression,
+`half_alpha_box_over_transparent_keeps_its_colour`,
+`two_half_alpha_layers_over_transparent_compose_src_over` and
+`textures_and_font_coverage_are_sampled_at_physical_resolution` fail.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index c9730a8..5d17f90 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -25,8 +25,13 @@
+ //!
+ //! RGBA framebuffer layout: row-major, top-left origin, 4 bytes/px R,G,B,A —
+ //! which is exactly a little-endian ABGR u32 (0xAABBGGRR), the spec color
+-//! format, so channel bytes map 1:1. The buffer is treated as opaque: the
+-//! destination alpha is always written back as 255.
++//! format, so channel bytes map 1:1. The buffer carries alpha (pocket-motion
++//! patch 0014): a frame clears to transparent black, an opaque fill writes
++//! 255, and a partial source over a partially covered destination composites
++//! straight-alpha src-over in both colour and alpha. Over an opaque
++//! destination the arithmetic is the one the buffer always had, byte for
++//! byte, so a composition that declares a ground renders exactly as before;
++//! only pixels no op ever reached, or reached only with partial alpha, differ.
+ //!
+ //! [`render_scaled_argb`] emits the same pixels as B,G,R,A bytes instead —
+ //! the little-endian memory layout of an ARGB8888 u32 word. Hosts whose blit
+@@ -149,10 +154,18 @@ trait RenderTarget {
+     fn push_mask(&mut self, _level: MaskLevel) {}
+     fn pop_mask(&mut self) {}
+ 
++    /// The colour a frame starts from over `len` pixels: opaque black for a
++    /// target with no alpha channel, transparent black where there is one
++    /// (pocket-motion patch 0014, overridden by `RgbaTarget`).
+     #[inline]
+-    fn clear_black(&mut self) {
++    fn fill_clear(&mut self, start: usize, len: usize) {
++        self.fill_opaque(start, len, 0, 0, 0);
++    }
++
++    #[inline]
++    fn clear(&mut self) {
+         let len = self.pixel_len();
+-        self.fill_opaque(0, len, 0, 0, 0);
++        self.fill_clear(0, len);
+     }
+ }
+ 
+@@ -186,11 +199,28 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
+             return;
+         }
+         let ia = 255 - a;
+-        let mix = |s: u32, d: u8| ((s * a + d as u32 * ia + 127) / 255) as u8;
++        let da = self.bytes[o + ai] as u32;
++        if da >= 255 {
++            // Opaque destination: the expression this buffer always used,
++            // kept verbatim so a grounded composition is byte-identical.
++            let mix = |s: u32, d: u8| ((s * a + d as u32 * ia + 127) / 255) as u8;
++            self.bytes[o + ri] = mix(r, self.bytes[o + ri]);
++            self.bytes[o + gi] = mix(g, self.bytes[o + gi]);
++            self.bytes[o + bi] = mix(b, self.bytes[o + bi]);
++            return;
++        }
++        // Straight-alpha src-over with a destination that is itself partly
++        // transparent (pocket-motion patch 0014). Alpha: a + da*(1-a).
++        // Colour: the premultiplied sum divided back out by the new alpha,
++        // so a source over fully transparent keeps its own colour exactly
++        // instead of being mixed toward the black the clear left behind.
++        let oa = a + (da * ia + 127) / 255; // 1..=255
++        let den = oa * 255;
++        let mix = |s: u32, d: u8| ((s * a * 255 + d as u32 * da * ia + den / 2) / den) as u8;
+         self.bytes[o + ri] = mix(r, self.bytes[o + ri]);
+         self.bytes[o + gi] = mix(g, self.bytes[o + gi]);
+         self.bytes[o + bi] = mix(b, self.bytes[o + bi]);
+-        self.bytes[o + ai] = 255;
++        self.bytes[o + ai] = oa as u8;
+     }
+ 
+     #[inline]
+@@ -198,6 +228,12 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
+         let byte_start = start * 4;
+         fill_opaque_span::<ARGB>(&mut self.bytes[byte_start..byte_start + len * 4], r, g, b);
+     }
++
++    #[inline]
++    fn fill_clear(&mut self, start: usize, len: usize) {
++        let byte_start = start * 4;
++        self.bytes[byte_start..byte_start + len * 4].fill(0);
++    }
+ }
+ 
+ struct Rgb565Target<'a> {
+@@ -569,7 +605,7 @@ fn render_scaled_impl<T: RenderTarget>(
+ ) {
+     let (width, _height, screen) = target_geometry(ui, target, scale);
+     if clear {
+-        target.clear_black();
++        target.clear();
+     }
+     render_scaled_clipped(ui, words, target, width, scale as i32, screen);
+ }
+@@ -677,16 +713,16 @@ fn render_damage_regions<T: RenderTarget>(
+         if physical.x0 >= physical.x1 || physical.y0 >= physical.y1 {
+             continue;
+         }
+-        clear_black_rect(target, width, physical);
++        clear_rect(target, width, physical);
+         render_scaled_clipped(ui, words, target, width, scale, physical);
+     }
+ }
+ 
+-fn clear_black_rect<T: RenderTarget>(target: &mut T, stride: i32, rect: Clip) {
++fn clear_rect<T: RenderTarget>(target: &mut T, stride: i32, rect: Clip) {
+     let row_pixels = (rect.x1 - rect.x0) as usize;
+     for y in rect.y0..rect.y1 {
+         let start = (y * stride + rect.x0) as usize;
+-        target.fill_opaque(start, row_pixels, 0, 0, 0);
++        target.fill_clear(start, row_pixels);
+     }
+ }
+ 
+@@ -1344,6 +1380,11 @@ impl RenderTarget for Masked<'_> {
+         self.inner.pixel_len()
+     }
+ 
++    #[inline]
++    fn fill_clear(&mut self, start: usize, len: usize) {
++        self.inner.fill_clear(start, len);
++    }
++
+     #[inline]
+     fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32) {
+         let hits = self.top(offset);
+@@ -1796,7 +1837,7 @@ mod tests {
+         let mut cleared = framebuffer(1);
+         cleared.fill(7);
+         render_scaled(&ui, &words, &mut cleared, 1);
+-        assert_eq!(rgba(&cleared, 1, 5, 5), [0, 0, 0, 255], "clearing variant blacks out");
++        assert_eq!(rgba(&cleared, 1, 5, 5), [0, 0, 0, 0], "clearing variant clears transparent");
+     }
+ 
+     #[test]
+@@ -2316,7 +2357,7 @@ mod tests {
+         ui.set_viewport(7.0, 5.0);
+         let mut fb = vec![0; 7 * 2 * 5 * 2 * 4];
+         render_scaled(&ui, &[], &mut fb, 2);
+-        assert!(fb.chunks_exact(4).all(|pixel| pixel == [0, 0, 0, 255]));
++        assert!(fb.chunks_exact(4).all(|pixel| pixel == [0, 0, 0, 0]));
+     }
+ 
+     #[test]
+@@ -2348,10 +2389,10 @@ mod tests {
+         let mut fb = framebuffer(2);
+         render_scaled(&ui, &words, &mut fb, 2);
+ 
+-        assert_eq!(rgba(&fb, 2, 1, 1), [0, 0, 0, 255]);
++        assert_eq!(rgba(&fb, 2, 1, 1), [0, 0, 0, 0]);
+         assert_eq!(rgba(&fb, 2, 2, 2), [255, 0, 0, 255]);
+         assert_eq!(rgba(&fb, 2, 5, 5), [255, 0, 0, 255]);
+-        assert_eq!(rgba(&fb, 2, 6, 6), [0, 0, 0, 255]);
++        assert_eq!(rgba(&fb, 2, 6, 6), [0, 0, 0, 0]);
+ 
+         let gradient = (8..12).map(|x| rgba(&fb, 2, x, 0)[0]).collect::<Vec<_>>();
+         assert_eq!(gradient.len(), 4);
+@@ -2416,7 +2457,9 @@ mod tests {
+         let coverage = &expected[24..];
+         for y in 0..4 {
+             for x in 0..4 {
+-                assert_eq!(rgba(&fb, 2, 6 + x, y)[0], coverage[y * 4 + x]);
++                // White glyph over a transparent clear: the colour stays 255
++                // and the coverage is the alpha byte (pocket-motion 0014).
++                assert_eq!(rgba(&fb, 2, 6 + x, y)[3], coverage[y * 4 + x]);
+             }
+         }
+     }
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 0815535..0fc3296 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -2277,6 +2277,9 @@ fn rotated_flat_box_raster_has_coverage_levels() {
+     let n = place_box(&mut ui, 240.0, 160.0, 120.0, 56.0);
+     ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+     ui.set_prop(n, spec::prop::ROTATE, 20.0);
++    // Coverage is read as luminance over black, so declare the black ground
++    // the clear no longer supplies (pocket-motion 0014).
++    ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
+     ui.tick();
+     let fb = raster_fb(&mut ui);
+     let (levels, _) = poly_luminance_stats(&fb);
+@@ -2584,7 +2587,7 @@ fn debug_hide_removes_pixels_and_clears_byte_for_byte() {
+     ui.debug_hide(a);
+     let hidden = raster_fb(&mut ui);
+     assert_ne!(hidden, baseline, "hiding a painted node must change a pixel");
+-    assert_eq!(sample_rgba(&hidden, 20, 20), [0, 0, 0, 0xff], "A's pixels are gone");
++    assert_eq!(sample_rgba(&hidden, 20, 20), [0, 0, 0, 0], "A's pixels are gone");
+     assert_eq!(sample_rgba(&hidden, 90, 20), [0x20, 0x20, 0xcc, 0xff], "B is untouched");
+ 
+     // Other nodes' inspect rects must not move: hide is draw-time only.
+@@ -2642,8 +2645,8 @@ fn debug_hide_parent_removes_children() {
+ 
+     ui.debug_hide(parent);
+     let hidden = raster_fb(&mut ui);
+-    assert_eq!(sample_rgba(&hidden, 35, 35), [0, 0, 0, 0xff], "child must go with its parent");
+-    assert_eq!(sample_rgba(&hidden, 15, 15), [0, 0, 0, 0xff], "parent fill must go too");
++    assert_eq!(sample_rgba(&hidden, 35, 35), [0, 0, 0, 0], "child must go with its parent");
++    assert_eq!(sample_rgba(&hidden, 15, 15), [0, 0, 0, 0], "parent fill must go too");
+ 
+     ui.debug_hide(0);
+     assert_eq!(raster_fb(&mut ui), baseline);
+@@ -4495,6 +4498,7 @@ fn rounded_full_mask_is_a_circle_with_coverage_on_its_edge() {
+     let mut ui = Ui::new();
+     let win = window(&mut ui, spec::Overflow::Mask, 200.0, 200.0, 0.0, 100.0);
+     full_bleed_white_under(&mut ui, win, 200.0, 200.0);
++    ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
+     ui.tick();
+     let fb = raster_fb(&mut ui);
+     // Centre (240,136): inside. The window's corner (140,36) is inside the
+@@ -4539,6 +4543,7 @@ fn nested_masks_multiply_their_coverage() {
+         ui.set_prop(b, spec::prop::ROTATE, -40.0);
+         ui.insert_before(a, b, 0);
+         full_bleed_white_under(&mut ui, b, 120.0, 120.0);
++        ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
+         ui.tick();
+         raster_fb(&mut ui)
+     }
+@@ -4591,6 +4596,99 @@ fn a_mask_pop_with_no_push_stops_the_stream_like_any_corrupt_op() {
+     let mut fb = alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
+     crate::raster::render(&ui, &words, &mut fb);
+     ui.tick();
+-    assert_eq!(sample_rgba(&fb, 10, 10), [0, 0, 0, 255], "nothing after the stray pop is drawn");
++    assert_eq!(sample_rgba(&fb, 10, 10), [0, 0, 0, 0], "nothing after the stray pop is drawn");
+ }
+ 
++
++// ---- pocket-motion patch 0014: the framebuffer carries alpha -------------------
++
++/// One absolutely positioned box at (10,10) 40x40 on a root that may or may
++/// not declare a ground.
++fn alpha_scene(ground: Option<u32>, color: u32) -> alloc::vec::Vec<u8> {
++    let mut ui = Ui::new();
++    let mut root = StyleSpec::new();
++    if let Some(g) = ground {
++        root.base = alloc::vec![(spec::prop::BG_COLOR, g)];
++    }
++    let mut boxed = StyleSpec::new();
++    boxed.base = alloc::vec![
++        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
++        (spec::prop::WIDTH, 40f32.to_bits()),
++        (spec::prop::HEIGHT, 40f32.to_bits()),
++        (spec::prop::INSET_L, 10f32.to_bits()),
++        (spec::prop::INSET_T, 10f32.to_bits()),
++        (spec::prop::BG_COLOR, color),
++    ];
++    assert!(ui.load_styles(&encode_styles(&[root, boxed])));
++    ui.set_style(spec::ROOT_ID, 0);
++    let a = ui.create_node(0);
++    ui.insert_before(spec::ROOT_ID, a, 0);
++    ui.set_style(a, 1);
++    ui.tick();
++    raster_fb(&mut ui)
++}
++
++#[test]
++fn no_ground_clears_transparent_and_an_opaque_box_is_opaque() {
++    let fb = alpha_scene(None, abgr(0x22, 0xd3, 0xee, 0xff));
++    assert_eq!(sample_rgba(&fb, 5, 5), [0, 0, 0, 0], "nothing was drawn here");
++    assert_eq!(sample_rgba(&fb, 20, 20), [0x22, 0xd3, 0xee, 0xff], "the box is opaque");
++    let min_alpha = fb.chunks_exact(4).map(|p| p[3]).min().unwrap();
++    let max_alpha = fb.chunks_exact(4).map(|p| p[3]).max().unwrap();
++    assert_eq!((min_alpha, max_alpha), (0, 255));
++}
++
++#[test]
++fn half_alpha_box_over_transparent_keeps_its_colour() {
++    // Straight alpha: the colour survives untouched and only the alpha byte
++    // carries the 50%. Premultiplied-into-black would read 0x11,0x69,0x77.
++    let fb = alpha_scene(None, abgr(0x22, 0xd3, 0xee, 0x80));
++    assert_eq!(sample_rgba(&fb, 20, 20), [0x22, 0xd3, 0xee, 0x80]);
++}
++
++#[test]
++fn declared_ground_is_opaque_everywhere_and_blends_as_before() {
++    let fb = alpha_scene(Some(abgr(0x10, 0x20, 0x30, 0xff)), abgr(0x22, 0xd3, 0xee, 0x80));
++    assert!(fb.chunks_exact(4).all(|p| p[3] == 255), "a ground makes every pixel opaque");
++    // The opaque-destination expression, verbatim: (s*a + d*(255-a) + 127) / 255.
++    let mix = |s: u32, d: u32| ((s * 0x80 + d * 0x7f + 127) / 255) as u8;
++    assert_eq!(
++        sample_rgba(&fb, 20, 20),
++        [mix(0x22, 0x10), mix(0xd3, 0x20), mix(0xee, 0x30), 0xff]
++    );
++    assert_eq!(sample_rgba(&fb, 5, 5), [0x10, 0x20, 0x30, 0xff]);
++}
++
++#[test]
++fn two_half_alpha_layers_over_transparent_compose_src_over() {
++    // Two 50% boxes at the same place: alpha 0x80 + 0x80*(1-0x80/255) = 0xbf,
++    // and a colour that is the straight-alpha src-over of the two.
++    let mut ui = Ui::new();
++    let mut boxed = StyleSpec::new();
++    boxed.base = alloc::vec![
++        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32),
++        (spec::prop::WIDTH, 40f32.to_bits()),
++        (spec::prop::HEIGHT, 40f32.to_bits()),
++        (spec::prop::INSET_L, 10f32.to_bits()),
++        (spec::prop::INSET_T, 10f32.to_bits()),
++        (spec::prop::BG_COLOR, abgr(0xff, 0x00, 0x00, 0x80)),
++    ];
++    let mut top = StyleSpec::new();
++    top.base = boxed.base.clone();
++    top.base[5] = (spec::prop::BG_COLOR, abgr(0x00, 0x00, 0xff, 0x80));
++    assert!(ui.load_styles(&encode_styles(&[boxed, top])));
++    for i in 0..2 {
++        let n = ui.create_node(0);
++        ui.insert_before(spec::ROOT_ID, n, 0);
++        ui.set_style(n, i);
++    }
++    ui.tick();
++    let fb = raster_fb(&mut ui);
++    let px = sample_rgba(&fb, 20, 20);
++    let want: u32 = 0x80 + (0x80u32 * 0x7f + 127) / 255;
++    assert_eq!(px[3] as u32, want, "alpha is src-over");
++    // red under blue at 50% each, straight alpha: red = 255*128*127/255 / (0xbf*255)...
++    // Rather than restate the integer expression, pin the property that
++    // matters: neither channel was pulled toward black.
++    assert!(px[0] > 0x40 && px[2] > 0x80, "colour kept: {:?}", px);
++}

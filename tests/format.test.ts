@@ -360,12 +360,12 @@ describe("what ffmpeg actually wrote", () => {
   );
 
   test(
-    "the alpha floor is measured, and it is 255 — the channel carries nothing yet",
+    "the alpha floor is measured, and it is 0 — the channel carries the picture",
     async () => {
-      // `compositions/alpha` declares no ground, and its frames are still
-      // fully opaque, because `clear_black` fills opaque. This is the fixture
-      // for that, and the day the core's clear changes this number drops and
-      // this test says so rather than a paragraph going quietly stale.
+      // `compositions/alpha` declares no ground. Patch 0014 clears the
+      // framebuffer to transparent black, so every pixel its one panel does
+      // not cover has alpha 0 and the floor is 0. Before the patch this
+      // asserted 255 and said so; the number is the evidence either way.
       const { out } = await cli([
         "render",
         ALPHA_DIR,
@@ -381,7 +381,7 @@ describe("what ffmpeg actually wrote", () => {
         alphaFloor: number;
       };
       expect(payload.alpha).toBe(true);
-      expect(payload.alphaFloor).toBe(255);
+      expect(payload.alphaFloor).toBe(0);
     },
     600_000,
   );

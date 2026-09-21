@@ -22,16 +22,13 @@
  *   mov      ProRes 422 (yuv422p10le), or 4444 (yuva444p10le) with alpha
  *   png-seq  no ffmpeg at all — one RGBA PNG per frame (`pngSequenceSink`)
  *
- * **What `--alpha` buys today is a container, not a picture.** The rasteriser
- * clears the framebuffer to OPAQUE black (`clear_black` in
- * `engine/core/src/raster.rs` calls `fill_opaque`), so every frame this
- * project produces has an alpha channel that is uniformly 255 whether or not
- * a composition declares a ground. An alpha-capable codec therefore carries a
- * channel with no information in it. That is stated rather than smoothed
- * over, and `render` MEASURES it per run rather than repeating this sentence:
- * `alphaFloor` below is the smallest alpha byte seen, and the command reports
- * it. Changing the clear is a core change and belongs in `patches/`, not
- * here.
+ * **`--alpha` delivers a picture.** The rasteriser clears the framebuffer to
+ * TRANSPARENT black (`patches/0014-transparent-clear.patch`), so a pixel no
+ * declared ground reaches has alpha 0 and a composition with a full-bleed
+ * ground is 255 everywhere. `render` MEASURES that per run rather than
+ * repeating this sentence: `alphaFloor` below is the smallest alpha byte
+ * seen, and the command reports it — 0 on `compositions/alpha`, 255 on
+ * anything grounded.
  */
 
 export const OUTPUT_FORMATS = ["mp4", "webm", "mov", "png-seq"] as const;

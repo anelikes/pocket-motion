@@ -1,17 +1,15 @@
 // @title PocketJS Motion — no declared ground
 //
 // The one composition in this tree whose root View carries no `bg-*`. It is
-// the fixture for the alpha-capable output formats, and what it actually
-// pins is that THEY CARRY NOTHING YET.
+// the fixture for the alpha-capable output formats, and what it pins is that
+// the channel carries the picture: the rasteriser clears the framebuffer to
+// TRANSPARENT black (`patches/0014-transparent-clear.patch`), so every pixel
+// the panel does not cover has alpha 0. `render --alpha` reports the smallest
+// alpha byte it saw, and `tests/format.test.ts` asserts it is 0 here.
 //
-// The rasteriser clears the framebuffer to OPAQUE black —
-// `clear_black` in `engine/core/src/raster.rs` calls `fill_opaque` — so a
-// composition that declares no ground still produces frames whose alpha
-// channel is uniformly 255, exactly like one that declares a black one. A
-// document sentence saying so would go stale silently the day that clear
-// changes; `render --alpha` reports the smallest alpha byte it saw, and
-// `tests/format.test.ts` asserts it is 255 here. The day the core clears
-// transparent, this fixture's alpha floor drops and the test says so.
+// Before 0014 the clear was opaque black, every frame's alpha was 255, and
+// this same fixture pinned THAT — its digest in the ledger is the one entry
+// that moved when the clear changed, which is what it is in the ledger for.
 //
 // Two frames at 320x180: the claim is about the encode leg, not about motion
 // or size. Nothing animates, so the two frames are identical.

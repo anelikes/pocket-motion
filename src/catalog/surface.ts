@@ -1902,7 +1902,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "off",
     constraint:
-      "asks the codec for an alpha channel: mov becomes ProRes 4444 (yuva444p10le in, yuva444p12le out — the 4444 bitstream is 12-bit), webm becomes yuva420p and the container gains alpha_mode=1 while the stream's own pix_fmt stays yuv420p, png-seq always carries all four channels. Refused for mp4, whose yuv420p has no alpha plane. THE CHANNEL IS CURRENTLY EMPTY: the rasteriser clears to opaque black, so every frame's alpha is 255 whether or not a composition declares a ground — `render` measures and prints the floor rather than restating this",
+      "asks the codec for an alpha channel: mov becomes ProRes 4444 (yuva444p10le in, yuva444p12le out — the 4444 bitstream is 12-bit), webm becomes yuva420p and the container gains alpha_mode=1 while the stream's own pix_fmt stays yuv420p, png-seq always carries all four channels. Refused for mp4, whose yuv420p has no alpha plane. The channel carries the picture: the rasteriser clears to transparent black (patches/0014), so a pixel no declared ground reaches has alpha 0 and a composition with a full-bleed ground is 255 everywhere — `render` measures and prints the floor rather than restating this",
     source: "src/render/encode.ts:169",
     verification: "pinned",
     diagnostics: [],

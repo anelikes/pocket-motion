@@ -829,20 +829,22 @@ when the next tool in the chain is not a player. It is also the one format
 with nowhere to put a mix: a composition that declares `sound` rendered to
 `png-seq` says so in the output rather than losing it quietly.
 
-**`--alpha` currently buys a container, not a picture.** The rasteriser clears
-the framebuffer to *opaque* black, so every frame this project produces has an
-alpha channel that is uniformly 255 — whether or not a composition declares a
-ground. The codec carries the channel and the channel carries nothing. Rather
-than repeat that sentence and let it go stale, `render --alpha` measures the
-smallest alpha byte it saw and prints it:
+**`--alpha` delivers a picture.** The rasteriser clears the framebuffer to
+*transparent* black (`patches/0014-transparent-clear.patch`), so a pixel that
+no declared ground reaches has alpha 0, a partially covered edge carries its
+coverage in the alpha byte with its own colour intact, and a composition whose
+root declares a `bg-*` is opaque everywhere, exactly as it rendered before the
+patch. Rather than state that and let it go stale, `render --alpha` measures
+the smallest alpha byte it saw and prints it:
 
 ```
-alpha floor 255 — every pixel of every frame is opaque; the rasteriser clears
-to opaque black, so the channel is carried and carries nothing
+alpha floor 0 — the frames are transparent where no ground was declared
 ```
 
 `compositions/alpha` is the fixture: the one composition here with no declared
-ground, whose alpha floor is 255 anyway. Changing the clear is a core change.
+ground. `tests/format.test.ts` asserts its floor is 0. A transparent delivery
+is a composition with no root ground rendered to `mov --alpha`, `webm --alpha`
+or `png-seq`.
 
 `--alpha` with `mp4` is **refused**, not ignored: this project encodes H.264 as
 `yuv420p`, which has no alpha plane, and accepting the flag would drop the

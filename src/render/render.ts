@@ -67,12 +67,12 @@ export interface RenderResult {
   /**
    * The smallest alpha byte over every frame, or undefined when nothing asked.
    *
-   * Measured rather than assumed, because what `--alpha` buys is currently a
-   * container and not a picture: the rasteriser clears to opaque black
-   * (`clear_black` → `fill_opaque`), so this comes back 255 for every
-   * composition in this tree, ground or no ground. A sentence in a document
-   * saying so would go stale silently the day the clear changes; a number the
-   * command prints will not.
+   * Measured rather than assumed. The rasteriser clears to transparent black
+   * (patch 0014), so this is 0 wherever a composition leaves a pixel to no
+   * declared ground and 255 for one whose ground covers the canvas. Before
+   * 0014 the clear was opaque and this came back 255 for every composition
+   * in the tree; the number the command prints is what said so, and what
+   * says otherwise now.
    */
   readonly alphaFloor?: number;
 }

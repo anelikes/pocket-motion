@@ -608,6 +608,20 @@ mechanisms with the file or test beside them.
 - `openFootage` (`src/cli/footage.ts`) refuses a source whose aspect
   drifts a pixel or more from its drawn size unless the sidecar names a `fit`,
   and refuses before paying for the ingest rather than after.
+- **The framebuffer carries alpha** (`patches/0014-transparent-clear.patch`,
+  class `motion`). The rasteriser clears to TRANSPARENT black and
+  `RgbaTarget::blend` composites straight-alpha src-over when the destination
+  is not opaque; when it is, the expression is the one the buffer always had,
+  verbatim, so every composition that declares a ground renders byte for byte
+  as before and the digest ledger is the check — `compositions/alpha`, the
+  only root here with no `bg-*`, is the one entry that moved. `render
+  --alpha` still measures and prints the smallest alpha byte it saw, so the
+  claim is a number: 0 on `alpha`, 255 on anything with a full-bleed ground.
+  `tests/format.test.ts` asserts the 0. Four Rust tests hold the blend, and
+  the red case is recorded in the patch header: with the general path
+  replaced by the opaque expression, three of them fail. What this does NOT
+  change is the RGB565 targets, which have no alpha byte, and it does not
+  reach the hosts upstream presents to — which is why it is class `motion`.
 - Ingest records the ffmpeg version into each artifact's manifest, and
   `assets/*/manifest.json` pins every fetched byte by sha256.
 - **The ingest names the scaler's rounding, not only its kernel.** Every
@@ -784,22 +798,6 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   - a duck applied to a bed for a whole cut, rather than for the span of one
     narration line
   The decision about which of these to add belongs upstream of the mixer.
-- **`--alpha` delivers a container, not a picture.** `render --format
-  mov --alpha` really does write ProRes 4444 and `--format webm --alpha` a
-  WebM with `alpha_mode=1`, both read back with ffprobe in
-  `tests/format.test.ts`. What neither carries is information: the rasteriser
-  clears the framebuffer to OPAQUE black (`clear_black` calls `fill_opaque`,
-  `engine/core/src/raster.rs`), so every frame's alpha byte is 255 whether or
-  not the composition declares a ground. Changing the clear is a core change
-  and belongs in `patches/`.
-
-  The hole is stated in three places and MEASURED in one, which is the part
-  that matters: `render --alpha` scans every frame for the smallest alpha byte
-  and prints `alpha floor N`, so the day the clear changes, the number moves
-  and the prose does not have to be remembered. `compositions/alpha` is the
-  fixture — the only composition here whose root View carries no `bg-*` — and
-  it is in both ledgers, its digest being the one in the tree that would move
-  if the clear colour did.
 - **The two ProRes/VP9 facts a reader would get wrong from the argv**, both
   pinned so they are not rediscovered: ProRes 4444 is asked for as
   `yuva444p10le` and DECODES as `yuva444p12le`, because the 4444 bitstream is
