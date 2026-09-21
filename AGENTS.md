@@ -608,6 +608,27 @@ mechanisms with the file or test beside them.
 - `openFootage` (`src/cli/footage.ts`) refuses a source whose aspect
   drifts a pixel or more from its drawn size unless the sidecar names a `fit`,
   and refuses before paying for the ingest rather than after.
+- **A measurement pass can be cached, and the cache can never be drawn.**
+  `openMeasurer` with `cache: { charset }` measures against a metrics-only
+  bake of the whole charset at every requested size, built once under the
+  build lock and booted per call (`src/text/measure.ts`;
+  `patches/0015-metrics-only-atlas.patch`, class `upstream`, adds
+  `--metrics-only` to the baker: real advances, kerning, baseline and line
+  height, 1x1 empty cells, `FONT_FLAG_METRICS_ONLY` in the header). Measured
+  on the paste template's charset — ASCII, CJK punctuation and the 3755
+  level-1 GB2312 characters — one 72 px bold slot is 30.1 MB with coverage
+  and under 64 KB without, and the per-call cost goes from a build (~1.1 s)
+  to a boot (~50 ms). The key is both faces by content, the size set, the
+  density, the charset and the baker's own source, so an edit to
+  `bake-font.ts` retires every cache it wrote; the slot table is written to
+  `slots.json` at build time, so a hit never reads the shared mirror. A
+  string with a character outside the charset falls back to the per-call
+  build, correct rather than refused. Two refusals keep the artifact in its
+  lane: `hardenedBootWorld` refuses a pak carrying a metrics-only atlas
+  unless the caller is the measurer, because such a pak measures text and
+  draws none of it — a blank frame with a clean realm and a stable digest;
+  and `verifySlots` still runs on a hit. `tests/measure.test.ts` holds all
+  four claims and its header records the edit that turns each one red.
 - **The framebuffer carries alpha** (`patches/0014-transparent-clear.patch`,
   class `motion`). The rasteriser clears to TRANSPARENT black and
   `RgbaTarget::blend` composites straight-alpha src-over when the destination

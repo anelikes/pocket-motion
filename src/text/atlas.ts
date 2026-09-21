@@ -37,6 +37,9 @@ export interface AtlasHeader {
   readonly bold: boolean;
   /** Codepoints this atlas carries. */
   readonly codepoints: ReadonlySet<number>;
+  /** FONT_FLAG_METRICS_ONLY (bit 1 of byte 13): baked with `--metrics-only`,
+   *  1x1 empty cells, real advances. Measures; must never be drawn. */
+  readonly metricsOnly: boolean;
 }
 
 export function parseAtlases(pak: Uint8Array): Map<number, AtlasHeader> {
@@ -63,6 +66,7 @@ export function parseAtlases(pak: Uint8Array): Map<number, AtlasHeader> {
       lineHeight: pak[i + 11]!,
       density: version >= 3 ? pak[i + 14]! : 1,
       bold: (pak[i + 13]! & 1) !== 0,
+      metricsOnly: (pak[i + 13]! & 2) !== 0,
       codepoints,
     });
   }

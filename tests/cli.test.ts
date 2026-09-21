@@ -649,6 +649,7 @@ describe("supersample", () => {
     lineHeight: 45,
     density,
     bold: false,
+    metricsOnly: false,
     codepoints: new Set<number>([0x41]),
   });
 

@@ -38,7 +38,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -78,6 +78,28 @@ export interface MeasurerOptions {
   /** Where the throwaway build goes. Removed on `close()` unless `keep`. */
   readonly workdir?: string;
   readonly keep?: boolean;
+  /**
+   * Measure against a CACHED metrics-only bake of `charset` instead of a
+   * per-call build. The bake carries every codepoint of `charset` (ASCII
+   * 32..126 is always baked) at every size in `sizes`, with `--metrics-only`:
+   * real advances, kerning and line metrics in 1x1 empty cells, kilobytes
+   * per slot where coverage would be tens of megabytes. It is built once
+   * under the build lock, keyed by faces, sizes, density, charset and the
+   * baker's own source, and every later call boots it in milliseconds.
+   *
+   * A string in `texts` with a character outside `charset` makes this call
+   * fall back to the per-call build, silently correct rather than refused:
+   * the cache is an optimisation of the same measurement, and `unmapped()`
+   * still answers against whatever was actually baked.
+   */
+  readonly cache?: MeasureCache;
+}
+
+export interface MeasureCache {
+  /** Every codepoint the cached bake carries. */
+  readonly charset: string;
+  /** Cache root; default `<repo>/dist/.measure`. One directory per key. */
+  readonly dir?: string;
 }
 
 export interface Measurer {
@@ -213,18 +235,40 @@ function verifySlots(
 }
 
 export async function openMeasurer(options: MeasurerOptions): Promise<Measurer> {
+  if (options.cache) {
+    const outside = textsOutside(options.texts, options.cache.charset);
+    if (outside.length === 0) return openCachedMeasurer(options, options.cache);
+  }
   // The lock spans the build AND the read-back below, not just the spawn: the
   // window this closes ends at `verifySlots`, not at the child's exit.
   return withBuildLock("a measurement pass", () => openMeasurerUnserialised(options));
+}
+
+/** Characters of `texts` the cached charset does not carry (ASCII is always baked). */
+export function textsOutside(texts: readonly string[], charset: string): string[] {
+  const have = new Set<string>([...charset]);
+  const out = new Set<string>();
+  for (const t of texts) {
+    for (const c of t) {
+      const cp = c.codePointAt(0)!;
+      if (c === "\n" || (cp >= 32 && cp <= 126)) continue;
+      if (!have.has(c)) out.add(c);
+    }
+  }
+  return [...out];
+}
+
+function checkedDensity(density: number): void {
+  if (!Number.isInteger(density) || density < 1) {
+    throw new Error(`openMeasurer: density must be a positive integer; got ${density}`);
+  }
 }
 
 async function openMeasurerUnserialised(options: MeasurerOptions): Promise<Measurer> {
   const { face, sizes, texts } = options;
   const density = options.density ?? 1;
   if (sizes.length === 0) throw new Error("openMeasurer: no sizes requested");
-  if (!Number.isInteger(density) || density < 1) {
-    throw new Error(`openMeasurer: density must be a positive integer; got ${density}`);
-  }
+  checkedDensity(density);
   const root = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
   // A shared dist/.measure directory is a race: two `render --spec` processes
   // overwrite each other's corpus and the loser reports a missing codepoint
@@ -232,25 +276,132 @@ async function openMeasurerUnserialised(options: MeasurerOptions): Promise<Measu
   const owned = options.workdir === undefined;
   const work = options.workdir ?? (await mkdtemp(join(tmpdir(), "pocketjs-measure-")));
   try {
-    return await openMeasurerAt(work, { face, sizes, texts, density, root, keep: options.keep });
+    const dist = join(work, "dist");
+    const bySize = await buildMeasurement(work, dist, { face, sizes, texts, density, root, extraArgs: [] });
+    return measurerOver(dist, bySize, {
+      metricsOnly: false,
+      close: async () => {
+        if (!options.keep) await rm(work, { recursive: true, force: true });
+      },
+    });
   } catch (e) {
     if (owned && !options.keep) await rm(work, { recursive: true, force: true });
     throw e;
   }
 }
 
-async function openMeasurerAt(
+/** `<cache dir>/slots.json`: the px -> slot table this bake was read with. */
+interface SlotsFile {
+  readonly slots: Record<string, number>;
+}
+
+/**
+ * A measurement against a cached metrics-only bake.
+ *
+ * The key is everything that decides an advance: both face files by content,
+ * the size set, the density, the charset, and the baker and build sources —
+ * so a change to `bake-font.ts` retires every cache it wrote. A miss builds
+ * into `<dir>.tmp-<pid>` under the build lock and renames it into place, so
+ * a reader never sees a half-written cache and two writers racing leave one
+ * complete copy. The mirror is read once, at write time, into `slots.json`;
+ * a hit reads that file and never touches the shared mirror at all.
+ */
+async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache): Promise<Measurer> {
+  const { face, sizes } = options;
+  const density = options.density ?? 1;
+  if (sizes.length === 0) throw new Error("openMeasurer: no sizes requested");
+  checkedDensity(density);
+  const root = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
+  const key = await cacheKey(face, sizes, density, cache.charset);
+  const dir = join(cache.dir ?? join(root, "dist", ".measure"), key);
+  const dist = join(dir, "dist");
+
+  let bySize = await readCachedSlots(dist);
+  if (!bySize) {
+    bySize = await withBuildLock("a metrics-only measurement bake", async () => {
+      // Re-check under the lock: another process may have written it.
+      const again = await readCachedSlots(dist);
+      if (again) return again;
+      const tmp = `${dir}.tmp-${process.pid}`;
+      await rm(tmp, { recursive: true, force: true });
+      const built = await buildMeasurement(tmp, join(tmp, "dist"), {
+        face, sizes, texts: [], density, root,
+        extraArgs: ["--metrics-only", `--extra-chars=${cache.charset}`],
+      });
+      const slots: Record<string, number> = {};
+      for (const [k, h] of built) slots[k] = h.slot;
+      await Bun.write(join(tmp, "dist", "slots.json"), JSON.stringify({ slots } satisfies SlotsFile));
+      await mkdir(join(dir, ".."), { recursive: true });
+      try {
+        await rename(tmp, dir);
+      } catch {
+        // Lost the race to a complete copy; use that one.
+        await rm(tmp, { recursive: true, force: true });
+      }
+      const now = await readCachedSlots(dist);
+      if (!now) throw new Error(`openMeasurer: the metrics cache at ${dir} did not come back readable`);
+      return now;
+    });
+  }
+  verifySlots(sizes, bySize, density);
+  return measurerOver(dist, bySize, { metricsOnly: true, close: async () => {} });
+}
+
+async function cacheKey(
+  face: FaceFiles,
+  sizes: readonly SizeRequest[],
+  density: number,
+  charset: string,
+): Promise<string> {
+  const h = new Bun.CryptoHasher("sha256");
+  const digest = async (path: string): Promise<string> => {
+    const f = new Bun.CryptoHasher("sha256");
+    f.update(await Bun.file(path).arrayBuffer());
+    return f.digest("hex");
+  };
+  h.update(`face:${await digest(face.regular)}:${await digest(face.bold)}\n`);
+  h.update(`baker:${await digest(join(pocketjsRoot(), "framework/compiler/bake-font.ts"))}\n`);
+  h.update(`build:${await digest(join(pocketjsRoot(), "tools/build.ts"))}\n`);
+  h.update(`sizes:${[...new Set(sizes.map((s) => keyOf(s.px, s.bold === true)))].sort().join(",")}\n`);
+  h.update(`density:${density}\n`);
+  const cs = new Bun.CryptoHasher("sha256");
+  cs.update(charset);
+  h.update(`charset:${cs.digest("hex")}\n`);
+  return h.digest("hex").slice(0, 32);
+}
+
+/** The slot table and atlases of a complete cache, or undefined when absent. */
+async function readCachedSlots(dist: string): Promise<Map<string, AtlasHeader> | undefined> {
+  const slotsPath = join(dist, "slots.json");
+  const pakPath = join(dist, "main.pak");
+  if (!existsSync(slotsPath) || !existsSync(pakPath) || !existsSync(join(dist, "main.js"))) return undefined;
+  const file = (await Bun.file(slotsPath).json()) as SlotsFile;
+  const atlases = await readAtlases(pakPath);
+  const bySize = new Map<string, AtlasHeader>();
+  for (const [k, slot] of Object.entries(file.slots)) {
+    const header = atlases.get(slot);
+    if (header) bySize.set(k, header);
+  }
+  return bySize;
+}
+
+/**
+ * Spawn the measurement build into `dist` and read the slot table back out of
+ * the mirror. Callers hold the build lock; the read-back is the reason.
+ */
+async function buildMeasurement(
   work: string,
-  options: {
+  dist: string,
+  o: {
     readonly face: FaceFiles;
     readonly sizes: readonly SizeRequest[];
     readonly texts: readonly string[];
     readonly density: number;
     readonly root: string;
-    readonly keep?: boolean;
+    readonly extraArgs: readonly string[];
   },
-): Promise<Measurer> {
-  const { face, sizes, texts, density, root } = options;
+): Promise<Map<string, AtlasHeader>> {
+  const { face, sizes, texts, density, root } = o;
   await mkdir(work, { recursive: true });
   await Bun.write(join(work, "app.tsx"), source(sizes, texts.length > 0 ? texts : [""]));
   await Bun.write(
@@ -258,13 +409,13 @@ async function openMeasurerAt(
     '// @title measurement pass\nimport { mount } from "@pocketjs/framework";\nimport Measure from "./app.tsx";\n\nmount(() => <Measure />);\n',
   );
 
-  const dist = join(work, "dist");
   const build = Bun.spawn(
     [
       "bun", join(pocketjsRoot(), "tools/build.ts"), join(work, "main.tsx"),
       `--outdir=${dist}`, "--framework=solid",
       `--font-regular=${face.regular}`, `--font-bold=${face.bold}`,
       ...(density > 1 ? [`--density=${density}`] : []),
+      ...o.extraArgs,
     ],
     { stdout: "pipe", stderr: "pipe", cwd: root },
   );
@@ -294,14 +445,23 @@ async function openMeasurerAt(
   }
 
   verifySlots(sizes, bySize, density);
+  return bySize;
+}
 
+/** Boot the built measurement world and wrap it as a `Measurer`. */
+async function measurerOver(
+  dist: string,
+  bySize: ReadonlyMap<string, AtlasHeader>,
+  o: { readonly metricsOnly: boolean; readonly close: () => Promise<void> },
+): Promise<Measurer> {
   const world = await hardenedBootWorld({
     bundlePath: join(dist, "main.js"),
-    pakPath,
+    pakPath: join(dist, "main.pak"),
     // Nothing is rendered, so the viewport only has to be legal.
     width: 64,
     height: 64,
     hz: 30,
+    allowMetricsOnly: o.metricsOnly,
   });
   world.frame(0);
   for (let t = 0; t < world.ticksPerFrame; t++) world.tick();
@@ -342,8 +502,6 @@ async function openMeasurerAt(
         return raw(text, slot);
       };
     },
-    close: async () => {
-      if (!options.keep) await rm(work, { recursive: true, force: true });
-    },
+    close: o.close,
   };
 }

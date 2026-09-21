@@ -15,6 +15,7 @@
  */
 
 import { createSandbox, type AuditReport, type Sandbox } from "../harness/sandbox.ts";
+import { parseAtlases } from "../text/atlas.ts";
 
 /**
  * Upstream checkout that supplies the wasm core and the built bundles.
@@ -46,6 +47,11 @@ export interface BootOptions {
   readonly rasterDensity?: number;
   /** Defaults to `<root>/hosts/web/pocketjs.wasm`. */
   readonly wasmPath?: string;
+  /** A pak whose atlases were baked `--metrics-only` (1x1 empty cells) is
+   *  refused unless this is set: it measures correctly and draws nothing,
+   *  which is a blank frame with a clean realm and a stable digest. Only
+   *  `src/text/measure.ts` passes it. */
+  readonly allowMetricsOnly?: boolean;
   /** Wrap the ops object before it is handed to the guest (the mount-only oracle). */
   readonly wrapOps?: (ops: Record<string, unknown>) => Record<string, unknown>;
   /** The command that rebuilds this bundle, quoted back when the bundle's baked
@@ -213,7 +219,21 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
       recv: () => (inbox.length > 0 ? inbox.shift()! : null),
     },
   };
-  if (pakPath) slots.__pak = await Bun.file(pakPath).arrayBuffer();
+  if (pakPath) {
+    const pak = await Bun.file(pakPath).arrayBuffer();
+    if (!options.allowMetricsOnly) {
+      const thin = [...parseAtlases(new Uint8Array(pak)).values()].filter((a) => a.metricsOnly);
+      if (thin.length > 0) {
+        throw new Error(
+          `PocketJS Motion: ${pakPath} carries ${thin.length} metrics-only font atlas(es) ` +
+            `(slot ${thin.map((a) => a.slot).join(", ")}) — a pak baked with --metrics-only ` +
+            "measures text and draws none of it. It is a measurement artifact " +
+            "(src/text/measure.ts), not a composition build; rebuild without the flag.",
+        );
+      }
+    }
+    slots.__pak = pak;
+  }
 
   const sandbox = createSandbox({ slots, extraAllow: ["frame"] });
   sandbox.eval(await Bun.file(bundlePath).text());

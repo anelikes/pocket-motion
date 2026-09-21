@@ -1,0 +1,326 @@
+0015 — `--metrics-only`: a font atlas that measures and cannot draw.
+
+`bake-font.ts` gains a mode that writes advances, kerning pairs, baseline
+and line height exactly as the full bake does, and no coverage: every cell
+is 1x1 (the core refuses 0x0) and empty, and byte 13 of the header carries
+`FONT_FLAG_METRICS_ONLY` (bit 1, beside `FONT_FLAG_BOLD`). No outline is
+read, so a 3,800-glyph charset bakes in the time the cmap takes rather than
+the time its coverage takes. `tools/build.ts` exposes it as `--metrics-only`
+and says so on the per-slot line.
+
+Why: a measurement pass (pocket-motion `src/text/measure.ts`) reads widths
+through the core's own `measureText` and never draws, but the bake it
+measured against carried full coverage — 30.1 MB for one 72 px bold slot
+over the level-1 GB2312 charset, so it had to be rebuilt per text instead
+of cached per charset. With this flag the same slot is under 64 KB and the
+pass is built once and booted per call.
+
+The tofu advance is computed the same way in both modes and only its cell
+is dropped, so the cmap differs from the full bake in exactly one byte per
+entry: `xoff`, the ink's left-bearing shift, which a bake that read no
+outline writes as 0 and nothing in measurement reads.
+
+A host that renders must refuse a pak carrying this flag: it measures text
+and draws none of it, which is a blank frame with nothing wrong in it.
+pocket-motion's `hardenedBootWorld` does, unless the measurer asks.
+
+By file:
+- `contracts/spec/spec.ts`: `FONT_FLAG_METRICS_ONLY`; `gen-rust.ts` and
+  `engine/core/src/spec.rs` (regenerated): `font_atlas::FLAG_METRICS_ONLY`.
+  The core reads neither; the constant is published so a backend can.
+- `framework/compiler/bake-font.ts`: `BakeOptions.metricsOnly`, a
+  `metricsOnly` parameter on `bakeSlot`, `BakedAtlas.metricsOnly`.
+- `tools/build.ts`: the flag.
+- `tests/font-bake.test.ts`: the metrics-only bake against the full bake —
+  bytes 10..12 equal, every cmap entry equal through the advance byte, kern
+  section byte-identical and non-empty, the blob header + cmap + one byte
+  per glyph + kern, and the full bake more than twenty times larger.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 3deed2f..d5c6f0d 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -75,6 +75,7 @@ import {
+   FIXED_DT,
+   FONT_CMAP_ENTRY_SIZE,
+   FONT_FLAG_BOLD,
++  FONT_FLAG_METRICS_ONLY,
+   FONT_HEADER_SIZE,
+   FONT_KERN_PAIR_SIZE,
+   FONT_MAGIC,
+@@ -427,6 +428,7 @@ export function generateRust(): string {
+   put(`    pub const CMAP_ENTRY_SIZE: usize = ${FONT_CMAP_ENTRY_SIZE};`);
+   put(`    pub const KERN_PAIR_SIZE: usize = ${FONT_KERN_PAIR_SIZE};`);
+   put(`    pub const FLAG_BOLD: u8 = ${FONT_FLAG_BOLD};`);
++  put(`    pub const FLAG_METRICS_ONLY: u8 = ${FONT_FLAG_METRICS_ONLY};`);
+   put("}");
+   put("");
+ 
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 2233c3f..61bbf68 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -1332,6 +1332,10 @@ export const FONT_HEADER_SIZE = 16;
+ export const FONT_CMAP_ENTRY_SIZE = 8;
+ export const FONT_KERN_PAIR_SIZE = 5;
+ export const FONT_FLAG_BOLD = 1 << 0;
++/** The atlas carries metrics only: real advances, kerning, baseline and line
++ *  height, but 1x1 coverage cells with nothing in them. Baked with
++ *  `--metrics-only` for a measurement pass; a host must refuse to DRAW one. */
++export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+ 
+ // ---------------------------------------------------------------------------
+ // DRAWLIST op format  (core -> backend)
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index c42636a..483b2ae 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -418,6 +418,7 @@ pub mod font_atlas {
+     pub const CMAP_ENTRY_SIZE: usize = 8;
+     pub const KERN_PAIR_SIZE: usize = 5;
+     pub const FLAG_BOLD: u8 = 1;
++    pub const FLAG_METRICS_ONLY: u8 = 2;
+ }
+ 
+ /// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).
+diff --git a/framework/compiler/bake-font.ts b/framework/compiler/bake-font.ts
+index 99d1e5b..4ff64cc 100644
+--- a/framework/compiler/bake-font.ts
++++ b/framework/compiler/bake-font.ts
+@@ -25,6 +25,7 @@ import { parse as parseFont, type Font, type Path } from "opentype.js";
+ import {
+   FONT_CMAP_ENTRY_SIZE,
+   FONT_FLAG_BOLD,
++  FONT_FLAG_METRICS_ONLY,
+   FONT_HEADER_SIZE,
+   FONT_KERN_PAIR_SIZE,
+   FONT_MAGIC,
+@@ -54,6 +55,8 @@ export interface BakedAtlas {
+   coverageH: number;
+   /** Non-zero pair adjustments that survived subsetting and rounding. */
+   pairCount: number;
++  /** FONT_FLAG_METRICS_ONLY is set: 1x1 empty cells, metrics real. */
++  metricsOnly: boolean;
+ }
+ 
+ export interface BakeOptions {
+@@ -65,6 +68,11 @@ export interface BakeOptions {
+   extraChars?: string;
+   /** Raster samples per logical pixel. Defaults to 1. */
+   rasterDensity?: number;
++  /** Bake advances, kerning, baseline and line height only: every coverage
++   *  cell is 1x1 and empty, and the header carries FONT_FLAG_METRICS_ONLY. For
++   *  a measurement pass that will never draw — a full charset at every size
++   *  costs kilobytes instead of the tens of megabytes its coverage would. */
++  metricsOnly?: boolean;
+   regularTtf?: string;
+   boldTtf?: string;
+   monoTtf?: string;
+@@ -409,6 +417,7 @@ export function bakeSlot(
+   bold: boolean,
+   chars: number[],
+   rasterDensity = 1,
++  metricsOnly = false,
+ ): BakedAtlas {
+   rasterDensity = checkedRasterDensity(rasterDensity);
+   const upm = font.unitsPerEm;
+@@ -456,6 +465,13 @@ export function bakeSlot(
+     if (gi <= 0) continue;
+     const glyph = font.glyphs.get(gi);
+     const advance = Math.max(0, Math.min(255, Math.round((glyph.advanceWidth ?? 0) * scale)));
++    if (metricsOnly) {
++      // No outline is read: the advance above and the kerning below are the
++      // whole of what a measurement reads, and flattening every contour of a
++      // 3,800-glyph charset is most of a full bake's time.
++      glyphs.push({ cp, fontGid: gi, contours: [], advance, maxX: 0, xoff: 0 });
++      continue;
++    }
+     const path = glyph.getPath(0, baseline, px);
+     // Keep every metric byte-for-byte equivalent to the density-1 bake. The
+     // higher-density contour gets more curve subdivisions, then is scaled into
+@@ -487,12 +503,17 @@ export function bakeSlot(
+   let cellW = tofuW;
+   for (const g of glyphs) cellW = Math.max(cellW, Math.ceil(g.maxX));
+   cellW = Math.min(255, Math.max(1, cellW));
++  // A metrics-only atlas keeps every metric real — baseline, line height,
++  // advances, the tofu advance — and shrinks only the coverage cell, to the
++  // smallest the core will load (it refuses 0x0).
++  const cellWOut = metricsOnly ? 1 : cellW;
++  const cellHOut = metricsOnly ? 1 : cellH;
+ 
+   // gid 0 = tofu; gid k+1 = k-th glyph (chars arrive sorted ascending)
+   const glyphCount = glyphs.length + 1;
+   if (glyphCount > 0xffff) throw new Error("PocketJS bake-font: too many glyphs");
+-  const coverageW = cellW * rasterDensity;
+-  const coverageH = cellH * rasterDensity;
++  const coverageW = cellWOut * rasterDensity;
++  const coverageH = cellHOut * rasterDensity;
+   const coverageBytes = glyphCount * coverageH * coverageW;
+   if (!Number.isSafeInteger(coverageBytes)) {
+     throw new RangeError("PocketJS bake-font: atlas coverage is too large");
+@@ -506,12 +527,12 @@ export function bakeSlot(
+   dv.setUint32(0, FONT_MAGIC, true);
+   dv.setUint16(4, FONT_VERSION, true);
+   dv.setUint16(6, glyphCount, true);
+-  out[8] = cellW;
+-  out[9] = cellH;
++  out[8] = cellWOut;
++  out[9] = cellHOut;
+   out[10] = baseline;
+   out[11] = lineHeight;
+   out[12] = slot;
+-  out[13] = bold ? FONT_FLAG_BOLD : 0;
++  out[13] = (bold ? FONT_FLAG_BOLD : 0) | (metricsOnly ? FONT_FLAG_METRICS_ONLY : 0);
+   out[14] = rasterDensity;
+   // 15 reserved
+ 
+@@ -525,7 +546,10 @@ export function bakeSlot(
+       xoff: g.xoff,
+     }),
+   );
+-  const [tofuCoverage, tofuAdvance] = tofu(cellW, cellH, baseline, px, rasterDensity);
++  // The tofu advance is a metric too, so it is computed the same way in both
++  // modes; only its coverage cell is dropped.
++  const [tofuFull, tofuAdvance] = tofu(cellW, cellH, baseline, px, rasterDensity);
++  const tofuCoverage = metricsOnly ? new Uint8Array(1) : tofuFull;
+   entries.push({ cp: TOFU_CODEPOINT, gid: 0, advance: tofuAdvance, xoff: 0 });
+   entries.sort((a, b) => a.cp - b.cp);
+   let o = FONT_HEADER_SIZE;
+@@ -541,9 +565,11 @@ export function bakeSlot(
+   const coverageOff = FONT_HEADER_SIZE + glyphCount * FONT_CMAP_ENTRY_SIZE;
+   const cellBytes = coverageH * coverageW;
+   out.set(tofuCoverage, coverageOff); // gid 0
+-  glyphs.forEach((g, i) => {
+-    out.set(rasterize(g.contours, coverageW, coverageH), coverageOff + (i + 1) * cellBytes);
+-  });
++  if (!metricsOnly) {
++    glyphs.forEach((g, i) => {
++      out.set(rasterize(g.contours, coverageW, coverageH), coverageOff + (i + 1) * cellBytes);
++    });
++  }
+ 
+   const kernOff = coverageOff + coverageBytes;
+   dv.setUint32(kernOff, pairs.length, true);
+@@ -562,11 +588,12 @@ export function bakeSlot(
+     rasterDensity,
+     bytes: out,
+     glyphCount,
+-    cellW,
+-    cellH,
++    cellW: cellWOut,
++    cellH: cellHOut,
+     coverageW,
+     coverageH,
+     pairCount: pairs.length,
++    metricsOnly,
+   };
+ }
+ 
+@@ -601,7 +628,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+           ? (opts.boldTtf ?? DEFAULT_BOLD)
+           : (opts.regularTtf ?? DEFAULT_REGULAR),
+     );
+-    results.push(bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity));
++    results.push(bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity, opts.metricsOnly === true));
+   }
+   return results;
+ }
+diff --git a/tests/font-bake.test.ts b/tests/font-bake.test.ts
+index 9c6180c..fd7a3f9 100644
+--- a/tests/font-bake.test.ts
++++ b/tests/font-bake.test.ts
+@@ -52,6 +52,37 @@ describe("font atlas density", () => {
+   });
+ });
+ 
++describe("metrics-only atlases", () => {
++  test("carry the full bake's advances, kerning and line metrics in a 1x1 cell", () => {
++    const cps = [..."ATVWYaovyfi.,'"].map((c) => c.codePointAt(0)!); // kern pairs among them
++    const full = bakeSlot(font, 3, 24, false, cps, 1);
++    const thin = bakeSlot(font, 3, 24, false, cps, 1, true);
++    expect(thin.metricsOnly).toBe(true);
++    expect(full.metricsOnly).toBe(false);
++    expect([thin.cellW, thin.cellH]).toEqual([1, 1]);
++    expect(thin.bytes[13]! & 2).toBe(2);
++    expect(full.bytes[13]! & 2).toBe(0);
++    // baseline, line height, slot: bytes 10..12 identical.
++    expect([...thin.bytes.subarray(10, 13)]).toEqual([...full.bytes.subarray(10, 13)]);
++    expect(thin.glyphCount).toBe(full.glyphCount);
++    // Every cmap entry: same codepoint, gid and ADVANCE. xoff (byte +7) is the
++    // ink's left-bearing shift and is 0 in a bake that read no outline.
++    const cmapEnd = FONT_HEADER_SIZE + full.glyphCount * FONT_CMAP_ENTRY_SIZE;
++    for (let o = FONT_HEADER_SIZE; o < cmapEnd; o += FONT_CMAP_ENTRY_SIZE) {
++      expect([...thin.bytes.subarray(o, o + 7)]).toEqual([...full.bytes.subarray(o, o + 7)]);
++    }
++    // The kern section is byte-identical, and the whole blob is header + cmap
++    // + one byte per glyph + kern.
++    const fullKern = cmapEnd + full.glyphCount * full.coverageW * full.coverageH;
++    const thinKern = cmapEnd + thin.glyphCount;
++    expect(thin.pairCount).toBe(full.pairCount);
++    expect(full.pairCount).toBeGreaterThan(0);
++    expect([...thin.bytes.subarray(thinKern)]).toEqual([...full.bytes.subarray(fullKern)]);
++    expect(thin.bytes.length).toBe(thinKern + 4 + thin.pairCount * FONT_KERN_PAIR_SIZE);
++    expect(full.bytes.length).toBeGreaterThan(thin.bytes.length * 20);
++  });
++});
++
+ describe("open contours", () => {
+   /**
+    * A face whose one glyph is exactly the commands given.
+diff --git a/tools/build.ts b/tools/build.ts
+index c8eb37c..05bad5c 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -18,6 +18,9 @@
+ //   --config=<path>              load a Pocket config file (default: pocket.config.ts)
+ //   --no-config                  ignore pocket.config.ts
+ //   --extra-chars=<string>       force extra codepoints into every atlas
++//   --metrics-only               bake atlases with advances, kerning and line
++//                                metrics but empty 1x1 cells — for a measurement
++//                                pass that never draws; hosts refuse to render it
+ //   --density=<integer>          low-level target sampling density (default 1)
+ //   --font-regular=<path>        override the regular font source
+ //   --font-bold=<path>           override the bold font source
+@@ -78,6 +81,7 @@ const packageName = packageJson.name ?? "@pocketjs/framework";
+ 
+ const args = process.argv.slice(2);
+ let extraChars = "";
++let metricsOnly = false;
+ let regularFontPath: string | undefined;
+ let boldFontPath: string | undefined;
+ let appArg = "";
+@@ -91,6 +95,7 @@ let hzFlag: number | undefined;
+ let projectRoot = process.cwd();
+ for (const a of args) {
+   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
++  else if (a === "--metrics-only") metricsOnly = true;
+   else if (a.startsWith("--font-regular=")) regularFontPath = resolvePath(a.slice("--font-regular=".length));
+   else if (a.startsWith("--font-bold=")) boldFontPath = resolvePath(a.slice("--font-bold=".length));
+   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
+@@ -118,7 +123,7 @@ if (planPath) {
+ }
+ 
+ if (!appArg) {
+-  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor|octane] [--extra-chars=...] [--density=N] [--hz=N]");
++  console.error("usage: bun tools/build.ts <app.tsx | app name> [--plan=<resolved-plan.json>] [--framework=solid|vue-vapor|octane] [--extra-chars=...] [--metrics-only] [--density=N] [--hz=N]");
+   process.exit(1);
+ }
+ 
+@@ -319,6 +324,7 @@ const atlases = await bakeAtlases({
+   slots: styles.usedFontSlots,
+   extraChars,
+   rasterDensity,
++  metricsOnly,
+   regularTtf: regularFontPath,
+   boldTtf: boldFontPath,
+ });
+@@ -326,6 +332,7 @@ for (const a of atlases) {
+   console.log(
+     `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}) ${a.glyphCount} glyphs, ` +
+       `cell ${a.cellW}x${a.cellH}, coverage ${a.coverageW}x${a.coverageH} @${a.rasterDensity}x, ` +
++      (a.metricsOnly ? "metrics only, " : "") +
+       `${a.pairCount} kern pair(s), ${a.bytes.length} bytes`,
+   );
+ }

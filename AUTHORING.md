@@ -387,6 +387,14 @@ is the worked example: `gen.ts` declares the copy and the boxes, calls
 with the `\n` already placed. The measurement is exact — a break decided at
 build time *is* layout, not an approximation of it.
 
+A generator that measures the same faces at the same sizes on every run —
+a `render --spec` template, a batch — can pass `cache: { charset }` to
+`openMeasurer`: the measurement then comes from a metrics-only bake of that
+charset (advances and kerning, no coverage, kilobytes per size), built once
+and booted per call instead of built per call. A string with a character
+outside the charset falls back to the per-call build. The cached pak
+measures and cannot be rendered; every render command refuses it.
+
 Faces: pass `--font-regular` / `--font-bold` to the build. In-repo:
 HarmonyOS Sans (`assets/fonts/HarmonyOS_Sans_*.ttf`); fetched by
 `scripts/assets.ts`: Noto Sans SC (`assets/fonts/NotoSansSC-*.otf`) — the only
