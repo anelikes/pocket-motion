@@ -46,6 +46,7 @@ import { readAtlases, type AtlasHeader } from "./atlas.ts";
 import type { Measure } from "./fit.ts";
 import { hardenedBootWorld, pocketjsRoot } from "../runtime/boot.ts";
 import { withBuildLock } from "../vendor/build-lock.ts";
+import { fileURLToPath } from "node:url";
 
 export interface FaceFiles {
   readonly regular: string;
@@ -269,7 +270,7 @@ async function openMeasurerUnserialised(options: MeasurerOptions): Promise<Measu
   const density = options.density ?? 1;
   if (sizes.length === 0) throw new Error("openMeasurer: no sizes requested");
   checkedDensity(density);
-  const root = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
+  const root = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
   // A shared dist/.measure directory is a race: two `render --spec` processes
   // overwrite each other's corpus and the loser reports a missing codepoint
   // in its own copy. Per-run unless the caller passed `workdir`.
@@ -311,7 +312,7 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
   const density = options.density ?? 1;
   if (sizes.length === 0) throw new Error("openMeasurer: no sizes requested");
   checkedDensity(density);
-  const root = new URL("../..", import.meta.url).pathname.replace(/\/$/, "");
+  const root = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
   const key = await cacheKey(face, sizes, density, cache.charset);
   const dir = join(cache.dir ?? join(root, "dist", ".measure"), key);
   const dist = join(dir, "dist");

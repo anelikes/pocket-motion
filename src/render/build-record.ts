@@ -44,9 +44,10 @@ import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 import { UPSTREAM } from "../vendor/upstream.ts";
+import { fileURLToPath } from "node:url";
 
 /** The repository root: this module sits at `src/render/`. */
-const ROOT = resolve(new URL("../..", import.meta.url).pathname);
+const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
 /** Name of the record, beside the bundle and pak it describes. */
 export const BUILD_RECORD_FILE = "build.json";

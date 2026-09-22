@@ -19,6 +19,7 @@
 
 import { FrameHashSequence, type FrameHash } from "./hash.ts";
 import type { RenderOptions } from "./render.ts";
+import { fileURLToPath } from "node:url";
 
 export interface ParallelRenderOptions
   extends Omit<RenderOptions, "onProgress" | "onFrameBoundary" | "wrapOps" | "setup"> {
@@ -62,7 +63,7 @@ export function splitRange(frames: number, workers: number): Array<[number, numb
   return out;
 }
 
-const WORKER = new URL("./parallel-worker.ts", import.meta.url).pathname;
+const WORKER = fileURLToPath(new URL("./parallel-worker.ts", import.meta.url));
 
 export async function renderParallel(
   options: ParallelRenderOptions,

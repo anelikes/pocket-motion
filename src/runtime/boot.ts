@@ -16,6 +16,7 @@
 
 import { createSandbox, type AuditReport, type Sandbox } from "../harness/sandbox.ts";
 import { parseAtlases } from "../text/atlas.ts";
+import { fileURLToPath } from "node:url";
 
 /**
  * Upstream checkout that supplies the wasm core and the built bundles.
@@ -27,7 +28,7 @@ import { parseAtlases } from "../text/atlas.ts";
  * deliberate comparison against unpatched upstream.
  */
 export function pocketjsRoot(): string {
-  return process.env.POCKETJS_ROOT ?? new URL("../../vendor/pocketjs", import.meta.url).pathname;
+  return process.env.POCKETJS_ROOT ?? fileURLToPath(new URL("../../vendor/pocketjs", import.meta.url));
 }
 
 export interface BootOptions {
