@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
  * Upstream checkout that supplies the wasm core and the built bundles.
  *
  * Defaults to the vendored tree, which is the only one carrying `patches/` —
- * `MAX_FONT_SLOTS` is 64 there and 24 upstream, and the wasm is rebuilt to
+ * `MAX_FONT_SLOTS` is 128 there and 24 upstream, and the wasm is rebuilt to
  * match. Pointing this at a plain checkout silently loads a core that cannot
  * bind the slots our compositions ask for. `POCKETJS_ROOT` overrides it for
  * deliberate comparison against unpatched upstream.

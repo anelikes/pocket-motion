@@ -1,0 +1,438 @@
+0016 — named font faces: a class literal picks a face with `font-[name]`,
+and the build bakes that face's slots from files it was told about.
+
+Upstream bakes every slot from one regular/bold pair (plus the mono face);
+a composition that sets a display face, a body face and a CJK face has to
+be three compositions. This keeps the default pair as it is and adds faces
+beside it. Declaration-layer only: the core indexes slots and never knew
+which file a slot came from, so nothing under engine/ changes except one
+constant.
+
+What the patch adds, by file:
+
+- `framework/compiler/tailwind.ts`: the `font-[name]` token (name matches
+  /^[a-z][a-z0-9-]*$/, exported as FONT_FACE_NAME). A face's (px, weight)
+  pairs are always dynamic slots, keyed with the face, so the pinned table
+  and every existing slot number are untouched; a face takes precedence
+  over `font-mono`. `fontSlotInfo`/`fontSlotPlan` carry `face`, and the
+  `FONT_SLOTS` mirror names it — only on face slots, so a build with no
+  face writes the mirror it always wrote.
+- `framework/compiler/bake-font.ts`: `BakeOptions.faces` (name -> files);
+  a face slot bakes from its face, and a slot naming an undeclared face is
+  refused with the declared names, rather than baked from the default pair.
+- `tools/build.ts`: `--font-face-regular=<name>=<path>` and
+  `--font-face-bold=<name>=<path>`; a face declared with one weight is a
+  build error.
+- `contracts/spec/spec.ts`, `engine/core/src/spec.rs` (regenerated):
+  MAX_FONT_SLOTS 64 -> 128, so several faces fit. A slot index still fits
+  the u8 in the atlas header and GLYPH_RUN; each unused slot is one
+  `Option<Atlas>`.
+- `tests/tailwind.test.ts`, `tests/font-bake.test.ts`: slot allocation per
+  face, precedence over mono, the name rule, a face baked from its own file
+  and the refusal of an undeclared one.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 61bbf689..918b1359 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -861,10 +861,12 @@ export const WIRE_MARK_FLAG_ENDED = 1 << 0;
+ 
+ // Slots 0..13 are the seven pinned sizes x two weights (framework/compiler/tailwind.ts);
+ // 14/15 the 54 px display pair; 16..18 monospace regular (12/14/16 px — `font-mono`).
+-// The rest are allocated per build for arbitrary `text-[Npx]` sizes. Raised from 24
+-// so a composition is not limited to the pinned scale — each unused slot is one
+-// `Option<Atlas>` in the core, so the headroom is cheap.
+-export const MAX_FONT_SLOTS = 64;
++// The rest are allocated per build for arbitrary `text-[Npx]` sizes and for named
++// faces (`font-[name]`, pocket-motion). Raised from 24 to 64 so a composition is
++// not limited to the pinned scale, and from 64 to 128 so several faces fit —
++// each unused slot is one `Option<Atlas>` in the core, so the headroom is cheap,
++// and a slot index still fits the u8 every atlas header and GLYPH_RUN carries.
++export const MAX_FONT_SLOTS = 128;
+ 
+ // ---------------------------------------------------------------------------
+ // STYLE TABLE binary format — styles.bin  (version 2)
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 483b2ae9..f3e2dfe9 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -35,7 +35,7 @@ pub const TEX_MAX_DIM: u32 = 512;
+ pub const TEX_SLOT_BITS: u32 = 20;
+ pub const TEX_SLOT_MASK: u32 = 0xfffff;
+ /// Max baked font-atlas slots.
+-pub const MAX_FONT_SLOTS: usize = 64;
++pub const MAX_FONT_SLOTS: usize = 128;
+ /// Transition mask value meaning "every animatable prop".
+ pub const TRANSITION_MASK_ALL: u32 = 0xffffffff;
+ /// Core tick timestep: exactly 1/60 s (fixed — enables byte-exact goldens).
+diff --git a/framework/compiler/bake-font.ts b/framework/compiler/bake-font.ts
+index 4ff64cca..398d1a50 100644
+--- a/framework/compiler/bake-font.ts
++++ b/framework/compiler/bake-font.ts
+@@ -56,7 +56,8 @@ export interface BakedAtlas {
+   /** Non-zero pair adjustments that survived subsetting and rounding. */
+   pairCount: number;
+   /** FONT_FLAG_METRICS_ONLY is set: 1x1 empty cells, metrics real. */
+-  metricsOnly: boolean;
++  metricsOnly: boolean;  /** The named face (`font-[name]`) this slot was baked from; absent for the default pair and mono. */
++  face?: string;
+ }
+ 
+ export interface BakeOptions {
+@@ -76,6 +77,12 @@ export interface BakeOptions {
+   regularTtf?: string;
+   boldTtf?: string;
+   monoTtf?: string;
++  /**
++   * Named faces for `font-[name]` slots: name -> the regular and bold files.
++   * A slot naming a face that is not here is refused rather than baked from
++   * the default pair — that would be a face nobody declared.
++   */
++  faces?: Readonly<Record<string, { readonly regular: string; readonly bold: string }>>;
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -609,7 +616,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+   }
+   const chars = [...cps].sort((a, b) => a - b);
+ 
+-  const fonts: Record<"regular" | "bold" | "mono", Font | null> = {
++  const fonts: Record<string, Font | null> = {
+     regular: null,
+     bold: null,
+     mono: null,
+@@ -619,7 +626,25 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+     if (slot < 0 || slot >= MAX_FONT_SLOTS) {
+       throw new Error(`PocketJS bake-font: slot ${slot} out of range (0..${MAX_FONT_SLOTS - 1})`);
+     }
+-    const { px, bold, mono } = fontSlotInfo(slot);
++    const { px, bold, mono, face } = fontSlotInfo(slot);
++    if (face !== undefined) {
++      const files = opts.faces?.[face];
++      if (!files) {
++        const declared = Object.keys(opts.faces ?? {});
++        throw new Error(
++          `PocketJS bake-font: \`font-[${face}]\` names a face this build does not declare ` +
++            `(declared: ${declared.length > 0 ? declared.join(", ") : "none"}). Declare it with ` +
++            `--font-face-regular=${face}=<path> --font-face-bold=${face}=<path>.`,
++        );
++      }
++      const key = `face:${face}:${bold ? "bold" : "regular"}`;
++      fonts[key] ??= await loadFont(bold ? files.bold : files.regular);
++      results.push({
++        ...bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity, opts.metricsOnly === true),
++        face,
++      });
++      continue;
++    }
+     const key = mono ? "mono" : bold ? "bold" : "regular";
+     fonts[key] ??= await loadFont(
+       mono
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index 9c0916f2..0dbf4e62 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -64,7 +64,15 @@ const TEXT_SIZE_PX: Record<string, number> = {
+  */
+ const FIRST_DYNAMIC_SLOT = MONO_SLOT_BASE + MONO_FONT_PX.length;
+ 
+-interface DynamicSlot { px: number; bold: boolean; mono: boolean }
++/**
++ * A named face (`font-[display]`) is a family declared to the build next to
++ * the default pair (`--font-face-regular=display=<path>`,
++ * `--font-face-bold=display=<path>`). Its slots are always dynamic: the pinned
++ * table below is the default face's, and a face's (px, weight) pairs are
++ * allocated in first-sight order like any `text-[Npx]` size. `face` is
++ * undefined for the default face and for `font-mono`.
++ */
++interface DynamicSlot { px: number; bold: boolean; mono: boolean; face?: string }
+ const dynamicSlots: DynamicSlot[] = [];
+ const dynamicIndex = new Map<string, number>();
+ 
+@@ -75,8 +83,8 @@ export function resetFontSlotPlan(): void {
+ }
+ 
+ /** Every slot this build uses, pinned plus dynamic. bake-font consumes it. */
+-export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold: boolean; mono: boolean }> {
+-  const out: { slot: number; px: number; bold: boolean; mono: boolean }[] = [];
++export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold: boolean; mono: boolean; face?: string }> {
++  const out: { slot: number; px: number; bold: boolean; mono: boolean; face?: string }[] = [];
+   for (let i = 0; i < FONT_PX.length; i++) {
+     out.push({ slot: i, px: FONT_PX[i]!, bold: false, mono: false });
+     out.push({ slot: FONT_PX.length + i, px: FONT_PX[i]!, bold: true, mono: false });
+@@ -87,13 +95,21 @@ export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold:
+     out.push({ slot: MONO_SLOT_BASE + i, px: MONO_FONT_PX[i]!, bold: false, mono: true });
+   }
+   dynamicSlots.forEach((d, i) =>
+-    out.push({ slot: FIRST_DYNAMIC_SLOT + i, px: d.px, bold: d.bold, mono: d.mono }),
++    out.push({
++      slot: FIRST_DYNAMIC_SLOT + i, px: d.px, bold: d.bold, mono: d.mono,
++      ...(d.face !== undefined ? { face: d.face } : {}),
++    }),
+   );
+   return out;
+ }
+ 
+-/** Slot index for a (px, weight, family) triple, allocating one for unpinned sizes. */
+-export function fontSlotFor(px: number, bold: boolean, mono = false): number {
++/** Name a `font-[name]` face may take: lowercase, starting with a letter. */
++export const FONT_FACE_NAME = /^[a-z][a-z0-9-]*$/;
++
++/** Slot index for a (px, weight, family) triple, allocating one for unpinned sizes.
++ *  A named `face` always allocates dynamically and takes precedence over `mono`. */
++export function fontSlotFor(px: number, bold: boolean, mono = false, face?: string): number {
++  if (face !== undefined) return allocDynamic(px, bold, false, face);
+   if (mono) {
+     const i = (MONO_FONT_PX as readonly number[]).indexOf(px);
+     if (i >= 0) return MONO_SLOT_BASE + i;
+@@ -108,8 +124,8 @@ export function fontSlotFor(px: number, bold: boolean, mono = false): number {
+   return allocDynamic(px, bold, false);
+ }
+ 
+-function allocDynamic(px: number, bold: boolean, mono: boolean): number {
+-  const key = `${px}/${bold ? "b" : "r"}/${mono ? "m" : "p"}`;
++function allocDynamic(px: number, bold: boolean, mono: boolean, face?: string): number {
++  const key = `${px}/${bold ? "b" : "r"}/${mono ? "m" : "p"}` + (face !== undefined ? `/${face}` : "");
+   const existing = dynamicIndex.get(key);
+   if (existing !== undefined) return existing;
+ 
+@@ -117,23 +133,26 @@ function allocDynamic(px: number, bold: boolean, mono: boolean): number {
+   if (slot >= MAX_FONT_SLOTS) {
+     throw new Error(
+       `PocketJS tailwind: font slot budget exhausted (${MAX_FONT_SLOTS}). ` +
+-        `This composition uses more distinct (size, weight) pairs than the atlas ` +
+-        `table holds; reduce the number of text sizes.`,
++        `This composition uses more distinct (size, weight, face) triples than the ` +
++        `atlas table holds; reduce the number of text sizes or faces.`,
+     );
+   }
+-  dynamicSlots.push({ px, bold, mono });
++  dynamicSlots.push(face !== undefined ? { px, bold, mono, face } : { px, bold, mono });
+   dynamicIndex.set(key, slot);
+   return slot;
+ }
+ 
+-/** (px, bold, mono) for a slot index — inverse of fontSlotFor. */
+-export function fontSlotInfo(slot: number): { px: number; bold: boolean; mono: boolean } {
++/** (px, bold, mono, face) for a slot index — inverse of fontSlotFor. `face` is
++ *  present only for a named face. */
++export function fontSlotInfo(slot: number): { px: number; bold: boolean; mono: boolean; face?: string } {
+   if (slot >= FIRST_DYNAMIC_SLOT) {
+     const d = dynamicSlots[slot - FIRST_DYNAMIC_SLOT];
+     if (d === undefined) {
+       throw new Error(`PocketJS tailwind: font slot ${slot} was never allocated`);
+     }
+-    return { px: d.px, bold: d.bold, mono: d.mono };
++    return d.face !== undefined
++      ? { px: d.px, bold: d.bold, mono: d.mono, face: d.face }
++      : { px: d.px, bold: d.bold, mono: d.mono };
+   }
+   if (slot >= MONO_SLOT_BASE) {
+     const px = MONO_FONT_PX[slot - MONO_SLOT_BASE];
+@@ -243,6 +262,8 @@ type Decl = readonly [number, number]; // [propId, u32 value]
+ /** Per-variant parse accumulator (pseudo-utilities resolved at literal level). */
+ interface VariantAcc {
+   mono?: boolean;
++  /** `font-[name]`: a named face declared to the build. */
++  face?: string;
+   decls: Decl[];
+   sizePx?: number;
+   bold?: boolean;
+@@ -367,6 +388,16 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+     case "tracking-wide": acc.trackingWide = true; return true;
+   }
+   if (tok in SHADOWS) { D.push([PROP.shadow, int(SHADOWS[tok])]); return true; }
++  {
++    // `font-[display]`: a named face. The build refuses a name no
++    // `--font-face-*` flag declared (bake-font.ts), so a typo is loud there.
++    const face = /^font-\[([^\]]*)\]$/.exec(tok);
++    if (face) {
++      if (!FONT_FACE_NAME.test(face[1]!)) return false;
++      acc.face = face[1]!;
++      return true;
++    }
++  }
+ 
+   // -- prefix-value utilities ---------------------------------------------------
+   const dash = tok.indexOf("-");
+@@ -764,8 +795,9 @@ export function parseClassLiteral(
+     const effPx = v.sizePx ?? base.sizePx ?? 16;
+     const effBold = v.bold ?? base.bold ?? false;
+     const effMono = v.mono ?? base.mono ?? false;
+-    if (v.sizePx !== undefined || v.bold !== undefined || v.mono !== undefined) {
+-      v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold, effMono))]);
++    const effFace = v.face ?? base.face;
++    if (v.sizePx !== undefined || v.bold !== undefined || v.mono !== undefined || v.face !== undefined) {
++      v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold, effMono, effFace))]);
+     }
+     if (v.trackingWide) {
+       v.decls.push([PROP.tracking, px(0.025 * effPx)]); // Tailwind tracking-wide = 0.025em
+@@ -895,10 +927,10 @@ export function generateStylesModule(c: CompiledStyles): string {
+   L.push(`export const STYLE_COUNT = ${c.records.length};`);
+   L.push("");
+   L.push("/** Baked font-atlas slots shipped in the pak: slot -> metrics. */");
+-  L.push("export const FONT_SLOTS: Record<number, { px: number; bold: boolean }> = {");
++  L.push("export const FONT_SLOTS: Record<number, { px: number; bold: boolean; face?: string }> = {");
+   for (const slot of c.usedFontSlots) {
+-    const { px, bold } = fontSlotInfo(slot);
+-    L.push(`  ${slot}: { px: ${px}, bold: ${bold} },`);
++    const { px, bold, face } = fontSlotInfo(slot);
++    L.push(`  ${slot}: { px: ${px}, bold: ${bold}${face !== undefined ? `, face: ${JSON.stringify(face)}` : ""} },`);
+   }
+   L.push("};");
+   L.push("");
+diff --git a/tests/font-bake.test.ts b/tests/font-bake.test.ts
+index fd7a3f9b..2049c954 100644
+--- a/tests/font-bake.test.ts
++++ b/tests/font-bake.test.ts
+@@ -167,3 +167,30 @@ describe("monospace slots", () => {
+     expect(glyphAdvances(bakeSlot(font, 1, 14, false, chars, 1)).size).toBeGreaterThan(1);
+   });
+ });
++
++describe("named faces", () => {
++  test("a face slot bakes from the face's file, and an undeclared face is refused", async () => {
++    const { compileClasses } = await import("../framework/compiler/tailwind.ts");
++    const { PROP } = await import("../contracts/spec/spec.ts");
++    const { bakeAtlases, DEFAULT_REGULAR: reg, DEFAULT_BOLD: bold } = await import("../framework/compiler/bake-font.ts");
++    const { join, dirname } = await import("node:path");
++    const displayRegular = join(dirname(reg), "InterDisplay-Regular.ttf");
++    const displayBold = join(dirname(bold), "InterDisplay-Bold.ttf");
++    const c = compileClasses(["text-[40px] font-[display]", "text-[40px]"]);
++    const faceSlot = c.records[c.ids["text-[40px] font-[display]"]!]!.base!.find((p) => p.prop === PROP.fontSlot)!.value;
++    const plainSlot = c.records[c.ids["text-[40px]"]!]!.base!.find((p) => p.prop === PROP.fontSlot)!.value;
++    const atlases = await bakeAtlases({
++      codepoints: [..."Hamburgefonstiv"].map((ch) => ch.codePointAt(0)!),
++      slots: [faceSlot, plainSlot],
++      faces: { display: { regular: displayRegular, bold: displayBold } },
++    });
++    const bySlot = new Map(atlases.map((a) => [a.slot, a]));
++    expect(bySlot.get(faceSlot)!.face).toBe("display");
++    expect(bySlot.get(plainSlot)!.face).toBeUndefined();
++    // Two different faces at one size: the coverage differs.
++    expect(Buffer.compare(bySlot.get(faceSlot)!.bytes, bySlot.get(plainSlot)!.bytes)).not.toBe(0);
++    await expect(
++      bakeAtlases({ codepoints: [65], slots: [faceSlot] }),
++    ).rejects.toThrow("names a face this build does not declare");
++  });
++});
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index 55387c69..b2b78edc 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -568,3 +568,38 @@ describe("baked keyframe animations", () => {
+     registerAnimationTheme(undefined);
+   });
+ });
++
++describe("named font faces (font-[name])", () => {
++  test("a face allocates its own dynamic slot per (px, weight) and leaves the default table alone", () => {
++    const c = compileClasses([
++      "text-[40px] font-[display]",
++      "text-[40px] font-[display] font-bold",
++      "text-[40px]",
++      "text-2xl font-[body]",
++      "text-2xl",
++    ]);
++    const slotOf = (lit: string): number => {
++      const rec = c.records[c.ids[lit]!]!;
++      return rec.base!.find((p) => p.prop === PROP.fontSlot)!.value;
++    };
++    const display = slotOf("text-[40px] font-[display]");
++    const displayBold = slotOf("text-[40px] font-[display] font-bold");
++    const plain40 = slotOf("text-[40px]");
++    const body24 = slotOf("text-2xl font-[body]");
++    expect(new Set([display, displayBold, plain40, body24]).size).toBe(4);
++    // The pinned default slot for 24px regular is untouched by a face at 24px.
++    expect(slotOf("text-2xl")).toBe(fontSlotFor(24, false));
++    expect(c.usedFontSlots).toContain(display);
++  });
++  test("a face name that is not /^[a-z][a-z0-9-]*$/ is not a utility", () => {
++    expect(parseClassLiteral("font-[Display]")).toBeNull();
++    expect(parseClassLiteral("font-[]")).toBeNull();
++  });
++  test("font-[name] takes precedence over font-mono", async () => {
++    const { fontSlotInfo } = await import("../framework/compiler/tailwind.ts");
++    const c = compileClasses(["text-[14px] font-mono font-[code]"]);
++    const rec = c.records[0]!;
++    const slot = rec.base!.find((p) => p.prop === PROP.fontSlot)!.value;
++    expect(fontSlotInfo(slot)).toEqual({ px: 14, bold: false, mono: false, face: "code" });
++  });
++});
+diff --git a/tools/build.ts b/tools/build.ts
+index 05bad5c0..059854ec 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -24,6 +24,11 @@
+ //   --density=<integer>          low-level target sampling density (default 1)
+ //   --font-regular=<path>        override the regular font source
+ //   --font-bold=<path>           override the bold font source
++//   --font-face-regular=<name>=<path>  declare a named face's regular file
++//   --font-face-bold=<name>=<path>     ...and its bold file; `font-[name]` in a
++//                                class literal selects it. Both are required
++//                                per name; a name used and not declared, or
++//                                declared with one weight, is a build error
+ //   --outdir=<path>              write <app>.js/.pak here instead of dist/
+ //                                (external repos build their apps against a
+ //                                vendored PocketJS and keep outputs local)
+@@ -84,6 +89,17 @@ let extraChars = "";
+ let metricsOnly = false;
+ let regularFontPath: string | undefined;
+ let boldFontPath: string | undefined;
++const faceFlags: Record<string, { regular?: string; bold?: string }> = {};
++function faceFlag(a: string, weight: "regular" | "bold"): void {
++  const body = a.slice(`--font-face-${weight}=`.length);
++  const eq = body.indexOf("=");
++  const name = eq > 0 ? body.slice(0, eq) : "";
++  if (!/^[a-z][a-z0-9-]*$/.test(name) || eq === body.length - 1) {
++    console.error(`PocketJS build: ${a} — expected --font-face-${weight}=<name>=<path>, name matching /^[a-z][a-z0-9-]*$/`);
++    process.exit(1);
++  }
++  (faceFlags[name] ??= {})[weight] = resolvePath(body.slice(eq + 1));
++}
+ let appArg = "";
+ let frameworkFlag: string | undefined;
+ let configPath = join(ROOT, "pocket.config.ts");
+@@ -98,6 +114,8 @@ for (const a of args) {
+   else if (a === "--metrics-only") metricsOnly = true;
+   else if (a.startsWith("--font-regular=")) regularFontPath = resolvePath(a.slice("--font-regular=".length));
+   else if (a.startsWith("--font-bold=")) boldFontPath = resolvePath(a.slice("--font-bold=".length));
++  else if (a.startsWith("--font-face-regular=")) faceFlag(a, "regular");
++  else if (a.startsWith("--font-face-bold=")) faceFlag(a, "bold");
+   else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
+   else if (a.startsWith("--config=")) { configPath = resolvePath(ROOT, a.slice("--config=".length)); configFlagged = true; }
+   else if (a === "--no-config") useConfig = false;
+@@ -319,6 +337,18 @@ console.log(
+     `${Object.keys(styles.ids).length} literal(s) -> framework/src/styles.generated.ts`,
+ );
+ 
++const faces: Record<string, { regular: string; bold: string }> = {};
++for (const [name, f] of Object.entries(faceFlags)) {
++  if (f.regular === undefined || f.bold === undefined) {
++    console.error(
++      `PocketJS build: face \`${name}\` declares only its ${f.regular !== undefined ? "regular" : "bold"} file — ` +
++        `pass both --font-face-regular=${name}=<path> and --font-face-bold=${name}=<path>`,
++    );
++    process.exit(1);
++  }
++  faces[name] = { regular: f.regular, bold: f.bold };
++}
++
+ const atlases = await bakeAtlases({
+   codepoints,
+   slots: styles.usedFontSlots,
+@@ -327,10 +357,11 @@ const atlases = await bakeAtlases({
+   metricsOnly,
+   regularTtf: regularFontPath,
+   boldTtf: boldFontPath,
++  faces,
+ });
+ for (const a of atlases) {
+   console.log(
+-    `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}) ${a.glyphCount} glyphs, ` +
++    `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}${a.face !== undefined ? ` face ${a.face}` : ""}) ${a.glyphCount} glyphs, ` +
+       `cell ${a.cellW}x${a.cellH}, coverage ${a.coverageW}x${a.coverageH} @${a.rasterDensity}x, ` +
+       (a.metricsOnly ? "metrics only, " : "") +
+       `${a.pairCount} kern pair(s), ${a.bytes.length} bytes`,
