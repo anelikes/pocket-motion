@@ -72,10 +72,14 @@ Each of these was decided against for a reason, not left undone.
   vocabulary a composition can express, and they satisfy neither admission
   rule: none is expressible as a baked timeline, and none reproduces byte for
   byte across architectures without a GPU contract this project does not have.
-- **Runtime media effects and colour grading.** Blur and mip filtering belong
-  to the ingest, where the result is a frozen artifact with a digest. A
-  runtime operator would be a second way to move a pixel that no declaration
-  covers. Blend modes are the one item still open rather than decided.
+- **Footage effects and colour grading.** Filtering a clip — a grade, a
+  denoise, mip levels — belongs to the ingest, where the result is a frozen
+  artifact with a digest. What the rasteriser does draw is declared in a class
+  literal and travels in the draw list, where `check`, `trace` and
+  `visibility` read it: text stroke, a node's blur, drop shadow and glow, and
+  blend modes (`patches/0017`, `0018`; costs in
+  [`paint-effects.md`](./baselines/paint-effects.md)). A backdrop blur — one
+  that reads what is beneath a node — is not among them.
 
 ## Relationship to upstream
 

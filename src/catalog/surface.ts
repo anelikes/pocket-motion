@@ -1964,6 +1964,118 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
 
+  {
+    id: "paint.blur",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "blur-sm|md|lg|xl|2xl|3xl | blur | blur-none | blur-[Npx]",
+    required: false,
+    defaultValue: "0 (no layer)",
+    constraint:
+      "a gaussian blur of the node AND its subtree as one layer (CSS `filter: blur()`); the value is the standard deviation in px — Tailwind v3 steps 4/8/12/16/24/40/64 — at most 128. Keyframe-animatable as `blur` or as `filter: \"blur(Npx)\"`, continuous in the deviation. Computed at 1/2, 1/4, 1/8 resolution from 8, 16, 32 px of deviation; crossing one of those moves a channel by at most 2 levels (core test, measured 1). The blur spreads inside the clip in force at the node, never past it. No background blur. Inside a perspective (3D) subtree it is ignored. patches/0018, class motion, ops 67/68",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "blur-md compiles to blur = 12.0",
+        literals: ["blur-md w-[100px] h-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "blur", value: 1094713344 } },
+      },
+      {
+        what: "blur-[2.5px] compiles to blur = 2.5",
+        literals: ["blur-[2.5px] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "blur", value: 1075838976 } },
+      },
+      {
+        what: "a deviation past 128 px is not a utility and drops the literal",
+        literals: ["blur-[129px] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+  {
+    id: "paint.drop-shadow",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "drop-shadow-[X_Y_B_#hex] | drop-shadow-<color> | text-shadow-… | glow-[B] | glow-<color> | glow-gain-[N]",
+    required: false,
+    defaultValue: "none (colour transparent); gain 1",
+    constraint:
+      "a shadow of the node and its subtree made from their alpha (CSS `drop-shadow()`): offset X, Y and blur RADIUS B in px (deviation B / 2, as CSS), at most 256; the colour as the fourth value or as `drop-shadow-<palette>`/`-[#hex]`, transparent by default, so geometry alone draws nothing. `text-shadow-` is the same props under CSS's name for text; `glow-[B]` is a shadow at offset 0 with its own `glow-<color>`; `glow-gain-[N]` (0..16) multiplies the blurred alpha, clamped, which thickens a glow. Offsets round to whole physical px. Every value is keyframe-animatable as `dropShadowX/Y/Blur/Color/Gain` or as `filter: \"drop-shadow(x y b color)\"`. The shadow sits under the node, inside the clip in force at it. patches/0018, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "drop-shadow-[4px_6px_10px_#ff0000] compiles the blur radius",
+        literals: ["drop-shadow-[4px_6px_10px_#ff0000] w-[10px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "dropShadowBlur", value: 1092616192 } },
+      },
+      {
+        what: "the fourth value is the colour",
+        literals: ["drop-shadow-[4px_6px_10px_#ff0000] w-[10px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "dropShadowColor", value: 4278190335 } },
+      },
+      {
+        what: "glow-gain-[2] compiles to dropShadowGain = 2",
+        literals: ["glow-[24px] glow-amber-400 glow-gain-[2]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "dropShadowGain", value: 1073741824 } },
+      },
+      {
+        what: "one length is not a shadow and drops the literal",
+        literals: ["drop-shadow-[4px] w-[10px]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+  {
+    id: "paint.blend",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "mix-blend-normal|multiply|screen|overlay|plus-lighter|add",
+    required: false,
+    defaultValue: "normal (no layer)",
+    constraint:
+      "composites the node and its subtree, as one layer, over what is beneath by the W3C separable blend function, then source-over (CSS `mix-blend-mode`). `plus-lighter` and `add` are linear dodge, min(1, backdrop + source), composited like the others rather than as a Porter-Duff plus. Integer on 0..255 channels. patches/0018, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "mix-blend-multiply compiles to BlendMode.Multiply (1)",
+        literals: ["mix-blend-multiply w-[10px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "blendMode", value: 1 } },
+      },
+      {
+        what: "mix-blend-plus-lighter compiles to BlendMode.Add (4)",
+        literals: ["mix-blend-plus-lighter w-[10px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "blendMode", value: 4 } },
+      },
+      {
+        what: "a mode the rasteriser does not draw drops the literal",
+        literals: ["mix-blend-difference w-[10px]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+
   // -------------------------------------------------------------------------
   // Declaring footage (generator side)
   //

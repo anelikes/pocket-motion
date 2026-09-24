@@ -71,6 +71,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/filters": {
+      "failures": [],
+      "nodes": 7,
+      "named": 6,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/fit": {
       "failures": [],
       "nodes": 3,

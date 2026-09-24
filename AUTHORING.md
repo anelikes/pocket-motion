@@ -125,11 +125,18 @@ Worked examples, roughly in reading order:
 - `compositions/lower-third` — a name plate in the lower third, same spec
   contract. Optional logo (missing file is an error) and optional one footage
   track, declared with `tileNodes` / `footageTrack`.
-- `compositions/glow`, `compositions/glow-column` — the baked falloff, since
-  the rasteriser has no blur. The first is the 取消 button; the second renders
+- `compositions/glow`, `compositions/glow-column` — a falloff baked into a
+  PNG at build time, written before the rasteriser had a blur and kept as the
+  fixture for that technique (`glow-*` now draws one at render time;
+  `compositions/filters`). The first is the 取消 button; the second renders
   the column veil at a 140px and a 656px stack, which is what puts
   `rotate-180` on the lower cap into the digest ledger — every assertion about
   the generated source passes with the picture upside down.
+- `compositions/faces`, `compositions/stroke`, `compositions/filters` — the
+  mechanism fixtures for named faces, text stroke and filter layers: four
+  faces in one frame; outside, centred, hollow and keyframed outlines; blur
+  steps, a breathing glow, a hard shadow, a rack focus keyframed as a CSS
+  `filter`, and the five blend modes over a split ground.
 - `compositions/rename-card` — shutter's opening carried six seconds further:
   a dialog, a name typed into it with the caret at each prefix's *measured*
   width (`openMeasurer` again, one `Text` per prefix), and a close built from
@@ -231,7 +238,9 @@ Three node types: `View`, `Text`, `Image` (from
 `@pocketjs/framework/components`). Styling is Tailwind-subset class literals —
 layout (flex, size, inset, gap, padding), color/gradient (`bg-*`,
 `from-*`/`to-*`, 4-direction linear only), `rounded`, `opacity`, `border`,
-`shadow`, 2D/3D transforms, and an arc primitive
+`shadow`, 2D/3D transforms, named font faces (`font-[name]`), text stroke,
+filters (`blur-*`, `drop-shadow-*`, `glow-*`), blend modes (`mix-blend-*`),
+and an arc primitive
 (`arc-start-[deg] arc-sweep-[deg] arc-width-[px]`). Arbitrary values use
 bracket syntax: `w-[880px]`, `text-[38px]`. The authoritative list of
 utilities is the compiler itself — `vendor/pocketjs/framework/compiler/tailwind.ts`;
@@ -356,6 +365,26 @@ so an outside stroke is ink past the box and `layout` reports
 (`compositions/stroke` does, by name). Drawn by this repository's rasteriser
 only (`patches/0017`).
 
+**A node can be filtered as a unit.** `blur-md`, `drop-shadow-[6px_6px_8px_#000000]`,
+`glow-[24px] glow-amber-400` and `mix-blend-screen` each paint the node and
+its whole subtree into one layer, which is blurred, given a shadow and
+composited by blend mode when the node is done — CSS's `filter` and
+`mix-blend-mode`, in that order. `blur-*` is the standard deviation in px
+(Tailwind's 4/8/12/16/24/40/64 steps, or `blur-[Npx]` up to 128); a shadow's
+third length is the blur RADIUS, as in CSS, and a shadow draws only with a
+colour. `text-shadow-*` is the same shadow under the name CSS uses for text;
+`glow-[B]` is a shadow at offset 0, and `glow-gain-[N]` multiplies its
+alpha, which is how a thin line of text gets a glow that reads. Everything
+but the blend mode animates: write `filter: "blur(16px) drop-shadow(0px 0px
+4px #38bdf8)"` in a keyframe, or `blur` / `dropShadowBlur` / `dropShadowGain`
+and friends one at a time — `compositions/filters` does both. Like a stroke,
+a filter is paint, not layout, and it stays inside the clip in force at the
+node; there is no backdrop blur. Layers nest four deep; a fifth paints
+unfiltered. What each costs per frame is measured in
+`baselines/paint-effects.md` — a glow on each of six lines of lyrics is
+about 10 ms at 1080p. Drawn by this repository's rasteriser only
+(`patches/0018`).
+
 **What does not exist** (the checker will catch most of these, but knowing
 saves a round trip): per-frame callbacks (`onFrame`), timers (`after`),
 effects, signals that change after mount — a composition mounts once and
@@ -369,10 +398,9 @@ coming up: the transcript exists before the render, so each word's time is
 just a number your `gen.ts` turns into an animation delay. Anything you know
 at build time — a beat grid, a transcript, a data series, a per-item stagger —
 bakes. What cannot exist is timing that only becomes known while the frames
-are being produced, and for a renderer that is not a real case. No blur, no masks (only
-`overflow-hidden` rect clipping), no blend modes (alpha only), no multi-stop
-or radial gradients, no `SCREEN_W`/`SCREEN_H` imports (read the viewport, or
-just lay out with flex).
+are being produced, and for a renderer that is not a real case. No backdrop
+blur, no multi-stop or radial gradients, no `SCREEN_W`/`SCREEN_H` imports
+(read the viewport, or just lay out with flex).
 
 ## Text
 

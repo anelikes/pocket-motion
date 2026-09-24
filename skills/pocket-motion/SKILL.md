@@ -79,8 +79,15 @@ and text wider than its box draws past it or is clipped by an
 worked example. Every font size is baked, so only sizes that appear in class
 literals get an atlas. `scale` transforms move glyphs but never resize them.
 
-**What does not exist**: blur, masks (only `overflow-hidden` rect clipping),
-blend modes, multi-stop or radial gradients, runtime media effects.
+**Paint beyond boxes and text**: `overflow-mask` (a window shaped by its
+outline), named font faces (`font-[name]` over the sidecar's `fonts.faces`),
+text stroke (`text-stroke-[Npx] text-stroke-<color>`), and filter layers —
+`blur-*`, `drop-shadow-*`, `glow-*`, `mix-blend-*` — that paint a node and its
+subtree as one unit. All paint-only, all drawn by this repository's rasteriser
+alone (`patches/0013`, `0016`–`0018`).
+
+**What does not exist**: backdrop blur, multi-stop or radial gradients,
+footage effects at render time (grading and filtering belong to the ingest).
 
 **Footage is declared once, by a generator.** `tileNodes` emits the placeholder
 `Image` nodes and `footageTrack` emits the sidecar entry, both derived from one
@@ -239,8 +246,10 @@ Each of these is a decision with a reason, not a gap to fill.
 - **No browser anywhere in the render path.** A preview that renders in a
   browser cannot claim its pixels are the delivery's; here `preview` serves the
   bytes `frame` writes.
-- **No runtime blur, masks, blend modes or shader transitions.** They are
-  outside the vocabulary and outside what reproduces byte for byte.
+- **No shader transitions and no backdrop blur.** They are outside the
+  vocabulary and outside what reproduces byte for byte. The blur, shadow and
+  blend a class literal declares are in the draw list and integer or
+  IEEE-exact in the rasteriser, so they are inside both.
 - **No per-frame guest code.** Motion is baked timelines, so a frame costs no
   JavaScript.
 - **No media supply.** No stock library, no TTS, no background removal, no

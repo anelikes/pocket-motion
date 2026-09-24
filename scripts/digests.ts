@@ -145,6 +145,12 @@ const ENTRIES = [
   // 45 frames. A change to the distance field or the ring arithmetic moves
   // this digest and no other.
   "compositions/stroke",
+  // filters. The filter layers of patches/0018 over 30 frames: three blur
+  // steps on one card, a breathing text glow, a hard drop shadow, a rack
+  // focus keyframed as a CSS filter, and the five blend modes over a split
+  // ground. A change to the blur passes, the shadow, the composite or a
+  // blend function moves this digest.
+  "compositions/filters",
 ] as const;
 
 /**

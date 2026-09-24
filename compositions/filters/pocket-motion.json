@@ -1,0 +1,65 @@
+{
+  "motion": 1,
+  "durationFrames": 30,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf"
+  },
+  "layoutAllow": [
+    {
+      "node": "glow-text",
+      "allow": "overflow",
+      "reason": "a glow is ink past the glyph box by design"
+    },
+    {
+      "node": "shadow-text",
+      "allow": "overflow",
+      "reason": "a drop shadow is ink past the glyph box by design"
+    },
+    {
+      "node": "focus-text",
+      "allow": "overflow",
+      "reason": "a blurred run spreads past its box"
+    },
+    {
+      "node": "blur-sm-label",
+      "allow": "overflow",
+      "reason": "the label is blurred with its card, so its ink spreads past the glyph box"
+    },
+    {
+      "node": "blur-md-label",
+      "allow": "overflow",
+      "reason": "the label is blurred with its card, so its ink spreads past the glyph box"
+    },
+    {
+      "node": "blur-xl-label",
+      "allow": "overflow",
+      "reason": "the label is blurred with its card, so its ink spreads past the glyph box"
+    }
+  ],
+  "assertions": [
+    {
+      "node": "glow-text",
+      "inPicture": [
+        0,
+        29
+      ]
+    },
+    {
+      "node": "shadow-text",
+      "inPicture": [
+        0,
+        29
+      ]
+    },
+    {
+      "node": "focus-text",
+      "inPicture": [
+        0,
+        29
+      ]
+    }
+  ]
+}

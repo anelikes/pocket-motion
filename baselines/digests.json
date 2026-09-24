@@ -42,6 +42,10 @@
       "frames": 1,
       "digest": "9e43b28b9fed9cdc1b10f36f9120d4a12a0a52f80063e04b6bc3e23ab3be67eb"
     },
+    "compositions/filters": {
+      "frames": 30,
+      "digest": "2ccf040bd296d6c3015550e9ff6a23bd8a52785820f98ac45217eb3d221232b9"
+    },
     "compositions/footage-tracks": {
       "frames": 150,
       "digest": "3808eae81de304e259ebe1887f6ae259d5d037a86615e097d2c91325f3235b8d"
