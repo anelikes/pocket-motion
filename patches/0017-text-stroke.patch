@@ -25,12 +25,14 @@ What the patch adds, by file:
   the words it did before.
 - `engine/core/src/raster.rs`: `glyph_stroke` samples the run's coverage
   the way `glyph_run` does into a buffer over the cells grown by the
-  width, then `seed_distance` — two raster-order passes of nearest-seed
-  propagation, each seed carrying its edge offset 0.5 - coverage — gives
-  the distance to the ink; stroke coverage is clamp(width + 0.5 - d),
-  minus the ink (mode 2), or the dilation by half plus the complement's
-  dilation by half minus one (mode 1). f32 add/mul/div and a Newton sqrt
-  only, so the same words give the same pixels on every host.
+  width, then `seed_distance` — two raster-order passes of 8-neighbour
+  dead reckoning carrying each pixel's nearest seed by exact integer
+  squared distance, then |p - s| + (0.5 - coverage(s)), re-taken over
+  the 3x3 neighbourhood's seeds where it is near the stroke's edge —
+  gives the distance to the ink; stroke coverage is clamp(width + 0.5 - d), minus
+  the ink (mode 2), or the dilation by half plus the complement's
+  dilation by half minus one (mode 1). Integer compares and one Newton
+  sqrt per pixel, so the same words give the same pixels on every host.
 - `engine/core/src/damage.rs`: the op's word count, and its cells grown by
   the width as its bound.
 - `engine/core/src/tests.rs`: five tests — outside under the fill and
@@ -322,7 +324,7 @@ index 9c3c0599..24cf4817 100644
      /// plus the run string's UTF-8 bytes packed into the stream — the words
      /// alone are the complete pixel truth. The origin is f32 and may sit
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index 5d17f902..7679398e 100644
+index 5d17f902..bc00850b 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
 @@ -910,6 +910,30 @@ fn render_ops<T: RenderTarget>(
@@ -356,7 +358,7 @@ index 5d17f902..7679398e 100644
              draw_op::MASK_POP => {
                  if mask_depth > 0 {
                      target.pop_mask();
-@@ -1515,6 +1539,226 @@ fn glyph_run<T: RenderTarget>(
+@@ -1515,6 +1539,267 @@ fn glyph_run<T: RenderTarget>(
      }
  }
  
@@ -368,86 +370,127 @@ index 5d17f902..7679398e 100644
 +/// a line of text.
 +const STROKE_MAX_REGION: usize = 16 * 1024 * 1024;
 +
-+/// Nearest-seed distance field over `cov` (w x h, coverage 0..255): for each
-+/// pixel, the smallest `|p - s| + (0.5 - c(s))` over seeds `s` (pixels with
-+/// coverage > 0) that two raster-order passes of 4-neighbour propagation
-+/// find. `0.5 - c(s)` places the ink edge inside an anti-aliased seed pixel,
-+/// so the field is 0.5 - c at a seed itself and a dilation of width 0 is the
-+/// coverage it started from. Distances are f32 from exact integer squared
-+/// offsets (`sqrtf_newton`: IEEE-754 add/mul/div only), compared in a fixed
-+/// order: the same input gives the same field on every host.
-+fn seed_distance(cov: &[u8], w: usize, h: usize, invert: bool, out: &mut Vec<f32>) {
-+    const FAR: f32 = 1.0e9;
++/// Nearest-seed distance field over `cov` (w x h, coverage 0..255). Seeds
++/// are pixels with coverage > 0 (of the complement when `invert`). Two
++/// raster-order passes of 8-neighbour dead reckoning carry each pixel's
++/// nearest seed by exact integer squared distance; the field is then
++/// `|p - s| + (0.5 - c(s))`, the offset placing the ink edge inside an
++/// anti-aliased seed pixel — so the field is 0.5 - c at a seed itself and a
++/// dilation of width 0 is the coverage it started from.
++///
++/// The seed nearest by centre is not always the one nearest by that sum —
++/// a faint anti-aliased pixel can be closer than the solid one behind it —
++/// and on a curve the difference shows as steps in the stroke's outer edge.
++/// So where the field is near `band` (the stroke's edge, the only place
++/// where the exact value reaches the picture) the sum is re-taken over the
++/// seeds of the 3x3 neighbourhood and the smallest kept. Integer
++/// compares, Newton sqrt: the same input gives the same field on every host.
++fn seed_distance(cov: &[u8], w: usize, h: usize, invert: bool, band: f32, out: &mut Vec<f32>) {
++    const NONE: i32 = i32::MIN;
 +    let n = w * h;
 +    let c_of = |v: u8| -> u8 { if invert { 255 - v } else { v } };
-+    let mut seed: Vec<u32> = alloc::vec![u32::MAX; n];
-+    out.clear();
-+    out.resize(n, FAR);
-+    for i in 0..n {
-+        let c = c_of(cov[i]);
-+        if c > 0 {
-+            seed[i] = i as u32;
-+            out[i] = 0.5 - c as f32 / 255.0;
-+        }
-+    }
-+    let relax = |i: usize, j: usize, seed: &mut Vec<u32>, out: &mut Vec<f32>| {
-+        let s = seed[j];
-+        if s == u32::MAX {
-+            return;
-+        }
-+        let (px, py) = ((i % w) as i64, (i / w) as i64);
-+        let (sx, sy) = ((s as usize % w) as i64, (s as usize / w) as i64);
-+        let (dx, dy) = (px - sx, py - sy);
-+        let d = sqrtf_newton((dx * dx + dy * dy) as f32) + (0.5 - c_of(cov[s as usize]) as f32 / 255.0);
-+        if d < out[i] {
-+            out[i] = d;
-+            seed[i] = s;
-+        }
-+    };
++    // Nearest seed per pixel as (x, y), and its squared distance.
++    let mut sx: Vec<i32> = alloc::vec![NONE; n];
++    let mut sy: Vec<i32> = alloc::vec![0; n];
++    let mut d2: Vec<i64> = alloc::vec![i64::MAX; n];
 +    for y in 0..h {
 +        for x in 0..w {
 +            let i = y * w + x;
-+            if y > 0 {
-+                if x > 0 {
-+                    relax(i, i - w - 1, &mut seed, out);
-+                }
-+                relax(i, i - w, &mut seed, out);
-+                if x + 1 < w {
-+                    relax(i, i - w + 1, &mut seed, out);
-+                }
-+            }
-+            if x > 0 {
-+                relax(i, i - 1, &mut seed, out);
-+            }
-+        }
-+        for x in (0..w).rev() {
-+            let i = y * w + x;
-+            if x + 1 < w {
-+                relax(i, i + 1, &mut seed, out);
++            if c_of(cov[i]) > 0 {
++                sx[i] = x as i32;
++                sy[i] = y as i32;
++                d2[i] = 0;
 +            }
 +        }
 +    }
++    #[inline(always)]
++    fn relax(i: usize, j: usize, x: i32, y: i32, sx: &mut [i32], sy: &mut [i32], d2: &mut [i64]) {
++        let cx = sx[j];
++        if cx == i32::MIN {
++            return;
++        }
++        let cy = sy[j];
++        let (dx, dy) = ((x - cx) as i64, (y - cy) as i64);
++        let d = dx * dx + dy * dy;
++        if d < d2[i] {
++            d2[i] = d;
++            sx[i] = cx;
++            sy[i] = cy;
++        }
++    }
++    for y in 0..h {
++        let yi = y as i32;
++        for x in 0..w {
++            let (i, xi) = (y * w + x, x as i32);
++            if y > 0 {
++                if x > 0 {
++                    relax(i, i - w - 1, xi, yi, &mut sx, &mut sy, &mut d2);
++                }
++                relax(i, i - w, xi, yi, &mut sx, &mut sy, &mut d2);
++                if x + 1 < w {
++                    relax(i, i - w + 1, xi, yi, &mut sx, &mut sy, &mut d2);
++                }
++            }
++            if x > 0 {
++                relax(i, i - 1, xi, yi, &mut sx, &mut sy, &mut d2);
++            }
++        }
++        for x in (0..w.saturating_sub(1)).rev() {
++            relax(y * w + x, y * w + x + 1, x as i32, yi, &mut sx, &mut sy, &mut d2);
++        }
++    }
 +    for y in (0..h).rev() {
++        let yi = y as i32;
 +        for x in (0..w).rev() {
-+            let i = y * w + x;
++            let (i, xi) = (y * w + x, x as i32);
 +            if y + 1 < h {
 +                if x + 1 < w {
-+                    relax(i, i + w + 1, &mut seed, out);
++                    relax(i, i + w + 1, xi, yi, &mut sx, &mut sy, &mut d2);
 +                }
-+                relax(i, i + w, &mut seed, out);
++                relax(i, i + w, xi, yi, &mut sx, &mut sy, &mut d2);
 +                if x > 0 {
-+                    relax(i, i + w - 1, &mut seed, out);
++                    relax(i, i + w - 1, xi, yi, &mut sx, &mut sy, &mut d2);
 +                }
 +            }
 +            if x + 1 < w {
-+                relax(i, i + 1, &mut seed, out);
++                relax(i, i + 1, xi, yi, &mut sx, &mut sy, &mut d2);
 +            }
 +        }
-+        for x in 0..w {
-+            let i = y * w + x;
-+            if x > 0 {
-+                relax(i, i - 1, &mut seed, out);
++        for x in 1..w {
++            relax(y * w + x, y * w + x - 1, x as i32, yi, &mut sx, &mut sy, &mut d2);
++        }
++    }
++    out.clear();
++    out.resize(n, 1.0e9);
++    let off = |x: i32, y: i32| 0.5 - c_of(cov[y as usize * w + x as usize]) as f32 / 255.0;
++    for py in 0..h as i32 {
++        for px in 0..w as i32 {
++            let i = py as usize * w + px as usize;
++            if sx[i] == NONE {
++                continue;
 +            }
++            let mut d = sqrtf_newton(d2[i] as f32) + off(sx[i], sy[i]);
++            // The refined value is never above the provisional one, so the
++            // window reaches further on the far side of the edge.
++            let e = d - band;
++            if e > -1.0 && e < 2.0 {
++                for ny in (py - 1).max(0)..=(py + 1).min(h as i32 - 1) {
++                    for nx in (px - 1).max(0)..=(px + 1).min(w as i32 - 1) {
++                        let j = ny as usize * w + nx as usize;
++                        let cx = sx[j];
++                        if cx == NONE {
++                            continue;
++                        }
++                        let cy = sy[j];
++                        let (dx, dy) = ((px - cx) as f32, (py - cy) as f32);
++                        let c = sqrtf_newton(dx * dx + dy * dy) + off(cx, cy);
++                        if c < d {
++                            d = c;
++                        }
++                    }
++                }
++            }
++            out[i] = d;
 +        }
 +    }
 +}
@@ -553,10 +596,10 @@ index 5d17f902..7679398e 100644
 +    }
 +
 +    let mut dist: Vec<f32> = Vec::new();
-+    seed_distance(&cov, rw, rh, false, &mut dist);
++    seed_distance(&cov, rw, rh, false, reach, &mut dist);
 +    let mut dist_in: Vec<f32> = Vec::new();
 +    if mode == 1 {
-+        seed_distance(&cov, rw, rh, true, &mut dist_in);
++        seed_distance(&cov, rw, rh, true, reach, &mut dist_in);
 +    }
 +    let unit = |x: f32| -> f32 { x.max(0.0).min(1.0) };
 +    let y_end = out.y1.min(region.y0 + rh as i32);
