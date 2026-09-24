@@ -1,0 +1,226 @@
+pocket-motion-only: the PSP GE, Vita GXM and GLES2 paths address textures by power-of-two sizes and upstream keeps TEX_MAX_DIM at 512 for them; the software rasteriser samples by width and height and needs neither. A pak carrying an image of another size is refused by upstream's core at upload.
+
+0020 — images of any size: an IMG pak entry, or a texture a host uploads,
+is any size from 1 to IMG_MAX_DIM (2048) per side, a power of two or not.
+Sprite atlases, tilesets and stream planes keep TEX_MAX_DIM (512) and
+powers of two, and so every footage tile does.
+
+What the patch adds, by file:
+
+- `contracts/spec/spec.ts`, `gen-rust.ts`, `engine/core/src/spec.rs`
+  (regenerated): `IMG_MAX_DIM = 2048`, and TEX_MAX_DIM's comment says what
+  it still bounds.
+- `engine/core/src/lib.rs`: `upload_texture_flags` takes each side in
+  1..=IMG_MAX_DIM. Every size it accepted before it still accepts, the
+  same way; sampling was already by width and height (`tex_quad`,
+  `tex_tri`, `sample_linear`).
+- `framework/compiler/pak.ts`: `encodeImageEntry` takes each side in
+  1..IMG_MAX_DIM and names the size when it refuses; the header comment.
+- `framework/src/host.ts`: the `uploadTexture` doc comment.
+- `engine/core/src/tests.rs`: a 3x5 texture uploads and draws texel by
+  texel at 10x, 2048 is accepted and 2049 refused.
+- `tests/image-dims.test.ts`: a 300x170 entry encodes with its header and
+  payload exact; 2048 encodes, 2049 is refused.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index d099ba67..c8881535 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -136,6 +136,7 @@ import {
+   WIRE_SLOT_HEADER_SIZE,
+   WIRE_VERSION,
+   TEX_MAX_DIM,
++  IMG_MAX_DIM,
+   TEX_SLOT_BITS,
+   TEX_SLOT_MASK,
+   TILESET_ABSENT,
+@@ -219,6 +220,8 @@ export function generateRust(): string {
+   put("");
+   put("/// Textures must be power-of-two and no larger than this per side.");
+   put(`pub const TEX_MAX_DIM: u32 = ${TEX_MAX_DIM};`);
++  put(`/// Largest side of an image texture, any size from 1 (pocket-motion).`);
++  put(`pub const IMG_MAX_DIM: u32 = ${IMG_MAX_DIM};`);
+   put("/// Texture handles are generation-tagged like node ids:");
+   put("/// handle = (generation << TEX_SLOT_BITS) | slot; bit 31 stays 0.");
+   put(`pub const TEX_SLOT_BITS: u32 = ${TEX_SLOT_BITS};`);
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index aede4e1b..4affc87b 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -612,8 +612,14 @@ export const PSM = {
+   //              index bytes. 4x smaller than 8888 — the tile-canvas format.
+ } as const;
+ 
+-/** Textures must be power-of-two and no larger than this per side. */
++/** Sprite atlases, tilesets and stream planes must be power-of-two and no
++ *  larger than this per side; an image texture follows IMG_MAX_DIM. */
+ export const TEX_MAX_DIM = 512;
++/** Largest side of an IMAGE texture (an IMG pak entry or `uploadTexture`),
++ *  any size from 1, power of two or not (pocket-motion: the software
++ *  rasteriser samples by width and height, never by mask). Sprite atlases,
++ *  tilesets and stream planes keep TEX_MAX_DIM and powers of two. */
++export const IMG_MAX_DIM = 2048;
+ 
+ // Texture handles are generation-tagged like node ids:
+ //   handle = (generation << TEX_SLOT_BITS) | slot, bit 31 stays 0.
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 339ff972..a4832bdc 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -524,8 +524,9 @@ impl Ui {
+ 
+     // ---- assets ----------------------------------------------------------
+ 
+-    /// Upload a texture (raw pixels in `psm` format — spec::psm::*, pow2
+-    /// dims <= spec::TEX_MAX_DIM). Bytes are copied. Returns the
++    /// Upload a texture (raw pixels in `psm` format — spec::psm::*, each
++    /// side 1..=spec::IMG_MAX_DIM, a power of two or not: pocket-motion,
++    /// whose rasteriser samples by width and height). Bytes are copied. Returns the
+     /// generation-tagged handle (the first upload into a fresh core is slot 0
+     /// at gen 0 == handle 0 — goldens pin this) or -1.
+     ///
+@@ -546,8 +547,8 @@ impl Ui {
+             spec::psm::PSM_T8 => 1usize,
+             _ => return -1,
+         };
+-        let pow2 = |v: u32| v > 0 && v <= spec::TEX_MAX_DIM && v & (v - 1) == 0;
+-        if !pow2(w) || !pow2(h) {
++        let side = |v: u32| v > 0 && v <= spec::IMG_MAX_DIM;
++        if !side(w) || !side(h) {
+             return -1;
+         }
+         // PSM_T8 leads with the raw CLUT; the pixel stream follows it.
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 52ef8e83..996f791e 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -30,6 +30,8 @@ pub const SIZE_FULL: f32 = -1.0;
+ 
+ /// Textures must be power-of-two and no larger than this per side.
+ pub const TEX_MAX_DIM: u32 = 512;
++/// Largest side of an image texture, any size from 1 (pocket-motion).
++pub const IMG_MAX_DIM: u32 = 2048;
+ /// Texture handles are generation-tagged like node ids:
+ /// handle = (generation << TEX_SLOT_BITS) | slot; bit 31 stays 0.
+ pub const TEX_SLOT_BITS: u32 = 20;
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 6861a932..a3339399 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -5321,3 +5321,39 @@ fn a_legacy_two_stop_gradient_is_untouched() {
+     assert_eq!(counts[spec::draw_op::GRAD_RECT as usize], 1);
+     assert_eq!(counts[spec::draw_op::PAINT_PUSH as usize], 0);
+ }
++
++// ---- images of any size (pocket-motion) ---------------------------------------------
++
++#[test]
++fn an_image_of_any_size_up_to_img_max_dim_uploads_and_samples_by_its_own_size() {
++    let mut ui = Ui::new();
++    // 3x5 RGBA: column x has red = 80 * x, row y has green = 50 * y.
++    let (w, h) = (3u32, 5u32);
++    let mut px = Vec::new();
++    for y in 0..h {
++        for x in 0..w {
++            px.extend_from_slice(&[(80 * x) as u8, (50 * y) as u8, 0, 255]);
++        }
++    }
++    let tex = ui.upload_texture(&px, w, h, spec::psm::PSM_8888);
++    assert!(tex >= 0, "a 3x5 texture uploads");
++    assert!(ui.upload_texture(&alloc::vec![0u8; 4 * 2049], 2049, 1, spec::psm::PSM_8888) < 0, "2049 wide is refused");
++    assert!(ui.upload_texture(&alloc::vec![0u8; 4 * 2048], 2048, 1, spec::psm::PSM_8888) >= 0, "2048 is the edge");
++    let n = ui.create_node(spec::NodeType::Image as u8);
++    ui.set_prop(n, spec::prop::WIDTH, 30.0);
++    ui.set_prop(n, spec::prop::HEIGHT, 50.0);
++    ui.set_image(n, tex);
++    ui.insert_before(spec::ROOT_ID, n, 0);
++    ui.tick();
++    let fb = raster_fb(&mut ui);
++    // Each texel is a 10x10 block on screen, nearest-sampled.
++    for ty in 0..5usize {
++        for tx in 0..3usize {
++            assert_eq!(
++                sample_rgba(&fb, tx * 10 + 5, ty * 10 + 5),
++                [(80 * tx) as u8, (50 * ty) as u8, 0, 255],
++                "texel {tx},{ty}"
++            );
++        }
++    }
++}
+diff --git a/framework/compiler/pak.ts b/framework/compiler/pak.ts
+index be1490df..38ddf15f 100644
+--- a/framework/compiler/pak.ts
++++ b/framework/compiler/pak.ts
+@@ -8,7 +8,7 @@
+ //   ui:img.<name>    demo image texture (IMG entry layout below)
+ //
+ // IMG entry layout (PocketJS addition — the container itself is unchanged):
+-//   off 0  u16  width   (texture dims; pow2, <= TEX_MAX_DIM)
++//   off 0  u16  width   (texture dims; 1..IMG_MAX_DIM, pow2 or not)
+ //   off 2  u16  height
+ //   off 4  u8   psm     (spec.ts PSM: 0 = 5650, 2 = 4444, 3 = 8888)
+ //   off 5  u8   reserved (0)
+@@ -32,6 +32,7 @@ import {
+   PAK_VERSION,
+   PSM,
+   TEX_MAX_DIM,
++  IMG_MAX_DIM,
+   TILESET_ABSENT,
+   TILESET_DIR_ENTRY_SIZE,
+   TILESET_FLAG_RLE,
+@@ -158,9 +159,11 @@ export function encodeImageEntry(
+   flags: number = 0,
+ ): Uint8Array {
+   const { width: w, height: h, rgba } = img;
+-  const pow2 = (n: number) => n > 0 && (n & (n - 1)) === 0;
+-  if (!pow2(w) || !pow2(h) || w > TEX_MAX_DIM || h > TEX_MAX_DIM) {
+-    throw new Error(`pak image: dims must be pow2 <= ${TEX_MAX_DIM}, got ${w}x${h}`);
++  // Any size from 1 to IMG_MAX_DIM (pocket-motion): the software rasteriser
++  // samples by width and height. Sprites and tilesets below stay pow2.
++  const side = (n: number) => Number.isInteger(n) && n > 0 && n <= IMG_MAX_DIM;
++  if (!side(w) || !side(h)) {
++    throw new Error(`pak image: each side must be 1..${IMG_MAX_DIM} px, got ${w}x${h}`);
+   }
+   if (rgba.length !== w * h * 4) throw new Error("pak image: rgba length mismatch");
+   const bpp = psm === PSM.PSM_8888 ? 4 : 2;
+diff --git a/framework/src/host.ts b/framework/src/host.ts
+index 3ddb6936..776ce573 100644
+--- a/framework/src/host.ts
++++ b/framework/src/host.ts
+@@ -60,7 +60,7 @@ export interface HostOps {
+   setText(id: number, str: string): void;
+   /** Solid universal calls this on reactive text updates. */
+   replaceText(id: number, str: string): void;
+-  /** pow2 dims ≤ 512; psm: spec PSM. Returns a texture handle. */
++  /** Each side 1..IMG_MAX_DIM (2048), pow2 or not (pocket-motion); psm: spec PSM. Returns a texture handle. */
+   uploadTexture(buf: Uint8Array, w: number, h: number, psm: number): number;
+   /** texHandle < 0 clears the image (handles are 0-based: 0 is a real one). */
+   setImage(id: number, texHandle: number): void;
+diff --git a/tests/image-dims.test.ts b/tests/image-dims.test.ts
+new file mode 100644
+index 00000000..d6788f30
+--- /dev/null
++++ b/tests/image-dims.test.ts
+@@ -0,0 +1,20 @@
++// pocket-motion: an IMG entry of any size from 1 to IMG_MAX_DIM per side.
++import { describe, expect, test } from "bun:test";
++import { encodeImageEntry } from "../framework/compiler/pak.ts";
++import { IMG_MAX_DIM, PSM } from "../contracts/spec/spec.ts";
++
++const img = (width: number, height: number) => ({ width, height, rgba: new Uint8Array(width * height * 4) });
++
++describe("image entry dimensions", () => {
++  test("a size that is not a power of two encodes, header and payload exact", () => {
++    const blob = encodeImageEntry(img(300, 170), PSM.PSM_8888);
++    const dv = new DataView(blob.buffer);
++    expect([dv.getUint16(0, true), dv.getUint16(2, true)]).toEqual([300, 170]);
++    expect(blob.length).toBe(8 + 300 * 170 * 4);
++  });
++  test("IMG_MAX_DIM is the largest side; one more is refused", () => {
++    expect(IMG_MAX_DIM).toBe(2048);
++    expect(() => encodeImageEntry(img(2048, 1))).not.toThrow();
++    expect(() => encodeImageEntry(img(2049, 1))).toThrow("each side must be 1..2048 px");
++  });
++});
