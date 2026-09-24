@@ -395,7 +395,37 @@ and booted per call instead of built per call. A string with a character
 outside the charset falls back to the per-call build. The cached pak
 measures and cannot be rendered; every render command refuses it.
 
-Faces: pass `--font-regular` / `--font-bold` to the build. In-repo:
+**Faces.** The sidecar's `fonts.regular` / `fonts.bold` are the default pair
+(the build's `--font-regular` / `--font-bold`). `fonts.faces` declares more,
+each a named `{ regular, bold }` pair, and a class literal selects one per node
+with `font-[name]`:
+
+```json
+"fonts": {
+  "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+  "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf",
+  "faces": {
+    "display": { "regular": "vendor/pocketjs/assets/fonts/InterDisplay-Regular.ttf",
+                 "bold": "vendor/pocketjs/assets/fonts/InterDisplay-Bold.ttf" },
+    "cjk": { "regular": "assets/fonts/NotoSansSC-Regular.otf",
+             "bold": "assets/fonts/NotoSansSC-Bold.otf" }
+  }
+}
+```
+
+`<Text class="text-[120px] font-[display] font-bold">` then bakes its slot
+from the display face's bold file. A face with a single weight declares the
+same file twice. Every (size, weight, face) triple is its own atlas slot, all
+faces sharing one table of 128 (19 pinned for the default pair and mono, 109
+allocated in first-sight order); at most 8 named faces, and the declared files
+may total at most 64 MiB, each distinct file once. `font-[name]` with a name
+the sidecar does not declare fails the build, naming the faces it does.
+Measuring for a face means naming it on both sides of `openMeasurer`: pass the
+sidecar's `faces` map as `faces`, list sizes as `{ px, bold, face }`, and call
+`measure(px, bold, face)` / `lineHeight(px, bold, face)`.
+`compositions/faces` sets four faces in one frame.
+
+Files: In-repo:
 HarmonyOS Sans (`assets/fonts/HarmonyOS_Sans_*.ttf`); fetched by
 `scripts/assets.ts`: Noto Sans SC (`assets/fonts/NotoSansSC-*.otf`) — the only
 face here with CJK coverage; upstream's default: Inter

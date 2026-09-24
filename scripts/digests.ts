@@ -136,6 +136,10 @@ const ENTRIES = [
   "compositions/nested/a/9x16", // one compositionId, two paths differing only above the last segment;
   "compositions/nested/b/9x16", // both are here because a shared dist directory reads as one digest twice
   "compositions/typography", // arbitrary font sizes, every one outside the pinned FONT_PX scale
+  // faces. The default pair and three named faces (`fonts.faces`, patch 0016)
+  // in one frame, one of them the fetched CJK pair. A face baked from the
+  // wrong file, or a slot shared between two faces, moves this digest.
+  "compositions/faces",
 ] as const;
 
 /**

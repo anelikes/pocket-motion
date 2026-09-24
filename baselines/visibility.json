@@ -64,6 +64,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/faces": {
+      "failures": [],
+      "nodes": 5,
+      "named": 4,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/fit": {
       "failures": [],
       "nodes": 3,

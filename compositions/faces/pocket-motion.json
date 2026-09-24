@@ -1,0 +1,30 @@
+{
+  "motion": 1,
+  "durationFrames": 1,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf",
+    "faces": {
+      "display": {
+        "regular": "vendor/pocketjs/assets/fonts/InterDisplay-Regular.ttf",
+        "bold": "vendor/pocketjs/assets/fonts/InterDisplay-Bold.ttf"
+      },
+      "cjk": {
+        "regular": "assets/fonts/NotoSansSC-Regular.otf",
+        "bold": "assets/fonts/NotoSansSC-Bold.otf"
+      },
+      "code": {
+        "regular": "vendor/pocketjs/assets/fonts/JetBrainsMono-Regular.ttf",
+        "bold": "vendor/pocketjs/assets/fonts/JetBrainsMono-Regular.ttf"
+      }
+    }
+  },
+  "assertions": [
+    { "node": "display", "inPicture": [0, 0] },
+    { "node": "cjk", "inPicture": [0, 0] },
+    { "node": "code", "inPicture": [0, 0] },
+    { "node": "body", "inPicture": [0, 0] }
+  ]
+}
