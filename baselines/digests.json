@@ -102,6 +102,10 @@
       "frames": 180,
       "digest": "41cb13594b51603a3319c372f8a99666b345e393ab7906fb281d9c3edc7c3e22"
     },
+    "compositions/stroke": {
+      "frames": 45,
+      "digest": "69a87763321eecbcdb48e2ad41d95bee4a0d2b09aac9f01d9d5bd4fbb80197b9"
+    },
     "compositions/textcmp-cjk": {
       "frames": 1,
       "digest": "ac863a9238f1bbc7eef94944c4020bf612db0230153791d58ea079c59c82c092"

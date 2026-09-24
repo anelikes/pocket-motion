@@ -1,0 +1,28 @@
+{
+  "motion": 1,
+  "durationFrames": 45,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf",
+    "faces": {
+      "cjk": {
+        "regular": "assets/fonts/NotoSansSC-Regular.otf",
+        "bold": "assets/fonts/NotoSansSC-Bold.otf"
+      }
+    }
+  },
+  "layoutAllow": [
+    { "node": "outside", "allow": "overflow", "reason": "an outside stroke is ink past the glyph box by design; layout does not grow for it" },
+    { "node": "grow", "allow": "overflow", "reason": "the animated stroke reaches 10 px past the glyph box" },
+    { "node": "cjk", "allow": "overflow", "reason": "an outside stroke is ink past the glyph box by design" }
+  ],
+  "assertions": [
+    { "node": "outside", "inPicture": [0, 44] },
+    { "node": "center", "inPicture": [0, 44] },
+    { "node": "hollow", "inPicture": [0, 44] },
+    { "node": "grow", "inPicture": [0, 44] },
+    { "node": "cjk", "inPicture": [0, 44] }
+  ]
+}

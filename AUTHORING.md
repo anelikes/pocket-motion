@@ -344,6 +344,18 @@ for word. The op is this repository's own (`patches/0013`, the design beside
 it): no upstream backend draws it, so a composition that must stay portable to
 one keeps to `overflow-hidden`.
 
+**Text can carry an outline.** `text-stroke-[6px] text-stroke-[#7c2d12]`
+draws a 6 px outline around a Text node's glyphs; `text-stroke-outside` (the
+default) grows it outward under the fill, `text-stroke-center` straddles the
+glyph edge over the fill, and `text-transparent` with a stroke is hollow text.
+The width animates as a keyframe property (`textStrokeWidth`, or
+`-webkit-text-stroke-width` in its camel-case spelling `WebkitTextStrokeWidth`)
+and so does the colour. A stroke is paint, not layout: the box does not grow,
+so an outside stroke is ink past the box and `layout` reports
+`text_box_overflow` for it unless the sidecar allows `overflow` for that node
+(`compositions/stroke` does, by name). Drawn by this repository's rasteriser
+only (`patches/0017`).
+
 **What does not exist** (the checker will catch most of these, but knowing
 saves a round trip): per-frame callbacks (`onFrame`), timers (`after`),
 effects, signals that change after mount — a composition mounts once and

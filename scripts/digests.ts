@@ -140,6 +140,11 @@ const ENTRIES = [
   // in one frame, one of them the fetched CJK pair. A face baked from the
   // wrong file, or a slot shared between two faces, moves this digest.
   "compositions/faces",
+  // stroke. The four GLYPH_STROKE forms (patches/0017) — outside under the
+  // fill, centred over it, hollow, and a keyframed width 0 -> 10 px — over
+  // 45 frames. A change to the distance field or the ring arithmetic moves
+  // this digest and no other.
+  "compositions/stroke",
 ] as const;
 
 /**

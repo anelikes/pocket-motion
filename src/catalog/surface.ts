@@ -1922,6 +1922,48 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
 
+  {
+    id: "paint.text-stroke",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-stroke-[Npx] | text-stroke-<color> | text-stroke-outside|center",
+    required: false,
+    defaultValue: "no stroke; outside",
+    constraint:
+      "an outline around a Text node's glyphs. Width `text-stroke` (1px), `text-stroke-N` or `text-stroke-[Npx]`, at most 64 px; colour `text-stroke-<palette>` or `text-stroke-[#hex]`, transparent by default, so a width alone draws nothing. `outside` (default) grows outward and is painted under the fill; `center` straddles the glyph edge and is painted over it. With `text-transparent` the stroke is hollow text: the ring only. Width and colour animate in keyframes as `textStrokeWidth`/`textStrokeColor` (or `-webkit-text-stroke-width`/`-color`). Paint only — layout never grows for it, so an outside stroke is ink past the box (`text_box_overflow`). Coverage is a distance field over the run's own rasterised coverage, drawn by this repository's rasteriser only (patches/0017, class motion, op 66)",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "text-stroke-[4px] compiles to textStrokeWidth = 4.0",
+        literals: ["text-stroke-[4px] text-stroke-red-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textStrokeWidth", value: 1082130432 } },
+      },
+      {
+        what: "text-stroke-center compiles to StrokePos.Center (1)",
+        literals: ["text-stroke-2 text-stroke-center"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textStrokePos", value: 1 } },
+      },
+      {
+        what: "text-stroke-[#ff0000] compiles to the ABGR colour",
+        literals: ["text-stroke-[#ff0000] text-stroke-2"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textStrokeColor", value: 4278190335 } },
+      },
+      {
+        what: "a width past 64 px is not a utility and drops the literal",
+        literals: ["text-stroke-[65px] text-stroke-red-500"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+
   // -------------------------------------------------------------------------
   // Declaring footage (generator side)
   //

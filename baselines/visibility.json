@@ -234,6 +234,13 @@
       "neverShown": 0,
       "buriedAfterShown": 2
     },
+    "compositions/stroke": {
+      "failures": [],
+      "nodes": 5,
+      "named": 5,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/textcmp-cjk": {
       "failures": [],
       "nodes": 5,
