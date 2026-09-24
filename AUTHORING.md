@@ -132,11 +132,13 @@ Worked examples, roughly in reading order:
   the column veil at a 140px and a 656px stack, which is what puts
   `rotate-180` on the lower cap into the digest ledger — every assertion about
   the generated source passes with the picture upside down.
-- `compositions/faces`, `compositions/stroke`, `compositions/filters` — the
-  mechanism fixtures for named faces, text stroke and filter layers: four
-  faces in one frame; outside, centred, hollow and keyframed outlines; blur
-  steps, a breathing glow, a hard shadow, a rack focus keyframed as a CSS
-  `filter`, and the five blend modes over a split ground.
+- `compositions/faces`, `compositions/stroke`, `compositions/filters`,
+  `compositions/gradients` — the mechanism fixtures for named faces, text
+  stroke, filter layers and gradient paint: four faces in one frame;
+  outside, centred, hollow and keyframed outlines; blur steps, a breathing
+  glow, a hard shadow, a rack focus keyframed as a CSS `filter`, and the five
+  blend modes over a split ground; multi-stop, angled, radial and clipped-to-
+  text gradients with a turning angle and a sweeping stop.
 - `compositions/rename-card` — shutter's opening carried six seconds further:
   a dialog, a name typed into it with the caret at each prefix's *measured*
   width (`openMeasurer` again, one `Text` per prefix), and a close built from
@@ -237,7 +239,8 @@ nothing in this path fails quietly.
 Three node types: `View`, `Text`, `Image` (from
 `@pocketjs/framework/components`). Styling is Tailwind-subset class literals —
 layout (flex, size, inset, gap, padding), color/gradient (`bg-*`,
-`from-*`/`to-*`, 4-direction linear only), `rounded`, `opacity`, `border`,
+`from-*`/`via-*`/`to-*` with positions, any angle, radial, arbitrary
+`linear-gradient()`, gradient text with `bg-clip-text`), `rounded`, `opacity`, `border`,
 `shadow`, 2D/3D transforms, named font faces (`font-[name]`), text stroke,
 filters (`blur-*`, `drop-shadow-*`, `glow-*`), blend modes (`mix-blend-*`),
 and an arc primitive
@@ -385,6 +388,23 @@ unfiltered. What each costs per frame is measured in
 about 10 ms at 1080p. Drawn by this repository's rasteriser only
 (`patches/0018`).
 
+**Gradients take any number of stops up to six, any angle, and text.**
+`bg-gradient-to-r from-red-500 to-blue-500` is the two-stop gradient it
+always was, drawn the way it always was. Add `via-white` (50% unless
+`via-40%` says otherwise), stop positions (`from-10%`, `to-90%`), an angle
+(`bg-linear-45`, `bg-linear-[37.5deg]`, CSS's convention: 0deg points up,
+90deg right), `bg-radial`, or write the CSS itself —
+`bg-[linear-gradient(30deg,#1e3a8a,#7c3aed_35%,#ec4899_70%,#fde68a)]`,
+`bg-[radial-gradient(#fef08a,#f97316_45%,#f9731600)]` — and the node is
+painted by a gradient paint instead: up to six stops, `#hex` or palette
+colours, `_` for a space, interpolated premultiplied so a fade to
+transparent keeps its colour. Radial is the farthest-corner ellipse about
+the centre and nothing else. `bg-clip-text text-transparent` with any of
+these is gradient text. The angle, every stop colour and every position
+animate (`gradAngle`, `gradVia1Pos`, …; `compositions/gradients` turns a
+headline's angle and sweeps a via across a bar). Drawn by this repository's
+rasteriser only (`patches/0019`).
+
 **What does not exist** (the checker will catch most of these, but knowing
 saves a round trip): per-frame callbacks (`onFrame`), timers (`after`),
 effects, signals that change after mount — a composition mounts once and
@@ -399,8 +419,9 @@ just a number your `gen.ts` turns into an animation delay. Anything you know
 at build time — a beat grid, a transcript, a data series, a per-item stagger —
 bakes. What cannot exist is timing that only becomes known while the frames
 are being produced, and for a renderer that is not a real case. No backdrop
-blur, no multi-stop or radial gradients, no `SCREEN_W`/`SCREEN_H` imports
-(read the viewport, or just lay out with flex).
+blur, no conic gradients or radial shapes other than the centred
+farthest-corner ellipse, no `SCREEN_W`/`SCREEN_H` imports (read the
+viewport, or just lay out with flex).
 
 ## Text
 

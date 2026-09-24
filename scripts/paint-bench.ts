@@ -71,6 +71,19 @@ const CASES: readonly Case[] = [
   { name: "blur-block", what: "+ blur-md on the column (one layer, ~1400x780 px)", source: lyrics("", "blur-md") },
   { name: "blur-3xl", what: "+ blur-3xl on the column (one layer, 64 px deviation)", source: lyrics("", "blur-3xl") },
   { name: "blend", what: "+ mix-blend-screen on the column (one layer)", source: lyrics("", "mix-blend-screen") },
+  {
+    name: "gradient-text",
+    what: "+ bg-clip-text with a three-stop gradient on every line",
+    source: lyrics("bg-clip-text text-transparent bg-linear-90 from-[#fb7185] via-[#fde047] to-[#38bdf8]"),
+  },
+  {
+    name: "gradient-ground",
+    what: "+ a full-frame four-stop 30deg gradient ground",
+    source: lyrics("").replace(
+      "bg-[#0f172a]",
+      "bg-[linear-gradient(30deg,#1e3a8a,#7c3aed_35%,#ec4899_70%,#fde68a)]",
+    ),
+  },
 ];
 
 async function build(dir: string, source: string): Promise<void> {
@@ -130,7 +143,8 @@ try {
     console.log("| case | ms/frame (median) | over baseline | what |");
     console.log("|---|---:|---:|---|");
     for (const r of rows) {
-      const delta = r.c.name === "baseline" ? "—" : `+${(r.median - base).toFixed(2)}`;
+      const d = r.median - base;
+      const delta = r.c.name === "baseline" ? "—" : `${d >= 0 ? "+" : ""}${d.toFixed(2)}`;
       console.log(`| ${r.c.name} | ${r.median.toFixed(2)} | ${delta} | ${r.c.what} |`);
     }
   }

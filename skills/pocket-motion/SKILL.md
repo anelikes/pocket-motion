@@ -83,11 +83,13 @@ literals get an atlas. `scale` transforms move glyphs but never resize them.
 outline), named font faces (`font-[name]` over the sidecar's `fonts.faces`),
 text stroke (`text-stroke-[Npx] text-stroke-<color>`), and filter layers —
 `blur-*`, `drop-shadow-*`, `glow-*`, `mix-blend-*` — that paint a node and its
-subtree as one unit. All paint-only, all drawn by this repository's rasteriser
-alone (`patches/0013`, `0016`–`0018`).
+subtree as one unit, and gradients of up to six stops at any angle, radial, or
+clipped to text (`via-*`, `bg-linear-*`, `bg-radial`, `bg-clip-text`). All
+paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
+`0016`–`0019`).
 
-**What does not exist**: backdrop blur, multi-stop or radial gradients,
-footage effects at render time (grading and filtering belong to the ingest).
+**What does not exist**: backdrop blur, conic gradients, footage effects at
+render time (grading and filtering belong to the ingest).
 
 **Footage is declared once, by a generator.** `tileNodes` emits the placeholder
 `Image` nodes and `footageTrack` emits the sidecar entry, both derived from one

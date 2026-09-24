@@ -58,6 +58,10 @@
       "frames": 1,
       "digest": "c5e814edd762d5d236783b57a783c9d83c4eb426dcc5985552e6e42aca2f50f3"
     },
+    "compositions/gradients": {
+      "frames": 30,
+      "digest": "c4509f225a0834b61432bef2bf83a9a228889e25cb42c2504c12673e53b10572"
+    },
     "compositions/late-timer": {
       "frames": 900,
       "digest": "e09bb4f07eb27006a89842191b2516b5f3a39a7b0cb48080d63226fe701292f4"

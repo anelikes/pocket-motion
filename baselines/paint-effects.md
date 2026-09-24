@@ -1,6 +1,7 @@
 # Paint effects — what each costs per frame
 
-Apple M4, Bun 1.3.11, 2026-09-24. `bun scripts/paint-bench.ts --reps 25`.
+Apple M4, Bun 1.3.11, 2026-09-24. `bun scripts/paint-bench.ts --reps 25`, at
+the tree that added gradients (`patches/0019`).
 1920×1080, `supersample` 1. The number is the median wall time of
 `world.render()` — the core's draw walk plus the software rasteriser — over
 25 renders of one frame after a warm-up render. The guest, the frame hash and
@@ -12,14 +13,20 @@ no effect; each other case adds one, so its delta is the effect's own cost.
 
 | case | ms/frame (median) | over baseline | what |
 |---|---:|---:|---|
-| baseline | 2.47 | — | six 96 px bold lines, no effect |
-| stroke-outside | 19.37 | +16.91 | + `text-stroke-[6px]` outside on every line |
-| stroke-center | 32.00 | +29.54 | + `text-stroke-[4px]` centred on every line |
-| glow | 12.88 | +10.42 | + `glow-[24px]` on every line (six layers) |
-| shadow | 12.79 | +10.32 | + `drop-shadow-[6px_6px_8px]` on every line (six layers) |
-| blur-block | 24.38 | +21.92 | + `blur-md` on the column (one layer) |
-| blur-3xl | 21.75 | +19.28 | + `blur-3xl` on the column (one layer, 64 px deviation) |
-| blend | 5.51 | +3.04 | + `mix-blend-screen` on the column (one layer) |
+| baseline | 2.40 | — | six 96 px bold lines, no effect |
+| stroke-outside | 19.49 | +17.09 | + `text-stroke-[6px]` outside on every line |
+| stroke-center | 30.90 | +28.49 | + `text-stroke-[4px]` centred on every line |
+| glow | 12.78 | +10.38 | + `glow-[24px]` on every line (six layers) |
+| shadow | 11.82 | +9.42 | + `drop-shadow-[6px_6px_8px]` on every line (six layers) |
+| blur-block | 20.79 | +18.39 | + `blur-md` on the column (one layer) |
+| blur-3xl | 18.39 | +15.99 | + `blur-3xl` on the column (one layer, 64 px deviation) |
+| blend | 5.54 | +3.14 | + `mix-blend-screen` on the column (one layer) |
+| gradient-text | 2.99 | +0.59 | + `bg-clip-text` with a three-stop gradient on every line |
+| gradient-ground | 7.86 | +5.46 | + a full-frame four-stop 30deg gradient ground |
+
+The first recorded run (v0.3.0, before gradients) is within 1–3 ms of these
+rows on every shared case; the spread between runs on this machine is of
+that order, so read the table to the millisecond, not below.
 
 ## Reading it
 
@@ -41,3 +48,8 @@ no effect; each other case adds one, so its delta is the effect's own cost.
   `blur_across_a_resolution_step_moves_the_picture_by_little`).
 - **Blend modes cost a read per written pixel** and nothing else: +3 ms for
   a layer the size of the text block.
+- **A gradient costs a table lookup per written pixel.** The stops are baked
+  into a 4096-entry table once per paint; each pixel then maps to t (one
+  multiply-add for linear, a square root for radial). Gradient text is paid
+  only where glyphs have coverage (+0.6 ms for six lines); a full-frame
+  ground is 2 M pixels (+5.5 ms).

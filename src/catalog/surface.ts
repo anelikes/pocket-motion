@@ -2076,6 +2076,83 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
 
+  {
+    id: "paint.gradient",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "via-<color> | from-N% via-N% to-N% | bg-linear-N | bg-linear-[Ndeg] | bg-linear-to-t|r|b|l | bg-radial | bg-[linear-gradient(…)] | bg-[radial-gradient(…)]",
+    required: false,
+    defaultValue: "legacy two-stop gradient",
+    constraint:
+      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial (the farthest-corner ellipse about the centre; no other shape or centre). Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does; `via-<color>` alone sits at 50%. A literal with only `bg-gradient-to-* from-* to-*` keeps the two-stop path word for word. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "a via turns a legacy direction into the paint path (GradKind.Linear)",
+        literals: ["bg-gradient-to-r from-red-500 via-white to-blue-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradKind", value: 1 } },
+      },
+      {
+        what: "and `to-r` becomes the angle 90",
+        literals: ["bg-gradient-to-r from-red-500 via-white to-blue-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradAngle", value: 1119092736 } },
+      },
+      {
+        what: "bg-radial compiles to GradKind.Radial (2)",
+        literals: ["bg-radial from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradKind", value: 2 } },
+      },
+      {
+        what: "an arbitrary gradient's unpositioned middle stop is spread by CSS's rule",
+        literals: ["bg-[linear-gradient(90deg,#ff0000,#00ff00,#0000ff_80%)]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradVia1Pos", value: 1053609165 } },
+      },
+      {
+        what: "seven stops are one more than the paint carries and drop the literal",
+        literals: ["bg-[linear-gradient(#000,#111,#222,#333,#444,#555,#666)]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+  {
+    id: "paint.bg-clip-text",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "bg-clip-text | bg-clip-border",
+    required: false,
+    defaultValue: "border",
+    constraint:
+      "on a Text node, paints the node's ground into its glyphs instead of its box — the gradient (legacy or not) or the solid `bg-*` colour — and the text colour is not drawn, so the Tailwind idiom `bg-clip-text text-transparent bg-linear-90 from-… to-…` is gradient text. The gradient spans the node's box. A stroke is not painted by it. patches/0019, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "bg-clip-text compiles to BgClip.Text (1)",
+        literals: ["bg-clip-text text-transparent bg-linear-90 from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "bgClip", value: 1 } },
+      },
+      {
+        what: "over a legacy two-stop gradient it takes the paint path",
+        literals: ["bg-clip-text text-transparent bg-gradient-to-b from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradKind", value: 1 } },
+      },
+    ],
+  },
+
   // -------------------------------------------------------------------------
   // Declaring footage (generator side)
   //

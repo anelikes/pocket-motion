@@ -151,6 +151,12 @@ const ENTRIES = [
   // ground. A change to the blur passes, the shadow, the composite or a
   // blend function moves this digest.
   "compositions/filters",
+  // gradients. The gradient paint of patches/0019 over 30 frames: three
+  // stops inside a rounded border, four stops at 30deg, a radial fade to
+  // transparent, a rotated card, gradient text whose angle turns, CJK
+  // gradient text, and a via stop sweeping a bar. A change to the stop
+  // table, the parameter map or bg-clip-text moves this digest.
+  "compositions/gradients",
 ] as const;
 
 /**

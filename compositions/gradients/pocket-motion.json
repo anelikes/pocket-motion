@@ -1,0 +1,21 @@
+{
+  "motion": 1,
+  "durationFrames": 30,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf",
+    "faces": {
+      "cjk": {
+        "regular": "assets/fonts/NotoSansSC-Regular.otf",
+        "bold": "assets/fonts/NotoSansSC-Bold.otf"
+      }
+    }
+  },
+  "assertions": [
+    { "node": "headline", "inPicture": [0, 29] },
+    { "node": "cjk-line", "inPicture": [0, 29] },
+    { "node": "sweep", "inPicture": [0, 29] }
+  ]
+}
