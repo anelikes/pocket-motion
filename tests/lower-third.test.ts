@@ -153,7 +153,7 @@ describe("parseSpec — lower-third", () => {
     expect(spec.footage?.fit).toBe("cover");
   });
 
-  test("an svg logo whose logical size is not pow2 is refused at parse", async () => {
+  test("an svg logo whose logical size is not pow2 is accepted (patches/0020)", async () => {
     const rel = "dist/spec-logo-100.svg";
     mkdirSync(join(ROOT, "dist"), { recursive: true });
     await Bun.write(
@@ -161,18 +161,25 @@ describe("parseSpec — lower-third", () => {
       `<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#0f0"/></svg>\n`,
     );
     try {
-      expectReject({ ...sample, logo: rel }, "spec.logo.dims", "/logo");
+      expect(asPlate({ ...sample, logo: rel }).logo).toBe(rel);
     } finally {
       await rm(join(ROOT, rel), { force: true });
     }
   });
 
-  test("a legal svg logo is refused when supersample would bake past TEX_MAX_DIM", () => {
-    expectReject(
-      { ...sample, supersample: 4, logo: "compositions/probe/mark.svg" },
-      "spec.logo.dims",
-      "/logo",
+  test("an svg logo is refused when supersample would bake it past IMG_MAX_DIM", async () => {
+    const rel = "dist/spec-logo-600.svg";
+    mkdirSync(join(ROOT, "dist"), { recursive: true });
+    await Bun.write(
+      join(ROOT, rel),
+      `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="100"><rect width="600" height="100" fill="#0f0"/></svg>\n`,
     );
+    try {
+      expect(asPlate({ ...sample, supersample: 2, logo: rel }).logo).toBe(rel);
+      expectReject({ ...sample, supersample: 4, logo: rel }, "spec.logo.dims", "/logo");
+    } finally {
+      await rm(join(ROOT, rel), { force: true });
+    }
   });
 
   test("a legal svg logo is accepted at density 1", () => {

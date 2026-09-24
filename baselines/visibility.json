@@ -113,6 +113,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/images": {
+      "failures": [],
+      "nodes": 6,
+      "named": 3,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/kenburns": {
       "failures": [],
       "nodes": 2,

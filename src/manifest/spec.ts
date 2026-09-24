@@ -18,7 +18,7 @@ import {
   FONT_WEIGHT_KEYS,
   FOOTAGE_FIT_VALUES,
   SUPERSAMPLE_VALUES,
-  TEX_MAX_DIM,
+  IMG_MAX_DIM,
   VALID_FPS,
   type Diagnostic,
   type FootageFit,
@@ -211,10 +211,6 @@ function parseCopyString(
     return undefined;
   }
   return value;
-}
-
-function isPow2(n: number): boolean {
-  return Number.isInteger(n) && n >= 1 && (n & (n - 1)) === 0;
 }
 
 function svgAttrs(tag: string): Record<string, string> {
@@ -594,7 +590,9 @@ function parseLogo(
     return undefined;
   }
   const baked = logoBakedSize(logical, logical.kind, density);
-  if (!isPow2(logical.w) || !isPow2(logical.h) || baked.w > TEX_MAX_DIM || baked.h > TEX_MAX_DIM) {
+  // Any size from 1 to IMG_MAX_DIM as baked (patches/0020): the rasteriser
+  // samples an image by its own width and height.
+  if (logical.w < 1 || logical.h < 1 || baked.w > IMG_MAX_DIM || baked.h > IMG_MAX_DIM) {
     const bakedNote =
       logical.kind === "svg" && density > 1
         ? ` (bakes at ${baked.w}×${baked.h} with supersample ${density})`
@@ -603,7 +601,7 @@ function parseLogo(
       diag(
         "spec.logo.dims",
         "/logo",
-        `logo dimensions must be powers of two at most ${TEX_MAX_DIM}; got ${logical.w}×${logical.h}${bakedNote}`,
+        `logo dimensions must be 1..${IMG_MAX_DIM} px per side as baked; got ${logical.w}×${logical.h}${bakedNote}`,
       ),
     );
     return undefined;

@@ -1,0 +1,15 @@
+{
+  "motion": 1,
+  "durationFrames": 1,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf"
+  },
+  "assertions": [
+    { "node": "native", "inPicture": [0, 0] },
+    { "node": "scaled", "inPicture": [0, 0] },
+    { "node": "texels", "inPicture": [0, 0] }
+  ]
+}

@@ -62,6 +62,10 @@
       "frames": 30,
       "digest": "c4509f225a0834b61432bef2bf83a9a228889e25cb42c2504c12673e53b10572"
     },
+    "compositions/images": {
+      "frames": 1,
+      "digest": "6f5675ebe617f9c04e355786917f485f5e954bfed8a7157bce89c684580a24f7"
+    },
     "compositions/late-timer": {
       "frames": 900,
       "digest": "e09bb4f07eb27006a89842191b2516b5f3a39a7b0cb48080d63226fe701292f4"

@@ -30,7 +30,7 @@
  *   those would fail a composition that builds and renders correctly.
  *
  * What is not checked here: the dimensions (`encodeImageEntry` refuses a
- * non-power-of-two or one over 512 loudly already) and the `images.json` /
+ * side of 0 or over 2048 loudly already) and the `images.json` /
  * `sprites.json` manifests. A manifest key naming a file nothing references is
  * inert upstream — `compositions/copy` and `compositions/lower-third` both
  * carry one for the glow plates their generator writes only when a job asks

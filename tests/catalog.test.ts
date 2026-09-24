@@ -18,6 +18,7 @@ import { active, findingsFor, type FindingNode } from "../src/render/findings.ts
 import {
   ASSERTION_KEYS,
   FONT_FACE_KEYS,
+  IMG_MAX_DIM,
   FONT_KEYS,
   FONT_WEIGHT_KEYS,
   FOOTAGE_KEYS,
@@ -752,6 +753,13 @@ describe("catalog gates", () => {
     );
     if (String(TEX_MAX_DIM) !== specDim) {
       parts.push(`sidecar.ts TEX_MAX_DIM is ${TEX_MAX_DIM}; contracts/spec/spec.ts is ${specDim}`);
+    }
+    const imgDim = upstreamDefinition(
+      "vendor/pocketjs/contracts/spec/spec.ts",
+      /export const IMG_MAX_DIM = (\d+);/,
+    );
+    if (String(IMG_MAX_DIM) !== imgDim) {
+      parts.push(`sidecar.ts IMG_MAX_DIM is ${IMG_MAX_DIM}; contracts/spec/spec.ts is ${imgDim}`);
     }
 
     // Upstream stopped writing the list out at e0b37e2: `VALID_HZ` is now

@@ -600,11 +600,16 @@ own root, not this repository's, so `"logo.png"` finds the demo logo shipped
 with the engine and this repository's `assets/` is never consulted. In
 practice a composition's pictures live beside it.
 
-**Both dimensions must be a power of two and at most 512.**
-`encodeImageEntry` (`framework/compiler/pak.ts`) throws otherwise — 512 is the
-same `TEX_MAX_DIM` that makes footage a tile grid in the first place. A
-782×398 wordmark does not go in; pad or resize it to 512×256 first. SVG is
-rasterised at the composition's density.
+**Each side is 1 to 2048 px, a power of two or not** (`patches/0020`).
+`encodeImageEntry` (`framework/compiler/pak.ts`) throws past that, naming the
+size. A 782×398 wordmark goes in as it is; draw it at its own size for a
+texel per pixel, or set `"linear": true` for it in `images.json` when it is
+drawn larger or smaller. Sprite atlases and tilesets are still powers of two
+at most 512 (`TEX_MAX_DIM`), and so is a footage tile — that limit is what
+makes footage a tile grid in the first place. The whole image is baked into
+the pak: a 2048×2048 picture is 16 MiB there and 16 MiB again in the core.
+SVG is rasterised at the composition's density. `compositions/images` draws a
+900×506 picture and a 3×5 one.
 
 **A file that is not found does not stop the BUILD.** It prints
 
@@ -777,10 +782,10 @@ is a title card;
 `lower-third` is a name plate (optional logo, optional one footage clip).
 `glow: true` bakes a vertical veil behind the copy/name column at build
 time: a constant fill stretched to the column and the stack, and two caps
-whose falloff stays at native σ (a still picture, at most 512 — not a
-runtime blur). Omit it to leave the sample's picture unchanged.
-A logo is a still picture (power-of-two, at most 512 — see Still pictures
-above). Footage is ingested into the throwaway job tree and deleted with it,
+whose falloff stays at native σ (a still picture baked at build time; a
+generator written today could use `glow-*` instead). Omit it to leave the
+sample's picture unchanged. A logo is a still picture (each side at most
+2048 — see Still pictures above). Footage is ingested into the throwaway job tree and deleted with it,
 so a batch of jobs sharing one clip still decodes it once per job. The
 digest in `render --json` is the job's picture at a fixed `--hash`;
 `trace` does not accept `--spec`, so a job is not in the identity ledger.

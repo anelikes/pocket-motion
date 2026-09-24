@@ -157,6 +157,10 @@ const ENTRIES = [
   // gradient text, and a via stop sweeping a bar. A change to the stop
   // table, the parameter map or bg-clip-text moves this digest.
   "compositions/gradients",
+  // images. patches/0020: a 900x506 image drawn 1:1 and at 0.8x bilinear,
+  // and a 3x5 image drawn 40 px per texel. A stride or sampling that assumed
+  // a power of two moves this digest.
+  "compositions/images",
 ] as const;
 
 /**

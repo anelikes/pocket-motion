@@ -212,6 +212,10 @@ export const VALID_FPS = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60] as const;
 /** Upstream `TEX_MAX_DIM`. */
 export const TEX_MAX_DIM = 512;
 
+/** The vendored spec's `IMG_MAX_DIM` (patches/0020): an image's largest side,
+ *  any size from 1. */
+export const IMG_MAX_DIM = 2048;
+
 export const DURATION_FRAMES_MIN = 1;
 export const DURATION_FRAMES_MAX = 216_000; // 2 hours at 30 fps
 
