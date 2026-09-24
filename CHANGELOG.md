@@ -3,6 +3,39 @@
 Tags are cut from `main`. Each entry says what a composition can now
 declare, what it costs, and whether any recorded digest moved.
 
+## v0.4.0 — 2026-09-24
+
+Gradients beyond two stops, gradient text, and pictures of any size. Every
+digest recorded before this release reproduces unchanged.
+
+### Added
+
+- **Gradient paint** (`patches/0019`, class motion, ops 69/70). Up to six
+  stops (`from-*`, `via-*`, `to-*` with `N%` positions, or an arbitrary
+  `bg-[linear-gradient(…)]` / `bg-[radial-gradient(…)]`), any angle
+  (`bg-linear-N`, `bg-linear-[Ndeg]`, `bg-linear-to-t|r|b|l`), radial
+  (`bg-radial`: the farthest-corner ellipse about the centre), and gradient
+  text (`bg-clip-text`). Interpolated premultiplied. Angle, stop colours
+  and positions animate. A literal with only `bg-gradient-to-* from-* to-*`
+  keeps the two-stop path word for word. Fixture: `compositions/gradients`.
+  Cost at 1080p on an M4: a full-frame four-stop ground +5.5 ms, gradient
+  text on six 96 px lines +0.6 ms.
+- **Images of any size** (`patches/0020`, class motion). An image is 1 to
+  2048 px per side, a power of two or not (`IMG_MAX_DIM`); sprite atlases,
+  tilesets and footage tiles keep powers of two at most 512. The job spec's
+  logo rule follows. Fixture: `compositions/images`.
+
+### Changed
+
+- `baselines/paint-effects.md` re-taken with the gradient cases; the rows
+  shared with v0.3.0 moved by 1–3 ms, the spread between runs.
+
+### Not in this release
+
+- Conic gradients; radial shapes or centres other than the centred
+  farthest-corner ellipse.
+- Backdrop blur.
+
 ## v0.3.0 — 2026-09-24
 
 Mixed faces, outlined and glowing text, blur and blend modes. Every digest
@@ -46,8 +79,8 @@ ledger rows.
 
 ### Not in this release
 
-- Multi-stop, angled and radial gradients, gradient text.
-- Images that are not a power of two, or larger than 512 px.
+- Multi-stop, angled and radial gradients, gradient text (v0.4.0).
+- Images that are not a power of two, or larger than 512 px (v0.4.0).
 - Backdrop blur (a filter that reads what is beneath a node).
 
 ## v0.2.1 — 2026-09-22
