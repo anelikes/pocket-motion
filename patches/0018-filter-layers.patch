@@ -1,0 +1,1702 @@
+pocket-motion-only: a filter layer renders a span of the draw list offscreen, reads it back, blurs it and composites it by reading the destination; the PSP GE, ESP32 PPA, Symbian GLES2 and Vita GXM backends draw ops into a framebuffer they never read back, and have neither the second target nor the arithmetic. No upstream backend is taught LAYER_PUSH or LAYER_POP; a stream carrying them stops there.
+
+0018 — filter layers: a node and its whole subtree painted into one
+transparent layer that is blurred (`blur-*`), given a drop shadow or glow
+(`drop-shadow-*`, `text-shadow-*`, `glow-*`) and composited by blend mode
+(`mix-blend-*`). Blur deviation and every shadow parameter are
+keyframe-animatable, including as a CSS `filter` value.
+
+What the patch adds, by file:
+
+- `contracts/spec/spec.ts`, `gen-rust.ts`, `engine/core/src/spec.rs`
+  (regenerated): props `blur` (163), `dropShadowX/Y/Blur/Color/Gain`
+  (164-168), `blendMode` (169); the first six animatable (bits 40-45,
+  timeline-only); enum `BlendMode` {Normal, Multiply, Screen, Overlay,
+  Add}; `DRAW_OP.layerPush = 67`, `layerPop = 68`; `LAYER_MAX_DEPTH = 4`;
+  `BLUR_MAX = 128`.
+- `framework/compiler/tailwind.ts`: `blur`, `blur-sm..3xl`, `blur-none`,
+  `blur-[Npx]`; `drop-shadow-[X_Y(_B)(_#hex)]`, `drop-shadow-<color>`,
+  `drop-shadow-none` and the same under `text-shadow-`; `glow-[B]`,
+  `glow-<color>`, `glow-gain-[N]`; `mix-blend-normal|multiply|screen|
+  overlay|plus-lighter|add`.
+- `framework/compiler/animation.ts`: keyframe properties `blur`,
+  `dropShadowX/Y/Blur/Color/Gain`, and `filter` with `blur()` and
+  `drop-shadow()` functions.
+- `engine/core/src/style.rs`: the seven fields; gain defaults to 1.
+- `engine/core/src/draw.rs`: `paint` brackets a node that has a filter
+  in LAYER_PUSH/LAYER_POP around `paint_body` — the rest of the old
+  `paint`, moved unchanged — so every early return is inside the layer.
+  Past LAYER_MAX_DEPTH the node paints unfiltered. A node with no filter
+  prop emits exactly the words it did before.
+- `engine/core/src/raster.rs`: `render_ops` renders the span into a
+  pooled full-frame `LayerTarget` (RgbaTarget's own arithmetic, touched
+  rows tracked) and `composite_layer` filters it: the blur is three
+  extended-box passes per axis (Gwosdek et al. 2011, so the picture moves
+  continuously with the deviation), integer, at 1/2, 1/4 or 1/8 resolution
+  above 8, 16 and 32 px deviation; the shadow is the layer's alpha offset
+  by whole physical px, blurred the same way, times gain, tinted; the
+  layer goes over its shadow and the result over the target by W3C
+  separable blending then source-over. A target that cannot read its
+  backdrop blends as normal. `RenderTarget::read` is the new trait method.
+- `engine/core/src/damage.rs`: the two word counts; a change inside a
+  layer, or to its parameters, is a full redraw, because a filter spreads
+  a change past the op that made it.
+- `engine/core/src/tests.rs`: nine tests — no layer without a filter prop,
+  blur symmetric and continuous in its deviation, the step at each
+  resolution change bounded (measured 1 level), shadow offset and gain,
+  the four blend functions exactly, the depth limit keeping the stream
+  going, a change inside a layer redrawn in full and equal to the full
+  render, glow around a stroked run, and a pooled buffer carrying nothing
+  from the layer before (red with the clear removed).
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index bdfc17ca..3b94a65e 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -72,6 +72,8 @@ import {
+   DRAW_OP,
+   MASK_MAX_VERTS,
+   STROKE_MAX_WIDTH,
++  LAYER_MAX_DEPTH,
++  BLUR_MAX,
+   ENUMS,
+   FIXED_DT,
+   FONT_CMAP_ENTRY_SIZE,
+@@ -445,6 +447,8 @@ export function generateRust(): string {
+   put("    /// Largest vertex count a MASK_PUSH may carry.");
+   put(`    pub const MASK_MAX_VERTS: usize = ${MASK_MAX_VERTS};`);
+   put(`    pub const STROKE_MAX_WIDTH: f32 = ${STROKE_MAX_WIDTH}.0;`);
++  put(`    pub const LAYER_MAX_DEPTH: usize = ${LAYER_MAX_DEPTH};`);
++  put(`    pub const BLUR_MAX: f32 = ${BLUR_MAX}.0;`);
+   put("}");
+   put("");
+ 
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 23604819..30ba3a08 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -363,6 +363,19 @@ export const PROP = {
+   //                      edge, painted OVER the fill. Needs textStrokeColor.
+   textStrokeColor: 161, // color u32 ABGR (alpha 0 = no stroke)
+   textStrokePos: 162, //   enum StrokePos
++  // Filter layer (a node and its subtree painted into an offscreen layer,
++  // then filtered and composited; spec DRAW_OP.layerPush):
++  blur: 163, //            f32 px gaussian standard deviation (CSS
++  //                       `filter: blur()`; 0 = none)
++  dropShadowX: 164, //     f32 px shadow offset (CSS `drop-shadow()`)
++  dropShadowY: 165, //     f32 px
++  dropShadowBlur: 166, //  f32 px blur RADIUS (standard deviation = radius / 2,
++  //                       as CSS drop-shadow and text-shadow)
++  dropShadowColor: 167, // color u32 ABGR (alpha 0 = no shadow)
++  dropShadowGain: 168, //  f32 multiplier on the blurred shadow alpha (default
++  //                       1; > 1 thickens a glow), clamped at full coverage
++  blendMode: 169, //       enum BlendMode — how the layer composites over what
++  //                       is beneath (CSS `mix-blend-mode`)
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -423,6 +436,12 @@ export const ANIMATABLE: readonly PropName[] = [
+   "arcWidth", //    37
+   "textStrokeWidth", // 38
+   "textStrokeColor", // 39
++  "blur", //            40
++  "dropShadowX", //     41
++  "dropShadowY", //     42
++  "dropShadowBlur", //  43
++  "dropShadowColor", // 44
++  "dropShadowGain", //  45
+ ];
+ 
+ /** Anim bit index for a prop, or -1 if not animatable. */
+@@ -498,6 +517,11 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   arcStart: VALUE_KIND.f32, arcSweep: VALUE_KIND.f32, arcWidth: VALUE_KIND.f32,
+   textStrokeWidth: VALUE_KIND.f32, textStrokeColor: VALUE_KIND.color,
+   textStrokePos: VALUE_KIND.int,
++  blur: VALUE_KIND.f32,
++  dropShadowX: VALUE_KIND.f32, dropShadowY: VALUE_KIND.f32,
++  dropShadowBlur: VALUE_KIND.f32, dropShadowColor: VALUE_KIND.color,
++  dropShadowGain: VALUE_KIND.f32,
++  blendMode: VALUE_KIND.int,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -517,6 +541,9 @@ export const ENUMS = {
+   GradDir: { ToTop: 0, ToBottom: 1, ToLeft: 2, ToRight: 3 },
+   /** Text stroke position (`text-stroke-outside|center`, pocket-motion). */
+   StrokePos: { Outside: 0, Center: 1 },
++  /** Layer composite (`mix-blend-*`, pocket-motion). Add is linear dodge,
++   *  min(1, backdrop + source), composited like the others. */
++  BlendMode: { Normal: 0, Multiply: 1, Screen: 2, Overlay: 3, Add: 4 },
+   /**
+    * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
+    * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
+@@ -1456,6 +1483,25 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+ //                           edge offset (0.5 - coverage), so a width of 0 is
+ //                           the glyph's own coverage. Width is clamped to
+ //                           STROKE_MAX_WIDTH. Software rasteriser only.
++//   LAYER_PUSH  (8 words):  op, blendMode (BlendMode u32), blur (f32 bits,
++//                           LOGICAL px standard deviation), shadowX,
++//                           shadowY (f32 bits, LOGICAL px), shadowBlur (f32
++//                           bits, LOGICAL px radius), shadowColor, shadowGain
++//                           (f32 bits). Every op until the matching
++//                           LAYER_POP paints into a transparent layer
++//                           instead of the target. At the pop the layer is
++//                           blurred (separable three-pass extended box, the
++//                           standard deviation continuous), a shadow is
++//                           made from its alpha (offset rounded to whole
++//                           physical px, blurred, times gain, tinted), the
++//                           layer is composited over its shadow, and that
++//                           is composited over the target through the clip
++//                           in force at the push, by blendMode: separable
++//                           W3C blending, then source-over. Nests at most
++//                           LAYER_MAX_DEPTH deep; the core emits no deeper
++//                           layer and the rasteriser draws a deeper one's
++//                           ops unfiltered. Software rasteriser only.
++//   LAYER_POP   (1 word):   op — filter and composite the innermost layer.
+ //   TEXT_RUN    (8 + ceil(n/4) words):
+ //                           op,
+ //                           word1: bits 0-7 fontSlot,
+@@ -1498,8 +1544,16 @@ export const DRAW_OP = {
+   maskPush: 64,
+   maskPop: 65,
+   glyphStroke: 66,
++  layerPush: 67,
++  layerPop: 68,
+ } as const;
+ 
++/** Deepest nesting of filter layers (LAYER_PUSH). */
++export const LAYER_MAX_DEPTH = 4;
++/** Largest blur standard deviation, and largest drop-shadow blur radius / 2,
++ *  in logical px; larger is drawn at this. */
++export const BLUR_MAX = 128;
++
+ /** Widest text stroke, in logical px; wider is drawn at this width. */
+ export const STROKE_MAX_WIDTH = 64;
+ 
+diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
+index 29e3cc67..36015ae5 100644
+--- a/engine/core/src/damage.rs
++++ b/engine/core/src/damage.rs
+@@ -390,6 +390,10 @@ struct DamageDecoder<'a> {
+     clip: DamageRect,
+     stack: [DamageRect; CLIP_DEPTH],
+     depth: usize,
++    /// Open LAYER_PUSHes (pocket-motion filter layers). A filter spreads a
++    /// change past the bounds of the op that made it, so no op inside one
++    /// has a sound bound of its own.
++    layers: usize,
+ }
+ 
+ impl<'a> DamageDecoder<'a> {
+@@ -401,6 +405,7 @@ impl<'a> DamageDecoder<'a> {
+             clip: screen,
+             stack: [screen; CLIP_DEPTH],
+             depth: 0,
++            layers: 0,
+         }
+     }
+ 
+@@ -450,6 +455,8 @@ impl<'a> DamageDecoder<'a> {
+                     .checked_add(count.checked_mul(2).ok_or(())?)
+                     .ok_or(())?
+             }
++            spec::draw_op::LAYER_PUSH => 8,
++            spec::draw_op::LAYER_POP => 1,
+             _ => return Err(()),
+         };
+         let end = start.checked_add(len).ok_or(())?;
+@@ -489,6 +496,17 @@ impl<'a> DamageDecoder<'a> {
+             // A stroke reaches past its cells by its width: the cell bounds
+             // grown by that width (rounded out, plus the anti-aliased pixel).
+             spec::draw_op::GLYPH_STROKE => glyph_stroke_bounds(ui, words, self.clip),
++            spec::draw_op::LAYER_PUSH => {
++                self.layers += 1;
++                DamageRect::empty()
++            }
++            spec::draw_op::LAYER_POP => {
++                if self.layers == 0 {
++                    return Err(());
++                }
++                self.layers -= 1;
++                DamageRect::empty()
++            }
+             // Native-text runs carry no glyph geometry the tracker can
+             // measure; the core keeps every partially-clipped run inside a
+             // scissor, so the current clip is a sound (conservative) bound.
+@@ -503,7 +521,7 @@ impl<'a> DamageDecoder<'a> {
+     }
+ 
+     fn is_balanced(&self) -> bool {
+-        self.depth == 0
++        self.depth == 0 && self.layers == 0
+     }
+ }
+ 
+@@ -527,6 +545,11 @@ fn draw_list_damage<const MAX_REGIONS: usize>(
+             (None, None) => break,
+             (Some(old_op), Some(new_op)) if old_op.code == new_op.code => {
+                 if old_op.words != new_op.words {
++                    // Inside a filter layer (or the layer's own parameters)
++                    // a change reaches past its op: redraw everything.
++                    if old.layers > 0 || new.layers > 0 || old_op.code == spec::draw_op::LAYER_PUSH {
++                        return Ok(DamagePlan::full(screen));
++                    }
+                     damage.add(old_op.bounds, screen);
+                     damage.add(new_op.bounds, screen);
+                 }
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 24cf4817..fc26a4b9 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -819,6 +819,8 @@ struct Walker<'a> {
+     inspect_hit: Option<Clip>,
+     /// Draw-time skip: this slot and its subtree emit nothing (u32::MAX = none).
+     hide_slot: u32,
++    /// Open LAYER_PUSHes on the walk (pocket-motion filter layers).
++    layer_depth: u32,
+ }
+ 
+ /// Build the full DrawList for the current (laid-out) tree. `frame` is the
+@@ -873,6 +875,7 @@ pub fn build(
+         hide_slot,
+         in_3d: false,
+         provider_stale: false,
++        layer_depth: 0,
+     };
+     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
+     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), false, dl);
+@@ -964,6 +967,50 @@ impl<'a> Walker<'a> {
+             return;
+         }
+ 
++        // -- filter layer (pocket-motion): blur, drop shadow, blend mode ------
++        // The node's ground, text and whole subtree go into one layer, which
++        // is filtered and composited at LAYER_POP. The shadow colour is not
++        // scaled by `op`: the shadow is made from the layer's alpha, which
++        // already carries it. Past LAYER_MAX_DEPTH the node paints unfiltered.
++        let shadow = alpha(r.drop_shadow_color) > 0 && r.drop_shadow_gain > 0.0;
++        let layered = (r.blur > 0.0 || shadow || r.blend_mode != spec::BlendMode::Normal as u8)
++            && (self.layer_depth as usize) < spec::draw_op::LAYER_MAX_DEPTH;
++        if layered {
++            dl.words.push(spec::draw_op::LAYER_PUSH);
++            dl.words.push(r.blend_mode as u32);
++            dl.words.push(r.blur.max(0.0).min(spec::draw_op::BLUR_MAX).to_bits());
++            dl.words.push(r.drop_shadow_x.to_bits());
++            dl.words.push(r.drop_shadow_y.to_bits());
++            dl.words.push(r.drop_shadow_blur.max(0.0).min(2.0 * spec::draw_op::BLUR_MAX).to_bits());
++            dl.words.push(if shadow { r.drop_shadow_color } else { 0 });
++            dl.words.push(r.drop_shadow_gain.max(0.0).to_bits());
++            self.layer_depth += 1;
++        }
++        self.paint_body(slot, &r, world, op, clip, in_transform, dl);
++        if layered {
++            self.layer_depth -= 1;
++            dl.words.push(spec::draw_op::LAYER_POP);
++        }
++    }
++
++    /// Everything `paint` draws for a node once it is known to be visible:
++    /// ground, border, bevels, text or image, then children. Split out so a
++    /// filter layer brackets all of it whatever path returns early.
++    #[allow(clippy::too_many_arguments)]
++    fn paint_body(
++        &mut self,
++        slot: u32,
++        r: &style::Resolved,
++        world: Affine,
++        op: f32,
++        clip: Clip,
++        in_transform: bool,
++        dl: &mut DrawList,
++    ) {
++        let node = &self.tree.slots[slot as usize];
++        let r = *r;
++        let l = node.layout;
++
+         // -- background + shadow --------------------------------------------
+         let has_grad = r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32;
+         let bg_color = scale_alpha(r.bg_color, op);
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index bc00850b..4deb56d7 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -154,6 +154,14 @@ trait RenderTarget {
+     fn push_mask(&mut self, _level: MaskLevel) {}
+     fn pop_mask(&mut self) {}
+ 
++    /// The straight-alpha RGBA at `offset`, for blend modes that read the
++    /// backdrop (pocket-motion patch 0018). `None` where the target cannot
++    /// say, and a blend mode there composites as normal.
++    #[inline]
++    fn read(&self, _offset: usize) -> Option<(u32, u32, u32, u32)> {
++        None
++    }
++
+     /// The colour a frame starts from over `len` pixels: opaque black for a
+     /// target with no alpha channel, transparent black where there is one
+     /// (pocket-motion patch 0014, overridden by `RgbaTarget`).
+@@ -234,6 +242,18 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
+         let byte_start = start * 4;
+         self.bytes[byte_start..byte_start + len * 4].fill(0);
+     }
++
++    #[inline]
++    fn read(&self, offset: usize) -> Option<(u32, u32, u32, u32)> {
++        let o = offset * 4;
++        let (ri, gi, bi, ai) = if ARGB { (2, 1, 0, 3) } else { (0, 1, 2, 3) };
++        Some((
++            self.bytes[o + ri] as u32,
++            self.bytes[o + gi] as u32,
++            self.bytes[o + bi] as u32,
++            self.bytes[o + ai] as u32,
++        ))
++    }
+ }
+ 
+ struct Rgb565Target<'a> {
+@@ -734,7 +754,8 @@ fn render_scaled_clipped<T: RenderTarget>(
+     scale: i32,
+     screen: Clip,
+ ) {
+-    render_ops(ui, words, target, width, scale, screen, screen);
++    let mut pool = LayerPool { free: Vec::new() };
++    render_ops(ui, words, target, width, scale, screen, screen, 0, &mut pool);
+ }
+ 
+ /// The op loop. Returns how many words it consumed: all of them, or up to
+@@ -744,6 +765,7 @@ fn render_scaled_clipped<T: RenderTarget>(
+ /// resumes after the pop the inner call stopped at. A `Masked` target takes
+ /// further pushes onto its own stack instead, so the recursion is one level
+ /// deep whatever the nesting.
++#[allow(clippy::too_many_arguments)]
+ fn render_ops<T: RenderTarget>(
+     ui: &Ui,
+     words: &[u32],
+@@ -752,11 +774,16 @@ fn render_ops<T: RenderTarget>(
+     scale: i32,
+     screen: Clip,
+     clip0: Clip,
++    layers: usize,
++    pool: &mut LayerPool,
+ ) -> usize {
+     let mut stack: [Clip; 32] = [screen; 32];
+     let mut depth: usize = 0;
+     let mut clip = clip0;
+     let mut mask_depth: usize = 0;
++    // LAYER_PUSHes past LAYER_MAX_DEPTH, drawn unfiltered into this target;
++    // their pops are consumed here rather than closing the caller's layer.
++    let mut ignored_layers: usize = 0;
+ 
+     let mut i = 0usize;
+     while i < words.len() {
+@@ -907,7 +934,7 @@ fn render_ops<T: RenderTarget>(
+                 } else {
+                     let mut masked = Masked { inner: target, stride: width, levels: Vec::new() };
+                     masked.push_mask(level);
+-                    i += render_ops(ui, &words[i..], &mut masked, width, scale, screen, clip);
++                    i += render_ops(ui, &words[i..], &mut masked, width, scale, screen, clip, layers, pool);
+                 }
+             }
+             draw_op::GLYPH_STROKE => {
+@@ -934,6 +961,35 @@ fn render_ops<T: RenderTarget>(
+                 );
+                 i += 5 + 2 * n;
+             }
++            draw_op::LAYER_PUSH => {
++                if i + 8 > words.len() {
++                    return i;
++                }
++                let fx = LayerFx::decode(&words[i + 1..i + 8]);
++                i += 8;
++                if layers >= spec::draw_op::LAYER_MAX_DEPTH {
++                    ignored_layers += 1;
++                    continue;
++                }
++                let mut layer = LayerTarget::new(pool.take(target.pixel_len()));
++                i += render_ops(ui, &words[i..], &mut layer, width, scale, screen, clip, layers + 1, pool);
++                let (y0, y1) = composite_layer(target, &mut layer, &fx, clip, width, scale);
++                // Hand the buffer back transparent: only the rows the layer
++                // or its blur wrote can be non-zero.
++                let row = width as usize * 4;
++                layer.bytes[y0 * row..y1 * row].fill(0);
++                pool.free.push(layer.bytes);
++            }
++            draw_op::LAYER_POP => {
++                if ignored_layers > 0 {
++                    ignored_layers -= 1;
++                    i += 1;
++                } else {
++                    // Closes the layer the caller pushed; at the top level a
++                    // pop with no push is corrupt data and stops the stream.
++                    return i + 1;
++                }
++            }
+             draw_op::MASK_POP => {
+                 if mask_depth > 0 {
+                     target.pop_mask();
+@@ -1465,6 +1521,11 @@ impl RenderTarget for Masked<'_> {
+     fn pop_mask(&mut self) {
+         self.levels.pop();
+     }
++
++    #[inline]
++    fn read(&self, offset: usize) -> Option<(u32, u32, u32, u32)> {
++        self.inner.read(offset)
++    }
+ }
+ 
+ // ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
+@@ -1539,6 +1600,558 @@ fn glyph_run<T: RenderTarget>(
+     }
+ }
+ 
++// ---- LAYER_PUSH / LAYER_POP: filter layers (pocket-motion patch 0018) ----------------
++
++/// A LAYER_PUSH's parameters, decoded (spec.ts DRAWLIST op format).
++struct LayerFx {
++    blend: u32,
++    /// Standard deviation, logical px.
++    blur: f32,
++    shadow_x: f32,
++    shadow_y: f32,
++    /// Blur RADIUS, logical px (standard deviation = radius / 2).
++    shadow_blur: f32,
++    shadow_color: u32,
++    shadow_gain: f32,
++}
++
++impl LayerFx {
++    fn decode(w: &[u32]) -> LayerFx {
++        let finite = |x: f32| if x.is_finite() { x } else { 0.0 };
++        LayerFx {
++            blend: w[0],
++            blur: finite(f32::from_bits(w[1])).max(0.0).min(spec::draw_op::BLUR_MAX),
++            shadow_x: finite(f32::from_bits(w[2])),
++            shadow_y: finite(f32::from_bits(w[3])),
++            shadow_blur: finite(f32::from_bits(w[4])).max(0.0).min(2.0 * spec::draw_op::BLUR_MAX),
++            shadow_color: w[5],
++            shadow_gain: finite(f32::from_bits(w[6])).max(0.0),
++        }
++    }
++}
++
++/// A transparent full-frame RGBA layer. Writes use `RgbaTarget`'s own
++/// arithmetic, and the touched span of pixel offsets is recorded so the
++/// composite reads only the rows something reached.
++struct LayerTarget {
++    bytes: Vec<u8>,
++    lo: usize,
++    hi: usize,
++}
++
++/// Transparent layer buffers reused within one render: a layer is handed
++/// back cleared, so a frame with many filtered nodes allocates one buffer
++/// per nesting depth rather than one per node.
++struct LayerPool {
++    free: Vec<Vec<u8>>,
++}
++
++impl LayerPool {
++    fn take(&mut self, pixels: usize) -> Vec<u8> {
++        match self.free.pop() {
++            Some(b) if b.len() == pixels * 4 => b,
++            _ => alloc::vec![0u8; pixels * 4],
++        }
++    }
++}
++
++impl LayerTarget {
++    fn new(bytes: Vec<u8>) -> LayerTarget {
++        LayerTarget { bytes, lo: usize::MAX, hi: 0 }
++    }
++
++    #[inline]
++    fn touch(&mut self, start: usize, len: usize) {
++        self.lo = self.lo.min(start);
++        self.hi = self.hi.max(start + len);
++    }
++}
++
++impl RenderTarget for LayerTarget {
++    #[inline]
++    fn pixel_len(&self) -> usize {
++        self.bytes.len() / 4
++    }
++
++    #[inline]
++    fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32) {
++        if a == 0 {
++            return;
++        }
++        self.touch(offset, 1);
++        RgbaTarget::<false> { bytes: &mut self.bytes }.blend(offset, r, g, b, a);
++    }
++
++    #[inline]
++    fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32) {
++        if len == 0 {
++            return;
++        }
++        self.touch(start, len);
++        RgbaTarget::<false> { bytes: &mut self.bytes }.fill_opaque(start, len, r, g, b);
++    }
++
++    #[inline]
++    fn fill_clear(&mut self, start: usize, len: usize) {
++        RgbaTarget::<false> { bytes: &mut self.bytes }.fill_clear(start, len);
++    }
++
++    #[inline]
++    fn read(&self, offset: usize) -> Option<(u32, u32, u32, u32)> {
++        let o = offset * 4;
++        Some((
++            self.bytes[o] as u32,
++            self.bytes[o + 1] as u32,
++            self.bytes[o + 2] as u32,
++            self.bytes[o + 3] as u32,
++        ))
++    }
++}
++
++/// The separable blend function B(backdrop, source) of W3C Compositing
++/// Level 1, on 0..255 channels, integer. Add is linear dodge.
++#[inline]
++fn blend_channel(mode: u32, cb: u32, cs: u32) -> u32 {
++    let mul = |a: u32, b: u32| (a * b + 127) / 255;
++    match mode {
++        1 => mul(cb, cs),
++        2 => cb + cs - mul(cb, cs),
++        3 => {
++            // Overlay = HardLight with the roles swapped.
++            if cb <= 127 {
++                mul(2 * cb, cs)
++            } else {
++                let c = 2 * cb - 255;
++                c + cs - mul(c, cs)
++            }
++        }
++        4 => (cb + cs).min(255),
++        _ => cs,
++    }
++}
++
++/// Composite one straight-alpha source pixel by blend mode: the mixed
++/// source `(1 - ab) * cs + ab * B(cb, cs)`, then the target's own
++/// source-over. Normal, or a target that cannot read its backdrop, is the
++/// plain `blend`.
++#[inline]
++fn blend_with<T: RenderTarget + ?Sized>(t: &mut T, offset: usize, r: u32, g: u32, b: u32, a: u32, mode: u32) {
++    if mode == 0 || mode > 4 {
++        t.blend(offset, r, g, b, a);
++        return;
++    }
++    let Some((dr, dg, db, da)) = t.read(offset) else {
++        t.blend(offset, r, g, b, a);
++        return;
++    };
++    let mix = |cs: u32, cb: u32| ((255 - da) * cs + da * blend_channel(mode, cb, cs) + 127) / 255;
++    t.blend(offset, mix(r, dr), mix(g, dg), mix(b, db), a);
++}
++
++/// Extended-box parameters for one of three passes approximating a gaussian
++/// of standard deviation `sigma` px (Gwosdek, Grewenig, Bruhn, Weickert
++/// 2011): radius `r` and an edge weight in 1/256ths for the samples at
++/// +-(r + 1), so the variance — and the picture — moves continuously with
++/// `sigma` rather than in whole-box steps.
++fn extended_box(sigma: f32) -> (usize, u64) {
++    let v = sigma * sigma / 3.0;
++    let r = ((sqrtf_newton(12.0 * v + 1.0) - 1.0) * 0.5) as usize;
++    let rf = r as f32;
++    let den = 2.0 * ((rf + 1.0) * (rf + 1.0) - v);
++    let alpha = if den > 0.0 { (2.0 * rf + 1.0) * (v - rf * (rf + 1.0) / 3.0) / den } else { 0.0 };
++    let we = (alpha.max(0.0).min(1.0) * 256.0 + 0.5) as u64;
++    (r, we.min(255))
++}
++
++/// `(256 * sum + we * edge) / den`, rounded — one extended-box sample —
++/// through a fixed-point reciprocal `inv = round(2^40 / den)`: a u64 multiply
++/// where a division per sample was the cost of the whole blur. Integer, so
++/// the same words give the same pixels; the numerator stays under 2^36 for
++/// every radius BLUR_MAX allows, so the product fits.
++#[inline(always)]
++fn box_out(sum: u64, edge: u64, we: u64, inv: u64) -> u32 {
++    (((256 * sum + we * edge) * inv + (1u64 << 39)) >> 40) as u32
++}
++
++#[inline]
++fn box_inv(r: usize, we: u64) -> u64 {
++    let den = (2 * r as u64 + 1) * 256 + 2 * we;
++    ((1u64 << 40) + den / 2) / den
++}
++
++/// One extended-box pass along the rows of a `w x h` image of `ch`
++/// interleaved channels, zero outside it. Each row is copied into a line
++/// padded by r + 1 zeros on both sides so the window never branches.
++fn box_rows(img: &mut [u32], w: usize, h: usize, ch: usize, r: usize, we: u64, line: &mut Vec<u32>) {
++    let inv = box_inv(r, we);
++    let pad = r + 1;
++    line.clear();
++    line.resize((w + 2 * pad) * ch, 0);
++    for y in 0..h {
++        let row = &mut img[y * w * ch..(y + 1) * w * ch];
++        line[pad * ch..(pad + w) * ch].copy_from_slice(row);
++        for c in 0..ch {
++            // Window for x = 0 is line[pad - r ..= pad + r].
++            let mut sum: u64 = 0;
++            for k in (pad - r)..=(pad + r) {
++                sum += line[k * ch + c] as u64;
++            }
++            for x in 0..w {
++                let lo = x + pad - r; // first index in the window
++                let edge = line[(lo - 1) * ch + c] as u64 + line[(lo + 2 * r + 1) * ch + c] as u64;
++                row[x * ch + c] = box_out(sum, edge, we, inv);
++                sum = sum + line[(lo + 2 * r + 1) * ch + c] as u64 - line[lo * ch + c] as u64;
++            }
++        }
++    }
++}
++
++/// The same pass down columns, one accumulator per column and channel, row
++/// by row so the reads stay sequential.
++fn box_cols(img: &mut [u32], w: usize, h: usize, ch: usize, r: usize, we: u64, src: &mut Vec<u32>) {
++    let inv = box_inv(r, we);
++    let rw = w * ch;
++    src.clear();
++    src.extend_from_slice(img);
++    let mut acc: Vec<u64> = alloc::vec![0u64; rw];
++    for k in 0..=r.min(h.saturating_sub(1)) {
++        for (a, v) in acc.iter_mut().zip(&src[k * rw..(k + 1) * rw]) {
++            *a += *v as u64;
++        }
++    }
++    for y in 0..h {
++        let up = (y as isize - r as isize - 1 >= 0).then(|| (y - r - 1) * rw);
++        let down = (y + r + 1 < h).then(|| (y + r + 1) * rw);
++        let out = &mut img[y * rw..(y + 1) * rw];
++        for x in 0..rw {
++            let mut edge = 0u64;
++            if let Some(u) = up {
++                edge += src[u + x] as u64;
++            }
++            if let Some(d) = down {
++                edge += src[d + x] as u64;
++            }
++            out[x] = box_out(acc[x], edge, we, inv);
++        }
++        // Slide: row y + r + 1 enters, row y - r leaves.
++        if let Some(d) = down {
++            for (a, v) in acc.iter_mut().zip(&src[d..d + rw]) {
++                *a += *v as u64;
++            }
++        }
++        if y >= r {
++            let l = (y - r) * rw;
++            for (a, v) in acc.iter_mut().zip(&src[l..l + rw]) {
++                *a -= *v as u64;
++            }
++        }
++    }
++}
++
++/// Gaussian blur of a `w x h` image of `ch` interleaved channels by three
++/// extended-box passes per axis.
++fn blur_plane(img: &mut [u32], w: usize, h: usize, ch: usize, sigma: f32, scratch: &mut Vec<u32>) {
++    if !(sigma > 0.05) || w == 0 || h == 0 {
++        return;
++    }
++    let (r, we) = extended_box(sigma);
++    for _ in 0..3 {
++        box_rows(img, w, h, ch, r, we, scratch);
++    }
++    for _ in 0..3 {
++        box_cols(img, w, h, ch, r, we, scratch);
++    }
++}
++
++/// Resolution divisor for a blur of deviation `sigma` px: the largest power
++/// of two k <= sigma / 4, at most 8. Every pass costs per pixel whatever the
++/// radius, so a wide blur is paid in area; at sigma >= 4k the dropped
++/// frequencies were going to be blurred away anyway.
++#[inline]
++fn blur_divisor(sigma: f32) -> usize {
++    if sigma >= 32.0 {
++        8
++    } else if sigma >= 16.0 {
++        4
++    } else if sigma >= 8.0 {
++        2
++    } else {
++        1
++    }
++}
++
++/// Gaussian blur, at full resolution below a deviation of 8 px and at
++/// 1/k resolution above it (`blur_divisor`): box-average down by k, blur
++/// with the deviation that leaves after the down- and up-sampling filters'
++/// own variance ((k^2 - 1) / 12 and k^2 / 6), then bilinear back up. Integer
++/// throughout except the one deviation, so the result is a function of the
++/// input words alone.
++fn blur_image(img: &mut [u32], w: usize, h: usize, ch: usize, sigma: f32, scratch: &mut Vec<u32>) {
++    let k = blur_divisor(sigma);
++    if k == 1 {
++        blur_plane(img, w, h, ch, sigma, scratch);
++        return;
++    }
++    let (dw, dh) = (w.div_ceil(k), h.div_ceil(k));
++    let shift = k.trailing_zeros();
++    let mut down: Vec<u32> = alloc::vec![0u32; dw * dh * ch];
++    let mut acc: Vec<u64> = alloc::vec![0u64; dw * ch];
++    let kk = (k * k) as u64;
++    for dy in 0..dh {
++        acc.fill(0);
++        for y in dy * k..((dy + 1) * k).min(h) {
++            let row = &img[y * w * ch..(y + 1) * w * ch];
++            for (x, px) in row.chunks_exact(ch).enumerate() {
++                let o = (x >> shift) * ch;
++                for (a, v) in acc[o..o + ch].iter_mut().zip(px) {
++                    *a += *v as u64;
++                }
++            }
++        }
++        for (d, a) in down[dy * dw * ch..(dy + 1) * dw * ch].iter_mut().zip(&acc) {
++            *d = ((*a + kk / 2) / kk) as u32;
++        }
++    }
++    let kf = k as f32;
++    let var = sigma * sigma - (kf * kf - 1.0) / 12.0 - kf * kf / 6.0;
++    let sd = if var > 0.0 { sqrtf_newton(var) / kf } else { 0.0 };
++    blur_plane(&mut down, dw, dh, ch, sd, scratch);
++    // Bilinear up: pixel x's centre sits at (2x + 1 - k) / 2k in the small
++    // image, in 1/256ths exactly because k divides 128.
++    let tap = |x: usize, n: usize| -> (usize, usize, u64) {
++        let p = (2 * x as i64 + 1 - k as i64) * (128 / k as i64);
++        if p <= 0 {
++            return (0, 0, 0);
++        }
++        let i0 = (p >> 8) as usize;
++        let f = (p & 255) as u64;
++        if i0 + 1 >= n {
++            (n - 1, n - 1, 0)
++        } else {
++            (i0, i0 + 1, f)
++        }
++    };
++    // Rows first into a w x dh buffer, then columns into the image.
++    let xtaps: Vec<(usize, usize, u64)> = (0..w).map(|x| tap(x, dw)).collect();
++    let mut rows: Vec<u32> = alloc::vec![0u32; w * dh * ch];
++    for y in 0..dh {
++        let src = &down[y * dw * ch..(y + 1) * dw * ch];
++        let dst = &mut rows[y * w * ch..(y + 1) * w * ch];
++        for (x, &(a, b, f)) in xtaps.iter().enumerate() {
++            for c in 0..ch {
++                let va = src[a * ch + c] as u64;
++                let vb = src[b * ch + c] as u64;
++                dst[x * ch + c] = ((va * (256 - f) + vb * f + 128) >> 8) as u32;
++            }
++        }
++    }
++    let rw = w * ch;
++    for y in 0..h {
++        let (a, b, f) = tap(y, dh);
++        let (ra, rb) = (&rows[a * rw..(a + 1) * rw], &rows[b * rw..(b + 1) * rw]);
++        for ((o, va), vb) in img[y * rw..(y + 1) * rw].iter_mut().zip(ra).zip(rb) {
++            *o = ((*va as u64 * (256 - f) + *vb as u64 * f + 128) >> 8) as u32;
++        }
++    }
++}
++
++/// Pad of a blur of standard deviation `sigma`: three deviations, rounded out.
++#[inline]
++fn blur_pad(sigma: f32) -> i32 {
++    if sigma > 0.05 {
++        (3.0 * sigma) as i32 + 2
++    } else {
++        0
++    }
++}
++
++/// Filter the finished layer and composite it over `target` inside `clip`.
++/// Returns the rows of the layer that may now be non-zero, so the caller can
++/// clear exactly those.
++fn composite_layer<T: RenderTarget>(
++    target: &mut T,
++    layer: &mut LayerTarget,
++    fx: &LayerFx,
++    clip: Clip,
++    stride: i32,
++    scale: i32,
++) -> (usize, usize) {
++    if layer.lo >= layer.hi {
++        return (0, 0);
++    }
++    let w = stride as usize;
++    // Content bounds: the touched rows, then the columns with any alpha.
++    let (ry0, ry1) = (layer.lo / w, (layer.hi - 1) / w + 1);
++    let written = (ry0, ry1);
++    if clip.x0 >= clip.x1 || clip.y0 >= clip.y1 {
++        return written;
++    }
++    let (mut x0, mut x1) = (w, 0usize);
++    for y in ry0..ry1 {
++        let row = &layer.bytes[y * w * 4..(y + 1) * w * 4];
++        for x in 0..w {
++            if row[x * 4 + 3] != 0 {
++                x0 = x0.min(x);
++                x1 = x1.max(x + 1);
++            }
++        }
++    }
++    if x0 >= x1 {
++        return written;
++    }
++    let mut content = Clip { x0: x0 as i32, y0: ry0 as i32, x1: x1 as i32, y1: ry1 as i32 };
++    let mut scratch: Vec<u32> = Vec::new();
++
++    // Blur: premultiply the padded region into one RGBA image, blur, and write
++    // back straight alpha. The pad is clipped: nothing outside the clip was
++    // drawn, and nothing outside it will be shown.
++    let sigma = fx.blur * scale as f32;
++    let pad = blur_pad(sigma);
++    if pad > 0 {
++        let region = Clip {
++            x0: content.x0 - pad,
++            y0: content.y0 - pad,
++            x1: content.x1 + pad,
++            y1: content.y1 + pad,
++        }
++        .intersect(clip);
++        if region.x0 >= region.x1 || region.y0 >= region.y1 {
++            return written;
++        }
++        let (rw, rh) = ((region.x1 - region.x0) as usize, (region.y1 - region.y0) as usize);
++        let mut img: Vec<u32> = alloc::vec![0u32; rw * rh * 4];
++        for y in 0..rh {
++            let src = &layer.bytes[((region.y0 as usize + y) * w + region.x0 as usize) * 4..];
++            for x in 0..rw {
++                let a = src[x * 4 + 3] as u32;
++                if a == 0 {
++                    continue;
++                }
++                let i = (y * rw + x) * 4;
++                // Premultiplied, scaled by 255 so three passes keep precision.
++                img[i] = src[x * 4] as u32 * a;
++                img[i + 1] = src[x * 4 + 1] as u32 * a;
++                img[i + 2] = src[x * 4 + 2] as u32 * a;
++                img[i + 3] = a * 255;
++            }
++        }
++        blur_image(&mut img, rw, rh, 4, sigma, &mut scratch);
++        for y in 0..rh {
++            let dst = &mut layer.bytes[((region.y0 as usize + y) * w + region.x0 as usize) * 4..];
++            for x in 0..rw {
++                let i = (y * rw + x) * 4;
++                let a = img[i + 3]; // alpha * 255
++                let o = x * 4;
++                if a == 0 {
++                    dst[o..o + 4].fill(0);
++                    continue;
++                }
++                let un = |p: u32| ((p as u64 * 255 + a as u64 / 2) / a as u64).min(255) as u8;
++                dst[o] = un(img[i]);
++                dst[o + 1] = un(img[i + 1]);
++                dst[o + 2] = un(img[i + 2]);
++                dst[o + 3] = ((a + 127) / 255).min(255) as u8;
++            }
++        }
++        content = region;
++    }
++    let written = (written.0.min(content.y0 as usize), written.1.max(content.y1 as usize));
++
++    // Shadow: the layer's alpha, offset, blurred, times gain, tinted.
++    let (sr, sg, sb, sa) = channels(fx.shadow_color);
++    let mut shadow: Vec<u32> = Vec::new();
++    let mut srect = Clip { x0: 0, y0: 0, x1: 0, y1: 0 };
++    if sa > 0 && fx.shadow_gain > 0.0 {
++        let round = |v: f32| -> i32 { if v >= 0.0 { (v + 0.5) as i32 } else { -((-v + 0.5) as i32) } };
++        let dx = round(fx.shadow_x * scale as f32);
++        let dy = round(fx.shadow_y * scale as f32);
++        let ssigma = fx.shadow_blur * 0.5 * scale as f32;
++        let spad = blur_pad(ssigma);
++        srect = Clip {
++            x0: content.x0 + dx - spad,
++            y0: content.y0 + dy - spad,
++            x1: content.x1 + dx + spad,
++            y1: content.y1 + dy + spad,
++        }
++        .intersect(clip);
++        if srect.x0 < srect.x1 && srect.y0 < srect.y1 {
++            let (sw, sh) = ((srect.x1 - srect.x0) as usize, (srect.y1 - srect.y0) as usize);
++            shadow = alloc::vec![0u32; sw * sh];
++            for y in 0..sh {
++                let ly = srect.y0 + y as i32 - dy;
++                if ly < content.y0 || ly >= content.y1 {
++                    continue;
++                }
++                for x in 0..sw {
++                    let lx = srect.x0 + x as i32 - dx;
++                    if lx < content.x0 || lx >= content.x1 {
++                        continue;
++                    }
++                    shadow[y * sw + x] = layer.bytes[(ly as usize * w + lx as usize) * 4 + 3] as u32 * 256;
++                }
++            }
++            blur_image(&mut shadow, sw, sh, 1, ssigma, &mut scratch);
++            // Fold the gain and the colour's alpha in: 0..255 coverage.
++            let gain = (fx.shadow_gain * 256.0 + 0.5) as u64;
++            for v in shadow.iter_mut() {
++                let a = (*v as u64 * gain / 256 + 128) / 256; // 0..255 * gain
++                *v = ((a.min(255) * sa as u64 + 127) / 255) as u32;
++            }
++        } else {
++            srect = Clip { x0: 0, y0: 0, x1: 0, y1: 0 };
++        }
++    }
++
++    // Composite: content over its shadow, then over the target by mode.
++    let has_shadow = !shadow.is_empty();
++    let u = if has_shadow {
++        Clip {
++            x0: content.x0.min(srect.x0),
++            y0: content.y0.min(srect.y0),
++            x1: content.x1.max(srect.x1),
++            y1: content.y1.max(srect.y1),
++        }
++    } else {
++        content
++    }
++    .intersect(clip);
++    let sw = (srect.x1 - srect.x0).max(0) as usize;
++    for y in u.y0..u.y1 {
++        for x in u.x0..u.x1 {
++            let off = (y as usize) * w + x as usize;
++            let o = off * 4;
++            let (cr, cg, cb, ca) = (
++                layer.bytes[o] as u32,
++                layer.bytes[o + 1] as u32,
++                layer.bytes[o + 2] as u32,
++                layer.bytes[o + 3] as u32,
++            );
++            let s = if has_shadow && x >= srect.x0 && x < srect.x1 && y >= srect.y0 && y < srect.y1 {
++                shadow[(y - srect.y0) as usize * sw + (x - srect.x0) as usize]
++            } else {
++                0
++            };
++            if ca == 0 && s == 0 {
++                continue;
++            }
++            let (r, g, b, a) = if s == 0 || ca >= 255 {
++                (cr, cg, cb, ca)
++            } else if ca == 0 {
++                (sr, sg, sb, s)
++            } else {
++                // Straight-alpha source-over of the content on its shadow.
++                let ia = 255 - ca;
++                let oa = ca + (s * ia + 127) / 255;
++                let den = oa * 255;
++                let mix = |c: u32, d: u32| (c * ca * 255 + d * s * ia + den / 2) / den;
++                (mix(cr, sr), mix(cg, sg), mix(cb, sb), oa)
++            };
++            blend_with(target, off, r, g, b, a, fx.blend);
++        }
++    }
++    written
++}
++
+ // ---- GLYPH_STROKE: text outline by distance to the ink (pocket-motion) ----------------
+ 
+ /// Largest region, in physical pixels, one GLYPH_STROKE rasterises. A run
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index e9248b1b..7b1b7500 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -168,6 +168,13 @@ pub mod prop {
+     pub const TEXT_STROKE_WIDTH: u8 = 160;
+     pub const TEXT_STROKE_COLOR: u8 = 161;
+     pub const TEXT_STROKE_POS: u8 = 162;
++    pub const BLUR: u8 = 163;
++    pub const DROP_SHADOW_X: u8 = 164;
++    pub const DROP_SHADOW_Y: u8 = 165;
++    pub const DROP_SHADOW_BLUR: u8 = 166;
++    pub const DROP_SHADOW_COLOR: u8 = 167;
++    pub const DROP_SHADOW_GAIN: u8 = 168;
++    pub const BLEND_MODE: u8 = 169;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -189,7 +196,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0x00, 0x01, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -210,7 +217,7 @@ pub const ANIM_BIT: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0xff, 0xff, 0x20, 0x21, 0x22, 0xff, 0x23, 0x24, 0x25, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0x26, 0x27, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x26, 0x27, 0xff, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -219,7 +226,7 @@ pub const ANIM_BIT: [u8; 256] = [
+ ];
+ 
+ /// Bitset over prop ids: animatable props (tween/spring/transition targets).
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000000030000773f, 0x0000000000000000];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000001fb0000773f, 0x0000000000000000];
+ /// Bitset over prop ids: props whose change invalidates layout.
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000007fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ 
+@@ -311,6 +318,17 @@ pub enum StrokePos {
+     Center = 1,
+ }
+ 
++/// BlendMode
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum BlendMode {
++    Normal = 0,
++    Multiply = 1,
++    Screen = 2,
++    Overlay = 3,
++    Add = 4,
++}
++
+ /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
+ #[repr(u8)]
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+@@ -450,9 +468,13 @@ pub mod draw_op {
+     pub const MASK_PUSH: u32 = 64;
+     pub const MASK_POP: u32 = 65;
+     pub const GLYPH_STROKE: u32 = 66;
++    pub const LAYER_PUSH: u32 = 67;
++    pub const LAYER_POP: u32 = 68;
+     /// Largest vertex count a MASK_PUSH may carry.
+     pub const MASK_MAX_VERTS: usize = 256;
+     pub const STROKE_MAX_WIDTH: f32 = 64.0;
++    pub const LAYER_MAX_DEPTH: usize = 4;
++    pub const BLUR_MAX: f32 = 128.0;
+ }
+ 
+ /// .pak container constants (byte-compatible with dreamcart's format;
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index c528ce8a..b3735554 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -307,6 +307,15 @@ pub struct Resolved {
+     pub text_stroke_color: u32,
+     /// spec::StrokePos ordinal.
+     pub text_stroke_pos: u8,
++    /// Filter layer (pocket-motion; spec.ts PROP.blur..blendMode).
++    pub blur: f32,
++    pub drop_shadow_x: f32,
++    pub drop_shadow_y: f32,
++    pub drop_shadow_blur: f32,
++    pub drop_shadow_color: u32,
++    pub drop_shadow_gain: f32,
++    /// spec::BlendMode ordinal.
++    pub blend_mode: u8,
+ }
+ 
+ impl Default for Resolved {
+@@ -371,6 +380,13 @@ impl Default for Resolved {
+             text_stroke_width: 0.0,
+             text_stroke_color: 0,
+             text_stroke_pos: spec::StrokePos::Outside as u8,
++            blur: 0.0,
++            drop_shadow_x: 0.0,
++            drop_shadow_y: 0.0,
++            drop_shadow_blur: 0.0,
++            drop_shadow_color: 0,
++            drop_shadow_gain: 1.0,
++            blend_mode: spec::BlendMode::Normal as u8,
+         }
+     }
+ }
+@@ -464,6 +480,13 @@ impl Resolved {
+             p::TEXT_STROKE_WIDTH => self.text_stroke_width = f,
+             p::TEXT_STROKE_COLOR => self.text_stroke_color = bits,
+             p::TEXT_STROKE_POS => self.text_stroke_pos = bits as u8,
++            p::BLUR => self.blur = f,
++            p::DROP_SHADOW_X => self.drop_shadow_x = f,
++            p::DROP_SHADOW_Y => self.drop_shadow_y = f,
++            p::DROP_SHADOW_BLUR => self.drop_shadow_blur = f,
++            p::DROP_SHADOW_COLOR => self.drop_shadow_color = bits,
++            p::DROP_SHADOW_GAIN => self.drop_shadow_gain = f,
++            p::BLEND_MODE => self.blend_mode = bits as u8,
+             _ => {}
+         }
+     }
+@@ -541,6 +564,13 @@ impl Resolved {
+             p::TEXT_STROKE_WIDTH => self.text_stroke_width.to_bits(),
+             p::TEXT_STROKE_COLOR => self.text_stroke_color,
+             p::TEXT_STROKE_POS => self.text_stroke_pos as u32,
++            p::BLUR => self.blur.to_bits(),
++            p::DROP_SHADOW_X => self.drop_shadow_x.to_bits(),
++            p::DROP_SHADOW_Y => self.drop_shadow_y.to_bits(),
++            p::DROP_SHADOW_BLUR => self.drop_shadow_blur.to_bits(),
++            p::DROP_SHADOW_COLOR => self.drop_shadow_color,
++            p::DROP_SHADOW_GAIN => self.drop_shadow_gain.to_bits(),
++            p::BLEND_MODE => self.blend_mode as u32,
+             _ => 0,
+         }
+     }
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 946f9546..9ebb13fa 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -254,6 +254,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+     let mut counts = [0u32; 72];
+     let mut depth = 0i32;
+     let mut mask_depth = 0i32;
++    let mut layer_depth = 0i32;
+     let mut i = 0usize;
+     while i < words.len() {
+         let op = words[i];
+@@ -349,6 +350,22 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+                 }
+                 i += 5 + 2 * n;
+             }
++            spec::draw_op::LAYER_PUSH => {
++                assert!(i + 8 <= words.len(), "truncated LAYER_PUSH");
++                assert!(words[i + 1] <= 4, "bad BlendMode");
++                for k in 2..=5 {
++                    let f = f32::from_bits(words[i + k]);
++                    assert!(f.is_finite(), "LAYER_PUSH parameter not finite: {f}");
++                }
++                layer_depth += 1;
++                assert!(layer_depth as usize <= spec::draw_op::LAYER_MAX_DEPTH, "layers nested too deep");
++                i += 8;
++            }
++            spec::draw_op::LAYER_POP => {
++                layer_depth -= 1;
++                assert!(layer_depth >= 0, "unbalanced LAYER_POP");
++                i += 1;
++            }
+             spec::draw_op::TEXT_RUN => {
+                 // Native-text op: origin is f32 (exempt from the i16 clip
+                 // guarantee), box width is finite and non-negative, and the
+@@ -367,6 +384,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+     }
+     assert_eq!(depth, 0, "unbalanced SCISSOR/SCISSOR_POP");
+     assert_eq!(mask_depth, 0, "unbalanced MASK_PUSH/MASK_POP");
++    assert_eq!(layer_depth, 0, "unbalanced LAYER_PUSH/LAYER_POP");
+     counts
+ }
+ 
+@@ -4846,3 +4864,261 @@ fn a_moving_stroke_redraws_incrementally_to_the_full_render() {
+     render_scaled(&ui, &second, &mut full, 1);
+     assert!(fb == full, "incremental redraw of a moved stroke differs from the full render");
+ }
++
++// ---- LAYER_PUSH / LAYER_POP: filter layers (pocket-motion) -------------------------
++
++/// A 200x200 ground of `ground` with one absolute 40x40 box of `color` at
++/// (80, 80); `fx` sets filter props on the box. Returns the Ui, the box id
++/// and the draw words.
++fn filtered_box(ground: u32, color: u32, fx: &[(u8, f64)]) -> (Ui, i32, Vec<u32>) {
++    let mut ui = Ui::new();
++    let g = ui.create_node(0);
++    ui.set_prop(g, spec::prop::WIDTH, 200.0);
++    ui.set_prop(g, spec::prop::HEIGHT, 200.0);
++    ui.set_prop(g, spec::prop::BG_COLOR, ground as f64);
++    ui.insert_before(spec::ROOT_ID, g, 0);
++    let b = ui.create_node(0);
++    ui.set_prop(b, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(b, spec::prop::INSET_L, 80.0);
++    ui.set_prop(b, spec::prop::INSET_T, 80.0);
++    ui.set_prop(b, spec::prop::WIDTH, 40.0);
++    ui.set_prop(b, spec::prop::HEIGHT, 40.0);
++    ui.set_prop(b, spec::prop::BG_COLOR, color as f64);
++    for &(p, v) in fx {
++        ui.set_prop(b, p, v);
++    }
++    ui.insert_before(g, b, 0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    validate_drawlist(&words);
++    (ui, b, words)
++}
++
++#[test]
++fn no_filter_prop_emits_no_layer_and_the_same_pixels() {
++    let (mut plain, _, words) = filtered_box(abgr(0, 0, 0, 255), abgr(255, 255, 255, 255), &[]);
++    assert!(!words.iter().any(|&w| w == spec::draw_op::LAYER_PUSH));
++    // blur 0 and a transparent shadow colour are no filter either.
++    let (mut zero, _, zwords) = filtered_box(
++        abgr(0, 0, 0, 255),
++        abgr(255, 255, 255, 255),
++        &[(spec::prop::BLUR, 0.0), (spec::prop::DROP_SHADOW_X, 5.0), (spec::prop::DROP_SHADOW_BLUR, 4.0)],
++    );
++    assert_eq!(zwords, words);
++    assert_eq!(raster_fb(&mut zero), raster_fb(&mut plain));
++}
++
++#[test]
++fn blur_spreads_symmetrically_and_moves_continuously_with_sigma() {
++    let black = abgr(0, 0, 0, 255);
++    let white = abgr(255, 255, 255, 255);
++    let (mut ui, _, words) = filtered_box(black, white, &[(spec::prop::BLUR, 4.0)]);
++    let push = words.iter().position(|&w| w == spec::draw_op::LAYER_PUSH).expect("a layer");
++    assert_eq!(f32::from_bits(words[push + 2]), 4.0);
++    let fb = raster_fb(&mut ui);
++    let at = |x: usize, y: usize| sample_rgba(&fb, x, y)[0];
++    assert!(at(100, 100) > 250, "the middle of a 40 px box barely moves under a 4 px blur");
++    assert!(at(76, 100) > 0 && at(76, 100) < 128, "4 px outside the edge is lit, dimly: {}", at(76, 100));
++    assert_eq!(at(60, 100), 0, "20 px outside is past three deviations");
++    for d in 1..16 {
++        assert_eq!(at(80 - d, 100), at(119 + d, 100), "left/right symmetric at {d}");
++        assert_eq!(at(100, 80 - d), at(100, 119 + d), "top/bottom symmetric at {d}");
++    }
++    assert!(at(79, 100) > at(78, 100) && at(78, 100) > at(77, 100), "monotone falloff");
++    // Continuous in sigma: 4.1 differs from 4.0, by little.
++    let (mut ui2, _, _) = filtered_box(black, white, &[(spec::prop::BLUR, 4.1)]);
++    let fb2 = raster_fb(&mut ui2);
++    assert_ne!(fb, fb2, "a tenth of a pixel of deviation moves the picture");
++    let worst = fb.iter().zip(&fb2).map(|(a, b)| (*a as i32 - *b as i32).abs()).max().unwrap();
++    assert!(worst <= 6, "and moves it by little: {worst}");
++}
++
++#[test]
++fn drop_shadow_offsets_blurs_and_sits_under_the_node() {
++    let white = abgr(255, 255, 255, 255);
++    let blue = abgr(0, 0, 255, 255);
++    let red = abgr(255, 0, 0, 255);
++    let (mut ui, _, _) = filtered_box(
++        white,
++        blue,
++        &[
++            (spec::prop::DROP_SHADOW_X, 10.0),
++            (spec::prop::DROP_SHADOW_Y, 10.0),
++            (spec::prop::DROP_SHADOW_COLOR, red as f64),
++        ],
++    );
++    let fb = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&fb, 100, 100), [0, 0, 255, 255], "the node covers its shadow");
++    assert_eq!(sample_rgba(&fb, 125, 125), [255, 0, 0, 255], "an unblurred shadow is the offset alpha");
++    assert_eq!(sample_rgba(&fb, 85, 125), [255, 255, 255, 255], "left of the offset is ground");
++    // Blurred and with gain: the gain thickens a glow.
++    let glow = |gain: f64| {
++        let (mut ui, _, _) = filtered_box(
++            white,
++            blue,
++            &[
++                (spec::prop::DROP_SHADOW_BLUR, 16.0),
++                (spec::prop::DROP_SHADOW_COLOR, red as f64),
++                (spec::prop::DROP_SHADOW_GAIN, gain),
++            ],
++        );
++        sample_rgba(&raster_fb(&mut ui), 70, 100)
++    };
++    let (one, two) = (glow(1.0), glow(2.0));
++    assert!(one[1] < 255 && one[1] > 0, "a 16 px glow reaches 10 px out, partly: {one:?}");
++    assert!(two[1] < one[1], "gain 2 is redder there: {two:?} vs {one:?}");
++}
++
++#[test]
++fn blend_modes_match_the_w3c_separable_functions() {
++    let ground = abgr(128, 64, 200, 255);
++    let src = abgr(255, 128, 0, 255);
++    let px = |mode: spec::BlendMode| {
++        let (mut ui, _, _) = filtered_box(ground, src, &[(spec::prop::BLEND_MODE, mode as u32 as f64)]);
++        let fb = raster_fb(&mut ui);
++        (sample_rgba(&fb, 100, 100), sample_rgba(&fb, 10, 10))
++    };
++    let m = |a: u32, b: u32| ((a * b + 127) / 255) as u8;
++    let (inside, outside) = px(spec::BlendMode::Multiply);
++    assert_eq!(outside, [128, 64, 200, 255], "outside the node the ground is untouched");
++    assert_eq!(inside, [m(128, 255), m(64, 128), m(200, 0), 255]);
++    let screen = |b: u32, s: u32| (b + s - (b * s + 127) / 255) as u8;
++    assert_eq!(px(spec::BlendMode::Screen).0, [screen(128, 255), screen(64, 128), screen(200, 0), 255]);
++    let add = |b: u32, s: u32| (b + s).min(255) as u8;
++    assert_eq!(px(spec::BlendMode::Add).0, [add(128, 255), add(64, 128), add(200, 0), 255]);
++    let overlay = |b: u32, s: u32| {
++        if b <= 127 {
++            ((2 * b * s + 127) / 255) as u8
++        } else {
++            let c = 2 * b - 255;
++            (c + s - (c * s + 127) / 255) as u8
++        }
++    };
++    assert_eq!(px(spec::BlendMode::Overlay).0, [overlay(128, 255), overlay(64, 128), overlay(200, 0), 255]);
++    assert_eq!(px(spec::BlendMode::Normal).0, [255, 128, 0, 255]);
++}
++
++#[test]
++fn layers_past_the_depth_limit_draw_unfiltered_and_keep_the_stream_going() {
++    let mut ui = Ui::new();
++    let mut parent = spec::ROOT_ID;
++    for d in 0..7 {
++        let n = ui.create_node(0);
++        ui.set_prop(n, spec::prop::WIDTH, (200 - d * 20) as f64);
++        ui.set_prop(n, spec::prop::HEIGHT, (200 - d * 20) as f64);
++        ui.set_prop(n, spec::prop::BLEND_MODE, spec::BlendMode::Screen as u32 as f64);
++        ui.insert_before(parent, n, 0);
++        parent = n;
++    }
++    let last = ui.create_node(0);
++    ui.set_prop(last, spec::prop::WIDTH, 10.0);
++    ui.set_prop(last, spec::prop::HEIGHT, 10.0);
++    ui.set_prop(last, spec::prop::BG_COLOR, abgr(0, 255, 0, 255) as f64);
++    ui.insert_before(parent, last, 0);
++    let tail = ui.create_node(0);
++    ui.set_prop(tail, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(tail, spec::prop::INSET_L, 300.0);
++    ui.set_prop(tail, spec::prop::WIDTH, 10.0);
++    ui.set_prop(tail, spec::prop::HEIGHT, 10.0);
++    ui.set_prop(tail, spec::prop::BG_COLOR, abgr(255, 0, 0, 255) as f64);
++    ui.insert_before(spec::ROOT_ID, tail, 1);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let counts = validate_drawlist(&words);
++    assert_eq!(counts[spec::draw_op::LAYER_PUSH as usize] as usize, spec::draw_op::LAYER_MAX_DEPTH);
++    let fb = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&fb, 5, 5), [0, 255, 0, 255], "the innermost node still draws");
++    assert_eq!(sample_rgba(&fb, 305, 5), [255, 0, 0, 255], "and so does what follows the layers");
++}
++
++#[test]
++fn a_change_inside_a_layer_redraws_everything_and_equals_the_full_render() {
++    use crate::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS};
++    use crate::raster::{render_scaled, render_scaled_incremental};
++    let (mut ui, b, first) = filtered_box(abgr(0, 0, 0, 255), abgr(255, 255, 255, 255), &[(spec::prop::BLUR, 6.0)]);
++    ui.set_prop(b, spec::prop::BG_COLOR, abgr(255, 0, 0, 255) as f64);
++    ui.tick();
++    let second = ui.draw().words.clone();
++    let pixels = spec::SCREEN_W as usize * spec::SCREEN_H as usize;
++    let mut fb = alloc::vec![0u8; pixels * 4];
++    let mut state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
++    render_scaled_incremental(&ui, &first, &mut fb, 1, &mut state, DamagePolicy::default()).unwrap();
++    let plan = render_scaled_incremental(&ui, &second, &mut fb, 1, &mut state, DamagePolicy::default()).unwrap();
++    assert!(plan.is_full_redraw(), "a filtered change has no sound partial bound");
++    let mut full = alloc::vec![0u8; pixels * 4];
++    render_scaled(&ui, &second, &mut full, 1);
++    assert!(fb == full);
++}
++
++#[test]
++fn a_blurred_text_run_and_a_stroked_one_compose() {
++    // Text inside a layer: glow (shadow, no offset) around a stroked run.
++    let (mut ui, words) = stroked_block(abgr(0, 0, 255, 255), 3.0, abgr(0, 0, 0, 255), spec::StrokePos::Outside);
++    let _ = words;
++    let t = ui.hit_test(60.0, 60.0);
++    ui.set_prop(t, spec::prop::DROP_SHADOW_BLUR, 12.0);
++    ui.set_prop(t, spec::prop::DROP_SHADOW_COLOR, abgr(255, 200, 0, 255) as f64);
++    ui.set_prop(t, spec::prop::DROP_SHADOW_GAIN, 3.0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let counts = validate_drawlist(&words);
++    assert_eq!(counts[spec::draw_op::LAYER_PUSH as usize], 1);
++    assert_eq!(counts[spec::draw_op::GLYPH_STROKE as usize], 1);
++    let fb = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&fb, 60, 60), [0, 0, 255, 255], "fill on top");
++    assert_eq!(sample_rgba(&fb, 48, 60), [0, 0, 0, 255], "stroke under it");
++    let halo = sample_rgba(&fb, 42, 60);
++    assert!(halo[0] == 255 && halo[1] > 200 && halo[2] < 255, "the glow is past the stroke: {halo:?}");
++}
++
++#[test]
++fn blur_across_a_resolution_step_moves_the_picture_by_little() {
++    // 8, 16 and 32 px deviation are where the blur drops to 1/2, 1/4, 1/8
++    // resolution (raster.rs blur_divisor). Just below and at each step the
++    // pictures are two paths to the same gaussian; the step is bounded here.
++    let black = abgr(0, 0, 0, 255);
++    let white = abgr(255, 255, 255, 255);
++    for step in [8.0f64, 16.0, 32.0] {
++        let (mut a, _, _) = filtered_box(black, white, &[(spec::prop::BLUR, step - 0.001)]);
++        let (mut b, _, _) = filtered_box(black, white, &[(spec::prop::BLUR, step)]);
++        let (fa, fb) = (raster_fb(&mut a), raster_fb(&mut b));
++        let worst = fa.iter().zip(&fb).map(|(x, y)| (*x as i32 - *y as i32).abs()).max().unwrap();
++        // Measured 1 at each step (2026-09-24).
++        assert!(worst <= 2, "a blur crossing {step} px moves a channel by {worst}");
++    }
++}
++
++#[test]
++fn a_reused_layer_buffer_carries_nothing_from_the_layer_before() {
++    // Two blurred siblings share one pooled buffer (raster.rs LayerPool). If
++    // the first's pixels survived into the second, the first would be
++    // composited twice and come out brighter than when drawn alone.
++    let build = |both: bool| {
++        let mut ui = Ui::new();
++        let g = ui.create_node(0);
++        ui.set_prop(g, spec::prop::WIDTH, 400.0);
++        ui.set_prop(g, spec::prop::HEIGHT, 200.0);
++        ui.set_prop(g, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
++        ui.insert_before(spec::ROOT_ID, g, 0);
++        for (k, x) in [(0, 40.0), (1, 260.0)] {
++            if k == 1 && !both {
++                continue;
++            }
++            let b = ui.create_node(0);
++            ui.set_prop(b, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++            ui.set_prop(b, spec::prop::INSET_L, x);
++            ui.set_prop(b, spec::prop::INSET_T, 60.0);
++            ui.set_prop(b, spec::prop::WIDTH, 60.0);
++            ui.set_prop(b, spec::prop::HEIGHT, 60.0);
++            ui.set_prop(b, spec::prop::BG_COLOR, abgr(200, 200, 200, 128) as f64);
++            ui.set_prop(b, spec::prop::BLUR, 3.0);
++            ui.insert_before(g, b, k);
++        }
++        ui.tick();
++        raster_fb(&mut ui)
++    };
++    let (one, two) = (build(false), build(true));
++    for x in 20..140 {
++        assert_eq!(sample_rgba(&one, x, 90), sample_rgba(&two, x, 90), "column {x} of the first node");
++    }
++}
+diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
+index 725e0117..8cd6c5fb 100644
+--- a/framework/compiler/animation.ts
++++ b/framework/compiler/animation.ts
+@@ -249,8 +249,56 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   textStrokeColor: [[PROP.textStrokeColor], colorBits],
+   WebkitTextStrokeWidth: [[PROP.textStrokeWidth], pxBits],
+   WebkitTextStrokeColor: [[PROP.textStrokeColor], colorBits],
++  blur: [[PROP.blur], pxBits],
++  dropShadowX: [[PROP.dropShadowX], pxBits],
++  dropShadowY: [[PROP.dropShadowY], pxBits],
++  dropShadowBlur: [[PROP.dropShadowBlur], pxBits],
++  dropShadowColor: [[PROP.dropShadowColor], colorBits],
++  dropShadowGain: [[PROP.dropShadowGain], scalarBits],
+ };
+ 
++/**
++ * `filter: "blur(8px) drop-shadow(0px 0px 12px #fbbf24)"` -> props (pocket-
++ * motion). `blur()` is the standard deviation; `drop-shadow(x y [blur]
++ * [color])` takes px lengths and one colour in any order after the two
++ * offsets, as CSS. Functions a keyframe does not name are not pinned by it, so
++ * write the same functions at from/0% and to/100%.
++ */
++function parseFilter(value: string | number, where: string): Map<number, number> {
++  if (typeof value === "number") err(`${where}: filter must be a string.`);
++  rejectUnbakeable(value, where);
++  const out = new Map<number, number>();
++  const re = /([a-z-]+)\(([^()]*(?:\([^()]*\))?[^()]*)\)/g;
++  let m: RegExpExecArray | null;
++  let matched = 0;
++  while ((m = re.exec(value))) {
++    matched++;
++    const fn = m[1];
++    const w = `${where} filter ${fn}()`;
++    if (fn === "blur") {
++      out.set(PROP.blur, f32Bits(parsePx(m[2].trim(), w)));
++    } else if (fn === "drop-shadow") {
++      const parts = m[2].trim().split(/\s+/);
++      const lengths: number[] = [];
++      let color: number | undefined;
++      for (const part of parts) {
++        if (/^-?\d*\.?\d+(px)?$/.test(part)) lengths.push(parsePx(part, w));
++        else if (color === undefined) color = parseColor(part, w);
++        else err(`${w}: more than one colour.`);
++      }
++      if (lengths.length < 2 || lengths.length > 3) err(`${w}: needs two or three px lengths.`);
++      out.set(PROP.dropShadowX, f32Bits(lengths[0]!));
++      out.set(PROP.dropShadowY, f32Bits(lengths[1]!));
++      out.set(PROP.dropShadowBlur, f32Bits(lengths[2] ?? 0));
++      if (color !== undefined) out.set(PROP.dropShadowColor, color);
++    } else {
++      err(`${w}: unsupported filter function (blur and drop-shadow are).`);
++    }
++  }
++  if (matched === 0 && value.trim() !== "none") err(`${where}: cannot parse filter \`${value}\`.`);
++  return out;
++}
++
+ /** kebab-case -> camelCase (accepts `background-color` next to `backgroundColor`). */
+ function camel(name: string): string {
+   return name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+@@ -471,6 +519,10 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+           transformPcts.push([pct, decomposed]);
+           continue;
+         }
++        if (key === "filter") {
++          for (const [prop, bits] of parseFilter(value, where)) put(prop, pct, bits);
++          continue;
++        }
+         const spec = KEYFRAME_PROPS[key];
+         if (!spec) err(`${where}: unsupported property \`${rawKey}\`.`);
+         const [propIds, encode] = spec;
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index 84baf937..a1fffc84 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -22,6 +22,7 @@ import {
+   PROP,
+   SIZE_FULL,
+   STROKE_MAX_WIDTH,
++  BLUR_MAX,
+   TRANSITION_MASK_ALL,
+   abgr,
+   animBit,
+@@ -389,6 +390,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+     case "tracking-wide": acc.trackingWide = true; return true;
+   }
+   if (tok in SHADOWS) { D.push([PROP.shadow, int(SHADOWS[tok])]); return true; }
++  if (parseFilterUtility(tok, D)) return true;
+   {
+     // `font-[display]`: a named face. The build refuses a name no
+     // `--font-face-*` flag declared (bake-font.ts), so a typo is loud there.
+@@ -632,6 +634,102 @@ function parseTextStroke(rest: string, D: Decl[]): boolean {
+   return true;
+ }
+ 
++/** Tailwind v3 `blur-*` steps, px standard deviation. */
++const BLUR_STEPS: Record<string, number> = {
++  "blur-none": 0, "blur-sm": 4, "blur": 8, "blur-md": 12, "blur-lg": 16,
++  "blur-xl": 24, "blur-2xl": 40, "blur-3xl": 64,
++};
++const BLEND_MODES: Record<string, number> = {
++  normal: ENUMS.BlendMode.Normal, multiply: ENUMS.BlendMode.Multiply,
++  screen: ENUMS.BlendMode.Screen, overlay: ENUMS.BlendMode.Overlay,
++  "plus-lighter": ENUMS.BlendMode.Add, add: ENUMS.BlendMode.Add,
++};
++
++/** `[12px]` / `[12]` / `[-4px]` -> number, for filter arbitrary values. */
++function arbPx(part: string): number | null {
++  const m = /^\[(-?\d+(?:\.\d+)?)(?:px)?\]$/.exec(part);
++  return m ? parseFloat(m[1]!) : null;
++}
++
++/**
++ * Filter-layer utilities (pocket-motion): a node and its subtree painted into
++ * one layer that is blurred, shadowed and blended as a unit.
++ *
++ *   blur-sm|md|lg|xl|2xl|3xl, blur, blur-none, blur-[Npx]  standard deviation
++ *   drop-shadow-[X_Y]  drop-shadow-[X_Y_B]  drop-shadow-[X_Y_B_#hex]
++ *   drop-shadow-<color>  drop-shadow-none
++ *   text-shadow-[...] / text-shadow-<color>   the same props, CSS's name for
++ *                                             them on text
++ *   glow-[B]  (a shadow at offset 0), glow-<color>, glow-gain-[N]
++ *   mix-blend-normal|multiply|screen|overlay|plus-lighter|add
++ *
++ * A shadow draws only with a colour; B is the CSS blur radius (deviation =
++ * B / 2), as drop-shadow() and text-shadow.
++ */
++function parseFilterUtility(tok: string, D: Decl[]): boolean {
++  if (tok in BLUR_STEPS) { D.push([PROP.blur, px(BLUR_STEPS[tok]!)]); return true; }
++  if (tok.startsWith("blur-[")) {
++    const v = arbPx(tok.slice(5));
++    if (v === null || v < 0 || v > BLUR_MAX) return false;
++    D.push([PROP.blur, px(v)]);
++    return true;
++  }
++  if (tok.startsWith("mix-blend-")) {
++    const mode = BLEND_MODES[tok.slice("mix-blend-".length)];
++    if (mode === undefined) return false;
++    D.push([PROP.blendMode, int(mode)]);
++    return true;
++  }
++  if (tok.startsWith("glow-")) {
++    const rest = tok.slice(5);
++    if (rest.startsWith("gain-")) {
++      const v = arbPx(rest.slice(5)) ?? plainNum(rest.slice(5));
++      if (v === null || v < 0 || v > 16) return false;
++      D.push([PROP.dropShadowGain, px(v)]);
++      return true;
++    }
++    const b = arbPx(rest);
++    if (b !== null) {
++      if (b < 0 || b > 2 * BLUR_MAX) return false;
++      D.push([PROP.dropShadowX, px(0)], [PROP.dropShadowY, px(0)], [PROP.dropShadowBlur, px(b)]);
++      return true;
++    }
++    const c = colorValue(rest);
++    if (c === null) return false;
++    D.push([PROP.dropShadowColor, c]);
++    return true;
++  }
++  for (const head of ["drop-shadow-", "text-shadow-"]) {
++    if (!tok.startsWith(head)) continue;
++    const rest = tok.slice(head.length);
++    if (rest === "none") { D.push([PROP.dropShadowColor, int(0)]); return true; }
++    const geo = /^\[([^\]]+)\]$/.exec(rest);
++    if (geo && !geo[1]!.startsWith("#")) {
++      const parts = geo[1]!.split("_");
++      if (parts.length < 2 || parts.length > 4) return false;
++      const nums: number[] = [];
++      let color: number | null = null;
++      for (let i = 0; i < parts.length; i++) {
++        const n = arbPx(`[${parts[i]}]`);
++        if (n !== null && i < 3 && color === null) { nums.push(n); continue; }
++        if (i === parts.length - 1 && color === null) { color = bareHexColor(parts[i]!); if (color !== null) continue; }
++        return false;
++      }
++      if (nums.length < 2) return false;
++      const blur = nums[2] ?? 0;
++      if (blur < 0 || blur > 2 * BLUR_MAX) return false;
++      D.push([PROP.dropShadowX, px(nums[0]!)], [PROP.dropShadowY, px(nums[1]!)], [PROP.dropShadowBlur, px(blur)]);
++      if (color !== null) D.push([PROP.dropShadowColor, color]);
++      return true;
++    }
++    const c = colorValue(rest);
++    if (c === null) return false;
++    D.push([PROP.dropShadowColor, c]);
++    return true;
++  }
++  return false;
++}
++
+ /** Literal-level animation accumulator (`animate-*` binds to the base style). */
+ interface AnimAcc {
+   ids: number[];
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index 2a01139d..ab8727ab 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -632,3 +632,49 @@ describe("text stroke (pocket-motion)", () => {
+     expect(tl.tracks.map((t) => t.prop).sort()).toEqual([PROP.textStrokeWidth, PROP.textStrokeColor].sort());
+   });
+ });
++
++describe("filter layers (pocket-motion)", () => {
++  test("blur steps and arbitrary blur", () => {
++    expect(f32Of(props(parseClassLiteral("blur-md")), PROP.blur)).toBe(12);
++    expect(f32Of(props(parseClassLiteral("blur")), PROP.blur)).toBe(8);
++    expect(f32Of(props(parseClassLiteral("blur-[2.5px]")), PROP.blur)).toBe(2.5);
++    expect(parseClassLiteral("blur-[129px]")).toBeNull();
++  });
++  test("drop-shadow, text-shadow and glow all write the drop-shadow props", () => {
++    const m = props(parseClassLiteral("drop-shadow-[4px_6px_10px_#ff000080]"));
++    expect([f32Of(m, PROP.dropShadowX), f32Of(m, PROP.dropShadowY), f32Of(m, PROP.dropShadowBlur)]).toEqual([4, 6, 10]);
++    expect(m.get(PROP.dropShadowColor)).toBe(abgr(255, 0, 0, 0x80));
++    const t = props(parseClassLiteral("text-shadow-[-2px_3px] text-shadow-black"));
++    expect(f32Of(t, PROP.dropShadowX)).toBe(-2);
++    expect(f32Of(t, PROP.dropShadowBlur)).toBe(0);
++    expect(t.get(PROP.dropShadowColor)).toBe(abgr(0, 0, 0));
++    const g = props(parseClassLiteral("glow-[24px] glow-amber-400 glow-gain-[2]"));
++    expect([f32Of(g, PROP.dropShadowX), f32Of(g, PROP.dropShadowY), f32Of(g, PROP.dropShadowBlur)]).toEqual([0, 0, 24]);
++    expect(f32Of(g, PROP.dropShadowGain)).toBe(2);
++    expect(g.get(PROP.dropShadowColor)).toBe(paletteColor("amber-400")!);
++    expect(parseClassLiteral("drop-shadow-[4px]")).toBeNull();
++  });
++  test("mix-blend modes", () => {
++    expect(props(parseClassLiteral("mix-blend-multiply")).get(PROP.blendMode)).toBe(ENUMS.BlendMode.Multiply);
++    expect(props(parseClassLiteral("mix-blend-plus-lighter")).get(PROP.blendMode)).toBe(ENUMS.BlendMode.Add);
++    expect(parseClassLiteral("mix-blend-difference")).toBeNull();
++  });
++  test("filter keyframes: blur() and drop-shadow() bake to the props", () => {
++    resetAnimationBake();
++    setAnimationTickRate(60);
++    registerAnimationTheme({
++      keyframes: {
++        focus: {
++          from: { filter: "blur(12px) drop-shadow(0px 0px 4px #fbbf24)" },
++          to: { filter: "blur(0px) drop-shadow(0px 0px 24px #fbbf24)" },
++        },
++      },
++      animation: { focus: { value: "focus 1s linear both" } },
++    });
++    const rec = parseClassLiteral("animate-focus");
++    const tl = bakedTimelines()[rec!.animation!.anims[0]!]!;
++    expect(tl.tracks.map((t) => t.prop).sort((a, b) => a - b)).toEqual(
++      [PROP.blur, PROP.dropShadowX, PROP.dropShadowY, PROP.dropShadowBlur, PROP.dropShadowColor].sort((a, b) => a - b),
++    );
++  });
++});
