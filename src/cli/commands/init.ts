@@ -179,7 +179,10 @@ export function rewritePocketJson(text: string, toRel: string): string {
 /** Every repo-relative file the sidecar names — fonts, footage, sound. */
 export function declaredAssets(sidecar: MotionSidecar): string[] {
   const out: string[] = [];
-  if (sidecar.fonts) out.push(sidecar.fonts.regular, sidecar.fonts.bold);
+  if (sidecar.fonts) {
+    out.push(sidecar.fonts.regular, sidecar.fonts.bold);
+    for (const face of Object.values(sidecar.fonts.faces ?? {})) out.push(face.regular, face.bold);
+  }
   for (const track of sidecar.footage) out.push(track.src);
   const sound = sidecar.sound;
   if (sound) {

@@ -1069,3 +1069,26 @@ describe("parseSidecar — sound", () => {
     );
   });
 });
+
+describe("fonts.faces", () => {
+  const base = { motion: 1, durationFrames: 10, fps: 30 };
+  const pair = { regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf", bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf" };
+  test("named faces parse beside the default pair and are kept verbatim", () => {
+    const r = parseSidecar({ ...base, fonts: { ...pair, faces: { display: { ...pair }, cjk: { ...pair } } } });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.fonts?.faces).toEqual({ display: pair, cjk: pair });
+  });
+  test("a sidecar with no faces carries no faces key, so its identity projection is unchanged", () => {
+    const r = parseSidecar({ ...base, fonts: pair });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect("faces" in r.value.fonts!).toBe(false);
+  });
+  test("a face with one weight is refused", () => {
+    const r = parseSidecar({ ...base, fonts: { ...pair, faces: { display: { regular: pair.regular } } } });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.diagnostics.map((d) => d.code)).toContain("sidecar.fonts.faces.missing");
+  });
+});

@@ -8,9 +8,10 @@
  * viewport; CLI flags override.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import {
+  FONT_FILES_MAX_BYTES,
   parseSidecar,
   type Diagnostic,
   type MotionSidecar,
@@ -57,8 +58,13 @@ export interface ResolvedComposition {
   readonly fps: number;
   readonly durationFrames: number;
   readonly supersample: 1 | 2 | 4;
-  /** Absolute paths to the declared faces, or undefined for the build default. */
-  readonly fontPaths?: { readonly regular: string; readonly bold: string };
+  /** Absolute paths to the declared faces, or undefined for the build default.
+   *  `faces` holds the named faces (`fonts.faces`), present only when declared. */
+  readonly fontPaths?: {
+    readonly regular: string;
+    readonly bold: string;
+    readonly faces?: Readonly<Record<string, { readonly regular: string; readonly bold: string }>>;
+  };
   /** Exact build command that would produce the missing artifact. */
   readonly buildCommand: string;
   /** The same command as argv, so a path with a space is not split. */
@@ -270,8 +276,22 @@ export async function resolveComposition(
   // `repoRoot` above is also where a sidecar's relative font paths resolve
   // from: they are the same paths the documented build command is typed with.
   const fonts = parsed.value.fonts;
+  const namedFaces = Object.entries(fonts?.faces ?? {});
   const fontPaths = fonts
-    ? { regular: resolve(repoRoot, fonts.regular), bold: resolve(repoRoot, fonts.bold) }
+    ? {
+        regular: resolve(repoRoot, fonts.regular),
+        bold: resolve(repoRoot, fonts.bold),
+        ...(namedFaces.length > 0
+          ? {
+              faces: Object.fromEntries(
+                namedFaces.map(([name, f]) => [
+                  name,
+                  { regular: resolve(repoRoot, f.regular), bold: resolve(repoRoot, f.bold) },
+                ]),
+              ),
+            }
+          : {}),
+      }
     : undefined;
 
   const buildArgs = [
@@ -283,6 +303,10 @@ export async function resolveComposition(
     `--hz=${TICKS_PER_SECOND}`,
     ...(supersample > 1 ? [`--density=${supersample}`] : []),
     ...(fonts ? [`--font-regular=${fonts.regular}`, `--font-bold=${fonts.bold}`] : []),
+    ...namedFaces.flatMap(([name, f]) => [
+      `--font-face-regular=${name}=${f.regular}`,
+      `--font-face-bold=${name}=${f.bold}`,
+    ]),
   ];
   const buildCommand = buildArgs.map(quoteArg).join(" ");
 
@@ -296,7 +320,17 @@ export async function resolveComposition(
     // A declared face that is not on disk is the CJK case: Noto Sans SC is
     // fetched, not tracked, so a fresh clone that skipped `scripts/assets.ts`
     // would otherwise fail somewhere deeper with a less useful message.
-    for (const [weight, path] of Object.entries(fontPaths ?? {})) {
+    const declaredFiles: [string, string][] = fontPaths
+      ? [
+          ["regular", fontPaths.regular],
+          ["bold", fontPaths.bold],
+          ...Object.entries(fontPaths.faces ?? {}).flatMap(([name, f]): [string, string][] => [
+            [`${name} regular`, f.regular],
+            [`${name} bold`, f.bold],
+          ]),
+        ]
+      : [];
+    for (const [weight, path] of declaredFiles) {
       if (!existsSync(path)) {
         return {
           ok: false,
@@ -306,6 +340,20 @@ export async function resolveComposition(
             "Fetch the digest-pinned assets with:\n  bun scripts/assets.ts",
         };
       }
+    }
+    const fontBytes = [...new Set(declaredFiles.map(([, path]) => path))].reduce(
+      (sum, path) => sum + statSync(path).size,
+      0,
+    );
+    if (fontBytes > FONT_FILES_MAX_BYTES) {
+      return {
+        ok: false,
+        kind: "usage",
+        message:
+          `the declared font files total ${(fontBytes / 1048576).toFixed(1)} MiB; at most ` +
+          `${FONT_FILES_MAX_BYTES / 1048576} MiB are allowed (fonts.regular, fonts.bold and every fonts.faces entry, ` +
+          "each distinct file once)",
+      };
     }
     if (!existsSync(bundlePath)) {
       return {

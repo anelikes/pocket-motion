@@ -15,7 +15,7 @@ import { extname, resolve } from "node:path";
 import {
   DURATION_FRAMES_MAX,
   DURATION_FRAMES_MIN,
-  FONT_KEYS,
+  FONT_WEIGHT_KEYS,
   FOOTAGE_FIT_VALUES,
   SUPERSAMPLE_VALUES,
   TEX_MAX_DIM,
@@ -24,6 +24,13 @@ import {
   type FootageFit,
   type SidecarFonts,
 } from "./sidecar.ts";
+
+/**
+ * A job spec names the default pair only. Named faces are a sidecar
+ * declaration (`fonts.faces`), written by the generator that reads the spec,
+ * so the spec's own key set stays the two weights.
+ */
+const SPEC_FONT_KEYS = new Set<string>(FONT_WEIGHT_KEYS);
 
 export const SPEC_TEMPLATE_COPY = "copy";
 export const SPEC_TEMPLATE_LOWER_THIRD = "lower-third";
@@ -411,18 +418,18 @@ function parseEnvelope(
   } else {
     const obj = input.fonts;
     for (const key of Object.keys(obj)) {
-      if (!FONT_KEYS.has(key)) {
+      if (!SPEC_FONT_KEYS.has(key)) {
         diagnostics.push(
           diag(
             "spec.fonts.unknownKey",
             `/fonts/${key}`,
-            `unknown key ${JSON.stringify(key)}; allowed keys are ${[...FONT_KEYS].join(", ")}`,
+            `unknown key ${JSON.stringify(key)}; allowed keys are ${[...SPEC_FONT_KEYS].join(", ")}`,
           ),
         );
       }
     }
     const parts: Record<string, string> = {};
-    for (const key of FONT_KEYS) {
+    for (const key of SPEC_FONT_KEYS) {
       const value = obj[key];
       if (typeof value !== "string") {
         diagnostics.push(

@@ -116,3 +116,48 @@ describe("the metrics cache", () => {
     expect(typeof ok.frame).toBe("function");
   }, 60_000);
 });
+
+/**
+ * Named faces (`fonts.faces`, `font-[name]`): one measurement build carries the
+ * default pair and every named face, and `measure(px, bold, face)` reads the
+ * slot baked from that face's file. Red with `keyOf` ignoring `face` — the
+ * default pair's slot answers for both and the widths come out equal.
+ */
+describe("named faces", () => {
+  const FACES = {
+    display: {
+      regular: join(ROOT, "vendor/pocketjs/assets/fonts/InterDisplay-Regular.ttf"),
+      bold: join(ROOT, "vendor/pocketjs/assets/fonts/InterDisplay-Bold.ttf"),
+    },
+  };
+  const TEXT = "Hamburgefonstiv 1234";
+
+  test("measure(px, bold, face) measures the face's advances, full and cached alike", async () => {
+    const sizes = [{ px: 43 }, { px: 43, face: "display" }, { px: 43, bold: true, face: "display" }];
+    const full = await openMeasurer({ face: FACE, faces: FACES, sizes, texts: [TEXT] });
+    const cached = await openMeasurer({
+      face: FACE, faces: FACES, sizes, texts: [TEXT], cache: { charset: "", dir: cacheDir },
+    });
+    try {
+      const harmony = full.measure(43)(TEXT);
+      const display = full.measure(43, false, "display")(TEXT);
+      const displayBold = full.measure(43, true, "display")(TEXT);
+      expect(harmony).toBeGreaterThan(0);
+      expect(display).not.toBe(harmony);
+      expect(displayBold).not.toBe(display);
+      expect(full.atlas(43, false, "display").slot).not.toBe(full.atlas(43).slot);
+      expect(cached.measure(43, false, "display")(TEXT)).toBe(display);
+      expect(cached.measure(43)(TEXT)).toBe(harmony);
+      expect(cached.lineHeight(43, true, "display")).toBe(full.lineHeight(43, true, "display"));
+    } finally {
+      await full.close();
+      await cached.close();
+    }
+  }, 120_000);
+
+  test("a size naming an undeclared face is refused before anything is built", async () => {
+    await expect(
+      openMeasurer({ face: FACE, sizes: [{ px: 43, face: "nope" }], texts: [TEXT] }),
+    ).rejects.toThrow("which `faces` does not declare");
+  });
+});

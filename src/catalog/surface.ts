@@ -163,6 +163,7 @@ export interface CapabilityRow {
     | "sound"
     | "assets"
     | "animation"
+    | "paint"
     | "declare"
     | "output"
     | "layout";
@@ -425,7 +426,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     key: "fonts",
     required: false,
     defaultValue: null,
-    constraint: "object with regular and bold paths, or absent for the build default face",
+    constraint: "object with regular and bold paths (the default face) and optional named `faces`, or absent for the build default face",
     source: "src/manifest/sidecar.ts:435",
     verification: "probed",
     diagnostics: ["sidecar.fonts.notObject", "sidecar.fonts.unknownKey", "sidecar.fonts.missing"],
@@ -831,6 +832,79 @@ export const SURFACE: readonly CapabilityRow[] = [
       { code: "sidecar.fonts.bold.empty", input: withFonts({ ...FACE, bold: "" }) },
       { code: "sidecar.fonts.bold.absolute", input: withFonts({ ...FACE, bold: "/x.ttf" }) },
       { code: "sidecar.fonts.bold.traversal", input: withFonts({ ...FACE, bold: "../x.ttf" }) },
+    ],
+    pinned: [],
+  },
+  {
+    id: "fonts.faces",
+    group: "fonts",
+    declaredIn: "pocket-motion.json",
+    key: "faces",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "optional object of name -> { regular, bold }: named faces a class literal selects with `font-[name]`. A name matches /^[a-z][a-z0-9-]*$/ (the class token's own rule), at most 8 faces, both weights required per face, same path rules as footage src. The build bakes every (size, weight, face) a literal uses into its own slot, all faces sharing the core's 128-slot table (19 pinned for the default pair and mono, 109 dynamic). `resolveComposition` refuses declared font files totalling more than 64 MiB, default pair included, each distinct file once",
+    source: "src/manifest/sidecar.ts",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.fonts.faces.notObject",
+      "sidecar.fonts.faces.tooMany",
+      "sidecar.fonts.faces.name",
+      "sidecar.fonts.faces.faceNotObject",
+      "sidecar.fonts.faces.unknownKey",
+      "sidecar.fonts.faces.missing",
+      "sidecar.fonts.faces.regular.empty",
+      "sidecar.fonts.faces.regular.absolute",
+      "sidecar.fonts.faces.regular.traversal",
+      "sidecar.fonts.faces.bold.empty",
+      "sidecar.fonts.faces.bold.absolute",
+      "sidecar.fonts.faces.bold.traversal",
+    ],
+    probes: [
+      { code: "sidecar.fonts.faces.notObject", input: withFonts({ ...FACE, faces: ["display"] }) },
+      {
+        code: "sidecar.fonts.faces.tooMany",
+        input: withFonts({
+          ...FACE,
+          faces: Object.fromEntries(
+            ["a", "b", "c", "d", "e", "f", "g", "h", "i"].map((n) => [n, { ...FACE }]),
+          ),
+        }),
+      },
+      { code: "sidecar.fonts.faces.name", input: withFonts({ ...FACE, faces: { Display: { ...FACE } } }) },
+      { code: "sidecar.fonts.faces.faceNotObject", input: withFonts({ ...FACE, faces: { display: "x.ttf" } }) },
+      {
+        code: "sidecar.fonts.faces.unknownKey",
+        input: withFonts({ ...FACE, faces: { display: { ...FACE, italic: "i.ttf" } } }),
+      },
+      {
+        code: "sidecar.fonts.faces.missing",
+        input: withFonts({ ...FACE, faces: { display: { regular: FACE.regular } } }),
+      },
+      {
+        code: "sidecar.fonts.faces.regular.empty",
+        input: withFonts({ ...FACE, faces: { display: { ...FACE, regular: "" } } }),
+      },
+      {
+        code: "sidecar.fonts.faces.regular.absolute",
+        input: withFonts({ ...FACE, faces: { display: { ...FACE, regular: "/x.ttf" } } }),
+      },
+      {
+        code: "sidecar.fonts.faces.regular.traversal",
+        input: withFonts({ ...FACE, faces: { display: { ...FACE, regular: "../x.ttf" } } }),
+      },
+      {
+        code: "sidecar.fonts.faces.bold.empty",
+        input: withFonts({ ...FACE, faces: { display: { ...FACE, bold: "" } } }),
+      },
+      {
+        code: "sidecar.fonts.faces.bold.absolute",
+        input: withFonts({ ...FACE, faces: { display: { ...FACE, bold: "/x.ttf" } } }),
+      },
+      {
+        code: "sidecar.fonts.faces.bold.traversal",
+        input: withFonts({ ...FACE, faces: { display: { ...FACE, bold: "../x.ttf" } } }),
+      },
     ],
     pinned: [],
   },
@@ -1811,6 +1885,41 @@ export const SURFACE: readonly CapabilityRow[] = [
     diagnostics: [],
     probes: [],
     pinned: ["export function assertBakedTickRate", "__pocketTickHz", "TICKS_PER_SECOND"],
+  },
+
+  // -------------------------------------------------------------------------
+  // Paint: class literals the vendored compiler reads for faces, text effects,
+  // gradients, filters and blend modes. Probed like the animation rows: G6
+  // compiles each literal and asserts the style-table value the core reads.
+  // -------------------------------------------------------------------------
+  {
+    id: "paint.font-face",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "font-[name]",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "selects the named face `name` from the sidecar's `fonts.faces` for this node's text. Every (px, weight, face) triple gets its own atlas slot, allocated after the pinned table in first-sight order; a face takes precedence over `font-mono`. A name no `--font-face-*` flag declared fails the BUILD (bake-font.ts: \"names a face this build does not declare\"), not the compile, because the compiler has not seen the sidecar. `openMeasurer` measures per face: `sizes: [{ px, bold, face }]`, `measure(px, bold, face)`",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "font-[display] at 40px takes the first dynamic slot (19)",
+        literals: ["text-[40px] font-[display]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fontSlot", value: 19 } },
+      },
+      {
+        what: "a face name with an upper-case letter is not a utility and drops the literal",
+        literals: ["text-[40px] font-[Display]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
   },
 
   // -------------------------------------------------------------------------

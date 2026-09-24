@@ -23,7 +23,7 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | fps | yes | — | integer that divides 60 exactly (1,2,3,4,5,6,10,12,15,20,30,60) | src/manifest/sidecar.ts:389 | probed |
 | supersample | no | 1 | one of 1, 2, 4; default 1 when absent | src/manifest/sidecar.ts:419 | probed |
 | footage | no | [] | array of track objects; default [] when absent | src/manifest/sidecar.ts:486 | probed |
-| fonts | no | — | object with regular and bold paths, or absent for the build default face | src/manifest/sidecar.ts:435 | probed |
+| fonts | no | — | object with regular and bold paths (the default face) and optional named `faces`, or absent for the build default face | src/manifest/sidecar.ts:435 | probed |
 | sound | no | { narration: [], dialogue: [], cues: [] } | optional object of bed / narration / dialogue / cues; absent materialises empty arrays and omits bed. ids are one namespace across narration, dialogue and cues | src/manifest/sidecar.ts:523 | probed |
 | layoutAllow | no | [] | array of { node, allow, reason }; `node` is a debugName, `allow` is one of overlap / overflow / occlusion / canvas, `reason` is a non-empty sentence. One entry per node+scope. Suppresses the matching `layout` finding codes and never changes a pixel | src/manifest/sidecar.ts:594 | probed |
 | assertions | no | [] | array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames; changes no pixel | src/manifest/sidecar.ts:750 | probed |
@@ -48,6 +48,7 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 |---|---|---|---|---|---|
 | regular | yes | — | string relative path to the regular face; same path rules as footage src | src/manifest/sidecar.ts:464 | probed |
 | bold | yes | — | string relative path to the bold face; same path rules as footage src | src/manifest/sidecar.ts:464 | probed |
+| faces | no | — | optional object of name -> { regular, bold }: named faces a class literal selects with `font-[name]`. A name matches /^[a-z][a-z0-9-]*$/ (the class token's own rule), at most 8 faces, both weights required per face, same path rules as footage src. The build bakes every (size, weight, face) a literal uses into its own slot, all faces sharing the core's 128-slot table (19 pinned for the default pair and mono, 109 dynamic). `resolveComposition` refuses declared font files totalling more than 64 MiB, default pair included, each distinct file once | src/manifest/sidecar.ts | probed |
 
 ## Sound (`pocket-motion.json` `sound`)
 
@@ -87,6 +88,12 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | first and last keyframe | yes | — | every property an animation touches must be pinned at both from/0% and to/100%; CSS falls back to the computed style at the ends, and that is not bakeable | vendor/pocketjs/framework/compiler/animation.ts:444 | probed |
 | animate-loop-[Ns] | no | 0 (play once) | PocketJS extension, also writable as theme.animation[name].loop: restarts the whole comma list, delays included, every N ms. It needs an animate-<name> in the same class literal, and the period bakes to ticks at the realm's rate | vendor/pocketjs/framework/compiler/tailwind.ts:576 | probed |
 | --hz=N | no | 60 | the rate timelines bake at: every delay and segment endpoint is a frame count at this rate. This realm steps the core at 60, so assertBakedTickRate refuses a bundle baked at any other rate, and refuses one that declares no rate at all | src/runtime/boot.ts:152 | pinned |
+
+## Paint (class literals — faces, text effects, gradients, filters, blend modes)
+
+| key | required | default | constraint | source | verified |
+|---|---|---|---|---|---|
+| font-[name] | no | — | selects the named face `name` from the sidecar's `fonts.faces` for this node's text. Every (px, weight, face) triple gets its own atlas slot, allocated after the pinned table in first-sight order; a face takes precedence over `font-mono`. A name no `--font-face-*` flag declared fails the BUILD (bake-font.ts: "names a face this build does not declare"), not the compile, because the compiler has not seen the sidecar. `openMeasurer` measures per face: `sizes: [{ px, bold, face }]`, `measure(px, bold, face)` | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
 
 ## Declaring footage (generator side — `src/footage/declare.ts`)
 
@@ -134,6 +141,18 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.fonts.bold.absolute | fonts.bold |
 | sidecar.fonts.bold.empty | fonts.bold |
 | sidecar.fonts.bold.traversal | fonts.bold |
+| sidecar.fonts.faces.bold.absolute | fonts.faces |
+| sidecar.fonts.faces.bold.empty | fonts.faces |
+| sidecar.fonts.faces.bold.traversal | fonts.faces |
+| sidecar.fonts.faces.faceNotObject | fonts.faces |
+| sidecar.fonts.faces.missing | fonts.faces |
+| sidecar.fonts.faces.name | fonts.faces |
+| sidecar.fonts.faces.notObject | fonts.faces |
+| sidecar.fonts.faces.regular.absolute | fonts.faces |
+| sidecar.fonts.faces.regular.empty | fonts.faces |
+| sidecar.fonts.faces.regular.traversal | fonts.faces |
+| sidecar.fonts.faces.tooMany | fonts.faces |
+| sidecar.fonts.faces.unknownKey | fonts.faces |
 | sidecar.fonts.missing | sidecar.fonts |
 | sidecar.fonts.notObject | sidecar.fonts |
 | sidecar.fonts.regular.absolute | fonts.regular |

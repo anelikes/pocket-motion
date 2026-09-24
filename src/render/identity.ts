@@ -50,6 +50,9 @@ export interface IdentityInputs {
   readonly sidecarCanonical?: string;
   /** Font files the atlases were baked from. */
   readonly fontPaths?: readonly string[];
+  /** Named faces' files (`fonts.faces`), keyed `font:<face>/<file>` so two
+   *  faces whose files share a basename stay two components. */
+  readonly faceFontPaths?: Readonly<Record<string, { readonly regular: string; readonly bold: string }>>;
   /** Frozen footage artifacts (ingest output), by track id. */
   readonly footageHashes?: Readonly<Record<string, string>>;
   /** Viewport and rate — different values are a different render. */
@@ -189,6 +192,11 @@ export async function computeIdentity(inputs: IdentityInputs): Promise<InputIden
 
   for (const font of inputs.fontPaths ?? []) {
     components[`font:${font.slice(font.lastIndexOf("/") + 1)}`] = await fileDigest(font);
+  }
+  for (const [name, face] of Object.entries(inputs.faceFontPaths ?? {})) {
+    for (const font of [face.regular, face.bold]) {
+      components[`font:${name}/${font.slice(font.lastIndexOf("/") + 1)}`] = await fileDigest(font);
+    }
   }
   for (const [id, hash] of Object.entries(inputs.footageHashes ?? {})) {
     components[`footage:${id}`] = hash;

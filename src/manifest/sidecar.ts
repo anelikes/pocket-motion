@@ -60,6 +60,18 @@ export interface FootageTrack {
 export interface SidecarFonts {
   readonly regular: string;
   readonly bold: string;
+  /**
+   * Named faces a class literal selects with `font-[name]`, each a regular and
+   * bold pair like the default above. Absent when the composition uses only
+   * the default pair. Every face is an input to identity like the pair is.
+   */
+  readonly faces?: Readonly<Record<string, SidecarFace>>;
+}
+
+/** One named face: the files `font-[name]` bakes from. */
+export interface SidecarFace {
+  readonly regular: string;
+  readonly bold: string;
 }
 
 export interface SoundBed {
@@ -255,7 +267,32 @@ export const ASSERTION_PREDICATES = [
   "before",
 ] as const;
 
-export const FONT_KEYS = new Set(["regular", "bold"]);
+export const FONT_KEYS = new Set(["regular", "bold", "faces"]);
+
+/** The two weights every face declares — the default pair and each named one. */
+export const FONT_WEIGHT_KEYS = ["regular", "bold"] as const;
+
+/** Keys of one `fonts.faces[name]` entry. */
+export const FONT_FACE_KEYS = new Set<string>(FONT_WEIGHT_KEYS);
+
+/** A face name: what `font-[name]` accepts (vendored tailwind.ts FONT_FACE_NAME). */
+export const FONT_FACE_NAME_RE = /^[a-z][a-z0-9-]*$/;
+
+/**
+ * Most named faces one composition may declare. Each face is two files the
+ * build opens and every slot of it is an atlas in the pak, so the bound is on
+ * build time and pak size rather than on the core, whose limit is the slot
+ * table (MAX_FONT_SLOTS, 128, shared by every face and size).
+ */
+export const FONT_FACES_MAX = 8;
+
+/**
+ * Most bytes the declared font files may total, default pair included, each
+ * distinct file counted once. The build parses every face with opentype.js in
+ * one process and a CJK pair alone is 17 MB, so this bounds the build, not the
+ * render. Checked by `resolveComposition`, which is where the files are opened.
+ */
+export const FONT_FILES_MAX_BYTES = 64 * 1024 * 1024;
 
 export const SOUND_KEYS = new Set(["bed", "narration", "dialogue", "cues"]);
 
@@ -335,6 +372,107 @@ function isPowerOfTwo(n: number): boolean {
 
 function diag(code: string, path: string, message: string): Diagnostic {
   return { code, path, message };
+}
+
+/**
+ * `fonts.faces`: name -> { regular, bold }.
+ *
+ * Every face is held to the default pair's rule — both weights or the face is
+ * refused — because `font-[name] font-bold` bakes from the bold file and a
+ * missing one would be a face nobody declared. The name is the `font-[name]`
+ * token's, so a name the class parser would not accept is refused here rather
+ * than declared and never reachable.
+ */
+function parseFaces(
+  raw: unknown,
+  diagnostics: Diagnostic[],
+): Record<string, SidecarFace> | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    diagnostics.push(
+      diag(
+        "sidecar.fonts.faces.notObject",
+        "/fonts/faces",
+        `\`fonts.faces\` must be an object of name -> { regular, bold }; got ${describeType(raw)}`,
+      ),
+    );
+    return undefined;
+  }
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (entries.length > FONT_FACES_MAX) {
+    diagnostics.push(
+      diag(
+        "sidecar.fonts.faces.tooMany",
+        "/fonts/faces",
+        `\`fonts.faces\` declares ${entries.length} faces; at most ${FONT_FACES_MAX} are allowed`,
+      ),
+    );
+  }
+  const out: Record<string, SidecarFace> = {};
+  let ok = true;
+  for (const [name, face] of entries) {
+    const at = `/fonts/faces/${name}`;
+    if (!FONT_FACE_NAME_RE.test(name)) {
+      diagnostics.push(
+        diag(
+          "sidecar.fonts.faces.name",
+          at,
+          `face name ${JSON.stringify(name)} must match ${FONT_FACE_NAME_RE} — it is the \`font-[name]\` class token`,
+        ),
+      );
+      ok = false;
+      continue;
+    }
+    if (typeof face !== "object" || face === null || Array.isArray(face)) {
+      diagnostics.push(
+        diag(
+          "sidecar.fonts.faces.faceNotObject",
+          at,
+          `\`fonts.faces.${name}\` must be an object with \`regular\` and \`bold\`; got ${describeType(face)}`,
+        ),
+      );
+      ok = false;
+      continue;
+    }
+    const f = face as Record<string, unknown>;
+    for (const key of Object.keys(f)) {
+      if (!FONT_FACE_KEYS.has(key)) {
+        diagnostics.push(
+          diag(
+            "sidecar.fonts.faces.unknownKey",
+            `${at}/${key}`,
+            `unknown key ${JSON.stringify(key)}; allowed keys are ${[...FONT_FACE_KEYS].join(", ")}`,
+          ),
+        );
+        ok = false;
+      }
+    }
+    const parts: Record<string, string> = {};
+    for (const key of FONT_WEIGHT_KEYS) {
+      const value = f[key];
+      if (typeof value !== "string") {
+        diagnostics.push(
+          diag(
+            "sidecar.fonts.faces.missing",
+            `${at}/${key}`,
+            `\`fonts.faces.${name}.${key}\` must be a string path; got ${describeType(value)}`,
+          ),
+        );
+        ok = false;
+        continue;
+      }
+      const issue = pathIssue(value, `fonts.faces.${name}.${key}`, `sidecar.fonts.faces.${key}`);
+      if (issue) {
+        diagnostics.push(diag(issue.code, `${at}/${key}`, issue.message));
+        ok = false;
+      } else {
+        parts[key] = value;
+      }
+    }
+    if (parts.regular !== undefined && parts.bold !== undefined) {
+      out[name] = { regular: parts.regular, bold: parts.bold };
+    }
+  }
+  return ok ? out : undefined;
 }
 
 /**
@@ -535,7 +673,7 @@ export function parseSidecar(input: unknown): ParseResult {
         diag(
           "sidecar.fonts.notObject",
           "/fonts",
-          `\`fonts\` must be an object with \`regular\` and \`bold\`; got ${describeType(raw)}`,
+          `\`fonts\` must be an object with \`regular\` and \`bold\` (and optionally \`faces\`); got ${describeType(raw)}`,
         ),
       );
     } else {
@@ -555,7 +693,7 @@ export function parseSidecar(input: unknown): ParseResult {
       // independently, so a half-declared pair is a build that bakes one of
       // them from a face nobody wrote down.
       const parts: Record<string, string> = {};
-      for (const key of FONT_KEYS) {
+      for (const key of FONT_WEIGHT_KEYS) {
         const value = obj[key];
         if (typeof value !== "string") {
           diagnostics.push(
@@ -571,8 +709,13 @@ export function parseSidecar(input: unknown): ParseResult {
         if (issue) diagnostics.push(diag(issue.code, `/fonts/${key}`, issue.message));
         else parts[key] = value;
       }
+      const faces = "faces" in obj ? parseFaces(obj.faces, diagnostics) : undefined;
       if (parts.regular !== undefined && parts.bold !== undefined) {
-        fonts = { regular: parts.regular, bold: parts.bold };
+        fonts = {
+          regular: parts.regular,
+          bold: parts.bold,
+          ...(faces !== undefined ? { faces } : {}),
+        };
       }
     }
   }

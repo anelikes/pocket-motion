@@ -56,12 +56,21 @@ export interface FaceFiles {
 export interface SizeRequest {
   readonly px: number;
   readonly bold?: boolean;
+  /** A named face from `faces` (`font-[name]` in the composition); absent
+   *  means the default pair in `face`. */
+  readonly face?: string;
 }
 
 export interface MeasurerOptions {
   /** The faces the finished composition will be baked with. Measuring against
    *  any other face measures a different set of advances. */
   readonly face: FaceFiles;
+  /**
+   * Named faces, exactly as the composition's sidecar `fonts.faces` declares
+   * them (name -> files). A size request or a `measure(px, bold, face)` naming
+   * a face must find it here.
+   */
+  readonly faces?: Readonly<Record<string, FaceFiles>>;
   /** Every size the caller will measure at. */
   readonly sizes: readonly SizeRequest[];
   /** Every string the caller will measure, so its codepoints are baked. */
@@ -104,18 +113,22 @@ export interface MeasureCache {
 }
 
 export interface Measurer {
-  /** Width in logical px on one line, tracking 0 — `fit.ts`'s `Measure`. */
-  measure(px: number, bold?: boolean): Measure;
+  /** Width in logical px on one line, tracking 0 — `fit.ts`'s `Measure`.
+   *  `face` names one of `faces`; absent is the default pair. */
+  measure(px: number, bold?: boolean, face?: string): Measure;
   /** Atlas line advance in px, which `measureText` cannot report. */
-  lineHeight(px: number, bold?: boolean): number;
+  lineHeight(px: number, bold?: boolean, face?: string): number;
   /** Characters of `text` this build did not bake. */
-  unmapped(text: string, px: number, bold?: boolean): string[];
-  readonly atlas: (px: number, bold?: boolean) => AtlasHeader;
+  unmapped(text: string, px: number, bold?: boolean, face?: string): string[];
+  readonly atlas: (px: number, bold?: boolean, face?: string) => AtlasHeader;
   close(): Promise<void>;
 }
 
-const clsOf = (s: SizeRequest): string => `text-[${s.px}px]${s.bold ? " font-bold" : ""}`;
-const keyOf = (px: number, bold: boolean): string => `${px}:${bold ? "b" : "r"}`;
+const clsOf = (s: SizeRequest): string =>
+  `text-[${s.px}px]${s.bold ? " font-bold" : ""}${s.face !== undefined ? ` font-[${s.face}]` : ""}`;
+const keyOf = (px: number, bold: boolean, face?: string): string =>
+  `${px}:${bold ? "b" : "r"}${face !== undefined ? `:${face}` : ""}`;
+const faceLabel = (face?: string): string => (face !== undefined ? ` face ${face}` : "");
 
 /**
  * The measurement composition.
@@ -190,10 +203,10 @@ function verifySlots(
 ): void {
   const seen = new Set<number>();
   for (const s of wanted) {
-    const header = bySize.get(keyOf(s.px, s.bold ?? false));
+    const header = bySize.get(keyOf(s.px, s.bold ?? false, s.face));
     if (!header) {
       throw new Error(
-        `openMeasurer: the slot table has no entry for ${s.px}px ${s.bold ? "bold" : "regular"}, ` +
+        `openMeasurer: the slot table has no entry for ${s.px}px ${s.bold ? "bold" : "regular"}${faceLabel(s.face)}, ` +
           "which this build was asked to bake — styles.generated.ts is not this build's",
       );
     }
@@ -213,10 +226,11 @@ function verifySlots(
   }
   // Cell height is a monotone function of the size for one face, so a table
   // whose order disagrees with the pak's is a table from somewhere else.
-  for (const bold of [false, true]) {
+  const faceNames = [...new Set(wanted.map((s) => s.face))];
+  for (const face of faceNames) for (const bold of [false, true]) {
     const rungs = wanted
-      .filter((s) => (s.bold ?? false) === bold)
-      .map((s) => ({ px: s.px, cellH: bySize.get(keyOf(s.px, bold))!.cellH }))
+      .filter((s) => (s.bold ?? false) === bold && s.face === face)
+      .map((s) => ({ px: s.px, cellH: bySize.get(keyOf(s.px, bold, face))!.cellH }))
       .sort((a, b) => a.px - b.px);
     for (let i = 1; i < rungs.length; i++) {
       if (rungs[i]!.cellH < rungs[i - 1]!.cellH) {
@@ -227,7 +241,7 @@ function verifySlots(
       }
     }
   }
-  if (seen.size !== wanted.length) {
+  if (seen.size !== new Set(wanted.map((s) => keyOf(s.px, s.bold ?? false, s.face))).size) {
     throw new Error(
       `openMeasurer: ${wanted.length} sizes requested but they resolve to ${seen.size} distinct ` +
         "slots — two sizes share a slot, which one bake does not do",
@@ -259,6 +273,19 @@ export function textsOutside(texts: readonly string[], charset: string): string[
   return [...out];
 }
 
+/** Every face a size request names must be declared in `faces`. */
+function checkedFaces(options: MeasurerOptions): void {
+  for (const s of options.sizes) {
+    if (s.face !== undefined && options.faces?.[s.face] === undefined) {
+      const declared = Object.keys(options.faces ?? {});
+      throw new Error(
+        `openMeasurer: a size names face \`${s.face}\`, which \`faces\` does not declare ` +
+          `(declared: ${declared.length > 0 ? declared.join(", ") : "none"})`,
+      );
+    }
+  }
+}
+
 function checkedDensity(density: number): void {
   if (!Number.isInteger(density) || density < 1) {
     throw new Error(`openMeasurer: density must be a positive integer; got ${density}`);
@@ -267,9 +294,11 @@ function checkedDensity(density: number): void {
 
 async function openMeasurerUnserialised(options: MeasurerOptions): Promise<Measurer> {
   const { face, sizes, texts } = options;
+  const faces = options.faces ?? {};
   const density = options.density ?? 1;
   if (sizes.length === 0) throw new Error("openMeasurer: no sizes requested");
   checkedDensity(density);
+  checkedFaces(options);
   const root = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
   // A shared dist/.measure directory is a race: two `render --spec` processes
   // overwrite each other's corpus and the loser reports a missing codepoint
@@ -278,7 +307,7 @@ async function openMeasurerUnserialised(options: MeasurerOptions): Promise<Measu
   const work = options.workdir ?? (await mkdtemp(join(tmpdir(), "pocketjs-measure-")));
   try {
     const dist = join(work, "dist");
-    const bySize = await buildMeasurement(work, dist, { face, sizes, texts, density, root, extraArgs: [] });
+    const bySize = await buildMeasurement(work, dist, { face, faces, sizes, texts, density, root, extraArgs: [] });
     return measurerOver(dist, bySize, {
       metricsOnly: false,
       close: async () => {
@@ -309,11 +338,13 @@ interface SlotsFile {
  */
 async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache): Promise<Measurer> {
   const { face, sizes } = options;
+  const faces = options.faces ?? {};
   const density = options.density ?? 1;
   if (sizes.length === 0) throw new Error("openMeasurer: no sizes requested");
   checkedDensity(density);
+  checkedFaces(options);
   const root = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
-  const key = await cacheKey(face, sizes, density, cache.charset);
+  const key = await cacheKey(face, faces, sizes, density, cache.charset);
   const dir = join(cache.dir ?? join(root, "dist", ".measure"), key);
   const dist = join(dir, "dist");
 
@@ -326,7 +357,7 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
       const tmp = `${dir}.tmp-${process.pid}`;
       await rm(tmp, { recursive: true, force: true });
       const built = await buildMeasurement(tmp, join(tmp, "dist"), {
-        face, sizes, texts: [], density, root,
+        face, faces, sizes, texts: [], density, root,
         extraArgs: ["--metrics-only", `--extra-chars=${cache.charset}`],
       });
       const slots: Record<string, number> = {};
@@ -350,6 +381,7 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
 
 async function cacheKey(
   face: FaceFiles,
+  faces: Readonly<Record<string, FaceFiles>>,
   sizes: readonly SizeRequest[],
   density: number,
   charset: string,
@@ -361,9 +393,14 @@ async function cacheKey(
     return f.digest("hex");
   };
   h.update(`face:${await digest(face.regular)}:${await digest(face.bold)}\n`);
+  // Named faces, sorted by name. Absent when none are declared, so a key for
+  // the default pair alone is the key it always was.
+  for (const name of Object.keys(faces).sort()) {
+    h.update(`face.${name}:${await digest(faces[name]!.regular)}:${await digest(faces[name]!.bold)}\n`);
+  }
   h.update(`baker:${await digest(join(pocketjsRoot(), "framework/compiler/bake-font.ts"))}\n`);
   h.update(`build:${await digest(join(pocketjsRoot(), "tools/build.ts"))}\n`);
-  h.update(`sizes:${[...new Set(sizes.map((s) => keyOf(s.px, s.bold === true)))].sort().join(",")}\n`);
+  h.update(`sizes:${[...new Set(sizes.map((s) => keyOf(s.px, s.bold === true, s.face)))].sort().join(",")}\n`);
   h.update(`density:${density}\n`);
   const cs = new Bun.CryptoHasher("sha256");
   cs.update(charset);
@@ -395,6 +432,7 @@ async function buildMeasurement(
   dist: string,
   o: {
     readonly face: FaceFiles;
+    readonly faces: Readonly<Record<string, FaceFiles>>;
     readonly sizes: readonly SizeRequest[];
     readonly texts: readonly string[];
     readonly density: number;
@@ -415,6 +453,10 @@ async function buildMeasurement(
       "bun", join(pocketjsRoot(), "tools/build.ts"), join(work, "main.tsx"),
       `--outdir=${dist}`, "--framework=solid",
       `--font-regular=${face.regular}`, `--font-bold=${face.bold}`,
+      ...Object.entries(o.faces).flatMap(([name, f]) => [
+        `--font-face-regular=${name}=${f.regular}`,
+        `--font-face-bold=${name}=${f.bold}`,
+      ]),
       ...(density > 1 ? [`--density=${density}`] : []),
       ...o.extraArgs,
     ],
@@ -433,7 +475,7 @@ async function buildMeasurement(
   // second measurement pass reads the first one's slot assignment.
   const generated = (await import(
     `${pocketjsRoot()}/framework/src/styles.generated.ts?measure=${Bun.nanoseconds()}`
-  )) as { FONT_SLOTS: Record<number, { px: number; bold: boolean }> };
+  )) as { FONT_SLOTS: Record<number, { px: number; bold: boolean; face?: string }> };
 
   const pakPath = join(dist, "main.pak");
   if (!existsSync(pakPath)) throw new Error(`openMeasurer: no pak at ${pakPath}`);
@@ -442,7 +484,7 @@ async function buildMeasurement(
   const bySize = new Map<string, AtlasHeader>();
   for (const [slot, v] of Object.entries(generated.FONT_SLOTS)) {
     const header = atlases.get(Number(slot));
-    if (header) bySize.set(keyOf(v.px, v.bold), header);
+    if (header) bySize.set(keyOf(v.px, v.bold, v.face), header);
   }
 
   verifySlots(sizes, bySize, density);
@@ -468,30 +510,30 @@ async function measurerOver(
   for (let t = 0; t < world.ticksPerFrame; t++) world.tick();
   const raw = (world.ops as { measureText: (s: string, slot: number) => number }).measureText;
 
-  const atlas = (px: number, bold = false): AtlasHeader => {
-    const header = bySize.get(keyOf(px, bold));
+  const atlas = (px: number, bold = false, face?: string): AtlasHeader => {
+    const header = bySize.get(keyOf(px, bold, face));
     if (!header) {
       throw new Error(
-        `openMeasurer: no slot baked for ${px}px ${bold ? "bold" : "regular"} — ` +
+        `openMeasurer: no slot baked for ${px}px ${bold ? "bold" : "regular"}${faceLabel(face)} — ` +
           "every size measured has to be listed in `sizes`",
       );
     }
     return header;
   };
 
-  const unmapped = (text: string, px: number, bold = false): string[] => {
-    const { codepoints } = atlas(px, bold);
+  const unmapped = (text: string, px: number, bold = false, face?: string): string[] => {
+    const { codepoints } = atlas(px, bold, face);
     return [...new Set([...text])].filter((c) => c !== "\n" && !codepoints.has(c.codePointAt(0)!));
   };
 
   return {
     atlas,
     unmapped,
-    lineHeight: (px, bold = false) => atlas(px, bold).lineHeight,
-    measure: (px, bold = false) => {
-      const slot = atlas(px, bold).slot;
+    lineHeight: (px, bold = false, face) => atlas(px, bold, face).lineHeight,
+    measure: (px, bold = false, face) => {
+      const slot = atlas(px, bold, face).slot;
       return (text: string) => {
-        const missing = unmapped(text, px, bold);
+        const missing = unmapped(text, px, bold, face);
         if (missing.length > 0) {
           throw new Error(
             `openMeasurer: ${missing.length} codepoint(s) of this string were never baked ` +

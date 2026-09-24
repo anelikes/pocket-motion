@@ -83,6 +83,7 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
       fontPaths: c.fontPaths
         ? [c.fontPaths.regular, c.fontPaths.bold]
         : undefined,
+      faceFontPaths: c.fontPaths?.faces,
       footageHashes: bound.footage?.hashes,
       width: c.width,
       height: c.height,

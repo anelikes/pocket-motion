@@ -17,7 +17,9 @@ import { SURFACE } from "../src/catalog/surface.ts";
 import { active, findingsFor, type FindingNode } from "../src/render/findings.ts";
 import {
   ASSERTION_KEYS,
+  FONT_FACE_KEYS,
   FONT_KEYS,
+  FONT_WEIGHT_KEYS,
   FOOTAGE_KEYS,
   LAYOUT_ALLOW_KEYS,
   ROOT_KEYS,
@@ -72,6 +74,7 @@ function sourceFile(source: string): string {
 const KNOWN_PATH_ISSUE_PREFIXES = new Set([
   "", // the default parameter, `sidecar.footage.src`
   "`sidecar.fonts.${key}`",
+  "`sidecar.fonts.faces.${key}`",
   "`sidecar.sound.${role}.src`",
 ]);
 
@@ -142,9 +145,17 @@ function extractSourceCodes(text: string): Set<string> {
   }
 
   if (text.includes("sidecar.fonts.${key}")) {
-    for (const key of FONT_KEYS) {
+    for (const key of FONT_WEIGHT_KEYS) {
       for (const suffix of PATH_ISSUE_SUFFIXES) {
         codes.add(`sidecar.fonts.${key}.${suffix}`);
+      }
+    }
+  }
+
+  if (text.includes("sidecar.fonts.faces.${key}")) {
+    for (const key of FONT_WEIGHT_KEYS) {
+      for (const suffix of PATH_ISSUE_SUFFIXES) {
+        codes.add(`sidecar.fonts.faces.${key}.${suffix}`);
       }
     }
   }
@@ -540,6 +551,17 @@ describe("catalog gates", () => {
         code: "sidecar.fonts.unknownKey",
       },
       {
+        label: "fonts.faces[name]",
+        input: {
+          motion: 1,
+          durationFrames: 10,
+          fps: 30,
+          fonts: { regular: "a.ttf", bold: "b.ttf", faces: { display: { regular: "c.ttf", bold: "d.ttf", italic: "e.ttf" } } },
+        },
+        keys: FONT_FACE_KEYS,
+        code: "sidecar.fonts.faces.unknownKey",
+      },
+      {
         label: "footage[0]",
         input: {
           motion: 1,
@@ -684,6 +706,7 @@ describe("catalog gates", () => {
         const setName: Record<(typeof cases)[number]["label"], string> = {
           root: "ROOT_KEYS",
           fonts: "FONT_KEYS",
+          "fonts.faces[name]": "FONT_FACE_KEYS",
           "footage[0]": "FOOTAGE_KEYS",
           sound: "SOUND_KEYS",
           "layoutAllow[0]": "LAYOUT_ALLOW_KEYS",
