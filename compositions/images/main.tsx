@@ -1,5 +1,7 @@
 // @title PocketJS Motion — images of any size
 //
+// The pictures are written by gen.ts (`*.png` is gitignored).
+//
 // patches/0020: an image is any size from 1 to 2048 px per side, a power of
 // two or not. horizon.png is 900x506 and is drawn at its own size (texel
 // for pixel) and at 0.8x with bilinear sampling (images.json); texels.png is
