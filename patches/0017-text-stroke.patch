@@ -1,0 +1,1002 @@
+pocket-motion-only: an outline is a distance field over the run's rasterised coverage, computed where the pixels are written; the PSP GE, ESP32 PPA, Symbian GLES2 and Vita GXM backends draw glyph cells from an atlas and have no pass that reads coverage back. No upstream backend is taught GLYPH_STROKE; a stream carrying it stops there.
+
+0017 — text stroke: an outline around a text run's glyphs, outside (under
+the fill) or centred (over it), and the hollow form when the fill is
+transparent. Width and colour are keyframe-animatable.
+
+What the patch adds, by file:
+
+- `contracts/spec/spec.ts`, `gen-rust.ts`, `engine/core/src/spec.rs`
+  (regenerated): props `textStrokeWidth` (160), `textStrokeColor` (161),
+  `textStrokePos` (162) in a new pocket-motion paint group; the first two
+  animatable (bits 38, 39, timeline-only); enum `StrokePos`;
+  `DRAW_OP.glyphStroke = 66`; `STROKE_MAX_WIDTH = 64`.
+- `framework/compiler/tailwind.ts`: `text-stroke`, `text-stroke-N`,
+  `text-stroke-[Npx]`, `text-stroke-<color>`, `text-stroke-outside|center`.
+- `framework/compiler/animation.ts`: keyframe properties
+  `textStrokeWidth`/`textStrokeColor` and their `-webkit-text-stroke-*`
+  spellings.
+- `engine/core/src/style.rs`: the three fields.
+- `engine/core/src/draw.rs`: `emit_text` draws a run with a transparent
+  fill when it carries a stroke; an outside stroke is emitted before the
+  GLYPH_RUN (mode 0, or mode 2 — the ring outside the ink — when there is
+  no fill), a centred one after it (mode 1). Cells are kept when the cell
+  grown by the width reaches the clip. A run with no stroke emits exactly
+  the words it did before.
+- `engine/core/src/raster.rs`: `glyph_stroke` samples the run's coverage
+  the way `glyph_run` does into a buffer over the cells grown by the
+  width, then `seed_distance` — two raster-order passes of nearest-seed
+  propagation, each seed carrying its edge offset 0.5 - coverage — gives
+  the distance to the ink; stroke coverage is clamp(width + 0.5 - d),
+  minus the ink (mode 2), or the dilation by half plus the complement's
+  dilation by half minus one (mode 1). f32 add/mul/div and a Newton sqrt
+  only, so the same words give the same pixels on every host.
+- `engine/core/src/damage.rs`: the op's word count, and its cells grown by
+  the width as its bound.
+- `engine/core/src/tests.rs`: five tests — outside under the fill and
+  reaching its width, the centred ring over the fill and hollow without
+  one, the outside ring, no op without a stroke, and a moved stroke
+  redrawn incrementally equal to the full render (red with the damage
+  bound not grown by the width).
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index d5c6f0dd..bdfc17ca 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -71,6 +71,7 @@ import {
+   PAK_VERSION,
+   DRAW_OP,
+   MASK_MAX_VERTS,
++  STROKE_MAX_WIDTH,
+   ENUMS,
+   FIXED_DT,
+   FONT_CMAP_ENTRY_SIZE,
+@@ -443,6 +444,7 @@ export function generateRust(): string {
+   }
+   put("    /// Largest vertex count a MASK_PUSH may carry.");
+   put(`    pub const MASK_MAX_VERTS: usize = ${MASK_MAX_VERTS};`);
++  put(`    pub const STROKE_MAX_WIDTH: f32 = ${STROKE_MAX_WIDTH}.0;`);
+   put("}");
+   put("");
+ 
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 918b1359..23604819 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -354,6 +354,15 @@ export const PROP = {
+   //                    center = node center, outer radius = min(w,h)/2, color
+   //                    = bgColor. Axis-aligned worlds only (rotation belongs
+   //                    in arcStart).
++
++  // -- pocket-motion paint (160..) — drawn by the pocket-motion software
++  //    rasteriser only; paint-only, never relayouts -------------------------
++  textStrokeWidth: 160, // f32 px outline width around a text run's glyphs
++  //                      (0 = none). Outside: grows outward from the glyph
++  //                      edge, painted UNDER the fill. Center: straddles the
++  //                      edge, painted OVER the fill. Needs textStrokeColor.
++  textStrokeColor: 161, // color u32 ABGR (alpha 0 = no stroke)
++  textStrokePos: 162, //   enum StrokePos
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -412,6 +421,8 @@ export const ANIMATABLE: readonly PropName[] = [
+   "arcStart", //    35
+   "arcSweep", //    36
+   "arcWidth", //    37
++  "textStrokeWidth", // 38
++  "textStrokeColor", // 39
+ ];
+ 
+ /** Anim bit index for a prop, or -1 if not animatable. */
+@@ -485,6 +496,8 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   rotateX: VALUE_KIND.f32, rotateY: VALUE_KIND.f32,
+   translateZ: VALUE_KIND.f32, perspective: VALUE_KIND.f32,
+   arcStart: VALUE_KIND.f32, arcSweep: VALUE_KIND.f32, arcWidth: VALUE_KIND.f32,
++  textStrokeWidth: VALUE_KIND.f32, textStrokeColor: VALUE_KIND.color,
++  textStrokePos: VALUE_KIND.int,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -502,6 +515,8 @@ export const ENUMS = {
+   TextAlign: { Left: 0, Center: 1, Right: 2 },
+   /** Gradient direction: `bg-gradient-to-t|b|l|r`. */
+   GradDir: { ToTop: 0, ToBottom: 1, ToLeft: 2, ToRight: 3 },
++  /** Text stroke position (`text-stroke-outside|center`, pocket-motion). */
++  StrokePos: { Outside: 0, Center: 1 },
+   /**
+    * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
+    * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
+@@ -1423,6 +1438,24 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+ //                           no other backend knows the op, and a stream
+ //                           carrying it stops there on them.
+ //   MASK_POP    (1 word):   op — restore the previous mask (none if empty).
++//   GLYPH_STROKE (5 + 2n):  op,
++//                           word1: bits 0-7 fontSlot, bits 16-31 glyph count n,
++//                           word2: color,
++//                           word3: width (f32 bits, LOGICAL px),
++//                           word4: mode — 0 = outside (the glyphs dilated by
++//                                  width, full coverage under the fill),
++//                                  1 = center (a ring width wide straddling
++//                                  the edge, over the fill), 2 = outside ring
++//                                  (dilated minus the glyphs' own coverage —
++//                                  the hollow form, emitted when the fill is
++//                                  transparent),
++//                           then n x { xy, gid } exactly as GLYPH_RUN.
++//                           The rasteriser samples the run's coverage the
++//                           way GLYPH_RUN does, then derives distance to the
++//                           ink by nearest-seed propagation with each seed's
++//                           edge offset (0.5 - coverage), so a width of 0 is
++//                           the glyph's own coverage. Width is clamped to
++//                           STROKE_MAX_WIDTH. Software rasteriser only.
+ //   TEXT_RUN    (8 + ceil(n/4) words):
+ //                           op,
+ //                           word1: bits 0-7 fontSlot,
+@@ -1464,8 +1497,12 @@ export const DRAW_OP = {
+   // out of its way (pocket-motion `src/vendor/draw-ops.ts`).
+   maskPush: 64,
+   maskPop: 65,
++  glyphStroke: 66,
+ } as const;
+ 
++/** Widest text stroke, in logical px; wider is drawn at this width. */
++export const STROKE_MAX_WIDTH = 64;
++
+ /** Largest vertex count a MASK_PUSH may carry. A rounded rectangle flattens
+  *  to at most 4 × 48 chords + 4, and clipping to a rectangle adds at most 4. */
+ export const MASK_MAX_VERTS = 256;
+diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
+index 72b79eb9..29e3cc67 100644
+--- a/engine/core/src/damage.rs
++++ b/engine/core/src/damage.rs
+@@ -444,6 +444,12 @@ impl<'a> DamageDecoder<'a> {
+                 2usize.checked_add(n).ok_or(())?
+             }
+             spec::draw_op::MASK_POP => 1,
++            spec::draw_op::GLYPH_STROKE => {
++                let count = (self.words.get(start + 1).copied().ok_or(())? >> 16) as usize;
++                5usize
++                    .checked_add(count.checked_mul(2).ok_or(())?)
++                    .ok_or(())?
++            }
+             _ => return Err(()),
+         };
+         let end = start.checked_add(len).ok_or(())?;
+@@ -480,6 +486,9 @@ impl<'a> DamageDecoder<'a> {
+             // span it shapes, and the ops inside carry their own.
+             spec::draw_op::MASK_PUSH => polygon_bounds(&words[2..], self.clip),
+             spec::draw_op::MASK_POP => DamageRect::empty(),
++            // A stroke reaches past its cells by its width: the cell bounds
++            // grown by that width (rounded out, plus the anti-aliased pixel).
++            spec::draw_op::GLYPH_STROKE => glyph_stroke_bounds(ui, words, self.clip),
+             // Native-text runs carry no glyph geometry the tracker can
+             // measure; the core keeps every partially-clipped run inside a
+             // scissor, so the current clip is a sound (conservative) bound.
+@@ -570,6 +579,35 @@ fn glyph_run_bounds(ui: &Ui, words: &[u32], clip: DamageRect) -> DamageRect {
+     bounds.intersect(clip)
+ }
+ 
++/// GLYPH_STROKE (pocket-motion): its cells, grown by the stroke width in
++/// logical px (rounded up, plus one for the anti-aliased edge pixel).
++fn glyph_stroke_bounds(ui: &Ui, words: &[u32], clip: DamageRect) -> DamageRect {
++    if words.len() < 5 || words[2] >> 24 == 0 {
++        return DamageRect::empty();
++    }
++    let slot = (words[1] & 0xff) as u8;
++    let Some(atlas) = ui.font_atlas(slot) else {
++        return DamageRect::empty();
++    };
++    let width = f32::from_bits(words[3]);
++    let grow = if width > 0.0 {
++        width.min(spec::draw_op::STROKE_MAX_WIDTH) as i32 + 2
++    } else {
++        return DamageRect::empty();
++    };
++    let mut bounds = DamageRect::empty();
++    for glyph in words[5..].chunks_exact(2) {
++        let (x, y) = xy(glyph[0]);
++        bounds = bounds.union(DamageRect::new(
++            x - grow,
++            y - grow,
++            x + atlas.cell_w as i32 + grow,
++            y + atlas.cell_h as i32 + grow,
++        ));
++    }
++    bounds.intersect(clip)
++}
++
+ fn triangle_bounds(vertices: [u32; 3], clip: DamageRect) -> DamageRect {
+     let [(x0, y0), (x1, y1), (x2, y2)] = vertices.map(xy);
+     DamageRect::new(
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 9c3c0599..24cf4817 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -2377,7 +2377,11 @@ impl<'a> Walker<'a> {
+         in_transform: bool,
+     ) {
+         let color = scale_alpha(r.text_color, op);
+-        if alpha(color) == 0 {
++        // Text stroke (pocket-motion): a run whose fill is transparent still
++        // draws when it carries a stroke — the hollow form.
++        let stroke_color = scale_alpha(r.text_stroke_color, op);
++        let stroke = r.text_stroke_width > 0.0 && alpha(stroke_color) > 0;
++        if alpha(color) == 0 && !stroke {
+             return;
+         }
+         let slot = r.font_slot as u8;
+@@ -2405,7 +2409,9 @@ impl<'a> Walker<'a> {
+             self.provider_stale = true;
+         }
+         if node.text_native {
+-            self.emit_text_native(dl, run, r, world, color, clip, box_w);
++            if alpha(color) > 0 {
++                self.emit_text_native(dl, run, r, world, color, clip, box_w);
++            }
+             return;
+         }
+         let Some(atlas) = self.fonts.atlas(slot) else { return };
+@@ -2414,6 +2420,21 @@ impl<'a> Walker<'a> {
+         scratch.clear();
+         self.fonts
+             .layout_run(&run, slot, r.tracking, r.line_height, r.text_align, box_w, &mut scratch);
++        let stroke_width = r.text_stroke_width.min(spec::draw_op::STROKE_MAX_WIDTH);
++        let center = r.text_stroke_pos == spec::StrokePos::Center as u8;
++        if stroke && !center {
++            // Outside: under the fill, dilated by the full width; the ring
++            // form when there is no fill to cover the glyphs' own ink.
++            let mode = if alpha(color) == 0 { 2 } else { 0 };
++            self.emit_glyph_stroke(dl, &scratch, world, clip, slot, stroke_color, stroke_width, mode, cell_w, cell_h);
++        }
++        if alpha(color) == 0 {
++            if stroke && center {
++                self.emit_glyph_stroke(dl, &scratch, world, clip, slot, stroke_color, stroke_width, 1, cell_w, cell_h);
++            }
++            self.glyph_scratch = scratch;
++            return;
++        }
+         let start = dl.words.len();
+         dl.words.push(spec::draw_op::GLYPH_RUN);
+         dl.words.push(0); // patched below: slot | count << 16
+@@ -2445,9 +2466,61 @@ impl<'a> Walker<'a> {
+         } else {
+             dl.words[start + 1] = (slot as u32) | (n << 16);
+         }
++        if stroke && center {
++            self.emit_glyph_stroke(dl, &scratch, world, clip, slot, stroke_color, stroke_width, 1, cell_w, cell_h);
++        }
+         self.glyph_scratch = scratch;
+     }
+ 
++    /// One GLYPH_STROKE (pocket-motion; format in spec.ts): the run's cells
++    /// placed exactly as GLYPH_RUN places them, kept when the cell widened
++    /// by the stroke width reaches the clip — a stroke reaches past its
++    /// glyph's cell.
++    #[allow(clippy::too_many_arguments)]
++    fn emit_glyph_stroke(
++        &self,
++        dl: &mut DrawList,
++        glyphs: &[crate::text::GlyphPos],
++        world: &Affine,
++        clip: &Clip,
++        slot: u8,
++        color: u32,
++        width: f32,
++        mode: u32,
++        cell_w: f32,
++        cell_h: f32,
++    ) {
++        let m = ceilf(width) + 1.0;
++        let start = dl.words.len();
++        dl.words.push(spec::draw_op::GLYPH_STROKE);
++        dl.words.push(0); // patched below: slot | count << 16
++        dl.words.push(color);
++        dl.words.push(width.to_bits());
++        dl.words.push(mode);
++        let mut n: u32 = 0;
++        for g in glyphs {
++            let (sx, sy) = world.apply(g.x, g.y);
++            let (rx, ry) = (roundf(sx), roundf(sy));
++            if rx < 0.0 || ry < 0.0 || rx > self.screen.0 || ry > self.screen.1 {
++                continue;
++            }
++            if rx + cell_w + m <= clip.x0 || rx - m >= clip.x1 || ry + cell_h + m <= clip.y0 || ry - m >= clip.y1 {
++                continue;
++            }
++            if n == u16::MAX as u32 {
++                break;
++            }
++            dl.words.push(xy_word(rx, ry));
++            dl.words.push(g.gid as u32);
++            n += 1;
++        }
++        if n == 0 {
++            dl.words.truncate(start);
++        } else {
++            dl.words[start + 1] = (slot as u32) | (n << 16);
++        }
++    }
++
+     /// Emit one TEXT_RUN (native text path; format in spec.ts): header words
+     /// plus the run string's UTF-8 bytes packed into the stream — the words
+     /// alone are the complete pixel truth. The origin is f32 and may sit
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index 5d17f902..7679398e 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -910,6 +910,30 @@ fn render_ops<T: RenderTarget>(
+                     i += render_ops(ui, &words[i..], &mut masked, width, scale, screen, clip);
+                 }
+             }
++            draw_op::GLYPH_STROKE => {
++                if i + 5 > words.len() {
++                    return i;
++                }
++                let slot = (words[i + 1] & 0xff) as u8;
++                let n = (words[i + 1] >> 16) as usize;
++                if i + 5 + 2 * n > words.len() {
++                    return i;
++                }
++                glyph_stroke(
++                    ui,
++                    target,
++                    width,
++                    scale,
++                    screen,
++                    clip,
++                    slot,
++                    words[i + 2],
++                    f32::from_bits(words[i + 3]),
++                    words[i + 4],
++                    &words[i + 5..i + 5 + 2 * n],
++                );
++                i += 5 + 2 * n;
++            }
+             draw_op::MASK_POP => {
+                 if mask_depth > 0 {
+                     target.pop_mask();
+@@ -1515,6 +1539,226 @@ fn glyph_run<T: RenderTarget>(
+     }
+ }
+ 
++// ---- GLYPH_STROKE: text outline by distance to the ink (pocket-motion) ----------------
++
++/// Largest region, in physical pixels, one GLYPH_STROKE rasterises. A run
++/// covering more than this (a 4K frame of text is 8.3 M) is drawn only over
++/// its first rows up to the bound; the core never emits one that large for
++/// a line of text.
++const STROKE_MAX_REGION: usize = 16 * 1024 * 1024;
++
++/// Nearest-seed distance field over `cov` (w x h, coverage 0..255): for each
++/// pixel, the smallest `|p - s| + (0.5 - c(s))` over seeds `s` (pixels with
++/// coverage > 0) that two raster-order passes of 4-neighbour propagation
++/// find. `0.5 - c(s)` places the ink edge inside an anti-aliased seed pixel,
++/// so the field is 0.5 - c at a seed itself and a dilation of width 0 is the
++/// coverage it started from. Distances are f32 from exact integer squared
++/// offsets (`sqrtf_newton`: IEEE-754 add/mul/div only), compared in a fixed
++/// order: the same input gives the same field on every host.
++fn seed_distance(cov: &[u8], w: usize, h: usize, invert: bool, out: &mut Vec<f32>) {
++    const FAR: f32 = 1.0e9;
++    let n = w * h;
++    let c_of = |v: u8| -> u8 { if invert { 255 - v } else { v } };
++    let mut seed: Vec<u32> = alloc::vec![u32::MAX; n];
++    out.clear();
++    out.resize(n, FAR);
++    for i in 0..n {
++        let c = c_of(cov[i]);
++        if c > 0 {
++            seed[i] = i as u32;
++            out[i] = 0.5 - c as f32 / 255.0;
++        }
++    }
++    let relax = |i: usize, j: usize, seed: &mut Vec<u32>, out: &mut Vec<f32>| {
++        let s = seed[j];
++        if s == u32::MAX {
++            return;
++        }
++        let (px, py) = ((i % w) as i64, (i / w) as i64);
++        let (sx, sy) = ((s as usize % w) as i64, (s as usize / w) as i64);
++        let (dx, dy) = (px - sx, py - sy);
++        let d = sqrtf_newton((dx * dx + dy * dy) as f32) + (0.5 - c_of(cov[s as usize]) as f32 / 255.0);
++        if d < out[i] {
++            out[i] = d;
++            seed[i] = s;
++        }
++    };
++    for y in 0..h {
++        for x in 0..w {
++            let i = y * w + x;
++            if y > 0 {
++                if x > 0 {
++                    relax(i, i - w - 1, &mut seed, out);
++                }
++                relax(i, i - w, &mut seed, out);
++                if x + 1 < w {
++                    relax(i, i - w + 1, &mut seed, out);
++                }
++            }
++            if x > 0 {
++                relax(i, i - 1, &mut seed, out);
++            }
++        }
++        for x in (0..w).rev() {
++            let i = y * w + x;
++            if x + 1 < w {
++                relax(i, i + 1, &mut seed, out);
++            }
++        }
++    }
++    for y in (0..h).rev() {
++        for x in (0..w).rev() {
++            let i = y * w + x;
++            if y + 1 < h {
++                if x + 1 < w {
++                    relax(i, i + w + 1, &mut seed, out);
++                }
++                relax(i, i + w, &mut seed, out);
++                if x > 0 {
++                    relax(i, i + w - 1, &mut seed, out);
++                }
++            }
++            if x + 1 < w {
++                relax(i, i + 1, &mut seed, out);
++            }
++        }
++        for x in 0..w {
++            let i = y * w + x;
++            if x > 0 {
++                relax(i, i - 1, &mut seed, out);
++            }
++        }
++    }
++}
++
++/// `sqrt` for non-negative finite values: the bit-halving estimate and three
++/// Newton steps `draw.rs` already uses — plain IEEE-754 add/mul/div, so the
++/// same input gives the same bits on every host (no libm in the core).
++#[inline]
++fn sqrtf_newton(x: f32) -> f32 {
++    if x <= 0.0 {
++        return 0.0;
++    }
++    let mut y = f32::from_bits((x.to_bits() >> 1) + 0x1fc0_0000);
++    y = 0.5 * (y + x / y);
++    y = 0.5 * (y + x / y);
++    y = 0.5 * (y + x / y);
++    y
++}
++
++#[allow(clippy::too_many_arguments)]
++fn glyph_stroke<T: RenderTarget>(
++    ui: &Ui,
++    target: &mut T,
++    stride: i32,
++    output_scale: i32,
++    screen: Clip,
++    clip: Clip,
++    slot: u8,
++    color: u32,
++    width: f32,
++    mode: u32,
++    glyphs: &[u32],
++) {
++    let Some(atlas) = ui.font_atlas(slot) else {
++        return;
++    };
++    let (r, g, b, a) = channels(color);
++    if a == 0 || !(width > 0.0) || mode > 2 {
++        return;
++    }
++    let width = width.min(spec::draw_op::STROKE_MAX_WIDTH) * output_scale as f32;
++    // Center strokes straddle the edge: half out (dilation), half in (erosion).
++    let reach = if mode == 1 { width * 0.5 } else { width };
++    let margin = reach as i32 + 2;
++    let cell_w = atlas.cell_w as i32 * output_scale;
++    let cell_h = atlas.cell_h as i32 * output_scale;
++    let atlas_density = atlas.raster_density as i32;
++    let coverage_w = atlas.coverage_width() as i32;
++    let coverage_h = atlas.coverage_height() as i32;
++    let bpr = atlas.bytes_per_row();
++
++    // Region: every cell widened by the reach, on screen. Coverage outside
++    // the clip still counts — a glyph past a scissor edge strokes into it.
++    let mut region = Clip { x0: i32::MAX, y0: i32::MAX, x1: i32::MIN, y1: i32::MIN };
++    for pair in glyphs.chunks_exact(2) {
++        let (gx, gy) = xy(pair[0], output_scale);
++        region.x0 = region.x0.min(gx - margin);
++        region.y0 = region.y0.min(gy - margin);
++        region.x1 = region.x1.max(gx + cell_w + margin);
++        region.y1 = region.y1.max(gy + cell_h + margin);
++    }
++    let region = region.intersect(screen);
++    if region.x0 >= region.x1 || region.y0 >= region.y1 {
++        return;
++    }
++    let out = region.intersect(clip);
++    if out.x0 >= out.x1 || out.y0 >= out.y1 {
++        return;
++    }
++    let rw = (region.x1 - region.x0) as usize;
++    let mut rh = (region.y1 - region.y0) as usize;
++    if rw * rh > STROKE_MAX_REGION {
++        rh = STROKE_MAX_REGION / rw;
++    }
++    let mut cov: Vec<u8> = alloc::vec![0u8; rw * rh];
++    for pair in glyphs.chunks_exact(2) {
++        let (gx, gy) = xy(pair[0], output_scale);
++        let gid = (pair[1] & 0xffff) as u16;
++        if gid >= atlas.glyph_count {
++            continue;
++        }
++        let x0 = gx.max(region.x0);
++        let x1 = (gx + cell_w).min(region.x1);
++        let y0 = gy.max(region.y0);
++        let y1 = (gy + cell_h).min(region.y0 + rh as i32);
++        if x0 >= x1 || y0 >= y1 {
++            continue;
++        }
++        let rows = atlas.glyph_rows(gid);
++        for py in y0..y1 {
++            let sy = coverage_index(py - gy, output_scale, atlas_density, coverage_h);
++            let row = &rows[sy * bpr..];
++            let base = (py - region.y0) as usize * rw;
++            for px in x0..x1 {
++                let cx = coverage_index(px - gx, output_scale, atlas_density, coverage_w);
++                let c = row[cx];
++                let o = base + (px - region.x0) as usize;
++                if c > cov[o] {
++                    cov[o] = c;
++                }
++            }
++        }
++    }
++
++    let mut dist: Vec<f32> = Vec::new();
++    seed_distance(&cov, rw, rh, false, &mut dist);
++    let mut dist_in: Vec<f32> = Vec::new();
++    if mode == 1 {
++        seed_distance(&cov, rw, rh, true, &mut dist_in);
++    }
++    let unit = |x: f32| -> f32 { x.max(0.0).min(1.0) };
++    let y_end = out.y1.min(region.y0 + rh as i32);
++    for py in out.y0..y_end {
++        let base = (py - region.y0) as usize * rw;
++        for px in out.x0..out.x1 {
++            let o = base + (px - region.x0) as usize;
++            let grown = unit(reach + 0.5 - dist[o]);
++            let cover = match mode {
++                0 => grown,
++                2 => unit(grown - cov[o] as f32 / 255.0),
++                // Ring: dilated by half minus eroded by half. Eroded is the
++                // complement of the complement's dilation.
++                _ => unit(grown + unit(reach + 0.5 - dist_in[o]) - 1.0),
++            };
++            let k = (cover * 255.0 + 0.5) as u32;
++            if k != 0 {
++                target.blend((py * stride + px) as usize, r, g, b, (a * k + 127) / 255);
++            }
++        }
++    }
++}
++
+ // ---- texel fetch + samplers ----------------------------------------------------------
+ 
+ /// Fetch texel `idx` (row-major) as (r, g, b, a) channels 0..255. None for
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index f3e2dfe9..e9248b1b 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -165,6 +165,9 @@ pub mod prop {
+     pub const ARC_START: u8 = 140;
+     pub const ARC_SWEEP: u8 = 141;
+     pub const ARC_WIDTH: u8 = 142;
++    pub const TEXT_STROKE_WIDTH: u8 = 160;
++    pub const TEXT_STROKE_COLOR: u8 = 161;
++    pub const TEXT_STROKE_POS: u8 = 162;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -186,7 +189,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x00, 0x01, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -207,7 +210,7 @@ pub const ANIM_BIT: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0xff, 0xff, 0x20, 0x21, 0x22, 0xff, 0x23, 0x24, 0x25, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x26, 0x27, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -216,7 +219,7 @@ pub const ANIM_BIT: [u8; 256] = [
+ ];
+ 
+ /// Bitset over prop ids: animatable props (tween/spring/transition targets).
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000000000000773f, 0x0000000000000000];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000000030000773f, 0x0000000000000000];
+ /// Bitset over prop ids: props whose change invalidates layout.
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000007fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ 
+@@ -300,6 +303,14 @@ pub enum GradDir {
+     ToRight = 3,
+ }
+ 
++/// StrokePos
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum StrokePos {
++    Outside = 0,
++    Center = 1,
++}
++
+ /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
+ #[repr(u8)]
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+@@ -438,8 +449,10 @@ pub mod draw_op {
+     pub const POLY: u32 = 10;
+     pub const MASK_PUSH: u32 = 64;
+     pub const MASK_POP: u32 = 65;
++    pub const GLYPH_STROKE: u32 = 66;
+     /// Largest vertex count a MASK_PUSH may carry.
+     pub const MASK_MAX_VERTS: usize = 256;
++    pub const STROKE_MAX_WIDTH: f32 = 64.0;
+ }
+ 
+ /// .pak container constants (byte-compatible with dreamcart's format;
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index 3fb95e68..c528ce8a 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -302,6 +302,11 @@ pub struct Resolved {
+     pub arc_start: f32,
+     pub arc_sweep: f32,
+     pub arc_width: f32,
++    /// Text stroke (pocket-motion; spec.ts PROP.textStrokeWidth..Pos).
++    pub text_stroke_width: f32,
++    pub text_stroke_color: u32,
++    /// spec::StrokePos ordinal.
++    pub text_stroke_pos: u8,
+ }
+ 
+ impl Default for Resolved {
+@@ -363,6 +368,9 @@ impl Default for Resolved {
+             arc_start: 0.0,
+             arc_sweep: 0.0,
+             arc_width: 0.0,
++            text_stroke_width: 0.0,
++            text_stroke_color: 0,
++            text_stroke_pos: spec::StrokePos::Outside as u8,
+         }
+     }
+ }
+@@ -453,6 +461,9 @@ impl Resolved {
+             p::ARC_START => self.arc_start = f,
+             p::ARC_SWEEP => self.arc_sweep = f,
+             p::ARC_WIDTH => self.arc_width = f,
++            p::TEXT_STROKE_WIDTH => self.text_stroke_width = f,
++            p::TEXT_STROKE_COLOR => self.text_stroke_color = bits,
++            p::TEXT_STROKE_POS => self.text_stroke_pos = bits as u8,
+             _ => {}
+         }
+     }
+@@ -527,6 +538,9 @@ impl Resolved {
+             p::ARC_START => self.arc_start.to_bits(),
+             p::ARC_SWEEP => self.arc_sweep.to_bits(),
+             p::ARC_WIDTH => self.arc_width.to_bits(),
++            p::TEXT_STROKE_WIDTH => self.text_stroke_width.to_bits(),
++            p::TEXT_STROKE_COLOR => self.text_stroke_color,
++            p::TEXT_STROKE_POS => self.text_stroke_pos as u32,
+             _ => 0,
+         }
+     }
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 0fc32962..946f9546 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -239,7 +239,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
+ /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
+ /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
+ /// balanced, only known ops. Returns per-op counts (indexed by op code).
+-fn validate_drawlist(words: &[u32]) -> [u32; 66] {
++fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+     let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
+     let xy_ok = |w: u32| {
+         let (x, y) = decode_xy(w);
+@@ -251,7 +251,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 66] {
+         let (w, h) = decode_wh(whw);
+         assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
+     };
+-    let mut counts = [0u32; 66];
++    let mut counts = [0u32; 72];
+     let mut depth = 0i32;
+     let mut mask_depth = 0i32;
+     let mut i = 0usize;
+@@ -339,6 +339,16 @@ fn validate_drawlist(words: &[u32]) -> [u32; 66] {
+                 assert!(mask_depth >= 0, "unbalanced MASK_POP");
+                 i += 1;
+             }
++            spec::draw_op::GLYPH_STROKE => {
++                let n = (words[i + 1] >> 16) as usize;
++                assert!(n > 0, "empty glyph stroke emitted");
++                assert!(f32::from_bits(words[i + 3]) > 0.0, "GLYPH_STROKE width not positive");
++                assert!(words[i + 4] <= 2, "bad GLYPH_STROKE mode");
++                for g in 0..n {
++                    xy_ok(words[i + 5 + g * 2]);
++                }
++                i += 5 + 2 * n;
++            }
+             spec::draw_op::TEXT_RUN => {
+                 // Native-text op: origin is f32 (exempt from the i16 clip
+                 // guarantee), box width is finite and non-negative, and the
+@@ -4692,3 +4702,147 @@ fn two_half_alpha_layers_over_transparent_compose_src_over() {
+     // matters: neither channel was pulled toward black.
+     assert!(px[0] > 0x40 && px[2] > 0x80, "colour kept: {:?}", px);
+ }
++
++// ---- GLYPH_STROKE (pocket-motion) ---------------------------------------------
++
++/// A v4 atlas of two glyphs in `cell`-px square cells: gid 0 (tofu) empty,
++/// gid 1 ('A') an opaque square covering cell pixels lo..hi on both axes.
++fn block_atlas(slot: u8, cell: u8, lo: usize, hi: usize) -> Vec<u8> {
++    let mut out = encode_atlas(slot, cell, cell, cell - 2, cell, 2, &[(0xfffd, 0, cell), ('A' as u32, 1, cell)]);
++    let c = cell as usize;
++    let cov0 = spec::font_atlas::HEADER_SIZE + 2 * spec::font_atlas::CMAP_ENTRY_SIZE;
++    let g1 = cov0 + c * c;
++    for y in lo..hi {
++        for x in lo..hi {
++            out[g1 + y * c + x] = 255;
++        }
++    }
++    out
++}
++
++/// One text node "A" at (40, 40) over a white ground, with the given stroke.
++fn stroked_block(fill: u32, stroke_width: f32, stroke_color: u32, pos: spec::StrokePos) -> (Ui, Vec<u32>) {
++    stroked_ink(fill, stroke_width, stroke_color, pos, (10, 30))
++}
++
++fn stroked_ink(
++    fill: u32,
++    stroke_width: f32,
++    stroke_color: u32,
++    pos: spec::StrokePos,
++    ink: (usize, usize),
++) -> (Ui, Vec<u32>) {
++    let mut ui = Ui::new();
++    assert!(ui.load_font_atlas(&block_atlas(0, 40, ink.0, ink.1)));
++    let ground = ui.create_node(0);
++    ui.set_prop(ground, spec::prop::WIDTH, 200.0);
++    ui.set_prop(ground, spec::prop::HEIGHT, 200.0);
++    ui.set_prop(ground, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.insert_before(spec::ROOT_ID, ground, 0);
++    let t = ui.create_node(spec::NodeType::Text as u8);
++    ui.set_prop(t, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(t, spec::prop::INSET_L, 40.0);
++    ui.set_prop(t, spec::prop::INSET_T, 40.0);
++    ui.set_prop(t, spec::prop::TEXT_COLOR, fill as f64);
++    ui.set_prop(t, spec::prop::TEXT_STROKE_WIDTH, stroke_width as f64);
++    ui.set_prop(t, spec::prop::TEXT_STROKE_COLOR, stroke_color as f64);
++    ui.set_prop(t, spec::prop::TEXT_STROKE_POS, pos as u32 as f64);
++    ui.set_text(t, "A");
++    ui.insert_before(ground, t, 0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    validate_drawlist(&words);
++    (ui, words)
++}
++
++#[test]
++fn text_stroke_outside_draws_under_the_fill_and_reaches_its_width() {
++    let fill = abgr(0, 0, 255, 255);
++    let stroke = abgr(255, 0, 0, 255);
++    let (mut ui, words) = stroked_block(fill, 4.0, stroke, spec::StrokePos::Outside);
++    let s = words.iter().position(|&w| w == spec::draw_op::GLYPH_STROKE).expect("a stroke op");
++    let g = words.iter().position(|&w| w == spec::draw_op::GLYPH_RUN).expect("a fill op");
++    assert!(s < g, "an outside stroke is emitted before (under) the fill");
++    assert_eq!(words[s + 4], 0, "outside with a visible fill is mode 0");
++    let fb = raster_fb(&mut ui);
++    // The square spans x 50..70, y 50..70 on screen (cell at 40,40; ink 10..30).
++    assert_eq!(sample_rgba(&fb, 60, 60), [0, 0, 255, 255], "interior is the fill");
++    assert_eq!(sample_rgba(&fb, 47, 60), [255, 0, 0, 255], "3 px out is inside a 4 px stroke");
++    assert_eq!(sample_rgba(&fb, 71, 71), [255, 0, 0, 255], "a pixel 2.1 px off the corner is stroked");
++    let corner = sample_rgba(&fb, 72, 72);
++    assert!(corner[1] > 0 && corner[1] < 255, "3.5 px off the corner is the anti-aliased rim, got {corner:?}");
++    assert_eq!(sample_rgba(&fb, 44, 60), [255, 255, 255, 255], "6 px out is past the stroke");
++}
++
++#[test]
++fn text_stroke_center_is_a_ring_over_the_fill_and_hollow_without_one() {
++    let stroke = abgr(255, 0, 0, 255);
++    let (mut ui, words) = stroked_block(0, 4.0, stroke, spec::StrokePos::Center);
++    assert!(
++        !words.iter().any(|&w| w == spec::draw_op::GLYPH_RUN),
++        "a transparent fill emits no GLYPH_RUN"
++    );
++    let fb = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&fb, 50, 60), [255, 0, 0, 255], "the edge pixel is on the ring");
++    assert_eq!(sample_rgba(&fb, 48, 60), [255, 0, 0, 255], "1.5 px outside the edge is on the ring");
++    assert_eq!(sample_rgba(&fb, 51, 60), [255, 0, 0, 255], "1.5 px inside the edge is on the ring");
++    assert_eq!(sample_rgba(&fb, 60, 60), [255, 255, 255, 255], "the middle stays hollow");
++    assert_eq!(sample_rgba(&fb, 45, 60), [255, 255, 255, 255], "past the outer half is ground");
++
++    let fill = abgr(0, 0, 255, 255);
++    let (_, words) = stroked_block(fill, 4.0, stroke, spec::StrokePos::Center);
++    let s = words.iter().position(|&w| w == spec::draw_op::GLYPH_STROKE).unwrap();
++    let g = words.iter().position(|&w| w == spec::draw_op::GLYPH_RUN).unwrap();
++    assert!(g < s, "a center stroke is emitted after (over) the fill");
++    assert_eq!(words[s + 4], 1);
++}
++
++#[test]
++fn text_stroke_outside_without_a_fill_is_the_outer_ring() {
++    let stroke = abgr(255, 0, 0, 255);
++    let (mut ui, words) = stroked_block(0, 3.0, stroke, spec::StrokePos::Outside);
++    let s = words.iter().position(|&w| w == spec::draw_op::GLYPH_STROKE).unwrap();
++    assert_eq!(words[s + 4], 2, "outside with no fill is the ring form");
++    let fb = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&fb, 60, 60), [255, 255, 255, 255], "the glyph's own ink is not stroked");
++    assert_eq!(sample_rgba(&fb, 48, 60), [255, 0, 0, 255], "the outside band is");
++}
++
++#[test]
++fn a_text_node_without_a_stroke_emits_no_stroke_op() {
++    let fill = abgr(0, 0, 255, 255);
++    let (_, words) = stroked_block(fill, 0.0, abgr(255, 0, 0, 255), spec::StrokePos::Outside);
++    assert!(!words.iter().any(|&w| w == spec::draw_op::GLYPH_STROKE));
++    let (_, words) = stroked_block(fill, 4.0, 0, spec::StrokePos::Outside);
++    assert!(!words.iter().any(|&w| w == spec::draw_op::GLYPH_STROKE), "a transparent stroke colour is no stroke");
++}
++
++#[test]
++fn a_moving_stroke_redraws_incrementally_to_the_full_render() {
++    use crate::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS};
++    use crate::raster::{render_scaled, render_scaled_incremental};
++    // Ink to within 2 px of the cell edge, so a 6 px stroke reaches 4 px past
++    // the cell on every side — past what a GLYPH_RUN's bounds would damage.
++    let (mut ui, first) =
++        stroked_ink(abgr(0, 0, 255, 255), 6.0, abgr(255, 0, 0, 255), spec::StrokePos::Outside, (2, 38));
++    // Move the text 30 px right: the stroke's old and new reach both damage.
++    let t = {
++        let words = ui.draw().words.clone();
++        assert_eq!(words, first);
++        // The text node is the ground's only child; look it up by hit-test at the ink.
++        ui.hit_test(60.0, 60.0)
++    };
++    assert!(t != 0);
++    ui.set_prop(t, spec::prop::INSET_L, 70.0);
++    ui.tick();
++    let second = ui.draw().words.clone();
++    let pixels = spec::SCREEN_W as usize * spec::SCREEN_H as usize;
++    let mut fb = alloc::vec![0u8; pixels * 4];
++    let mut state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
++    render_scaled_incremental(&ui, &first, &mut fb, 1, &mut state, DamagePolicy::default()).unwrap();
++    let plan = render_scaled_incremental(&ui, &second, &mut fb, 1, &mut state, DamagePolicy::default()).unwrap();
++    assert!(!plan.is_full_redraw());
++    let mut full = alloc::vec![0u8; pixels * 4];
++    render_scaled(&ui, &second, &mut full, 1);
++    assert!(fb == full, "incremental redraw of a moved stroke differs from the full render");
++}
+diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
+index 0640886e..725e0117 100644
+--- a/framework/compiler/animation.ts
++++ b/framework/compiler/animation.ts
+@@ -244,6 +244,11 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   arcStart: [[PROP.arcStart], degBits],
+   arcSweep: [[PROP.arcSweep], degBits],
+   arcWidth: [[PROP.arcWidth], pxBits],
++  // pocket-motion paint. The -webkit- spellings camel-case to Webkit*.
++  textStrokeWidth: [[PROP.textStrokeWidth], pxBits],
++  textStrokeColor: [[PROP.textStrokeColor], colorBits],
++  WebkitTextStrokeWidth: [[PROP.textStrokeWidth], pxBits],
++  WebkitTextStrokeColor: [[PROP.textStrokeColor], colorBits],
+ };
+ 
+ /** kebab-case -> camelCase (accepts `background-color` next to `backgroundColor`). */
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index 0dbf4e62..84baf937 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -21,6 +21,7 @@ import {
+   MAX_FONT_SLOTS,
+   PROP,
+   SIZE_FULL,
++  STROKE_MAX_WIDTH,
+   TRANSITION_MASK_ALL,
+   abgr,
+   animBit,
+@@ -542,6 +543,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+       return true;
+     }
+     case "text": {
++      if (rest.startsWith("stroke-") || rest === "stroke") return parseTextStroke(rest, D);
+       if (rest in TEXT_ALIGN) { D.push([PROP.textAlign, int(TEXT_ALIGN[rest])]); return true; }
+       if (rest in TEXT_SIZE_PX) { acc.sizePx = TEXT_SIZE_PX[rest]; return true; }
+       // Arbitrary size: `text-[47px]` / `text-[47]`. A slot is allocated on first
+@@ -593,6 +595,43 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+   return false;
+ }
+ 
++/**
++ * `text-stroke*` (pocket-motion): the outline of a text run.
++ *
++ *   text-stroke              1 px
++ *   text-stroke-N            N px (integer, 0..64)
++ *   text-stroke-[N] / [Npx]  N px, fractional allowed
++ *   text-stroke-outside      the default: grows outward, painted under the fill
++ *   text-stroke-center       straddles the glyph edge, painted over the fill
++ *   text-stroke-<color>      palette name, `transparent`, or `[#hex]`
++ *
++ * A width with no colour draws nothing (the colour defaults to transparent),
++ * and `text-transparent` with a stroke is hollow text.
++ */
++function parseTextStroke(rest: string, D: Decl[]): boolean {
++  if (rest === "stroke") { D.push([PROP.textStrokeWidth, px(1)]); return true; }
++  const v = rest.slice("stroke-".length);
++  if (v === "outside") { D.push([PROP.textStrokePos, int(ENUMS.StrokePos.Outside)]); return true; }
++  if (v === "center") { D.push([PROP.textStrokePos, int(ENUMS.StrokePos.Center)]); return true; }
++  if (/^\d+$/.test(v)) {
++    const w = parseInt(v, 10);
++    if (w > STROKE_MAX_WIDTH) return false;
++    D.push([PROP.textStrokeWidth, px(w)]);
++    return true;
++  }
++  const arb = /^\[(\d+(?:\.\d+)?)(?:px)?\]$/.exec(v);
++  if (arb) {
++    const w = parseFloat(arb[1]!);
++    if (w > STROKE_MAX_WIDTH) return false;
++    D.push([PROP.textStrokeWidth, px(w)]);
++    return true;
++  }
++  const c = colorValue(v);
++  if (c === null) return false;
++  D.push([PROP.textStrokeColor, c]);
++  return true;
++}
++
+ /** Literal-level animation accumulator (`animate-*` binds to the base style). */
+ interface AnimAcc {
+   ids: number[];
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index b2b78edc..2a01139d 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -603,3 +603,32 @@ describe("named font faces (font-[name])", () => {
+     expect(fontSlotInfo(slot)).toEqual({ px: 14, bold: false, mono: false, face: "code" });
+   });
+ });
++
++describe("text stroke (pocket-motion)", () => {
++  test("width, colour and position compile to the stroke props", () => {
++    const m = props(parseClassLiteral("text-stroke-[3.5px] text-stroke-red-500 text-stroke-center text-transparent"));
++    expect(f32Of(m, PROP.textStrokeWidth)).toBe(3.5);
++    expect(m.get(PROP.textStrokeColor)).toBe(paletteColor("red-500")!);
++    expect(m.get(PROP.textStrokePos)).toBe(ENUMS.StrokePos.Center);
++    expect(m.get(PROP.textColor)).toBe(abgr(0, 0, 0, 0));
++    expect(f32Of(props(parseClassLiteral("text-stroke")), PROP.textStrokeWidth)).toBe(1);
++    expect(f32Of(props(parseClassLiteral("text-stroke-4")), PROP.textStrokeWidth)).toBe(4);
++    expect(props(parseClassLiteral("text-stroke-[#ff000080]")).get(PROP.textStrokeColor)).toBe(abgr(255, 0, 0, 0x80));
++  });
++  test("a width past STROKE_MAX_WIDTH is not a utility", () => {
++    expect(parseClassLiteral("text-stroke-[65px]")).toBeNull();
++    expect(parseClassLiteral("text-stroke-65")).toBeNull();
++  });
++  test("stroke width and colour are keyframe-animatable", () => {
++    resetAnimationBake();
++    setAnimationTickRate(60);
++    registerAnimationTheme({
++      keyframes: { outline: { from: { WebkitTextStrokeWidth: "0px", textStrokeColor: "#000000" }, to: { WebkitTextStrokeWidth: "6px", textStrokeColor: "#ff0000" } } },
++      animation: { outline: { value: "outline 1s linear both" } },
++    });
++    const rec = parseClassLiteral("animate-outline text-stroke-center");
++    expect(rec?.animation?.anims.length).toBe(1);
++    const tl = bakedTimelines()[rec!.animation!.anims[0]!]!;
++    expect(tl.tracks.map((t) => t.prop).sort()).toEqual([PROP.textStrokeWidth, PROP.textStrokeColor].sort());
++  });
++});
