@@ -1,0 +1,398 @@
+0021 — TEX_QUAD takes its sampling taps once per column and once per row.
+
+A pixel's u in TEX_QUAD depends on its column alone and its v on its row
+alone, yet the loop evaluated both for every pixel: two f32 expressions
+and two saturating casts, and for a linear texture four texel reads and
+four blends even where both weights were 0. The taps are now taken once
+per column into a table and once per row, from the same f32 expressions,
+and the pixel loop only fetches and blends:
+
+- a tap on a texel centre is that texel, because `lerp8(a, b, 0)` is `a`:
+  every nearest tap, and nearly every linear tap of a quad drawn at its
+  texture's own size, reads one texel instead of four;
+- an RGBA8888 texel of alpha 0 at such a tap is skipped before it is read,
+  because it is still 0 after the modulate and every target's `blend`
+  returns without writing at 0;
+- every other tap is the four-texel blend it was.
+
+The pixels are byte-identical by construction, not by tolerance: the
+taps come out of the expressions the per-pixel loop evaluated, and a
+centre is decided by the weights the blend would have used. That matters
+at a texture's own size, where `(j + 0.5) / w * w` lands a fraction below
+the centre on some columns (229 of 1080 at w = 1080; at w = 41 the first
+column, whose tap then leans on the second texel). Those columns keep the
+four-texel blend; a shortcut that assumed centres differs there by up to
+2 levels, and on such a first column by the whole step to the next texel.
+
+By file:
+- `engine/core/src/raster.rs`: `linear_axis` and `nearest_axis` (one axis
+  of a lookup; `linear_sample_coordinates` is two `linear_axis` calls and
+  returns what it did), `bilinear` (the four-texel blend `sample_linear`
+  held), and `tex_quad`'s loop. A test keeps the per-pixel sampler as a
+  reference and compares it with `tex_quad` byte for byte, on the RGBA and
+  RGB565 targets, over 24 textures (1x1 to 100x3, RGBA8888 with every
+  fifth texel transparent and RGB565, nearest and linear) and seven quads
+  each (own size, own size clipped, 2x, fractional, minified, a UV
+  sub-rect, mirrored), two modulates, scale 1 and 2, whole frame and a
+  damage region. With the "own size means centre" shortcut in its place
+  it fails on the 25x27 linear texture.
+
+`git apply` skips everything above the first `diff --git`.
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index 1ed657db..2945739f 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -2635,23 +2635,49 @@ pub struct LinearSample {
+     pub fy: u32,
+ }
+ 
++/// One axis of a texture lookup: the base texel, its clamped neighbour and
++/// the neighbour's 8-bit weight. A nearest lookup is a tap of weight 0.
++#[derive(Clone, Copy)]
++struct AxisTap {
++    i0: u32,
++    i1: u32,
++    f: u32,
++}
++
++/// One axis of [`linear_sample_coordinates`]. The axes never read each
++/// other, which is what lets TEX_QUAD take a column's tap once for every row.
++#[inline]
++fn linear_axis(size: u32, t: f32) -> AxisTap {
++    let max = size as i32 - 1;
++    let tf = (t * size as f32 * 256.0) as i32 - 128;
++    let i0 = (tf >> 8).clamp(0, max);
++    AxisTap {
++        i0: i0 as u32,
++        i1: (i0 + 1).min(max) as u32,
++        f: (tf & 255) as u32,
++    }
++}
++
++/// One axis of a nearest lookup: truncate, clamp, weight 0.
++#[inline]
++fn nearest_axis(size: u32, t: f32) -> AxisTap {
++    let i = ((t * size as f32) as i32).clamp(0, size as i32 - 1) as u32;
++    AxisTap { i0: i, i1: i, f: 0 }
++}
++
+ #[inline]
+ pub fn linear_sample_coordinates(width: u32, height: u32, u: f32, v: f32) -> Option<LinearSample> {
+     if width == 0 || height == 0 {
+         return None;
+     }
+-    let (tw_max, th_max) = (width as i32 - 1, height as i32 - 1);
+-    let uf = (u * width as f32 * 256.0) as i32 - 128;
+-    let vf = (v * height as f32 * 256.0) as i32 - 128;
+-    let x0 = (uf >> 8).clamp(0, tw_max);
+-    let y0 = (vf >> 8).clamp(0, th_max);
++    let (x, y) = (linear_axis(width, u), linear_axis(height, v));
+     Some(LinearSample {
+-        x0: x0 as u32,
+-        y0: y0 as u32,
+-        x1: (x0 + 1).min(tw_max) as u32,
+-        y1: (y0 + 1).min(th_max) as u32,
+-        fx: (uf & 255) as u32,
+-        fy: (vf & 255) as u32,
++        x0: x.i0,
++        y0: y.i0,
++        x1: x.i1,
++        y1: y.i1,
++        fx: x.f,
++        fy: y.f,
+     })
+ }
+ 
+@@ -2660,18 +2686,28 @@ pub fn linear_sample_coordinates(width: u32, height: u32, u: f32, v: f32) -> Opt
+ /// vertical — integer math only, so byte-exact on every host.
+ #[inline]
+ fn sample_linear(view: &TexView, u: f32, v: f32) -> Option<(u32, u32, u32, u32)> {
+-    let sample = linear_sample_coordinates(view.w, view.h, u, v)?;
++    if view.w == 0 || view.h == 0 {
++        return None;
++    }
++    bilinear(view, linear_axis(view.w, u), linear_axis(view.h, v))
++}
++
++/// The four texels two linear taps address, blended horizontally then
++/// vertically.
++#[inline]
++fn bilinear(view: &TexView, x: AxisTap, y: AxisTap) -> Option<(u32, u32, u32, u32)> {
+     let w = view.w as usize;
+-    let c00 = texel(view, sample.y0 as usize * w + sample.x0 as usize)?;
+-    let c01 = texel(view, sample.y0 as usize * w + sample.x1 as usize)?;
+-    let c10 = texel(view, sample.y1 as usize * w + sample.x0 as usize)?;
+-    let c11 = texel(view, sample.y1 as usize * w + sample.x1 as usize)?;
++    let (row0, row1) = (y.i0 as usize * w, y.i1 as usize * w);
++    let c00 = texel(view, row0 + x.i0 as usize)?;
++    let c01 = texel(view, row0 + x.i1 as usize)?;
++    let c10 = texel(view, row1 + x.i0 as usize)?;
++    let c11 = texel(view, row1 + x.i1 as usize)?;
+     let lerp8 = |a: u32, b: u32, f: u32| (a * (256 - f) + b * f) >> 8;
+     let mix = |c0: u32, c1: u32, c2: u32, c3: u32| {
+         lerp8(
+-            lerp8(c0, c1, sample.fx),
+-            lerp8(c2, c3, sample.fx),
+-            sample.fy,
++            lerp8(c0, c1, x.f),
++            lerp8(c2, c3, x.f),
++            y.f,
+         )
+     };
+     Some((
+@@ -2803,22 +2839,37 @@ fn tex_quad<T: RenderTarget>(
+     }
+     let (mr, mg, mb, ma) = channels(modulate);
+     let identity = modulate == 0xffff_ffff;
+-    let (twf, thf) = (view.w as f32, view.h as f32);
+-    let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
++    // A pixel's u depends on its column alone and its v on its row alone, so
++    // each column's tap is taken once into `cols` and each row's once per
++    // row, from the expressions a per-pixel loop evaluates: the taps, and so
++    // the pixels, are that loop's (the reference in this file's tests).
++    // Nearest is the golden-pinned default path; linear is opt-in per
++    // texture (spec::img::FLAG_LINEAR).
++    let axis = if view.linear { linear_axis } else { nearest_axis };
+     let inv_w = 1.0f32 / w as f32;
+     let inv_h = 1.0f32 / h as f32;
++    let cols: Vec<AxisTap> = (c.x0..c.x1)
++        .map(|px| axis(view.w, u0 + (u1 - u0) * ((px - x) as f32 + 0.5) * inv_w))
++        .collect();
++    let tw = view.w as usize;
++    let rgba8888 = view.psm == spec::psm::PSM_8888;
+     for py in c.y0..c.y1 {
+-        let v = v0 + (v1 - v0) * ((py - y) as f32 + 0.5) * inv_h;
+-        let ty = ((v * thf) as i32).clamp(0, th_max);
+-        for px in c.x0..c.x1 {
+-            let u = u0 + (u1 - u0) * ((px - x) as f32 + 0.5) * inv_w;
+-            // Nearest is the golden-pinned default path; linear is opt-in
+-            // per texture (spec::img::FLAG_LINEAR).
+-            let sample = if view.linear {
+-                sample_linear(&view, u, v)
++        let row = axis(view.h, v0 + (v1 - v0) * ((py - y) as f32 + 0.5) * inv_h);
++        let line = py * stride;
++        for (px, &col) in (c.x0..c.x1).zip(cols.iter()) {
++            let sample = if col.f == 0 && row.f == 0 {
++                // A tap on a texel centre is that texel (`lerp8(a, b, 0)` is
++                // `a`): every nearest tap, and nearly every linear one of a
++                // quad drawn at its texture's own size.
++                let idx = row.i0 as usize * tw + col.i0 as usize;
++                if rgba8888 && view.pixels[idx * 4 + 3] == 0 {
++                    // Alpha 0 is 0 after the modulate too, and every
++                    // target's blend leaves the pixel as it is at 0.
++                    continue;
++                }
++                texel(&view, idx)
+             } else {
+-                let tx = ((u * twf) as i32).clamp(0, tw_max);
+-                texel(&view, (ty * view.w as i32 + tx) as usize)
++                bilinear(&view, col, row)
+             };
+             let Some((mut r, mut g, mut b, mut a)) = sample else {
+                 return;
+@@ -2830,7 +2881,7 @@ fn tex_quad<T: RenderTarget>(
+                 b = (b * mb + 127) / 255;
+                 a = (a * ma + 127) / 255;
+             }
+-            target.blend((py * stride + px) as usize, r, g, b, a);
++            target.blend((line + px) as usize, r, g, b, a);
+         }
+     }
+ }
+@@ -3509,4 +3560,196 @@ mod tests {
+             }
+         }
+     }
++
++    // ---- TEX_QUAD taps by column and row ------------------------------------------------
++
++    /// TEX_QUAD's sampler as it was before its taps were tabled, kept as the
++    /// reference: every pixel evaluates its own (u, v) and, when linear,
++    /// reads and blends all four neighbours through the coordinate
++    /// arithmetic of that time.
++    fn tex_quad_per_pixel<T: RenderTarget>(
++        ui: &Ui,
++        target: &mut T,
++        stride: i32,
++        scale: i32,
++        clip: Clip,
++        p: &[u32],
++    ) {
++        let sample_linear = |view: &TexView, u: f32, v: f32| {
++            let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
++            let uf = (u * view.w as f32 * 256.0) as i32 - 128;
++            let vf = (v * view.h as f32 * 256.0) as i32 - 128;
++            let x0 = (uf >> 8).clamp(0, tw_max);
++            let y0 = (vf >> 8).clamp(0, th_max);
++            let (x1, y1) = ((x0 + 1).min(tw_max), (y0 + 1).min(th_max));
++            let (fx, fy) = ((uf & 255) as u32, (vf & 255) as u32);
++            let w = view.w as i32;
++            let c00 = texel(view, (y0 * w + x0) as usize)?;
++            let c01 = texel(view, (y0 * w + x1) as usize)?;
++            let c10 = texel(view, (y1 * w + x0) as usize)?;
++            let c11 = texel(view, (y1 * w + x1) as usize)?;
++            let lerp8 = |a: u32, b: u32, f: u32| (a * (256 - f) + b * f) >> 8;
++            let mix = |c0: u32, c1: u32, c2: u32, c3: u32| {
++                lerp8(lerp8(c0, c1, fx), lerp8(c2, c3, fx), fy)
++            };
++            Some((
++                mix(c00.0, c01.0, c10.0, c11.0),
++                mix(c00.1, c01.1, c10.1, c11.1),
++                mix(c00.2, c01.2, c10.2, c11.2),
++                mix(c00.3, c01.3, c10.3, c11.3),
++            ))
++        };
++        let handle = p[0] as i32;
++        let (x, y) = xy(p[1], scale);
++        let (w, h) = wh(p[2], scale);
++        let (u0, v0) = (f32::from_bits(p[3]), f32::from_bits(p[4]));
++        let (u1, v1) = (f32::from_bits(p[5]), f32::from_bits(p[6]));
++        let modulate = p[7];
++        if w <= 0 || h <= 0 {
++            return;
++        }
++        let Some(view) = ui.texture(handle) else {
++            return;
++        };
++        let c = clip.intersect(Clip {
++            x0: x,
++            y0: y,
++            x1: x + w,
++            y1: y + h,
++        });
++        if c.x0 >= c.x1 || c.y0 >= c.y1 {
++            return;
++        }
++        let (mr, mg, mb, ma) = channels(modulate);
++        let identity = modulate == 0xffff_ffff;
++        let (twf, thf) = (view.w as f32, view.h as f32);
++        let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
++        let inv_w = 1.0f32 / w as f32;
++        let inv_h = 1.0f32 / h as f32;
++        for py in c.y0..c.y1 {
++            let v = v0 + (v1 - v0) * ((py - y) as f32 + 0.5) * inv_h;
++            let ty = ((v * thf) as i32).clamp(0, th_max);
++            for px in c.x0..c.x1 {
++                let u = u0 + (u1 - u0) * ((px - x) as f32 + 0.5) * inv_w;
++                let sample = if view.linear {
++                    sample_linear(&view, u, v)
++                } else {
++                    let tx = ((u * twf) as i32).clamp(0, tw_max);
++                    texel(&view, (ty * view.w as i32 + tx) as usize)
++                };
++                let Some((mut r, mut g, mut b, mut a)) = sample else {
++                    return;
++                };
++                if !identity {
++                    r = (r * mr + 127) / 255;
++                    g = (g * mg + 127) / 255;
++                    b = (b * mb + 127) / 255;
++                    a = (a * ma + 127) / 255;
++                }
++                target.blend((py * stride + px) as usize, r, g, b, a);
++            }
++        }
++    }
++
++    #[test]
++    fn tex_quad_taps_by_column_and_row_match_the_per_pixel_sampler() {
++        let mut ui = Ui::new();
++        // xorshift32 texel bytes; every fifth RGBA texel fully transparent.
++        let mut state = 0x2545_f491u32;
++        let mut next = move || {
++            state ^= state << 13;
++            state ^= state >> 17;
++            state ^= state << 5;
++            state
++        };
++        // At 25, 27, 41 and 100 texels a quad drawn at the texture's own size
++        // puts some linear taps a fraction BELOW a texel centre (41: on the
++        // first column or row, where the tap then leans on the second texel),
++        // which is exactly where a shortcut that assumed centres would differ.
++        let sizes = [(1u32, 1u32), (3, 5), (25, 27), (41, 6), (7, 41), (100, 3)];
++        let mut textures = Vec::new();
++        for &(w, h) in &sizes {
++            let mut rgba = Vec::new();
++            for i in 0..w * h {
++                let v = next();
++                let a = if i % 5 == 4 { 0 } else { (v >> 24) as u8 };
++                rgba.extend_from_slice(&[v as u8, (v >> 8) as u8, (v >> 16) as u8, a]);
++            }
++            let rgb565: Vec<u8> = (0..w * h).flat_map(|_| (next() as u16).to_le_bytes()).collect();
++            for flags in [0, spec::img::FLAG_LINEAR] {
++                for (bytes, psm) in [(&rgba, spec::psm::PSM_8888), (&rgb565, spec::psm::PSM_5650)] {
++                    let handle = ui.upload_texture_flags(bytes, w, h, psm, flags);
++                    assert!(handle >= 0, "{w}x{h} psm {psm} flags {flags} uploads");
++                    textures.push((handle, w as i32, h as i32));
++                }
++            }
++        }
++        let (fw, fh) = (128i32, 72i32);
++        let (mut compared, mut painted) = (0usize, 0usize);
++        for &(handle, tw, th) in &textures {
++            // (x, y, w, h, u0, v0, u1, v1), logical px.
++            let quads = [
++                (0, 0, tw, th, 0.0f32, 0.0f32, 1.0f32, 1.0f32), // its own size
++                (-3, -2, tw, th, 0.0, 0.0, 1.0, 1.0),           // its own size, clipped
++                (5, 4, 2 * tw, 2 * th, 0.0, 0.0, 1.0, 1.0),     // magnified 2x
++                (1, 2, tw * 3 / 2 + 1, th * 5 / 4 + 1, 0.0, 0.0, 1.0, 1.0),
++                (2, 1, (tw / 2).max(1), (th / 3).max(1), 0.0, 0.0, 1.0, 1.0),
++                (3, 3, tw, th, 0.25, 0.125, 0.75, 0.875), // a sub-rect, as a tile
++                (4, 2, tw, th, 1.0, 1.0, 0.0, 0.0),       // mirrored
++            ];
++            for &(qx, qy, qw, qh, u0, v0, u1, v1) in &quads {
++                for modulate in [0xffff_ffffu32, 0x80c0_40ff] {
++                    let p = [
++                        handle as u32,
++                        xy_word(qx as i16, qy as i16),
++                        wh_word(qw as u16, qh as u16),
++                        u0.to_bits(),
++                        v0.to_bits(),
++                        u1.to_bits(),
++                        v1.to_bits(),
++                        modulate,
++                    ];
++                    for scale in [1i32, 2] {
++                        let (sw, sh) = (fw * scale, fh * scale);
++                        let whole = Clip { x0: 0, y0: 0, x1: sw, y1: sh };
++                        // A damage region cutting through most quads.
++                        let region = Clip { x0: 3 * scale, y0: 2 * scale, x1: 31 * scale, y1: 23 * scale };
++                        for clip in [whole, region] {
++                            // A partly transparent ground, so every blend arm is taken.
++                            let ground: Vec<u8> = (0..sw * sh * 4).map(|i| (i * 7 % 251) as u8).collect();
++                            let (mut want, mut got) = (ground.clone(), ground.clone());
++                            tex_quad_per_pixel(&ui, &mut RgbaTarget::<false> { bytes: &mut want }, sw, scale, clip, &p);
++                            tex_quad(&ui, &mut RgbaTarget::<false> { bytes: &mut got }, sw, scale, clip, &p);
++                            assert!(
++                                want == got,
++                                "{tw}x{th} texture {handle}: quad at {qx},{qy} {qw}x{qh}, uv {u0},{v0}..{u1},{v1}, \
++                                 modulate {modulate:08x}, scale {scale}, clip x {}..{} y {}..{}",
++                                clip.x0,
++                                clip.x1,
++                                clip.y0,
++                                clip.y1
++                            );
++                            compared += 1;
++                            painted += usize::from(want != ground);
++                            // The RGB565 target: its own blend, the same taps.
++                            let ground565: Vec<u16> = ground
++                                .chunks_exact(4)
++                                .map(|px| u16::from_le_bytes([px[0], px[1]]))
++                                .collect();
++                            let (mut want565, mut got565) = (ground565.clone(), ground565);
++                            tex_quad_per_pixel(&ui, &mut Rgb565Target { pixels: &mut want565 }, sw, scale, clip, &p);
++                            tex_quad(&ui, &mut Rgb565Target { pixels: &mut got565 }, sw, scale, clip, &p);
++                            assert!(
++                                want565 == got565,
++                                "RGB565: {tw}x{th} texture {handle}, quad at {qx},{qy} {qw}x{qh}, scale {scale}"
++                            );
++                        }
++                    }
++                }
++            }
++        }
++        assert_eq!(compared, textures.len() * 7 * 2 * 2 * 2);
++        // Most draws reach the ground; a comparison of two no-ops proves nothing.
++        assert!(painted * 4 >= compared * 3, "only {painted} of {compared} draws painted anything");
++    }
+ }
