@@ -212,14 +212,22 @@ function isDataBuffer(value: unknown): value is ArrayBuffer | ArrayBufferView {
   return value instanceof ArrayBuffer || ArrayBuffer.isView(value);
 }
 
-/** Flatten a host ArrayBuffer / view to plain numbers (no host object crosses). */
-function toByteArray(value: ArrayBuffer | ArrayBufferView): number[] {
-  if (value instanceof ArrayBuffer) {
-    return Array.from(new Uint8Array(value));
-  }
-  return Array.from(
-    new Uint8Array(value.buffer, value.byteOffset, value.byteLength),
-  );
+/**
+ * Flatten a host ArrayBuffer / view to a latin1 string, one char per byte.
+ * A string is a primitive, so no host object crosses, and it holds a byte in
+ * a byte where a number array holds an 8-byte value: for a 51 MB pak the
+ * array took 0.6 s and grew the process by 1.1 GB per world, the string
+ * 0.05 s and 0.1 GB.
+ * `Buffer`'s latin1 maps byte b to code point b for all 256 values;
+ * `TextDecoder("latin1")` would not, because that WHATWG label is
+ * windows-1252.
+ */
+function toByteString(value: ArrayBuffer | ArrayBufferView): string {
+  const bytes =
+    value instanceof ArrayBuffer
+      ? new Uint8Array(value)
+      : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("latin1");
 }
 
 /** Marshal bounds — reject rather than recurse forever. */
@@ -265,8 +273,8 @@ export function createSandbox(options: SandboxOptions): Sandbox {
   for (const name of slotNames) {
     const value = slots[name];
     if (isDataBuffer(value)) {
-      // Pass plain numbers only — never a host ArrayBuffer / TypedArray.
-      context[`__pocket_slot_${name}`] = toByteArray(value);
+      // Pass a string only — never a host ArrayBuffer / TypedArray.
+      context[`__pocket_slot_${name}`] = toByteString(value);
       slotMeta.push({ name, kind: "buffer" });
     } else {
       context[`__pocket_slot_${name}`] = value;
@@ -434,14 +442,17 @@ export function createSandbox(options: SandboxOptions): Sandbox {
       /**
        * Rebuild an ArrayBuffer / TypedArray / DataView with sandbox intrinsics.
        * Bytes are copied — never hand a host buffer across.
-       * Also used for __pak injection (from a plain number array).
+       * Also used for __pak injection (from a latin1 string).
        */
       function rebuildBuffer(value) {
-        // Plain number[] from host bootstrap (injection path).
-        if (Array.isArray(value)) {
-          return new Uint8Array(value).buffer;
-        }
         var i, len, src, bytes;
+        // Latin1 string from host bootstrap (injection path): one char per byte.
+        if (typeof value === "string") {
+          len = value.length;
+          bytes = new Uint8Array(len);
+          for (i = 0; i < len; i++) bytes[i] = value.charCodeAt(i);
+          return bytes.buffer;
+        }
         if (ArrayBuffer.isView(value)) {
           len = value.byteLength;
           bytes = new Uint8Array(len);

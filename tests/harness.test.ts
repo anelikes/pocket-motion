@@ -367,6 +367,19 @@ describe("D. the sandbox is still usable", () => {
   test("new Uint8Array(__pak).length matches injected byte length", () => {
     expect(sb.eval<number>("new Uint8Array(__pak).length")).toBe(PAK_BYTES.length);
   });
+
+  test("a buffer slot arrives byte for byte: every value, from a view's own window", () => {
+    // The pak crosses as a latin1 string. All 256 byte values, twice, inside
+    // a larger buffer whose other bytes must not come along: 0x80..0x9f are
+    // the ones a windows-1252 decode would turn into other code points.
+    const backing = new Uint8Array(4 + 512 + 4).fill(0xee);
+    for (let i = 0; i < 512; i++) backing[4 + i] = i & 0xff;
+    const view = new Uint8Array(backing.buffer, 4, 512);
+    const pak = createSandbox({ slots: { __pak: view } });
+    expect(pak.eval<number[]>("Array.from(new Uint8Array(__pak))")).toEqual(Array.from(view));
+    // Rebuilt with sandbox intrinsics, not handed across.
+    expect(pak.eval<boolean>("__pak instanceof ArrayBuffer")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
