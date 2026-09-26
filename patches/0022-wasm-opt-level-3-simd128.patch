@@ -1,0 +1,49 @@
+pocket-motion-only: upstream ships this module to browsers, where its size is a download and opt-level "s" is the right trade; here Bun reads it from disk and rasterises every frame of a film with it, so throughput is the cost that counts.
+
+0022 — the wasm core is compiled for speed: opt-level 3 and simd128.
+
+- `engine/wasm/Cargo.toml`: `[profile.release] opt-level = 3`, was "s".
+  LTO stays on.
+- `engine/wasm/.cargo/config.toml` (new): `-C target-feature=+simd128` for
+  `wasm32-unknown-unknown`, so LLVM may use 128-bit wasm SIMD where it
+  vectorises the raster loops. Cargo reads the file because every build
+  of this crate runs cargo in `engine/wasm` (`scripts/vendor.ts`, and
+  upstream's `tools/wasm.ts`). A `RUSTFLAGS` in the environment replaces
+  it (cargo does not merge the two) and builds the same pixels without
+  SIMD.
+
+Neither changes a pixel. Wasm SIMD's integer lanes are exact, its f32
+lanes are IEEE single precision like the scalar ops, and LLVM reorders no
+float arithmetic without fast-math flags, which Rust never sets; the
+ledger's digests are the check, on macOS/arm64 and on Linux/x86-64 in CI.
+Bun's JavaScriptCore compiles wasm SIMD on both.
+
+The module grows from 312 KB to 513 KB with Rust 1.97.1 (give or take
+the few hundred bytes a checkout's path adds to the panic locations it
+carries): opt-level 3 alone makes it 496 KB, simd128 the rest.
+
+`git apply` skips everything above the first `diff --git`.
+diff --git a/engine/wasm/.cargo/config.toml b/engine/wasm/.cargo/config.toml
+new file mode 100644
+index 00000000..39095002
+--- /dev/null
++++ b/engine/wasm/.cargo/config.toml
+@@ -0,0 +1,5 @@
++# pocket-motion: 128-bit wasm SIMD for the raster loops LLVM vectorises.
++# Read because every build of this crate runs cargo in this directory; a
++# RUSTFLAGS in the environment replaces it rather than adding to it.
++[target.wasm32-unknown-unknown]
++rustflags = ["-C", "target-feature=+simd128"]
+diff --git a/engine/wasm/Cargo.toml b/engine/wasm/Cargo.toml
+index 91256969..08cb63e7 100644
+--- a/engine/wasm/Cargo.toml
++++ b/engine/wasm/Cargo.toml
+@@ -19,5 +19,7 @@ crate-type = ["cdylib"]
+ pocketjs-core = { path = "../core" }
+ 
+ [profile.release]
+-opt-level = "s"
++# pocket-motion: built for render throughput, not download size; the
++# simd128 target feature is in .cargo/config.toml beside this file.
++opt-level = 3
+ lto = true

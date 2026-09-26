@@ -83,6 +83,7 @@ with it. `0013`'s MASK_PUSH and MASK_POP are 64 and 65, and move with nothing.
 | 0019 | motion | gradient paint: `via-*`, stop positions, `bg-linear-*`, `bg-radial`, arbitrary `linear-gradient()`/`radial-gradient()` up to six stops, and `bg-clip-text`; one PAINT_PUSH/PAINT_POP pair at 69 and 70 recolours the ops between them per pixel from a premultiplied stop table. A legacy two-stop literal is untouched | never; the header says why | — |
 | 0020 | motion | images of any size: an IMG entry or uploaded texture is 1..`IMG_MAX_DIM` (2048) px per side, power of two or not; sprites, tilesets, stream planes and footage tiles keep 512 and powers of two | never; the header says why | — |
 | 0021 | upstream | TEX_QUAD takes its sampling taps once per column and once per row instead of per pixel: a tap on a texel centre reads one texel instead of four, and an RGBA8888 texel of alpha 0 there is skipped. Byte-identical by construction; a core test holds `tex_quad` equal to the per-pixel sampler it replaced. No target-side change, so it belongs to upstream's software rasteriser as much as to this one | unsubmitted | not measured |
+| 0022 | motion | the wasm core builds at `opt-level = 3` with `+simd128` (was `"s"`): the same pixels; the module grows from 312 to 513 KB | never; the header says why | — |
 
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.

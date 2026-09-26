@@ -50,8 +50,10 @@ length measured is slower than simply dividing.
 
 ## In the profile that actually ships
 
-`engine/wasm` builds `opt-level = "s"`, lto, to `wasm32-unknown-unknown`. The
-same benchmark compiled that way and run under Bun
+`engine/wasm` built `opt-level = "s"`, lto, to `wasm32-unknown-unknown` when
+this was measured; patch 0022 (v0.5.0) moved it to `opt-level = 3` with
+simd128, and the table below was not re-taken under that profile. The
+same benchmark compiled the old way and run under Bun
 ([`bench-wasm.rs`](affine-texture/bench-wasm.rs), [`run-wasm.ts`](affine-texture/run-wasm.ts)),
 median of five runs of 200 iterations, accepted-pixel counts within 0.1% across
 variants:
