@@ -3,6 +3,42 @@
 Tags are cut from `main`. Each entry says what a composition can now
 declare, what it costs, and whether any recorded digest moved.
 
+## v0.5.0 — 2026-09-26
+
+The same pictures, rendered with less memory and less work. Nothing new
+to declare; every digest recorded before this release reproduces
+unchanged.
+
+### Changed
+
+- **The pak crosses into the sandbox as a latin1 string**
+  (`src/harness/sandbox.ts`), not as an array of one number per byte.
+  Booting a world over a 51 MB pak takes 0.05 s instead of 0.6 s and grows
+  the process by 0.1 GB instead of 1.1 GB, which is what bounds how many
+  worlds, and so render workers, fit in memory.
+- **TEX_QUAD takes its sampling taps per column and per row**
+  (`patches/0021`, class upstream): a tap on a texel centre reads one
+  texel instead of four, and a transparent RGBA8888 texel there is
+  skipped. Byte-identical by construction; a core test holds it to the
+  per-pixel sampler it replaced.
+- **The wasm core builds at `opt-level = 3` with simd128**
+  (`patches/0022`, class motion), was `"s"`: the same pixels, a module
+  of 513 KB instead of 312 KB. Built with Rust 1.97.1.
+- `baselines/affine-texture.md` says its wasm table predates 0022.
+
+Measured on two 1080x1080 Peesuto lyric films, a serial raster pass over
+every frame in one process, Bun 1.3.11 on an M4 (instructions retired,
+because the machine carried other load; every frame hash unchanged):
+
+| film | frames | peak RSS | boot | instructions |
+|---|---:|---:|---:|---:|
+| classic zh | 720 | 1.83 → 0.57 GB | 0.70 → 0.33 s | 573 → 351 G (−39%) |
+| night zh | 701 | 2.14 → 0.62 GB | 0.80 → 0.29 s | 797 → 412 G (−48%) |
+
+In the raster pass alone, 0021 removes 27% (classic) and 41% (night) of
+the instructions and 0022 a further 9% and 7%; its CPU time, best of two
+or three runs, went from 20.8 to 17.6 s and from 30.1 to 17.7 s.
+
 ## v0.4.0 — 2026-09-24
 
 Gradients beyond two stops, gradient text, and pictures of any size. Every
