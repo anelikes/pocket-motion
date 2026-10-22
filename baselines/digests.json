@@ -76,7 +76,7 @@
     },
     "compositions/masked": {
       "frames": 90,
-      "digest": "2b43d5e8c0ea600cbbfc378d7d08545d1e1eefe8a54f8836814050e3bc8a5722"
+      "digest": "c973c551e80e85c787f1551a955e82ff80b34b535d15dd6f02ea343c776f8047"
     },
     "compositions/nested/a/9x16": {
       "frames": 30,
@@ -108,7 +108,7 @@
     },
     "compositions/smoke": {
       "frames": 450,
-      "digest": "947ec6d2c3b946802ea3e7be16d9c1412c6fc28b2225ba5ca7e60af9ee21f36f"
+      "digest": "17bc445ebf250da679371277cbec985bef8a68ec0c6f53157a3b24cd9afec163"
     },
     "compositions/sound-roles": {
       "frames": 180,

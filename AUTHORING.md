@@ -352,10 +352,33 @@ animated window), while a px radius is clamped to half the box at draw time;
 there is no spelling for a negative angle, and `rotate-340` is −20; and to
 keep a scene still inside a rotated window, rotate it back about the SAME
 point (`origin-left` on both, with the two origins placed on one pixel). A
-square-cornered, unrotated `overflow-mask` window is `overflow-hidden` word
-for word. The op is this repository's own (`patches/0013`, the design beside
+square-cornered, unrotated `overflow-mask` window whose box lands on whole
+pixels is `overflow-hidden` word for word; anywhere else the outline is exact
+to a sixteenth of a pixel (`patches/0024`), so content whose edge lies on the
+window's edge — a poster seen through a tile of itself — stops at that edge
+however the window turns. Content drawn inside it is still placed on whole
+pixels (POLY and TEX_TRI are upstream's formats), so a plate offset by a pixel
+on purpose rolls away with its tile, a pixel wide. The op is this repository's own (`patches/0013`, the design beside
 it): no upstream backend draws it, so a composition that must stay portable to
 one keeps to `overflow-hidden`.
+
+**A rounded box keeps its corners when it turns.** A `rounded-*` node under
+a rotation, skew or mirror is drawn under its own rounded outline — the one
+`overflow-mask` uses — so a turning `rounded-full` circle stays a circle
+rather than turning as a square (`patches/0028`). Unturned, it is drawn as it
+always was.
+
+**An arc is a stroke.** `arc-width-[px]` turns a node's ground into an
+annular sector centred in its box — outer radius half the shorter side,
+`arc-start-[deg]` from 12 o'clock clockwise, `arc-sweep-[deg]` long, in the
+`bg-*` colour, with a round cap on each end; `arc-cap-butt` ends it on the
+radius instead, so an arc as wide as its radius is a pie sector — a radar
+wedge, a slice of a pie chart (`patches/0027`). A sweep of 0 draws nothing, neither arc nor box, so a drawn-on
+stroke animates `arcSweep` from 0 (`patches/0025`). The arc is drawn in its
+node's frame and follows the world transform like any other paint
+(`patches/0026`): a ring of arcs on a rotating wrapper turns with it, a
+mirror reverses the sweep, and a scale that differs per axis stretches ring,
+stroke and caps into an elliptical band.
 
 **Text can carry an outline.** `text-stroke-[6px] text-stroke-[#7c2d12]`
 draws a 6 px outline around a Text node's glyphs; `text-stroke-outside` (the
@@ -399,8 +422,12 @@ always was, drawn the way it always was. Add `via-white` (50% unless
 `bg-[radial-gradient(#fef08a,#f97316_45%,#f9731600)]` — and the node is
 painted by a gradient paint instead: up to six stops, `#hex` or palette
 colours, `_` for a space, interpolated premultiplied so a fade to
-transparent keeps its colour. Radial is the farthest-corner ellipse about
-the centre and nothing else. `bg-clip-text text-transparent` with any of
+transparent keeps its colour. Radial is about the box centre: the
+farthest-corner ellipse by default, `bg-radial-circle` the farthest-corner
+circle, and `bg-radial-[circle_closest-side]` or
+`bg-[radial-gradient(circle_closest-side,#fff,#0000)]` any of CSS's shapes and
+sizes (`patches/0029`) — a round glow on a wide box is `bg-radial-circle`, not
+a square box around it. `bg-clip-text text-transparent` with any of
 these is gradient text. The angle, every stop colour and every position
 animate (`gradAngle`, `gradVia1Pos`, …; `compositions/gradients` turns a
 headline's angle and sweeps a via across a bar). Drawn by this repository's
@@ -420,8 +447,8 @@ just a number your `gen.ts` turns into an animation delay. Anything you know
 at build time — a beat grid, a transcript, a data series, a per-item stagger —
 bakes. What cannot exist is timing that only becomes known while the frames
 are being produced, and for a renderer that is not a real case. No backdrop
-blur, no conic gradients or radial shapes other than the centred
-farthest-corner ellipse, no `SCREEN_W`/`SCREEN_H` imports (read the
+blur, no conic gradients, no radial gradient centred anywhere but the box
+centre or sized by a length, no `SCREEN_W`/`SCREEN_H` imports (read the
 viewport, or just lay out with flex).
 
 ## Text

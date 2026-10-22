@@ -425,9 +425,18 @@ mechanisms with the file or test beside them.
   children and its own ground are clipped to its outline — the rounded
   rectangle under its transform — through MASK_PUSH/MASK_POP at 64 and 65,
   whose coverage is POLY's own: the row walk is one `PolyScan` shared by both,
-  and a white full-bleed child under a rotated square-cornered window is
-  byte-identical to a white rotated box over 54 size/angle cases
-  (`engine/core/src/tests.rs`, red with the level builder made binary).
+  and a full-screen white RECT under a MASK_PUSH of a rotated box's POLY
+  vertices is byte-identical to that POLY over 54 size/angle cases
+  (`engine/core/src/tests.rs`, red with the level builder made binary). The
+  outline itself is NOT rounded to pixels (`patches/0024`): MASK_PUSH carries
+  f32 vertices and `PolyScan` works in sixteenths of a pixel, POLY's whole
+  pixels entering it multiplied by 16, which leaves every POLY byte-identical.
+  Rounded, each edge moved up to half a pixel per axis — a band of content as
+  long as the window's side outside a turned window — and a square-cornered
+  window at a fractional position was its rounded-OUT AABB. The guard turns a
+  120 px window about its corner from -90 to +90 degrees in quarter degrees
+  and fails on any pixel inked with every sample outside the outline: 21,193
+  pixels at 659 of 721 angles before, none after.
   Nested masks multiply exactly, which is why the outline is clipped to the
   viewport and not to the scissor: a vertex that clipping creates rounds to a
   pixel, and against an ancestor's unrounded AABB that moved an edge by half

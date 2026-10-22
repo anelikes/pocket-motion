@@ -97,6 +97,13 @@ patch's own header carries the full note.
 | 0021 | upstream | TEX_QUAD takes its sampling taps once per column and once per row instead of per pixel: a tap on a texel centre reads one texel instead of four, and an RGBA8888 texel of alpha 0 there is skipped. Byte-identical by construction; a core test holds `tex_quad` equal to the per-pixel sampler it replaced. No target-side change, so it belongs to upstream's software rasteriser as much as to this one | unsubmitted | applied unchanged |
 | 0022 | motion | the wasm core builds at `opt-level = 3` with `+simd128` (was `"s"`): the same pixels; the module grows from 312 to 513 KB | never; the header says why | applied unchanged |
 | 0023 | upstream | the build's style table, which upstream #591 serves from memory, stays in the file namespace, so a bundle names it `vendor/pocketjs/framework/src/styles.generated.ts` rather than `pocketjs-generated-styles:/<the checkout>/…`; and a `styles.generated.ts` reaching the loader at any other path fails the build naming both paths, where main bundles it from disk (a red class drawn blue, exit 0) | unsubmitted; #591 itself merged 2026-10-19 (`586428b2`) | new at this pin: the two departures the old pin's #591 backport made, against main's form; `tests/style-table.test.ts` was red on main's form in both |
+| 0024 | motion | `overflow-mask` outlines at sub-pixel precision: MASK_PUSH carries `(x, y)` f32 pairs and the rasteriser takes them to a sixteenth of a pixel, where `0013` rounded each vertex to a whole pixel — a band of content up to a pixel wide outside a turned window along any long edge; a square-cornered axis-aligned window is its AABB only on whole pixels. `PolyScan` works in sixteenths, which leaves every POLY byte-identical | never; the header says why | new at this pin |
+| 0025 | upstream | an arc with no sweep draws nothing: any `arc-width` makes the node an arc, where a sweep of 0 fell through to the box painter — a full disc on a `rounded-full` node for the frame a drawn-on stroke starts from | unsubmitted | new at this pin |
+| 0026 | upstream | an arc follows its world transform: under a rotation, mirror, skew or per-axis scale every sample is tested in the node's own frame, where the arc returned unpainted under any world that was not axis-aligned; a per-axis scale stretches the ring into an elliptical band. Axis-aligned uniform scale keeps the screen-space path | unsubmitted | new at this pin |
+| 0027 | upstream | `arc-cap-butt` (PROP `arcCap` 183, `arc-cap-round` the default): an arc's ends stop on the radius instead of a half-disc each, so an arc as wide as its radius is a pie sector | unsubmitted | new at this pin |
+| 0028 | motion | a turned rounded box keeps its corners: under a world that is not axis-aligned it is its fill under a MASK_PUSH of its rounded outline (`mask_outline`, 0024's precision) inside its AABB's SCISSOR, where it was the plain box — a turning `rounded-full` circle was a turning square. Unturned boxes are byte-identical | never; the header says why | new at this pin |
+| 0029 | motion | a radial gradient takes the ending shape it names (PROP `gradShape` 184): `bg-radial-circle`, `bg-radial-[<shape>_<size>]`, `radial-gradient(<shape> <size>, …)` — the circle or ellipse to the farthest corner or the sides — where 0019 drew the farthest-corner ellipse only. The radii are chosen in `emit_paint_push`; PAINT_PUSH and the rasteriser are unchanged | never; the header says why | new at this pin |
+| 0030 | upstream | TRI and TEX_TRI draw a pixel centre lying exactly on an edge two triangles share once, by an edge-ownership rule, where both drew it: under a translucent texture every perspective image's cell diagonal was a line blended twice | unsubmitted | new at this pin |
 | 0040 | upstream | the build's SVG baker covers by scanline instead of testing every subsample against every edge — the same 4x4 samples, the same crossing arithmetic, so every pixel's count is the integer it was (`tests/fixtures/bake-svg-reference.ts` is the old baker, kept as the oracle) and a 952-cell hex grid takes 63 ms instead of 23 minutes of CPU — and draws strokes (width, miter/round/bevel joins, butt/round/square caps, miter limit, stroke-opacity), `<g>` with transform, inherited paint and group opacity, `A` arcs, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>` and `rect` `rx`; what would paint and is not drawn is refused instead of dropped | unsubmitted | written on 66caf4e5 |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
@@ -118,10 +125,10 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Sixteen patches are class `upstream` and seven `motion`. Of the sixteen,
-fourteen are unsubmitted declaration- or build-layer changes, `0040`, the
+Twenty patches are class `upstream` and ten `motion`. Of the twenty,
+seventeen are unsubmitted declaration- or build-layer changes, `0040`, the
 build-time SVG baker every target's pak goes through, among them; `0008` is
-#301, and `0021` is a rasteriser change with no target-side cost.
+#301, and `0021` and `0030` are rasteriser changes with no target-side cost.
 
 ## Known gaps the rebase left
 

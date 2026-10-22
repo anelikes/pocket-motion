@@ -1,0 +1,239 @@
+0030 — TRI and TEX_TRI draw a pixel on a shared edge once.
+
+Both triangle rasterisers counted a pixel centre exactly on an edge as
+inside (`w >= 0` on all three edge functions), so a centre on an edge two
+triangles share was drawn by both. Every image under a perspective root is
+TEX_TRI cells, two triangles a cell, cells sharing edges; every turned
+two-stop gradient is a TRI fan. Under a translucent fill the shared edge
+was blended twice: a dark disc at 82 % alpha over a bright ground showed a
+darker line along its cells' diagonal — a full line where the diagonal runs
+at 45 degrees through pixel centres, dashed at any other scale.
+
+Now each edge owns the centres exactly on it only when it runs down the
+screen or, level, leftward (`edge_min`). Two positively wound triangles
+traverse a shared edge in opposite directions, and exactly one of a
+direction and its negation qualifies, so a centre on a shared edge is drawn
+by exactly one of them. Coverage everywhere else is unchanged, and so are
+the barycentric weights.
+
+Class `upstream`: the rule belongs to the software rasteriser upstream
+ships as much as to this one, with no target-side cost — as `0021`. Not
+run: upstream's PNG goldens, which need its sim prep builds (as at the pin
+move). A centre exactly on an outer edge that does not own it is no longer
+drawn — half the edge directions — so a rotated image or gradient whose
+outer edge runs through pixel centres can lose those pixels.
+
+Guard: `a_translucent_image_in_perspective_draws_each_pixel_once`
+(`engine/core/src/tests.rs`): a uniform half-alpha black texture as an
+Image under `perspective` 2600 over white — flat at z 0 and -300, and
+turned 30 degrees about Y — shows one colour; so does a turned box whose
+two-stop gradient is one translucent colour (a TRI fan). Red before (z 0:
+two colours, the diagonal blended twice), green after.
+
+The same fan draws any image whose 2D world is not axis-aligned — a turn of
+180 degrees too (`rotate-[540deg]`): its quad lands axis-aligned on screen,
+but its world has a < 0 and takes the TEX_TRI path.
+`a_translucent_image_turned_in_2d_draws_each_pixel_once` turns the same
+texture 17.3, 30, 45, 90, 180, 270, 540 and -135 degrees: red before (two
+colours at 17.3), green after.
+
+The films it was found in, each rendered with and without this patch:
+`mg-hud` frames 40 and 150 (a 540 px disc PNG at alpha 209 under
+`perspective-[2600]`), the 1 px 45-degree line across the disc is gone;
+the other changed pixels are the 6 px dot images' own edges, spread by the
+glow layer they sit in. `mg-bauhaus` frame 297 (10bd471), the red module
+turned 540 degrees: 119 pixels change, all on one diagonal (x - y constant)
+and every one darker before — the PNG's ink grain keeps its alpha under 255.
+
+Not done here: a quarter turn is not always the pixel-permuted unturned
+image. A 240 px texture drawn at 120 px puts every pixel centre on a texel
+boundary; the unturned TEX_QUAD picks one side and TEX_TRI's f32
+barycentric UVs land a hair either side, so the nearest texel differs by
+one at 234 of 14,400 pixels, scattered, at every quarter turn (exact for
+8, 16 and 32 px textures at 1:1 and 2:1 on 64 and 16 px boxes). That is a
+tie-breaking change to TEX_TRI's sampling, not this edge rule.
+
+Ledgers, against the same tree without this patch: no digest and no
+`visibility` row moves — no ledger composition draws an image in
+perspective, and none puts a TRI or TEX_TRI edge through a pixel centre.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index a11f992d..3c899696 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -1198,6 +1198,24 @@ fn orient(ax: i64, ay: i64, bx: i64, by: i64, px: i64, py: i64) -> i64 {
+     (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+ }
+ 
++/// The smallest edge-function value at which a pixel centre counts as inside
++/// the edge a -> b of a positively wound triangle: 0 when the edge owns the
++/// centres lying exactly on it, 1 when it does not. Two triangles sharing an
++/// edge traverse it in opposite directions, and exactly one of a direction
++/// and its negation runs down the screen or, level, leftward — so a centre on
++/// a shared edge is drawn once. Inclusive on every edge, it was drawn by both,
++/// and under a translucent fill (a dark disc at 82 % alpha) the shared
++/// diagonal of every TEX_TRI pair was a darker line (pocket-motion patch 0030).
++#[inline]
++fn edge_min(ax: i64, ay: i64, bx: i64, by: i64) -> i64 {
++    let (dx, dy) = (bx - ax, by - ay);
++    if dy > 0 || (dy == 0 && dx < 0) {
++        0
++    } else {
++        1
++    }
++}
++
+ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p: &[u32]) {
+     let (x0, y0) = xy(p[0], scale);
+     let (x1, y1) = xy(p[1], scale);
+@@ -1229,6 +1247,7 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p:
+     let flat = c0 == c1 && c1 == c2;
+     let flat_opaque = flat && a0 >= 255;
+     let half = area / 2;
++    let (m0, m1, m2) = (edge_min(bx, by, cx, cy), edge_min(cx, cy, ax, ay), edge_min(ax, ay, bx, by));
+     for py in min_y..max_y {
+         let sy = 2 * py as i64 + 1;
+         for px in min_x..max_x {
+@@ -1237,7 +1256,7 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p:
+             let w0 = orient(bx, by, cx, cy, sx, sy);
+             let w1 = orient(cx, cy, ax, ay, sx, sy);
+             let w2 = orient(ax, ay, bx, by, sx, sy);
+-            if w0 < 0 || w1 < 0 || w2 < 0 {
++            if w0 < m0 || w1 < m1 || w2 < m2 {
+                 continue;
+             }
+             if flat_opaque {
+@@ -2903,6 +2922,7 @@ fn tex_tri<T: RenderTarget>(
+     let (twf, thf) = (view.w as f32, view.h as f32);
+     let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
+     let inv_area = 1.0f32 / area as f32;
++    let (m0, m1, m2) = (edge_min(bx, by, cx, cy), edge_min(cx, cy, ax, ay), edge_min(ax, ay, bx, by));
+     for py in min_y..max_y {
+         let sy = 2 * py as i64 + 1;
+         for px in min_x..max_x {
+@@ -2910,7 +2930,7 @@ fn tex_tri<T: RenderTarget>(
+             let w0 = orient(bx, by, cx, cy, sx, sy);
+             let w1 = orient(cx, cy, ax, ay, sx, sy);
+             let w2 = orient(ax, ay, bx, by, sx, sy);
+-            if w0 < 0 || w1 < 0 || w2 < 0 {
++            if w0 < m0 || w1 < m1 || w2 < m2 {
+                 continue;
+             }
+             let (f0, f1, f2) = (
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 2e033a83..4049488f 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -2954,6 +2954,110 @@ fn a_butt_capped_arc_as_wide_as_its_radius_is_a_pie_sector() {
+     assert_eq!(round, named);
+ }
+ 
++/// Distinct colours in a frame other than `ground`.
++fn colours_besides(fb: &[u8], ground: [u8; 4]) -> alloc::collections::BTreeSet<[u8; 4]> {
++    let mut seen = alloc::collections::BTreeSet::new();
++    for y in 0..spec::SCREEN_H as usize {
++        for x in 0..spec::SCREEN_W as usize {
++            let c = sample_rgba(fb, x, y);
++            if c != ground {
++                seen.insert(c);
++            }
++        }
++    }
++    seen
++}
++
++#[test]
++fn a_translucent_image_in_perspective_draws_each_pixel_once() {
++    // An image under a perspective root is TEX_TRI cells, two triangles a
++    // cell, and the cells share their edges. A pixel centre exactly on a
++    // shared edge was drawn by both triangles; under a translucent texture
++    // (a dark disc at 82 % alpha over a bright ground) that was a darker
++    // line along every cell's diagonal — a full line where the diagonal runs
++    // at 45 degrees through pixel centres, a dashed one at any other scale.
++    // A uniform half-alpha black texture over white must show one colour.
++    let mut tex_px = alloc::vec![0u8; 8 * 8 * 4];
++    for px in tex_px.chunks_exact_mut(4) {
++        px[3] = 128;
++    }
++    let white = [255u8, 255, 255, 255];
++    for &(z, rot_y) in &[(0.0f64, 0.0f64), (-300.0, 0.0), (-120.0, 30.0)] {
++        let mut ui = Ui::new();
++        ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++        let tex = ui.upload_texture(&tex_px, 8, 8, spec::psm::PSM_8888);
++        assert!(tex >= 0);
++        let stage = place_box(&mut ui, 480.0, 272.0, 0.0, 0.0);
++        ui.set_prop(stage, spec::prop::PERSPECTIVE, 2600.0);
++        let img = ui.create_node(spec::NodeType::Image as u8);
++        ui.set_prop(img, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++        ui.set_prop(img, spec::prop::INSET_L, 140.0);
++        ui.set_prop(img, spec::prop::INSET_T, 36.0);
++        ui.set_prop(img, spec::prop::WIDTH, 200.0);
++        ui.set_prop(img, spec::prop::HEIGHT, 200.0);
++        ui.set_prop(img, spec::prop::TRANSLATE_Z, z);
++        if rot_y != 0.0 {
++            ui.set_prop(img, spec::prop::ROTATE_Y, rot_y);
++        }
++        ui.set_image(img, tex);
++        ui.insert_before(stage, img, 0);
++        ui.tick();
++        let words = ui.draw().words.clone();
++        let counts = validate_drawlist(&words);
++        assert!(counts[spec::draw_op::TEX_TRI as usize] >= 2, "z {z} rotateY {rot_y}: an image in perspective is TEX_TRI cells");
++        let fb = raster_fb(&mut ui);
++        let seen = colours_besides(&fb, white);
++        assert_eq!(seen.len(), 1, "z {z} rotateY {rot_y}: {} colours where one texel colour is drawn: {seen:?}", seen.len());
++    }
++    // The same for a TRI fan: a turned box with a two-stop gradient whose
++    // stops are one translucent colour.
++    let mut ui = Ui::new();
++    ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    let b = place_box(&mut ui, 160.0, 120.0, 160.0, 76.0);
++    ui.set_prop(b, spec::prop::ROTATE, 45.0);
++    ui.set_prop(b, spec::prop::GRAD_DIR, spec::GradDir::ToRight as u32 as f64);
++    ui.set_prop(b, spec::prop::GRAD_FROM, abgr(0, 0, 0, 128) as f64);
++    ui.set_prop(b, spec::prop::GRAD_TO, abgr(0, 0, 0, 128) as f64);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    assert!(validate_drawlist(&words)[spec::draw_op::TRI as usize] >= 2, "a turned gradient box is a TRI fan");
++    let seen = colours_besides(&raster_fb(&mut ui), white);
++    assert_eq!(seen.len(), 1, "a turned translucent gradient: {seen:?}");
++}
++
++#[test]
++fn a_translucent_image_turned_in_2d_draws_each_pixel_once() {
++    // The same two-triangle fan draws every image under a world that is not
++    // axis-aligned — a 2D rotation included, 180 degrees too (`rotate` 540 in
++    // a film: the quad lands axis-aligned on screen, but its world has a < 0
++    // and takes the TEX_TRI path). A uniform half-alpha black texture over
++    // white must show one colour at every turn, its diagonal included.
++    let mut tex_px = alloc::vec![0u8; 8 * 8 * 4];
++    for px in tex_px.chunks_exact_mut(4) {
++        px[3] = 128;
++    }
++    let white = [255u8, 255, 255, 255];
++    for &turn in &[17.3f64, 30.0, 45.0, 90.0, 180.0, 270.0, 540.0, -135.0] {
++        let mut ui = Ui::new();
++        ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++        let tex = ui.upload_texture(&tex_px, 8, 8, spec::psm::PSM_8888);
++        let img = ui.create_node(spec::NodeType::Image as u8);
++        ui.set_prop(img, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++        ui.set_prop(img, spec::prop::INSET_L, 180.0);
++        ui.set_prop(img, spec::prop::INSET_T, 76.0);
++        ui.set_prop(img, spec::prop::WIDTH, 120.0);
++        ui.set_prop(img, spec::prop::HEIGHT, 120.0);
++        ui.set_prop(img, spec::prop::ROTATE, turn);
++        ui.set_image(img, tex);
++        ui.insert_before(spec::ROOT_ID, img, 0);
++        ui.tick();
++        let words = ui.draw().words.clone();
++        assert!(validate_drawlist(&words)[spec::draw_op::TEX_TRI as usize] >= 2, "rotate {turn}: a turned image is a TEX_TRI fan");
++        let seen = colours_besides(&raster_fb(&mut ui), white);
++        assert_eq!(seen.len(), 1, "rotate {turn}: {} colours where one texel colour is drawn: {seen:?}", seen.len());
++    }
++}
++
+ // ---- POLY: convex coverage over a clipped rotated box ----------------------------
+ 
+ fn place_box(ui: &mut Ui, w: f64, h: f64, x: f64, y: f64) -> i32 {
