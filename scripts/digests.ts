@@ -151,6 +151,12 @@ const ENTRIES = [
   // ground. A change to the blur passes, the shadow, the composite or a
   // blend function moves this digest.
   "compositions/filters",
+  // bloom. patches/0033: an alpha glow and a luma glow side by side on the
+  // same 85 % dark plate carrying a white rule and a cyan bar, two frames.
+  // The alpha glow lightens the plate; the luma glow leaves it as it is and
+  // lights the rule and the bar. A change to the luma halo, its threshold
+  // ramp, its tint or the add moves this digest and no other.
+  "compositions/bloom",
   // gradients. The gradient paint of patches/0019 over 30 frames: three
   // stops inside a rounded border, four stops at 30deg, a radial fade to
   // transparent, a rotated card, gradient text whose angle turns, CJK

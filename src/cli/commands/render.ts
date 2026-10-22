@@ -199,7 +199,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
     const encodePNG =
       format === "png-seq"
         ? (
-            (await import(`${pocketjsRoot()}/tests/png.ts`)) as {
+            (await import(`${pocketjsRoot()}/tools/png.ts`)) as {
               encodePNG: (rgba: Uint8Array, w: number, h: number) => Uint8Array;
             }
           ).encodePNG

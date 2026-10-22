@@ -173,74 +173,61 @@ mechanisms with the file or test beside them.
   message quotes `bun src/cli/main.ts build <dir>` and NOT upstream's
   `tools/build.ts`, which writes no record — printing that as the fix for a
   missing record would be a loop. `tests/cli.test.ts` holds all three.
-- **One build at a time, because a build writes outside its own `--outdir`.**
-  Upstream's pass 1 writes `framework/src/styles.generated.ts` into the SHARED
-  vendored tree and pass 2 resolves that path, so "two builds into two
-  directories" is not two independent builds.
-  `withBuildLock` (`src/vendor/build-lock.ts`) holds them apart in this process
-  and, through a lock file under `vendor/pocketjs/.cache/`, across processes —
-  the ledgers, preview's hot reload, a second CLI. `runBuild`, `openMeasurer`
-  and `scripts/fit-probe.ts` all take it; a build spawned straight from
-  `bun vendor/pocketjs/tools/build.ts` still does not, which is the same
-  boundary `build.json` already draws.
+- **A build writes inside its own `--outdir`, so builds run side by side.**
+  Until upstream #591 (`586428b2`) — backported as a patch first, and on the
+  pin since it moved to 66caf4e5 — pass 1 wrote `framework/src/styles.generated.ts`
+  into the SHARED vendored tree and pass 2 resolved that path off disk, so two
+  builds into two directories were not two independent builds. That one file
+  failed in two shapes. A composition build landing between a measurement
+  build's write and its read-back replaced the px -> slot table and
+  `verifySlots` refused with `styles.generated.ts is not this build's` —
+  still 3 of 10 overlapping pairs on the pre-#591 tree with the lock bypassed,
+  measured 2026-10-22. And on a fresh tree, where the file is gitignored and
+  absent, pass 2 had to find a path pass 1 had probed and missed:
+  `Could not resolve: "./styles.generated.ts"` on 6 of 20 cold builds on a
+  Linux CI runner and on none of 25 in local containers or any on macOS. It
+  cost a cross-process build lock, a seeded placeholder and a `doctor` check.
 
-  **The damage is a wrong number, not a failed build**, and that decided the
-  design. Two things were measured before anything was written: `Bun.write`
-  never leaves a file missing or empty — one process rewriting a 200 KB
-  stand-in 84k times against another statting it 5.1M times reports 0 of each —
-  and every build writes the mirror in its own pass 1 before its own pass 2
-  reads it, so "one build removes it while another resolves it" is not a
-  window that exists. The window that does exist is between a write and a
-  reader that pairs the file with a pak, and `src/text/measure.ts` is the only
-  such reader: it takes the px -> slot table straight back out of the mirror to
-  check it against its own build's atlases. A composition build landing in that
-  gap replaces the table. Reproduced by starting one 300 ms into a measurement
-  build, `verifySlots` refuses with `styles.generated.ts is not this build's` —
-  so a correct pair of builds fails, and the reverse pairing would have been
-  the advances of a different font size with nothing to show why. That is also
-  why this is a lock and not a retry-on-failed-build: in the reproduction the
-  build that lost the file exited 0, and a retry would have had nothing to
-  retry. `measure.ts` used to hold a queue of its own covering measurement
-  builds against each other, which left the direction that actually happens
-  open. `tests/build-lock.test.ts` is the guard; its timing sweep is red at
-  150-500 ms with the lock reverted.
-- **A FRESH tree has no `styles.generated.ts` at all, and that is a different
-  fault from two builds sharing it.** The file is upstream-gitignored, so it
-  appears the first time a build runs — and both passes of that same build
-  touch it in the wrong order. Pass 1 resolves the import at
-  `framework/src/index.ts:52` (`tools/build.ts:248`) and MISSES, a probe that
-  is wasted anyway because `walk` returns for that filename at line 270. Pass 1
-  then writes the file (line 311). Pass 2 resolves it OFF DISK, because
-  `jsxPlugin` serves the contents from memory but registers no `onResolve` for
-  a relative specifier under `framework === "solid"`. Whether Bun finds a file
-  created after it looked in that directory is not this repository's to decide,
-  and upstream does not try: `tools/site-build.ts` writes the same four-export
-  stub before it builds anything, "to seed a positive resolution before Bun can
-  cache the missing path".
-
-  **It happens at a rate, and the rate was measured rather than guessed.** A
-  fresh Linux CI checkout failed the first build of a run this way, in
-  `tests/preview.test.ts`'s `beforeAll`, with
-  `Could not resolve: "./styles.generated.ts"` on stderr after that same
-  build's stdout had printed the table it had just written. Put back on the
-  same runner as a sweep — mirror and transform cache deleted before each
-  build, upstream's builder spawned directly — **6 of 20 failed**. Every
-  environment reachable locally is green on that sweep: 25 mirror-less
-  cold-cache builds in Linux containers on amd64 and arm64, and every attempt
-  on macOS. So it is not a commit and not a platform, and nothing here can
-  make Bun re-read a directory it has already listed. What is fixed is the
-  STATE.
-
-  `scripts/vendor.ts` seeds the stub, so no tree this project sets up is
-  mirror-less, and `withBuildLock` seeds it again inside the lock, because a
-  tree can lose the file afterwards (`tests/build-lock.test.ts` removes it on
-  purpose). A seed never overwrites: it fills an absence, and the first build
-  replaces it. `vendorProblems` now reports an absent mirror, so `doctor` calls
-  such a tree unready instead of a build saying `Could not resolve` two passes
-  later. `src/vendor/mirror.ts` holds all of it; `tests/vendor-mirror.test.ts`
-  is the guard and its four cases go red with each half reverted — including
-  the placeholder drifting from what the vendored tree imports, which is a
-  literal in this repository that nothing else would notice.
+  Pass 1 now writes `<outdir>/<output>.styles.ts`; `jsxPlugin` resolves the
+  framework's `styles.generated` import itself and serves this build's table
+  from memory, so pass 2 never asks the disk for it; and the framework's file
+  is a committed empty table no build writes. Upstream resolves the import
+  into a namespace of its own, and Bun then names the module in the bundle
+  by its absolute path — the checkout's location, in every bundle.
+  `patches/0023-style-table-file-namespace.patch` keeps it in the file
+  namespace, where the name is repo-relative; when the backport landed on
+  the old pin, all 45 compositions' bundles and paks were byte-identical
+  before and after it.
+  `src/text/measure.ts` and `scripts/fit-probe.ts` read the slot table from
+  their own build's `main.styles.ts`. The lock, the seed and the check are
+  deleted, each because its reason was measured gone: a build moves nothing in
+  the vendored tree but `.cache/transforms/` entries, which are
+  content-addressed and read as a miss when torn; a build on a tree with no
+  `styles.generated.ts` at all bundles its own table; and the
+  measurer-beside-a-composition-build sweep that guarded the lock is 0 of 34
+  red with no lock, over offsets where the two builds overlapped by up to
+  670 ms. `tests/style-table.test.ts` holds the first two, the absolute-path
+  property and the sweep; the first went red with the backport moved out of
+  `patches/` on the old pin, the second with the `onResolve` removed — as
+  `Could not resolve: "./styles.generated.ts"`, the CI failure's message, on
+  every run — and the third is red on main's own namespace form, which is
+  why 0023 exists. `scripts/vendor.ts` removes each file a patch creates
+  before applying it, because a file the pin's `.gitignore` covers survives
+  `git clean -fd` and `git apply` refuses to create a file that is already
+  there.
+- **The interception is a path comparison, so a miss is refused.** `jsxPlugin`
+  serves the table for one path, compared as a string. Bun hands it realpaths
+  on both sides, so a symlinked tree (`tests/authoring.test.ts` builds in one),
+  a case-variant spelling on a case-insensitive volume and `/tmp` against
+  `/private/tmp` all intercept — each was built and checked. A second FILE
+  does not: a copy of `framework/src` reached by a relative path, or any module
+  named `styles.generated.ts`, was bundled from disk. With the committed empty
+  copy `mount` throws `unknown class ... (dynamic classes must be ternaries of
+  full literals)`, a diagnosis that points elsewhere; with a stale copy — what
+  the framework's file held after any build before #591 — a red class rendered
+  blue and the build exited 0, as it still does on main's form. 0023 carries a
+  refusal upstream does not: such a load fails the build naming both paths.
+  `tests/style-table.test.ts` is red without it, and says which pixel shipped.
 - Each composition builds into its own dist directory, under ONE root, keyed
   by its path relative to the repository (`src/cli/resolve.ts`). Two things
   used to go wrong here and both are now one derivation. The key was the last
@@ -438,9 +425,18 @@ mechanisms with the file or test beside them.
   children and its own ground are clipped to its outline — the rounded
   rectangle under its transform — through MASK_PUSH/MASK_POP at 64 and 65,
   whose coverage is POLY's own: the row walk is one `PolyScan` shared by both,
-  and a white full-bleed child under a rotated square-cornered window is
-  byte-identical to a white rotated box over 54 size/angle cases
-  (`engine/core/src/tests.rs`, red with the level builder made binary).
+  and a full-screen white RECT under a MASK_PUSH of a rotated box's POLY
+  vertices is byte-identical to that POLY over 54 size/angle cases
+  (`engine/core/src/tests.rs`, red with the level builder made binary). The
+  outline itself is NOT rounded to pixels (`patches/0024`): MASK_PUSH carries
+  f32 vertices and `PolyScan` works in sixteenths of a pixel, POLY's whole
+  pixels entering it multiplied by 16, which leaves every POLY byte-identical.
+  Rounded, each edge moved up to half a pixel per axis — a band of content as
+  long as the window's side outside a turned window — and a square-cornered
+  window at a fractional position was its rounded-OUT AABB. The guard turns a
+  120 px window about its corner from -90 to +90 degrees in quarter degrees
+  and fails on any pixel inked with every sample outside the outline: 21,193
+  pixels at 659 of 721 angles before, none after.
   Nested masks multiply exactly, which is why the outline is clipped to the
   viewport and not to the scissor: a vertex that clipping creates rounds to a
   pixel, and against an ancestor's unrounded AABB that moved an edge by half
@@ -512,6 +508,24 @@ mechanisms with the file or test beside them.
   `compositions/missing-image` is the fixture and traces green on purpose;
   `check` asks before booting, because a clean realm is exactly what a missing
   picture leaves behind.
+- **An SVG either bakes as written or stops the build.** The build's baker
+  (`framework/compiler/bake-svg.ts`, `patches/0040`) used to scan a file for
+  three tag names and drop the rest — a `<text>`, a rect's `rx`, a transform
+  on a circle, paint on a `<g>` — so a picture could lose parts of itself
+  with every gate green; and it decided each subsample against every edge,
+  which on a 952-cell hex grid took 23 minutes of CPU, so a film rasterised
+  its own PNGs instead. It now walks the document, draws strokes, arcs and
+  `<g transform>`, and refuses what would paint and is not drawn, naming it.
+  Its coverage is a scanline held to the old baker kept verbatim as the
+  vendored `tests/fixtures/bake-svg-reference.ts`, count for count: every
+  shipped SVG at densities 1-3, seeded random fills and discs, and fills
+  whose edges pass through sample positions so the crossing's last bit
+  decides — the only cases that catch the same line computed from its other
+  endpoint, which no shipped SVG and about one random fill in 1,500 does.
+  `compositions/probe` bakes `mark.svg` and is in the digest ledger.
+  `tests/svg-bake.test.ts` holds it here; the vendored suite of the same
+  name, which this repository's `bun test ./tests/` does not run, holds
+  the rest.
 - **A job is a spec, and the sample is not the job.** `render --spec job.json`
   stages a throwaway copy of the composition (`src/cli/stage-sources.ts`), runs
   the generator into it, builds, encodes and removes the tree, so a batch never
@@ -610,8 +624,8 @@ mechanisms with the file or test beside them.
   and refuses before paying for the ingest rather than after.
 - **A measurement pass can be cached, and the cache can never be drawn.**
   `openMeasurer` with `cache: { charset }` measures against a metrics-only
-  bake of the whole charset at every requested size, built once under the
-  build lock and booted per call (`src/text/measure.ts`;
+  bake of the whole charset at every requested size, built on the first miss
+  and booted per call (`src/text/measure.ts`;
   `patches/0015-metrics-only-atlas.patch`, class `upstream`, adds
   `--metrics-only` to the baker: real advances, kerning, baseline and line
   height, 1x1 empty cells, `FONT_FLAG_METRICS_ONLY` in the header). Measured
@@ -621,14 +635,17 @@ mechanisms with the file or test beside them.
   to a boot (~50 ms). The key is both faces by content, the size set, the
   density, the charset and the baker's own source, so an edit to
   `bake-font.ts` retires every cache it wrote; the slot table is written to
-  `slots.json` at build time, so a hit never reads the shared mirror. A
+  `slots.json` at build time, so a hit never reads a style module. A
   string with a character outside the charset falls back to the per-call
   build, correct rather than refused. Two refusals keep the artifact in its
   lane: `hardenedBootWorld` refuses a pak carrying a metrics-only atlas
   unless the caller is the measurer, because such a pak measures text and
   draws none of it — a blank frame with a clean realm and a stable digest;
-  and `verifySlots` still runs on a hit. `tests/measure.test.ts` holds all
-  four claims and its header records the edit that turns each one red.
+  and `verifySlots` still runs on a hit. Two misses on one key — in one
+  process or two, since no lock orders them — each build into a fresh
+  `mkdtemp` directory and one rename wins; a per-process directory failed
+  4 of 9 such pairs. `tests/measure.test.ts` holds all five claims and its
+  header records the edit that turns each one red.
 - **The framebuffer carries alpha** (`patches/0014-transparent-clear.patch`,
   class `motion`). The rasteriser clears to TRANSPARENT black and
   `RgbaTarget::blend` composites straight-alpha src-over when the destination
@@ -887,14 +904,24 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   works because `readCache` wants all three of `cache.json`, `manifest.json`
   and `frames.rgba` and takes a missing one as a miss. Stating the recipe in
   the key would be the fix, at the cost of re-decoding every track once.
-- **The shared build file is held by a lock, not by isolation.**
-  `withBuildLock` serialises every build this CLI spawns, but the file it
-  protects — `vendor/pocketjs/framework/src/styles.generated.ts` — is still one
-  path shared by every process on the machine. A build started straight from
-  `bun vendor/pocketjs/tools/build.ts`, or a second checkout sharing a vendored
-  tree, takes no lock and is not seen. Making pass 1 write inside the
-  `--outdir` is upstream's change; until then the lock is the whole of the
-  protection and `openMeasurer`'s refusal is the only detector.
+- **An SVG's angles go through the host's `Math`.** `rotate()` and an
+  arc's x-axis-rotation take `Math.cos` and `Math.sin`, and `skewX`/`skewY`
+  take `Math.tan`, in the baker that writes the pak — upstream's choice for
+  `rotate()`, kept so the shipped icons bake to their old bytes. Whether
+  those agree bit for bit between the Bun on macOS/arm64 and the one on
+  Linux/x86-64 has not been measured, and nothing would report it: the one
+  SVG in the digest ledger (`compositions/probe/mark.svg`) has no angle in
+  it. An angle that is a multiple of 90 degrees is not exempt — `cos(90°)`
+  comes back as 6e-17, not 0.
+- **Two builds into ONE directory are ordered by nothing.** Builds into
+  different directories share nothing but the content-addressed transform
+  cache. Into the same one, identical inputs write identical bytes — three
+  concurrent builds of `compositions/smoke`, five rounds, every artifact equal
+  to a serial build's — but different inputs leave each file to its last
+  writer, so a bundle and a pak can come from two builds. `withBuildLock` used
+  to order the writers and never the readers; `scripts/digests.ts`'s
+  mtime/size check is what makes a moved artefact impossible to pass silently,
+  and it covers a ledger run and nothing outside one.
 
 ## Working rules
 
@@ -903,15 +930,16 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   `patches/NNNN-*.patch` applied in sorted order against the pinned upstream
   commit. A change to engine behaviour is a new patch, and a patch is one of
   two classes (`patches/README.md`): `upstream`, a change that belongs in
-  pocket-stack/pocketjs and is rebased onto its main when submitted — the
+  pocket-nexus/pocketjs and is rebased onto its main when submitted — the
   declaration layer, target-independent; or `motion`, a change this
   rasteriser needs and no upstream target will draw, never submitted, with
   the reason on a `pocket-motion-only:` line in the patch's own header —
   the paint layer. A `motion` draw-list op takes a code at or above
   `MOTION_DRAW_OP_BASE` (64, `src/vendor/draw-ops.ts`): upstream allocates
   densely from 1 and took 10 for `surfaceQuad` after `0008` had given 10 to
-  POLY. `tests/patches.test.ts` holds the classification and the range, and
-  goes red on the number collision the day the pin moves onto one. Whatever
+  POLY, which is 11 since the pin moved to 66caf4e5, as in #301.
+  `tests/patches.test.ts` holds the classification and the range, and goes
+  red on the number collision the day the pin moves onto one. Whatever
   the class, an op is still declared in the class literal and emitted by
   `draw.rs` — never a host-side pass over the finished frame, which `check`,
   `visibility` and `ui_draw_hash` would not see.

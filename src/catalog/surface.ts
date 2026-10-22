@@ -1284,6 +1284,29 @@ export const SURFACE: readonly CapabilityRow[] = [
     pinned: ["IMG_MAX_DIM", "each side must be 1..", "encodeImageEntry"],
   },
   {
+    id: "assets.image.svg",
+    group: "assets",
+    declaredIn: "class literal",
+    key: 'src="*.svg"',
+    required: false,
+    defaultValue: null,
+    constraint:
+      "baked at build time by framework/compiler/bake-svg.ts (patches/0040), 4×4 samples per pixel. Draws <path> (M L H V C S Q T A Z), <circle>, <ellipse>, <rect> with rx/ry, <line>, <polyline>, <polygon>; fill and stroke as #rgb/#rrggbb/#rrggbbaa/white/black/none/hole; stroke-width, stroke-linejoin miter|round|bevel, stroke-linecap butt|round|square, stroke-miterlimit; fill-/stroke-opacity, opacity; <g> with transform (matrix translate scale rotate skewX skewY, SVG order), inherited paint and group opacity; style=\"\". Refuses what would paint and is not drawn — <text>, <image>, <use>, <style>, clip-path, mask, filter, stroke-dasharray, preserveAspectRatio other than none — instead of dropping it. Cubic and quadratic segments are 16 steps; arcs, circles, ellipses, round joins and caps are within 1/32 px. Held by tests/svg-bake.test.ts against the old baker",
+    source: "vendor/pocketjs/framework/compiler/bake-svg.ts:1007",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: [
+      "export const SVG_SUPERSAMPLE = 4;",
+      'const SHAPES = new Set(["circle", "ellipse", "rect", "line", "polyline", "polygon", "path"]);',
+      'join !== "miter" && join !== "round" && join !== "bevel"',
+      'cap !== "butt" && cap !== "round" && cap !== "square"',
+      '"stroke-dasharray": "none",',
+      "const CURVE_STEPS = 16;",
+      "const FLATTEN_TOLERANCE_PX = 1 / 32;",
+    ],
+  },
+  {
     id: "assets.image.missing",
     group: "assets",
     declaredIn: "class literal",
@@ -1532,7 +1555,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "clips the node's children AND its own ground to the node's outline — its rounded rectangle under its transform — where `overflow-hidden` clips to the axis-aligned bounding box. Lays out and hit-tests as `overflow-hidden`. A square-cornered, unrotated window emits no mask and is `overflow-hidden` word for word. Drawn by this repository's software rasteriser only (patches/0013, class motion): no upstream backend knows the op",
+      "clips the node's children AND its own ground to the node's outline — its rounded rectangle under its transform — where `overflow-hidden` clips to the axis-aligned bounding box. Lays out and hit-tests as `overflow-hidden`. The outline is exact to a sixteenth of a pixel (patches/0024): no pixel is inked whose every sample lies outside it. A square-cornered, unrotated window whose box lands on whole pixels emits no mask and is `overflow-hidden` word for word; at a fractional position (a translate keyframe) it is masked to its edge. Drawn by this repository's software rasteriser only (patches/0013, class motion): no upstream backend knows the op",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -1775,7 +1798,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: true,
     defaultValue: null,
     constraint:
-      "an ANIMATABLE property, camelCase or kebab-case, or `transform` decomposed into translate/translateX/Y/Z, rotate/rotateX/Y and scale/scaleX/Y (perspective is ignored — it is static). Any other property or transform function is refused",
+      "an ANIMATABLE property, camelCase or kebab-case, or `transform` decomposed into translate/translateX/Y/Z, rotate/rotateX/Y, skewX and scale/scaleX/Y (perspective is ignored — it is static). Any other property or transform function is refused",
     source: "vendor/pocketjs/framework/compiler/animation.ts:216",
     verification: "probed",
     diagnostics: [],
@@ -1791,10 +1814,17 @@ export const SURFACE: readonly CapabilityRow[] = [
       },
       {
         what: "a transform function outside the decomposed set",
-        keyframes: { appear: { from: { transform: "skewX(10deg)" }, to: { transform: "skewX(0deg)" } } },
+        keyframes: { appear: { from: { transform: "skewY(10deg)" }, to: { transform: "skewY(0deg)" } } },
         animation: { bad: { value: "appear 1s" } },
         literals: ["animate-bad"],
         outcome: { refuses: "unsupported transform function" },
+      },
+      {
+        what: "skewX is in the decomposed set (upstream a2b923d3)",
+        keyframes: { appear: { from: { transform: "skewX(10deg)" }, to: { transform: "skewX(0deg)" } } },
+        animation: { lean: { value: "appear 1s" } },
+        literals: ["animate-lean"],
+        outcome: { bakes: true },
       },
       {
         what: "kebab-case, and a transform that mixes functions",
@@ -1908,10 +1938,10 @@ export const SURFACE: readonly CapabilityRow[] = [
     pinned: [],
     bakeProbes: [
       {
-        what: "font-[display] at 40px takes the first dynamic slot (19)",
+        what: "font-[display] at 40px takes the first dynamic slot (21, after upstream's 10 px pair at 19/20)",
         literals: ["text-[40px] font-[display]"],
         fromClassAttribute: true,
-        outcome: { declares: { prop: "fontSlot", value: 19 } },
+        outcome: { declares: { prop: "fontSlot", value: 21 } },
       },
       {
         what: "a face name with an upper-case letter is not a utility and drops the literal",
@@ -2041,6 +2071,41 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
   {
+    id: "paint.glow-mode",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "glow-mode-alpha | glow-mode-luma | glow-threshold-[N]",
+    required: false,
+    defaultValue: "alpha; threshold 0.5",
+    constraint:
+      "what a glow (or any drop shadow) is made from. `glow-mode-alpha` is CSS's drop shadow: the layer's alpha, tinted, under the content — a dark translucent plate in a glow reads lighter than the ground. `glow-mode-luma` is a bloom: each pixel's own premultiplied colour, weighted by how far its brightest channel is above `glow-threshold-[t]` (0..1), offset, blurred and multiplied by gain like the shadow, tinted by the glow colour, and ADDED over the content, so it never darkens and a pixel at or below the threshold emits nothing. Neither animates (an enum and a level); the glow's radius, colour and gain still do. patches/0033, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "glow-mode-luma compiles to GlowMode.Luma (1)",
+        literals: ["glow-[24px] glow-white glow-mode-luma"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "glowMode", value: 1 } },
+      },
+      {
+        what: "glow-threshold-[0.75] compiles to glowThreshold 0.75",
+        literals: ["glow-[24px] glow-white glow-mode-luma glow-threshold-[0.75]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "glowThreshold", value: 1061158912 } },
+      },
+      {
+        what: "a threshold above 1 drops the literal",
+        literals: ["glow-[24px] glow-white glow-mode-luma glow-threshold-[2]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+  {
     id: "paint.blend",
     group: "paint",
     declaredIn: "class literal",
@@ -2080,11 +2145,11 @@ export const SURFACE: readonly CapabilityRow[] = [
     id: "paint.gradient",
     group: "paint",
     declaredIn: "class literal",
-    key: "via-<color> | from-N% via-N% to-N% | bg-linear-N | bg-linear-[Ndeg] | bg-linear-to-t|r|b|l | bg-radial | bg-[linear-gradient(…)] | bg-[radial-gradient(…)]",
+    key: "via-<color> | from-N% via-N% to-N% | bg-linear-N | bg-linear-[Ndeg] | bg-linear-to-t|r|b|l | bg-radial | bg-radial-circle | bg-radial-[<shape>_<size>] | bg-[linear-gradient(…)] | bg-[radial-gradient(…)]",
     required: false,
     defaultValue: "legacy two-stop gradient",
     constraint:
-      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial (the farthest-corner ellipse about the centre; no other shape or centre). Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does; `via-<color>` alone sits at 50%. A literal with only `bg-gradient-to-* from-* to-*` keeps the two-stop path word for word. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
+      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial about the box centre: the farthest-corner ellipse by default, `bg-radial-circle` the farthest-corner circle, and `bg-radial-[<shape>_<size>]` or `radial-gradient(<shape> <size>, …)` any of CSS's `circle`/`ellipse` with `closest-side`/`farthest-side`/`closest-corner`/`farthest-corner` (patches/0029; about the centre that is five shapes). A length, a percentage or `at <position>` drops the literal: there is no other centre. Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does. A gradient upstream draws itself — `bg-gradient-to-*` with from, at most one via and to — compiles as upstream compiles it: `via-<color>` is `gradVia` at `gradViaPos` 0.5 (`via-N%` moves it), drawn on the legacy path as two GRAD_RECTs split at the stop (99af2166), and a literal with no via keeps the two-stop path word for word. Anything more takes the paint, where a via is `gradVia1`, at 50% unless positioned; no literal carries both. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -2092,14 +2157,32 @@ export const SURFACE: readonly CapabilityRow[] = [
     pinned: [],
     bakeProbes: [
       {
-        what: "a via turns a legacy direction into the paint path (GradKind.Linear)",
+        what: "a via under a legacy direction is upstream's middle stop (gradVia)",
         literals: ["bg-gradient-to-r from-red-500 via-white to-blue-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradVia", value: 4294967295 } },
+      },
+      {
+        what: "at upstream's 50% (gradViaPos)",
+        literals: ["bg-gradient-to-r from-red-500 via-white to-blue-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradViaPos", value: 1056964608 } },
+      },
+      {
+        what: "in a literal that needs the paint, the via is the stop table's (gradVia1)",
+        literals: ["bg-linear-to-r from-red-500 via-white to-blue-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradVia1", value: 4294967295 } },
+      },
+      {
+        what: "bg-clip-text takes a legacy direction into the paint (GradKind.Linear)",
+        literals: ["bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-white to-blue-500"],
         fromClassAttribute: true,
         outcome: { declares: { prop: "gradKind", value: 1 } },
       },
       {
         what: "and `to-r` becomes the angle 90",
-        literals: ["bg-gradient-to-r from-red-500 via-white to-blue-500"],
+        literals: ["bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-white to-blue-500"],
         fromClassAttribute: true,
         outcome: { declares: { prop: "gradAngle", value: 1119092736 } },
       },
@@ -2108,6 +2191,24 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["bg-radial from-white to-black"],
         fromClassAttribute: true,
         outcome: { declares: { prop: "gradKind", value: 2 } },
+      },
+      {
+        what: "bg-radial-circle compiles to GradShape.Circle (1)",
+        literals: ["bg-radial-circle from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradShape", value: 1 } },
+      },
+      {
+        what: "radial-gradient(circle closest-side, …) compiles to GradShape.CircleClosestSide (3)",
+        literals: ["bg-[radial-gradient(circle_closest-side,#ffffff,#000000)]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradShape", value: 3 } },
+      },
+      {
+        what: "a radial centre the paint cannot place drops the literal",
+        literals: ["bg-radial-[circle_at_top] from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
       },
       {
         what: "an arbitrary gradient's unpositioned middle stop is spread by CSS's rule",
@@ -2149,6 +2250,72 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["bg-clip-text text-transparent bg-gradient-to-b from-white to-black"],
         fromClassAttribute: true,
         outcome: { declares: { prop: "gradKind", value: 1 } },
+      },
+    ],
+  },
+
+  {
+    id: "paint.arc",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "arc-start-[deg] | arc-sweep-[deg] | arc-width-[px]",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "`arc-width` turns the node's ground into an annular sector centred in its box: outer radius half the shorter side, the band `arc-width` wide, from `arc-start` (0 = 12 o'clock, clockwise) for `arc-sweep` degrees (negative runs counter-clockwise), in the `bg-*` colour, with a round cap on each end unless `arc-cap-butt` says otherwise. A sweep of 0 draws nothing — neither arc nor the box (patches/0025, class upstream; before it, the node's whole ground). The arc is drawn in the node's frame and follows its world transform: a rotation turns it, a mirror reverses the sweep, a scale that differs per axis stretches ring, stroke and caps into an elliptical band (patches/0026, class upstream; before it, an arc under any world that was not axis-aligned drew nothing). All three animate as `arcStart`, `arcSweep`, `arcWidth`",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "arc-width-[5] compiles to arcWidth 5.0",
+        literals: ["w-[80px] h-[80px] bg-white arc-start-[45] arc-sweep-[0] arc-width-[5]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "arcWidth", value: 1084227584 } },
+      },
+      {
+        what: "a sweep of 0 is declared, not dropped",
+        literals: ["w-[80px] h-[80px] bg-white arc-start-[45] arc-sweep-[0] arc-width-[5]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "arcSweep", value: 0 } },
+      },
+    ],
+  },
+
+  {
+    id: "paint.arc-cap",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "arc-cap-round | arc-cap-butt",
+    required: false,
+    defaultValue: "round",
+    constraint:
+      "how an arc's ends finish. `arc-cap-round` puts a half-disc of the stroke's width on each end; `arc-cap-butt` ends the band on the radii through `arc-start` and `arc-start + arc-sweep`, so an arc as wide as its radius is a pie sector — a radar wedge, a pie chart. Any other cap word drops the literal. Not animatable (an enum, PROP `arcCap` 183). patches/0027, class upstream",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "arc-cap-butt compiles to ArcCap.Butt (1)",
+        literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-butt"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "arcCap", value: 1 } },
+      },
+      {
+        what: "arc-cap-round compiles to ArcCap.Round (0)",
+        literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-round"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "arcCap", value: 0 } },
+      },
+      {
+        what: "a cap the core does not draw drops the literal",
+        literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-square"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
       },
     ],
   },

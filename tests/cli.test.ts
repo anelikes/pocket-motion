@@ -324,7 +324,7 @@ describe("check", () => {
       mountOnly: boolean;
       realmClean: boolean;
       totalOps: number;
-      pendingWork: Record<string, number> | null;
+      pendingWork: Record<string, unknown> | null;
     };
     expect(json.ok).toBe(true);
     expect(json.mountOnly).toBe(true);
@@ -336,10 +336,19 @@ describe("check", () => {
     expect(json.pendingWork).not.toBeNull();
     expect(json.pendingWork).toEqual({
       frameHooks: 0,
+      systemFrameHooks: 0,
       timers: 0,
       effectsPending: 0,
       effectsQueued: 0,
       servicePumps: 0,
+      modelTasks: 0,
+      modelDeliveries: 0,
+      modelCommands: 0,
+      modelAnimations: 0,
+      modelRegions: 0,
+      lifecycleHooks: 0,
+      unrecognised: {},
+      missing: [],
     });
   }, 60_000);
 
@@ -371,7 +380,7 @@ describe("check", () => {
       mountOnly: boolean;
       totalOps: number;
       staticFindings: { code: string; file: string; message: string }[];
-      pendingWork: Record<string, number> | null;
+      pendingWork: Record<string, unknown> | null;
     };
 
     // The ops oracle still reports clean, and always will — this is the

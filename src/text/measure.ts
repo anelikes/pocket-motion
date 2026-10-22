@@ -45,7 +45,7 @@ import { join } from "node:path";
 import { readAtlases, type AtlasHeader } from "./atlas.ts";
 import type { Measure } from "./fit.ts";
 import { hardenedBootWorld, pocketjsRoot } from "../runtime/boot.ts";
-import { withBuildLock } from "../vendor/build-lock.ts";
+import { buildEnv } from "../vendor/cache.ts";
 import { fileURLToPath } from "node:url";
 
 export interface FaceFiles {
@@ -93,9 +93,9 @@ export interface MeasurerOptions {
    * per-call build. The bake carries every codepoint of `charset` (ASCII
    * 32..126 is always baked) at every size in `sizes`, with `--metrics-only`:
    * real advances, kerning and line metrics in 1x1 empty cells, kilobytes
-   * per slot where coverage would be tens of megabytes. It is built once
-   * under the build lock, keyed by faces, sizes, density, charset and the
-   * baker's own source, and every later call boots it in milliseconds.
+   * per slot where coverage would be tens of megabytes. It is built on the
+   * first miss, keyed by faces, sizes, density, charset and the baker's own
+   * source, and every later call boots it in milliseconds.
    *
    * A string in `texts` with a character outside `charset` makes this call
    * fall back to the per-call build, silently correct rather than refused:
@@ -123,6 +123,13 @@ export interface Measurer {
   readonly atlas: (px: number, bold?: boolean, face?: string) => AtlasHeader;
   close(): Promise<void>;
 }
+
+/**
+ * Where pass 1 writes the build's style module: `<outdir>/<output>.styles.ts`,
+ * and the measurement entry is `main.tsx`, so the output is `main` — the same
+ * name `main.pak` and `main.js` carry.
+ */
+const STYLES_MODULE = "main.styles.ts";
 
 const clsOf = (s: SizeRequest): string =>
   `text-[${s.px}px]${s.bold ? " font-bold" : ""}${s.face !== undefined ? ` font-[${s.face}]` : ""}`;
@@ -163,34 +170,32 @@ ${nodes}
 }
 
 /**
- * Builds are serialised through `src/vendor/build-lock.ts`.
+ * The px -> slot table is read from the build's OWN style module.
  *
- * `styles.generated.ts` is a SINGLE FILE that every build rewrites, and it is
- * the only place the px -> slot assignment is published (it is tree-shaken out
- * of the bundle, so the build's own artefacts do not carry it). Two builds
- * overlapping means reading one build's slot table against another build's pak,
- * and the result of that is not an error — it is the advances of a DIFFERENT
- * FONT SIZE, a number that looks entirely reasonable. The cmap guard cannot see
- * it either, because the codepoints are the same.
+ * The slot assignment is published in one place, the style module pass 1
+ * writes (it is tree-shaken out of the bundle, so the pak and bundle do not
+ * carry it). Reading another build's table against this build's pak is not an
+ * error — it is the advances of a DIFFERENT FONT SIZE, a number that looks
+ * entirely reasonable, and the cmap guard cannot see it because the codepoints
+ * are the same.
  *
- * This module used to hold a queue of its OWN, which serialised measurement
- * builds against each other and nothing else. That left the case the queue was
- * written for wide open in the direction that actually happens: a COMPOSITION
- * build through `runBuild` landing between the measurement build's write and
- * the `import` below. Reproduced by starting one 300 ms into a measurement
- * build; `verifySlots` throws, so the measurement is refused rather than wrong,
- * but a correct pair of builds fails. The lock is now shared with `runBuild`,
- * and it covers other processes too — which is what the note here used to
- * concede a queue could not.
+ * Before upstream #591 (backported, and on the pin since 66caf4e5) that module was
+ * `vendor/pocketjs/framework/src/styles.generated.ts`, one file every build on
+ * the machine rewrote, and a composition build landing between a measurement
+ * build's write and the `import` below replaced it: `verifySlots` refused 3 of
+ * 10 overlapping pairs with the build lock bypassed (2026-10-22). Pass 1 now
+ * writes `<outdir>/main.styles.ts`, a measurement build's outdir is its own,
+ * and no lock is needed — `tests/style-table.test.ts` runs the same pairs side
+ * by side.
  *
- * `verifySlots` stays regardless: it is what covers a build this repository
- * never spawned, run by hand against the same vendored tree.
+ * `verifySlots` stays regardless: it is what refuses a table that is not this
+ * build's, whatever the reason it came to be read.
  */
 
 /**
  * Refuse a slot table that did not come from this build's pak.
  *
- * A stale mirror almost never agrees with the pak it is paired against: the slot
+ * A stale table almost never agrees with the pak it is paired against: the slot
  * SET differs as soon as the two builds used different sizes, and the weight
  * flags differ as soon as they used different weights. What remains after those
  * two is a table whose cell heights do not rise with the font size, which no
@@ -207,7 +212,7 @@ function verifySlots(
     if (!header) {
       throw new Error(
         `openMeasurer: the slot table has no entry for ${s.px}px ${s.bold ? "bold" : "regular"}${faceLabel(s.face)}, ` +
-          "which this build was asked to bake — styles.generated.ts is not this build's",
+          `which this build was asked to bake — the ${STYLES_MODULE} read is not this build's`,
       );
     }
     if (header.density !== density) {
@@ -219,7 +224,7 @@ function verifySlots(
     if (header.bold !== (s.bold ?? false)) {
       throw new Error(
         `openMeasurer: slot ${header.slot} is baked ${header.bold ? "bold" : "regular"} but the ` +
-          `slot table calls it ${s.bold ? "bold" : "regular"} — styles.generated.ts is not this build's`,
+          `slot table calls it ${s.bold ? "bold" : "regular"} — the ${STYLES_MODULE} read is not this build's`,
       );
     }
     seen.add(header.slot);
@@ -236,7 +241,7 @@ function verifySlots(
       if (rungs[i]!.cellH < rungs[i - 1]!.cellH) {
         throw new Error(
           `openMeasurer: ${rungs[i]!.px}px bakes a shorter cell (${rungs[i]!.cellH}) than ` +
-            `${rungs[i - 1]!.px}px (${rungs[i - 1]!.cellH}) — styles.generated.ts is not this build's`,
+            `${rungs[i - 1]!.px}px (${rungs[i - 1]!.cellH}) — the ${STYLES_MODULE} read is not this build's`,
         );
       }
     }
@@ -254,9 +259,7 @@ export async function openMeasurer(options: MeasurerOptions): Promise<Measurer> 
     const outside = textsOutside(options.texts, options.cache.charset);
     if (outside.length === 0) return openCachedMeasurer(options, options.cache);
   }
-  // The lock spans the build AND the read-back below, not just the spawn: the
-  // window this closes ends at `verifySlots`, not at the child's exit.
-  return withBuildLock("a measurement pass", () => openMeasurerUnserialised(options));
+  return openMeasurerPerCall(options);
 }
 
 /** Characters of `texts` the cached charset does not carry (ASCII is always baked). */
@@ -292,7 +295,7 @@ function checkedDensity(density: number): void {
   }
 }
 
-async function openMeasurerUnserialised(options: MeasurerOptions): Promise<Measurer> {
+async function openMeasurerPerCall(options: MeasurerOptions): Promise<Measurer> {
   const { face, sizes, texts } = options;
   const faces = options.faces ?? {};
   const density = options.density ?? 1;
@@ -331,10 +334,10 @@ interface SlotsFile {
  * The key is everything that decides an advance: both face files by content,
  * the size set, the density, the charset, and the baker and build sources —
  * so a change to `bake-font.ts` retires every cache it wrote. A miss builds
- * into `<dir>.tmp-<pid>` under the build lock and renames it into place, so
- * a reader never sees a half-written cache and two writers racing leave one
- * complete copy. The mirror is read once, at write time, into `slots.json`;
- * a hit reads that file and never touches the shared mirror at all.
+ * into a fresh `<dir>.tmp-*` and renames it into place, so a reader never
+ * sees a half-written cache and two misses racing — in one process or two —
+ * each build once and leave one complete copy. The style module is read once,
+ * at write time, into `slots.json`; a hit reads that file.
  */
 async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache): Promise<Measurer> {
   const { face, sizes } = options;
@@ -350,12 +353,11 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
 
   let bySize = await readCachedSlots(dist);
   if (!bySize) {
-    bySize = await withBuildLock("a metrics-only measurement bake", async () => {
-      // Re-check under the lock: another process may have written it.
-      const again = await readCachedSlots(dist);
-      if (again) return again;
-      const tmp = `${dir}.tmp-${process.pid}`;
-      await rm(tmp, { recursive: true, force: true });
+    // Unique per call, not per process: two misses on one key in one process
+    // would otherwise build into the same directory at once.
+    await mkdir(join(dir, ".."), { recursive: true });
+    const tmp = await mkdtemp(`${dir}.tmp-`);
+    try {
       const built = await buildMeasurement(tmp, join(tmp, "dist"), {
         face, faces, sizes, texts: [], density, root,
         extraArgs: ["--metrics-only", `--extra-chars=${cache.charset}`],
@@ -363,17 +365,16 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
       const slots: Record<string, number> = {};
       for (const [k, h] of built) slots[k] = h.slot;
       await Bun.write(join(tmp, "dist", "slots.json"), JSON.stringify({ slots } satisfies SlotsFile));
-      await mkdir(join(dir, ".."), { recursive: true });
       try {
         await rename(tmp, dir);
       } catch {
         // Lost the race to a complete copy; use that one.
-        await rm(tmp, { recursive: true, force: true });
       }
-      const now = await readCachedSlots(dist);
-      if (!now) throw new Error(`openMeasurer: the metrics cache at ${dir} did not come back readable`);
-      return now;
-    });
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+    bySize = await readCachedSlots(dist);
+    if (!bySize) throw new Error(`openMeasurer: the metrics cache at ${dir} did not come back readable`);
   }
   verifySlots(sizes, bySize, density);
   return measurerOver(dist, bySize, { metricsOnly: true, close: async () => {} });
@@ -425,7 +426,7 @@ async function readCachedSlots(dist: string): Promise<Map<string, AtlasHeader> |
 
 /**
  * Spawn the measurement build into `dist` and read the slot table back out of
- * the mirror. Callers hold the build lock; the read-back is the reason.
+ * the style module it wrote there.
  */
 async function buildMeasurement(
   work: string,
@@ -460,7 +461,10 @@ async function buildMeasurement(
       ...(density > 1 ? [`--density=${density}`] : []),
       ...o.extraArgs,
     ],
-    { stdout: "pipe", stderr: "pipe", cwd: root },
+    // `env` names the transform cache, as every build this repository
+    // spawns does (`src/vendor/cache.ts`); without it a read-only HOME fails
+    // the measurement, and with it every generator that fits text.
+    { stdout: "pipe", stderr: "pipe", cwd: root, env: buildEnv() },
   );
   const [out, err] = await Promise.all([
     new Response(build.stdout).text(),
@@ -470,11 +474,12 @@ async function buildMeasurement(
     throw new Error(`openMeasurer: the measurement build failed\n${out}\n${err}`);
   }
 
-  // styles.generated.ts is rewritten by every build (an ignored mirror — see
-  // tools/build.ts), so it has to be re-imported past the module cache or a
-  // second measurement pass reads the first one's slot assignment.
+  // The build's own style module, written beside its pak by pass 1
+  // (upstream #591, on the pin since 66caf4e5). The query defeats the
+  // module cache: a cache bake is built at `<dir>.tmp-<pid>`, a path the same
+  // process can reach twice.
   const generated = (await import(
-    `${pocketjsRoot()}/framework/src/styles.generated.ts?measure=${Bun.nanoseconds()}`
+    `${join(dist, STYLES_MODULE)}?measure=${Bun.nanoseconds()}`
   )) as { FONT_SLOTS: Record<number, { px: number; bold: boolean; face?: string }> };
 
   const pakPath = join(dist, "main.pak");

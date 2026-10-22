@@ -87,7 +87,7 @@ export async function run(options: FrameOptions): Promise<CommandResult> {
     await footage?.close();
 
     const { encodePNG } = (await import(
-      `${pocketjsRoot()}/tests/png.ts`
+      `${pocketjsRoot()}/tools/png.ts`
     )) as {
       encodePNG: (rgba: Uint8Array, w: number, h: number) => Buffer;
     };

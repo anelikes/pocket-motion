@@ -1,17 +1,17 @@
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 4a4d64a..4e5e6c1 100644
+index 6296f24e..61640661 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
-@@ -813,6 +813,8 @@ struct Walker<'a> {
-     inspect_slot: u32,
-     /// World AABB of `inspect_slot`, set when the walk reaches it.
-     inspect_hit: Option<Clip>,
+@@ -1044,6 +1044,8 @@ struct Walker<'a> {
+     /// The capture's subtree root, and whether the walk is inside it.
+     capture_slot: u32,
+     capturing: bool,
 +    /// Draw-time skip: this slot and its subtree emit nothing (u32::MAX = none).
 +    hide_slot: u32,
  }
  
  /// Build the full DrawList for the current (laid-out) tree. `frame` is the
-@@ -833,6 +835,7 @@ pub fn build(
+@@ -1065,6 +1067,7 @@ pub fn build(
      raster_density: u32,
      dl: &mut DrawList,
      inspect_id: i32,
@@ -19,7 +19,23 @@ index 4a4d64a..4e5e6c1 100644
      inspect_prev: Option<(f32, f32, f32, f32)>,
      cursor: Option<(u32, f32, f32, f32, f32)>,
  ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>, bool) {
-@@ -845,6 +848,11 @@ pub fn build(
+@@ -1082,6 +1085,7 @@ pub fn build(
+         raster_density,
+         dl,
+         inspect_id,
++        hide_id,
+         inspect_prev,
+         cursor,
+     )
+@@ -1104,6 +1108,7 @@ pub fn build_root(
+     raster_density: u32,
+     dl: &mut DrawList,
+     inspect_id: i32,
++    hide_id: i32,
+     inspect_prev: Option<(f32, f32, f32, f32)>,
+     cursor: Option<(u32, f32, f32, f32, f32)>,
+ ) -> (Option<(f32, f32, f32, f32)>, Option<(f32, f32, f32, f32)>, bool) {
+@@ -1116,6 +1121,11 @@ pub fn build_root(
      } else {
          u32::MAX
      };
@@ -31,15 +47,15 @@ index 4a4d64a..4e5e6c1 100644
      let mut w = Walker {
          tree,
          styles,
-@@ -858,6 +866,7 @@ pub fn build(
-         raster_density,
-         inspect_slot,
-         inspect_hit: None,
+@@ -1133,6 +1143,7 @@ pub fn build_root(
+         texts: if dl.capture_texts != 0 { Some(Vec::new()) } else { None },
+         capture_slot: if dl.capture_texts != 0 { tree.resolve(dl.capture_texts).unwrap_or(u32::MAX) } else { u32::MAX },
+         capturing: false,
 +        hide_slot,
          in_3d: false,
          provider_stale: false,
      };
-@@ -921,6 +930,12 @@ impl<'a> Walker<'a> {
+@@ -1205,6 +1216,12 @@ impl<'a> Walker<'a> {
          in_transform: bool,
          dl: &mut DrawList,
      ) {
@@ -49,10 +65,10 @@ index 4a4d64a..4e5e6c1 100644
 +        if slot == self.hide_slot {
 +            return;
 +        }
-         let node = &self.tree.slots[slot as usize];
-         let r = style::resolve(node, self.styles, true);
-         // The provider gate accumulates EXACTLY like layout.rs build() —
-@@ -1217,6 +1232,12 @@ impl<'a> Walker<'a> {
+         // A text capture reads one subtree: the walk is inside it from its
+         // root down.
+         if slot == self.capture_slot && !self.capturing {
+@@ -1533,6 +1550,12 @@ impl<'a> Walker<'a> {
          items: &mut Vec<(f32, Item3)>,
          tex_cells: &mut Vec<TexCell>,
      ) {
@@ -66,10 +82,10 @@ index 4a4d64a..4e5e6c1 100644
          let r = style::resolve(node, self.styles, true);
          if r.display == spec::Display::None as u8 {
 diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
-index d0f9be6..339ff97 100644
+index c461f356..6e3def8d 100644
 --- a/engine/core/src/lib.rs
 +++ b/engine/core/src/lib.rs
-@@ -275,6 +275,9 @@ pub struct Ui {
+@@ -322,6 +322,9 @@ pub struct Ui {
      tick_hz: u32,
      /// DevTools (spec ops 18..22, docs/DEVTOOLS.md). All default-off.
      inspect_id: i32,
@@ -79,7 +95,7 @@ index d0f9be6..339ff97 100644
      /// World AABB (x, y, w, h) of the inspected node, captured by the last
      /// `draw()` that painted it.
      inspect_rect: Option<(f32, f32, f32, f32)>,
-@@ -330,6 +333,7 @@ impl Ui {
+@@ -391,6 +394,7 @@ impl Ui {
              dt: spec::FIXED_DT,
              tick_hz: DEFAULT_TICK_HZ,
              inspect_id: 0,
@@ -87,7 +103,7 @@ index d0f9be6..339ff97 100644
              inspect_rect: None,
              inspect_drawn: None,
              paused: false,
-@@ -1222,6 +1226,7 @@ impl Ui {
+@@ -1970,6 +1974,7 @@ impl Ui {
              self.raster_density,
              &mut self.draw_list,
              self.inspect_id,
@@ -95,7 +111,7 @@ index d0f9be6..339ff97 100644
              self.inspect_drawn,
              cursor,
          );
-@@ -1248,6 +1253,7 @@ impl Ui {
+@@ -1997,6 +2002,7 @@ impl Ui {
                  self.raster_density,
                  &mut self.draw_list,
                  self.inspect_id,
@@ -103,8 +119,24 @@ index d0f9be6..339ff97 100644
                  self.inspect_drawn,
                  cursor,
              );
-@@ -1325,6 +1331,12 @@ impl Ui {
-         }
+@@ -2045,6 +2051,7 @@ impl Ui {
+             self.raster_density,
+             &mut auxiliary.draw_list,
+             self.inspect_id,
++            self.hide_id,
+             auxiliary.inspect_drawn,
+             None,
+         );
+@@ -2072,6 +2079,7 @@ impl Ui {
+                 self.raster_density,
+                 &mut auxiliary.draw_list,
+                 self.inspect_id,
++                self.hide_id,
+                 auxiliary.inspect_drawn,
+                 None,
+             );
+@@ -2226,6 +2234,12 @@ impl Ui {
+         out
      }
  
 +    /// Set (0 = clear) the hidden node. The next `draw()` skips that slot
@@ -117,10 +149,10 @@ index d0f9be6..339ff97 100644
      /// world AABB; -1 if it hasn't been painted since `debug_inspect`.
      pub fn debug_rect_xy(&self) -> i32 {
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 954c2de..c2e7642 100644
+index a0ed657c..d09c158f 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -2180,6 +2180,116 @@ fn debug_inspect_glides_between_targets() {
+@@ -2716,6 +2716,116 @@ fn debug_inspect_glides_between_targets() {
      assert_eq!(ui.draw().words.len(), baseline, "clear hides the overlay");
  }
  
@@ -238,10 +270,10 @@ index 954c2de..c2e7642 100644
  /// inside a FIXED cell (definite px width AND height), where the measure
  /// result cannot move layout. Empty <-> non-empty stays structural (the
 diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
-index 47664a8..c1a2ecf 100644
+index e5b1b717..11b3ba7e 100644
 --- a/engine/wasm/src/lib.rs
 +++ b/engine/wasm/src/lib.rs
-@@ -293,6 +293,11 @@ pub extern "C" fn ui_debug_inspect(id: i32) {
+@@ -611,6 +611,11 @@ pub extern "C" fn ui_debug_inspect(id: i32) {
      ui().debug_inspect(id)
  }
  

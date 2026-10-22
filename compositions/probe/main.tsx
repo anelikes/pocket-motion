@@ -4,11 +4,14 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 /**
  * The two facts every reel layout is built around, in one frame.
  *
- * A · `scale` on a wrapper. The Image grows by the scale factor. The Text does
- *     not: its glyph cells come out of the atlas at their baked size and only
- *     the advances scale, so a "camera push-in" over type reads as tracking.
- *     Measured at 80 px bold: cap height 60 px at scale 1.0, 1.25 and 1.5
- *     alike, while the run spreads 819 px -> 938 px -> 1022 px.
+ * A · `scale` on a wrapper. The Image grows by the scale factor, and since
+ *     the pin moved to 66caf4e5 (upstream 119297b3) so does the Text: its
+ *     cells are resampled bilinearly from the 64 px atlas, so the 1.5 row is a
+ *     magnified bitmap, softer than a 96 px bake. Measured on this frame: the
+ *     1.5 row's ink is 431x72 against the 1.0 row's 282x48; before the pin
+ *     moved it was 385x48 — only the advances scaled, and a "camera push-in"
+ *     over type read as tracking. A rotated run still keeps its cells upright
+ *     and unscaled.
  *
  * B · a `rotate-y` wall. The Image is carried into perspective with the wall
  *     (TEX_TRI). The Text stays flat and upright on top of it. This is why the

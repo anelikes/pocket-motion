@@ -1,0 +1,244 @@
+pocket-motion-only: fixes the arithmetic 0014 (a framebuffer that carries alpha) and 0018 (filter layers) added; upstream draws neither a transparent frame nor a filter layer.
+
+0032 — straight-alpha src-over divides by the exact new alpha.
+
+`RgbaTarget::blend` composites a partial source over a partly transparent
+destination straight-alpha: the new alpha is `a + da*(255-a)/255`, and the
+colour is the premultiplied sum divided back out by it. It divided by the
+STORED alpha, rounded to a byte — up to 127/255 below the exact one. That
+inflated the colour: by up to half of it at small alphas, and past 255 the
+byte wrapped, so white over white came out black. `composite_layer`'s
+content-over-shadow step made the same division. Every translucent write
+inside a filter layer lands in a transparent buffer, and a glow is a shadow
+at offset 0, so translucent white content in a white glow came out as
+near-black speckle wherever the rounding went down — the dark dither a film
+showed where two translucent white layers overlapped in a `glow-*` node.
+
+Both now divide by `a*255 + da*(255-a)`, 255 times the exact new alpha.
+The colour is then a weighted mean of the two inputs and stays between
+them; the stored alpha is unchanged. The opaque-destination expression is
+untouched, so a frame with a ground is byte-identical outside its filter
+layers.
+
+Guards (`engine/core/src/tests.rs`):
+`src_over_a_transparent_destination_keeps_the_colour_between_its_inputs`
+blends every source alpha over every destination alpha (1..254 each) for
+five colour pairs on a one-pixel transparent frame: red before (17,828
+composites outside their inputs' range), green after.
+`a_translucent_white_over_its_white_glow_stays_white`: every content alpha
+at glow gains 0.5, 1 and 2, over a transparent frame and an opaque white
+one: red with only the blend fixed (312 not white, the darkest 0), green
+with the composite fixed too.
+`translucent_whites_overlapping_in_a_glow_never_darken`: two translucent
+white boxes (alpha 0.42 and 0.32) overlapping inside a white glow, under an
+`overflow-mask` or not, over a dark ground or none: the pair is never
+darker than one box alone. Red before onto a transparent destination (507
+of 765 darker at one pixel), green after.
+
+Ledgers, against the same tree without this patch: `compositions/filters`
+moves — all 30 frames, every changed pixel by exactly one level, all in its
+glow, shadow and rack-focus row (frame 15: 4,059 pixels) — the rounding of
+the in-layer and content-over-shadow composites. `compositions/alpha` does
+not move (its one box is opaque). No other digest and no `visibility` row
+moves.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index 3c899696..b75dea83 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -231,8 +231,14 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
+         // Colour: the premultiplied sum divided back out by the new alpha,
+         // so a source over fully transparent keeps its own colour exactly
+         // instead of being mixed toward the black the clear left behind.
++        // The divisor is 255 times the EXACT new alpha, `a*255 + da*ia`, not
++        // the stored byte rounded: that byte can sit up to 127/255 below it,
++        // and dividing by it inflated the colour — past 255 the byte wrapped,
++        // and white over white came out black (pocket-motion patch 0032).
++        // With the exact divisor the colour is a weighted mean of the two and
++        // stays between them.
+         let oa = a + (da * ia + 127) / 255; // 1..=255
+-        let den = oa * 255;
++        let den = a * 255 + da * ia;
+         let mix = |s: u32, d: u8| ((s * a * 255 + d as u32 * da * ia + den / 2) / den) as u8;
+         self.bytes[o + ri] = mix(r, self.bytes[o + ri]);
+         self.bytes[o + gi] = mix(g, self.bytes[o + gi]);
+@@ -2446,10 +2452,13 @@ fn composite_layer<T: RenderTarget>(
+             } else if ca == 0 {
+                 (sr, sg, sb, s)
+             } else {
+-                // Straight-alpha source-over of the content on its shadow.
++                // Straight-alpha source-over of the content on its shadow,
++                // divided by 255 times the exact alpha, as `RgbaTarget::blend`
++                // (pocket-motion patch 0032): the rounded one inflated white
++                // past 255, and the blend below wrapped it to near-black.
+                 let ia = 255 - ca;
+                 let oa = ca + (s * ia + 127) / 255;
+-                let den = oa * 255;
++                let den = ca * 255 + s * ia;
+                 let mix = |c: u32, d: u32| (c * ca * 255 + d * s * ia + den / 2) / den;
+                 (mix(cr, sr), mix(cg, sg), mix(cb, sb), oa)
+             };
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 4049488f..923237d9 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -6228,6 +6228,157 @@ fn two_half_alpha_layers_over_transparent_compose_src_over() {
+     assert!(px[0] > 0x40 && px[2] > 0x80, "colour kept: {:?}", px);
+ }
+ 
++#[test]
++fn src_over_a_transparent_destination_keeps_the_colour_between_its_inputs() {
++    // Straight-alpha src-over is a weighted mean of the two colours, so it
++    // lies between them. The colour was divided by the ROUNDED new alpha,
++    // which can sit up to 127/255 below the exact one; with a small
++    // destination alpha that inflated the colour by up to half of it, and
++    // past 255 the byte wrapped: white at 200 over white at 2 was written as
++    // 0. Inside a filter layer every translucent write takes this path, so
++    // two translucent whites overlapping in a glow layer came out as
++    // near-black speckle. Every source alpha over every destination alpha,
++    // for five colour pairs, on a one-pixel transparent frame.
++    let mut ui = Ui::new();
++    ui.set_viewport(1.0, 1.0);
++    let rect = |c: u32| [spec::draw_op::RECT, 0, 1 | (1 << 16), c];
++    let mut bad = alloc::vec::Vec::new();
++    let mut fb = [0u8; 4];
++    for &(s, d) in &[(255u32, 255u32), (100, 100), (0, 255), (255, 0), (37, 201)] {
++        for da in 1..255u32 {
++            for a in 1..255u32 {
++                let mut words = alloc::vec::Vec::new();
++                words.extend_from_slice(&rect(abgr(d as u8, d as u8, d as u8, da as u8)));
++                words.extend_from_slice(&rect(abgr(s as u8, s as u8, s as u8, a as u8)));
++                crate::raster::render(&ui, &words, &mut fb);
++                let (lo, hi) = (s.min(d), s.max(d));
++                let got = fb[0] as u32;
++                if got < lo || got > hi {
++                    bad.push((s, d, a, da, got));
++                }
++                assert_eq!(fb[3] as u32, a + (da * (255 - a) + 127) / 255, "alpha is src-over");
++            }
++        }
++    }
++    assert!(bad.is_empty(), "{} composites left their inputs' range; first {:?}", bad.len(), &bad[..bad.len().min(6)]);
++}
++
++#[test]
++fn a_translucent_white_over_its_white_glow_stays_white() {
++    // A filter layer composites its content over its shadow (a glow is a
++    // shadow at offset 0) with the same straight-alpha src-over, and divided
++    // by the same rounded alpha: white content over a white glow came out
++    // as 256 and up, and the composite wrapped it to near-black — the dark
++    // speckle where translucent white lines overlap in a glow layer. Every
++    // content alpha, at three glow gains, over a transparent frame and over
++    // an opaque white one: the colour stays white.
++    let mut ui = Ui::new();
++    ui.set_viewport(1.0, 1.0);
++    let white = 0xffff_ffffu32;
++    let mut bad = alloc::vec::Vec::new();
++    let mut fb = [0u8; 4];
++    for &ground in &[false, true] {
++        for &gain in &[0.5f32, 1.0, 2.0] {
++            for a in 1..255u32 {
++                let mut words = alloc::vec::Vec::new();
++                if ground {
++                    words.extend_from_slice(&[spec::draw_op::RECT, 0, 1 | (1 << 16), white]);
++                }
++                words.extend_from_slice(&[
++                    spec::draw_op::LAYER_PUSH,
++                    spec::BlendMode::Normal as u32,
++                    0f32.to_bits(),
++                    0f32.to_bits(),
++                    0f32.to_bits(),
++                    0f32.to_bits(),
++                    white,
++                    gain.to_bits(),
++                    spec::draw_op::RECT,
++                    0,
++                    1 | (1 << 16),
++                    abgr(255, 255, 255, a as u8),
++                    spec::draw_op::LAYER_POP,
++                ]);
++                crate::raster::render(&ui, &words, &mut fb);
++                if fb[..3] != [255, 255, 255] {
++                    bad.push((ground, gain, a, fb));
++                }
++            }
++        }
++    }
++    assert!(bad.is_empty(), "{} white-on-white glows were not white; first {:?}", bad.len(), &bad[..bad.len().min(6)]);
++}
++
++/// Two translucent white boxes (alpha 107 and 82, the 0.42 and 0.32 a film
++/// draws its radar wedge and coast glow at) that overlap, inside a node with
++/// a white glow, under an `overflow-mask` ancestor or not, over a dark
++/// ground or none — with none, the glow layer composites onto a transparent
++/// destination, as a glow layer nested in another layer does. Returns the
++/// frame with `first` and `second` drawn as asked.
++fn glow_overlap(first: bool, second: bool, masked: bool, ground: bool) -> alloc::vec::Vec<u8> {
++    let mut ui = Ui::new();
++    if ground {
++        ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(0, 8, 20, 255) as f64);
++    }
++    let outer = place_box(&mut ui, 300.0, 200.0, 90.0, 36.0);
++    if masked {
++        ui.set_prop(outer, spec::prop::OVERFLOW, spec::Overflow::Mask as u32 as f64);
++        ui.set_prop(outer, spec::prop::RADIUS, 90.0);
++    }
++    let glow = ui.create_node(0);
++    ui.set_prop(glow, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(glow, spec::prop::WIDTH, 300.0);
++    ui.set_prop(glow, spec::prop::HEIGHT, 200.0);
++    ui.set_prop(glow, spec::prop::DROP_SHADOW_BLUR, 12.0);
++    ui.set_prop(glow, spec::prop::DROP_SHADOW_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.set_prop(glow, spec::prop::DROP_SHADOW_GAIN, 1.0);
++    ui.insert_before(outer, glow, 0);
++    for (on, alpha, x, y) in [(first, 107u8, 40.0, 40.0), (second, 82u8, 110.0, 70.0)] {
++        if !on {
++            continue;
++        }
++        let b = ui.create_node(0);
++        ui.set_prop(b, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++        ui.set_prop(b, spec::prop::INSET_L, x);
++        ui.set_prop(b, spec::prop::INSET_T, y);
++        ui.set_prop(b, spec::prop::WIDTH, 140.0);
++        ui.set_prop(b, spec::prop::HEIGHT, 90.0);
++        ui.set_prop(b, spec::prop::BG_COLOR, abgr(255, 255, 255, alpha) as f64);
++        ui.insert_before(glow, b, 0);
++    }
++    ui.tick();
++    raster_fb(&mut ui)
++}
++
++#[test]
++fn translucent_whites_overlapping_in_a_glow_never_darken() {
++    // White over white cannot darken: wherever both boxes and their glows
++    // reach, the pair is at least as bright as either alone, to the last
++    // bits of rounding — read premultiplied, so a transparent frame's colour
++    // counts by its alpha. With the rounded divisor the glow composite
++    // wrapped white to near-black onto a transparent destination: speckle in
++    // the overlap and along the halo, mask or no mask.
++    for &(masked, ground) in &[(false, false), (true, false), (false, true), (true, true)] {
++        let a = glow_overlap(true, false, masked, ground);
++        let b = glow_overlap(false, true, masked, ground);
++        let both = glow_overlap(true, true, masked, ground);
++        let lum = |fb: &[u8], x: usize, y: usize| {
++            let p = sample_rgba(fb, x, y);
++            (p[0] as i32 + p[1] as i32 + p[2] as i32) * p[3] as i32 / 255
++        };
++        let mut worst = (0i32, 0usize, 0usize);
++        for y in 0..spec::SCREEN_H as usize {
++            for x in 0..spec::SCREEN_W as usize {
++                let drop = lum(&a, x, y).max(lum(&b, x, y)) - lum(&both, x, y);
++                if drop > worst.0 {
++                    worst = (drop, x, y);
++                }
++            }
++        }
++        assert!(worst.0 <= 3, "masked {masked} ground {ground}: the pair is darker than one box alone by {} at ({},{})", worst.0, worst.1, worst.2);
++    }
++}
++
+ // ---- GLYPH_STROKE (pocket-motion) ---------------------------------------------
+ 
+ /// A v4 atlas of two glyphs in `cell`-px square cells: gid 0 (tofu) empty,

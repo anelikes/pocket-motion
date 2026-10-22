@@ -1,0 +1,394 @@
+pocket-motion-only: extends 0019's gradient paint (PAINT_PUSH, ops 69/70), which only this rasteriser draws.
+
+0029 — a radial gradient takes the ending shape it names.
+
+0019's radial was CSS's default and nothing else: the farthest-corner
+ellipse about the box centre. On a wide box a "glow" was a flat oval, and a
+round one had to be a square box around a circle. `bg-radial-circle` is
+the farthest-corner circle; `bg-radial-[<shape>_<size>]` and
+`bg-[radial-gradient(<shape> <size>, …)]` take CSS's shape (`circle`,
+`ellipse`) and size (`closest-side`, `farthest-side`, `closest-corner`,
+`farthest-corner`), each optional, either order. About the box centre the
+closest and farthest corner are one point and an ellipse's closest and
+farthest side are one size, so five shapes cover every pair: the ellipse
+(default) and the circle to the farthest corner, the ellipse to the sides,
+and the circle to the closest or farthest side. A length, a percentage or
+`at <position>` is refused, not dropped to the default. Stop positions and
+colours animate as before; the shape is an enum and does not.
+
+What it adds: PROP `gradShape` = 184 (enum `GradShape { Ellipse: 0,
+Circle: 1, EllipseClosestSide: 2, CircleClosestSide: 3, CircleFarthestSide:
+4 }`); `Resolved.grad_shape`; `emit_paint_push` picks the radii, so the
+rasteriser and PAINT_PUSH's format are unchanged; the compiler declares the
+shape only when it is not the default ellipse, so every literal that
+compiled before compiles to the same record.
+
+Guard: `a_radial_gradient_takes_the_ending_shape_it_names`
+(`engine/core/src/tests.rs`): white-to-black on a 200 x 40 box, read 15 px
+right of the centre and 15 px below it; each shape matches its radii within
+2 levels, and the circles read the same on both axes while the ellipses do
+not. Red with the shape ignored (Circle reads 227 where its radius gives
+216), green with it. `tests/tailwind.test.ts` pins the compiler.
+
+Ledgers, against the same tree without this patch: no digest and no
+`visibility` row moves — `compositions/gradients` draws the default
+ellipse, whose radii and style record are the ones it had.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 61856d7d..06c78cfe 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -347,6 +347,7 @@ export function generateRust(): string {
+     Contain: "layout containment (Strict: own layout root; Baked: Strict plus build-time rects).",
+     TextAlign: "text alignment within the node box.",
+     GradDir: "gradient direction (`bg-gradient-to-t|b|l|r`).",
++    GradShape: "a radial gradient's ending shape about the box centre (`bg-radial-circle`, `radial-gradient(circle closest-side, …)`).",
+     ArcCap: "how an arc's ends finish (`arc-cap-round|butt`): Round adds a half-disc per end; Butt ends on the radius.",
+     Easing:
+       "animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.",
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index f993949f..410bc608 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -471,6 +471,11 @@ export const PROP = {
+   //                    each end; Butt ends the band on the radius through
+   //                    arcStart and arcStart + arcSweep, so an arc as wide
+   //                    as its radius is a pie sector.
++  gradShape: 184, //      enum GradShape — a radial gradient's ending shape
++  //                    and size about the box centre: the farthest-corner
++  //                    ellipse (default), the farthest-corner circle, the
++  //                    closest-side ellipse, the closest- or farthest-side
++  //                    circle (pocket-motion).
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -639,6 +644,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   gradVia4: VALUE_KIND.color, gradVia4Pos: VALUE_KIND.f32,
+   bgClip: VALUE_KIND.int,
+   arcCap: VALUE_KIND.int,
++  gradShape: VALUE_KIND.int,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -667,6 +673,11 @@ export const ENUMS = {
+   GradKind: { Legacy: 0, Linear: 1, Radial: 2 },
+   /** What the ground paints (`bg-clip-text`, pocket-motion). */
+   BgClip: { Border: 0, Text: 1 },
++  /** A radial gradient's ending shape about the box centre (`bg-radial-circle`,
++   *  `radial-gradient(circle closest-side, …)`, pocket-motion). About the
++   *  centre the closest and farthest corner are one point, and an ellipse's
++   *  closest and farthest side are one size. */
++  GradShape: { Ellipse: 0, Circle: 1, EllipseClosestSide: 2, CircleClosestSide: 3, CircleFarthestSide: 4 },
+   /** How an arc's ends finish (`arc-cap-round|butt`). */
+   ArcCap: { Round: 0, Butt: 1 },
+   /**
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index eb00a662..37588e76 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -3462,8 +3462,9 @@ impl<'a> Walker<'a> {
+     /// affine function of the screen point: the inverse of `world` takes a
+     /// point to the box, and there the CSS gradient line (linear: through
+     /// the centre at `grad_angle`, as long as the box's extent along it;
+-    /// radial: the farthest-corner ellipse about the centre) gives t. False,
+-    /// emitting nothing, for a degenerate box or transform.
++    /// radial: the ending shape `grad_shape` names about the centre, the
++    /// farthest-corner ellipse by default) gives t. False, emitting nothing,
++    /// for a degenerate box or transform.
+     fn emit_paint_push(&self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, r: &style::Resolved) -> bool {
+         let det = world.a * world.d - world.b * world.c;
+         if det == 0.0 || !(w > 0.0) || !(h > 0.0) {
+@@ -3476,8 +3477,24 @@ impl<'a> Walker<'a> {
+         let v = (world.b * world.tx - world.a * world.ty) / det;
+         let (hw, hh) = (w * 0.5, h * 0.5);
+         let coef: [f32; 6] = if r.grad_kind == spec::GradKind::Radial as u8 {
+-            // Farthest-corner ellipse about the centre: radii sqrt(2) w/2, h/2.
+-            let (rx, ry) = (hw * core::f32::consts::SQRT_2, hh * core::f32::consts::SQRT_2);
++            // The ending shape's radii. Farthest-corner ellipse (the default):
++            // sqrt(2) w/2, h/2 — the ellipse of the box's proportions through
++            // its corners. Farthest-corner circle: the half-diagonal. Closest-
++            // side ellipse: w/2, h/2. Circles to the closest or farthest side:
++            // the shorter or longer half-side.
++            let shape = r.grad_shape;
++            let (rx, ry) = if shape == spec::GradShape::Circle as u8 {
++                let d = sqrtf(hw * hw + hh * hh);
++                (d, d)
++            } else if shape == spec::GradShape::EllipseClosestSide as u8 {
++                (hw, hh)
++            } else if shape == spec::GradShape::CircleClosestSide as u8 {
++                (hw.min(hh), hw.min(hh))
++            } else if shape == spec::GradShape::CircleFarthestSide as u8 {
++                (hw.max(hh), hw.max(hh))
++            } else {
++                (hw * core::f32::consts::SQRT_2, hh * core::f32::consts::SQRT_2)
++            };
+             [p / rx, q / rx, (u - hw) / rx, sx / ry, ty / ry, (v - hh) / ry]
+         } else {
+             let rad = r.grad_angle * (PI / 180.0);
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 1c148a97..c9472a25 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -210,6 +210,7 @@ pub mod prop {
+     pub const GRAD_VIA4_POS: u8 = 181;
+     pub const BG_CLIP: u8 = 182;
+     pub const ARC_CAP: u8 = 183;
++    pub const GRAD_SHAPE: u8 = 184;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -232,7 +233,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+-    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -390,6 +391,17 @@ pub enum BgClip {
+     Text = 1,
+ }
+ 
++/// a radial gradient's ending shape about the box centre (`bg-radial-circle`, `radial-gradient(circle closest-side, …)`).
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum GradShape {
++    Ellipse = 0,
++    Circle = 1,
++    EllipseClosestSide = 2,
++    CircleClosestSide = 3,
++    CircleFarthestSide = 4,
++}
++
+ /// how an arc's ends finish (`arc-cap-round|butt`): Round adds a half-disc per end; Butt ends on the radius.
+ #[repr(u8)]
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index a92a01be..cc20b3dc 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -336,6 +336,8 @@ pub struct Resolved {
+     pub grad_vias: [(u32, f32); 4],
+     /// spec::BgClip ordinal.
+     pub bg_clip: u8,
++    /// spec::GradShape ordinal (radial only).
++    pub grad_shape: u8,
+ }
+ 
+ impl Default for Resolved {
+@@ -418,6 +420,7 @@ impl Default for Resolved {
+             grad_to_pos: 1.0,
+             grad_vias: [(0, f32::NAN); 4],
+             bg_clip: spec::BgClip::Border as u8,
++            grad_shape: spec::GradShape::Ellipse as u8,
+         }
+     }
+ }
+@@ -537,6 +540,7 @@ impl Resolved {
+             p::GRAD_VIA4 => self.grad_vias[3].0 = bits,
+             p::GRAD_VIA4_POS => self.grad_vias[3].1 = f,
+             p::BG_CLIP => self.bg_clip = bits as u8,
++            p::GRAD_SHAPE => self.grad_shape = bits as u8,
+             _ => {}
+         }
+     }
+@@ -639,6 +643,7 @@ impl Resolved {
+             p::GRAD_VIA4 => self.grad_vias[3].0,
+             p::GRAD_VIA4_POS => self.grad_vias[3].1.to_bits(),
+             p::BG_CLIP => self.bg_clip as u32,
++            p::GRAD_SHAPE => self.grad_shape as u32,
+             _ => 0,
+         }
+     }
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 7fff1c60..2e033a83 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -6656,6 +6656,44 @@ fn a_three_stop_linear_gradient_to_the_right_hits_each_stop() {
+     assert_eq!(sample_rgba(&fb, 60, 101), sample_rgba(&fb, 60, 138));
+ }
+ 
++#[test]
++fn a_radial_gradient_takes_the_ending_shape_it_names() {
++    // The paint's radial was only CSS's default, the farthest-corner
++    // ellipse: on a 200 x 40 box a "radial glow" was a flat oval and a round
++    // one had to be a square box around a circle. Each shape's radii about
++    // the centre (100, 120), read white-to-black at the pixel 15 px right of
++    // the centre and the one 15 px below it: a circle reads the same on both
++    // axes, an ellipse does not.
++    let (white, black) = (abgr(255, 255, 255, 255), abgr(0, 0, 0, 255));
++    let (hw, hh) = (100.0f64, 20.0f64);
++    let shapes: [(spec::GradShape, f64, f64); 5] = [
++        (spec::GradShape::Ellipse, hw * core::f64::consts::SQRT_2, hh * core::f64::consts::SQRT_2),
++        (spec::GradShape::Circle, (hw * hw + hh * hh).sqrt(), (hw * hw + hh * hh).sqrt()),
++        (spec::GradShape::EllipseClosestSide, hw, hh),
++        (spec::GradShape::CircleClosestSide, hh, hh),
++        (spec::GradShape::CircleFarthestSide, hw, hw),
++    ];
++    for &(shape, rx, ry) in shapes.iter() {
++        let (mut ui, _, _) = gradient_box(
++            spec::GradKind::Radial,
++            0.0,
++            &[(white, 0.0), (black, 1.0)],
++            &[(spec::prop::GRAD_SHAPE, shape as u32 as f64)],
++        );
++        let fb = raster_fb(&mut ui);
++        let want = |dx: f64, dy: f64| {
++            let t = ((dx / rx).powi(2) + (dy / ry).powi(2)).sqrt().min(1.0);
++            255.0 * (1.0 - t)
++        };
++        let across = sample_rgba(&fb, 115, 120)[0] as f64;
++        let down = sample_rgba(&fb, 100, 135)[0] as f64;
++        assert!((across - want(15.5, 0.5)).abs() <= 2.0, "{shape:?}: 15 px across reads {across}, want {}", want(15.5, 0.5));
++        assert!((down - want(0.5, 15.5)).abs() <= 2.0, "{shape:?}: 15 px down reads {down}, want {}", want(0.5, 15.5));
++        let round = matches!(shape, spec::GradShape::Circle | spec::GradShape::CircleClosestSide | spec::GradShape::CircleFarthestSide);
++        assert_eq!(round, across == down, "{shape:?}: across {across}, down {down}");
++    }
++}
++
+ #[test]
+ fn gradient_angle_and_radial_follow_the_css_line() {
+     let (black, white) = (abgr(0, 0, 0, 255), abgr(255, 255, 255, 255));
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index b8eceae2..ea542b7a 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -102,6 +102,7 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("gradVia4Pos", 181, "f32"),
+     ("bgClip", 182, "i32"),
+     ("arcCap", 183, "i32"),
++    ("gradShape", 184, "i32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index 50d9f661..73e3f752 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -798,15 +798,47 @@ function stopColor(part: string): number | null {
+   return paletteColor(part) ?? bareHexColor(part);
+ }
+ 
++/**
++ * A radial gradient's ending shape about the box centre, from CSS's
++ * `<shape> <size>` — each optional, either order. About the centre the
++ * closest and farthest corner are one point, and an ellipse's closest and
++ * farthest side are one size, so five shapes cover every pair. Null for
++ * anything else: a length, a percentage, `at <position>` — the centre is
++ * the box's — and a word that is neither.
++ */
++function radialShape(spec: string): number | null {
++  let shape: string | null = null;
++  let size: string | null = null;
++  for (const w of spec.split(/\s+/).filter(Boolean)) {
++    if (w === "circle" || w === "ellipse") {
++      if (shape !== null) return null;
++      shape = w;
++    } else if (/^(closest|farthest)-(side|corner)$/.test(w)) {
++      if (size !== null) return null;
++      size = w;
++    } else return null;
++  }
++  if (shape === null && size === null) return null;
++  const corner = size === null || size.endsWith("-corner");
++  if ((shape ?? "ellipse") === "ellipse") return corner ? ENUMS.GradShape.Ellipse : ENUMS.GradShape.EllipseClosestSide;
++  if (corner) return ENUMS.GradShape.Circle;
++  return size === "closest-side" ? ENUMS.GradShape.CircleClosestSide : ENUMS.GradShape.CircleFarthestSide;
++}
++
+ /**
+  * Gradient paint utilities after `bg-` (pocket-motion):
+  *
+  *   bg-linear-N, bg-linear-[Ndeg]   an angle, CSS convention (0 = to top)
+  *   bg-linear-to-t|r|b|l            the four sides
+  *   bg-radial                       the farthest-corner ellipse about the centre
++ *   bg-radial-circle                the farthest-corner circle about the centre
++ *   bg-radial-[circle_closest-side] a CSS ending shape: circle|ellipse and/or
++ *                                   closest-side|farthest-side|closest-corner|
++ *                                   farthest-corner, either order
+  *   bg-clip-text / bg-clip-border   paint the ground into the glyphs / the box
+  *   bg-[linear-gradient(45deg,#f00,#0f0_30%,#00f)]
+  *   bg-[radial-gradient(#fff,#fff0_70%)]
++ *   bg-[radial-gradient(circle_closest-side,#fff,#000)]
+  *                                   up to 6 stops, `_` for a space, stops
+  *                                   `#hex` or palette names with an optional
+  *                                   `N%`; missing positions spread evenly
+@@ -815,6 +847,15 @@ function stopColor(part: string): number | null {
+ function parseGradientPaint(rest: string, acc: VariantAcc): boolean {
+   const D = acc.decls;
+   if (rest === "radial") { acc.gradKind = ENUMS.GradKind.Radial; acc.gradPaint = true; return true; }
++  const shaped = rest === "radial-circle" ? "circle" : /^radial-\[([^\]]+)\]$/.exec(rest)?.[1]?.replace(/_/g, " ");
++  if (shaped !== undefined) {
++    const shape = radialShape(shaped);
++    if (shape === null) return false;
++    if (shape !== ENUMS.GradShape.Ellipse) D.push([PROP.gradShape, int(shape)]);
++    acc.gradKind = ENUMS.GradKind.Radial;
++    acc.gradPaint = true;
++    return true;
++  }
+   if (rest === "clip-text") { acc.clipText = true; D.push([PROP.bgClip, int(ENUMS.BgClip.Text)]); return true; }
+   if (rest === "clip-border") { D.push([PROP.bgClip, int(ENUMS.BgClip.Border)]); return true; }
+   if (rest.startsWith("linear-")) {
+@@ -845,7 +886,13 @@ function parseGradientPaint(rest: string, acc: VariantAcc): boolean {
+     if (deg) { angle = parseFloat(deg[1]!); args.shift(); }
+     else if (side) { angle = { top: 0, right: 90, bottom: 180, left: 270 }[side[1] as "top"]; args.shift(); }
+   }
+-  if (radial && args.length > 0 && /^(ellipse|ellipse farthest-corner)$/.test(args[0]!)) args.shift();
++  if (radial && args.length > 0) {
++    const shape = radialShape(args[0]!);
++    if (shape !== null) {
++      if (shape !== ENUMS.GradShape.Ellipse) D.push([PROP.gradShape, int(shape)]);
++      args.shift();
++    }
++  }
+   if (args.length < 2 || args.length > PAINT_MAX_STOPS) return false;
+   const stops: { color: number; pos: number | null }[] = [];
+   for (const a of args) {
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index 0cda534a..3bec6b21 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -97,6 +97,7 @@ export interface MicroTsStyleProps {
+   gradVia4Pos?: MicroTsFloatInput;
+   bgClip?: i32;
+   arcCap?: i32;
++  gradShape?: i32;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index 74b3d038..b9534a58 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -803,6 +803,28 @@ describe("gradient paint (pocket-motion)", () => {
+     expect(r.get(PROP.gradKind)).toBe(ENUMS.GradKind.Radial);
+     expect(f32Of(r, PROP.gradToPos)).toBeCloseTo(0.7, 6);
+   });
++  test("a radial gradient's ending shape: bg-radial-circle, bg-radial-[…], radial-gradient(<shape>, …)", () => {
++    const shape = (lit: string) => props(parseClassLiteral(lit)).get(PROP.gradShape);
++    // The default ellipse declares nothing, so every literal that compiled
++    // before compiles to the same record.
++    expect(shape("bg-radial from-white to-black")).toBeUndefined();
++    expect(shape("bg-[radial-gradient(ellipse_farthest-corner,#fff,#000)]")).toBeUndefined();
++    expect(shape("bg-radial-circle from-white to-black")).toBe(ENUMS.GradShape.Circle);
++    expect(stopsOf(props(parseClassLiteral("bg-radial-circle from-white to-black"))).kind).toBe(ENUMS.GradKind.Radial);
++    expect(shape("bg-radial-[circle_closest-side] from-white to-black")).toBe(ENUMS.GradShape.CircleClosestSide);
++    expect(shape("bg-radial-[farthest-side_circle] from-white to-black")).toBe(ENUMS.GradShape.CircleFarthestSide);
++    expect(shape("bg-radial-[closest-side] from-white to-black")).toBe(ENUMS.GradShape.EllipseClosestSide);
++    expect(shape("bg-radial-[circle_closest-corner] from-white to-black")).toBe(ENUMS.GradShape.Circle);
++    const c = props(parseClassLiteral("bg-[radial-gradient(circle,#ffffff,#00000000_70%)]"));
++    expect(c.get(PROP.gradShape)).toBe(ENUMS.GradShape.Circle);
++    expect(f32Of(c, PROP.gradToPos)).toBeCloseTo(0.7, 6);
++    expect(shape("bg-[radial-gradient(circle_closest-side,#fff,#000)]")).toBe(ENUMS.GradShape.CircleClosestSide);
++    // A size the paint cannot draw — a length, a centre — is refused, not dropped to the default.
++    expect(parseClassLiteral("bg-radial-[circle_40px] from-white to-black")).toBeNull();
++    expect(parseClassLiteral("bg-radial-[circle_at_top] from-white to-black")).toBeNull();
++    expect(parseClassLiteral("bg-[radial-gradient(circle_at_top,#fff,#000)]")).toBeNull();
++    expect(parseClassLiteral("bg-radial-[circle_ellipse] from-white to-black")).toBeNull();
++  });
+   test("bg-clip-text over a legacy gradient takes the paint path", () => {
+     const m = props(parseClassLiteral("bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-400"));
+     expect(m.get(PROP.bgClip)).toBe(ENUMS.BgClip.Text);

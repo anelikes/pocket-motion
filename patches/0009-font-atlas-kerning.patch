@@ -6,11 +6,22 @@ the blob; v2 and v3 still load.
 
 `git apply` skips everything above the first `diff --git`.
 
+2026-10-22, rebased onto 66caf4e5. Main gained atlas readers and writers
+that assumed v3: `framework/src/font-coverage.ts` (the baked-coverage check)
+reads v4, whose header and cmap are v3's; `hosts/web/runtime-glyphs.js`
+parses v4 and carries the kern section through an append;
+`tools/companion/glyphs.ts` writes v3 by name, its cells having no pairs.
+Main's fallback faces put a glyph in a slot whose id is the FALLBACK face's;
+such a glyph is keyed -1 so the slot face's GPOS pairs cannot match it.
+Measured before the fix: Inter at 24 px with Noto Sans CJK behind it put a
+-1 px pair between '7' and '二'. Five of main's core tests that filled
+"coverage to the end of the blob" now stop before the v4 kern section.
+
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index 9734b68..5331e37 100644
+index 7fecbdd6..2ac06995 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
-@@ -75,6 +75,7 @@ import {
+@@ -102,6 +102,7 @@ import {
    FONT_CMAP_ENTRY_SIZE,
    FONT_FLAG_BOLD,
    FONT_HEADER_SIZE,
@@ -18,7 +29,7 @@ index 9734b68..5331e37 100644
    FONT_MAGIC,
    FONT_VERSION,
    ID_SLOT_BITS,
-@@ -423,6 +424,7 @@ export function generateRust(): string {
+@@ -458,6 +459,7 @@ export function generateRust(): string {
    put(`    pub const VERSION: u16 = ${FONT_VERSION};`);
    put(`    pub const HEADER_SIZE: usize = ${FONT_HEADER_SIZE};`);
    put(`    pub const CMAP_ENTRY_SIZE: usize = ${FONT_CMAP_ENTRY_SIZE};`);
@@ -27,10 +38,10 @@ index 9734b68..5331e37 100644
    put("}");
    put("");
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index 03d3ef9..88e190c 100644
+index 483e6ee1..5c40e0d0 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -1265,7 +1265,7 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
+@@ -1341,7 +1341,7 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
  }
  
  // ---------------------------------------------------------------------------
@@ -39,7 +50,7 @@ index 03d3ef9..88e190c 100644
  // ---------------------------------------------------------------------------
  // One blob per font slot, baked by framework/compiler/bake-font.ts, parsed by
  // engine/core/src/text.rs. Glyph coverage is stored in fixed-size cells as one
-@@ -1274,7 +1274,7 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
+@@ -1350,7 +1350,7 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
  //
  //   Header (16 bytes):
  //     off  0  u32  magic      = 0x41464344  bytes 'D','C','F','A'
@@ -48,7 +59,7 @@ index 03d3ef9..88e190c 100644
  //     off  6  u16  glyphCount (including gid 0 = tofu box)
  //     off  8  u8   cellW      LOGICAL cell width in px
  //     off  9  u8   cellH      LOGICAL cell height in px
-@@ -1303,17 +1303,34 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
+@@ -1379,17 +1379,34 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
  //     Glyph g's rows start at
  //     coverageOffset + g * (cellH*density) * (cellW*density).
  //
@@ -86,10 +97,10 @@ index 03d3ef9..88e190c 100644
  export const FONT_FLAG_BOLD = 1 << 0;
  
  // ---------------------------------------------------------------------------
-diff --git a/engine/backends/esp32p4-ppa/tests/strip_parity.rs b/engine/backends/esp32p4-ppa/tests/strip_parity.rs
-index 539e982..0fd8c9e 100644
---- a/engine/backends/esp32p4-ppa/tests/strip_parity.rs
-+++ b/engine/backends/esp32p4-ppa/tests/strip_parity.rs
+diff --git a/engine/backends/rgb565/tests/strip_parity.rs b/engine/backends/rgb565/tests/strip_parity.rs
+index e6539ddf..6d95759d 100644
+--- a/engine/backends/rgb565/tests/strip_parity.rs
++++ b/engine/backends/rgb565/tests/strip_parity.rs
 @@ -132,6 +132,9 @@ fn density_two_font() -> Vec<u8> {
      atlas.extend_from_slice(&0u16.to_le_bytes());
      atlas.extend_from_slice(&[2, 0]);
@@ -101,10 +112,10 @@ index 539e982..0fd8c9e 100644
  }
  
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index 6527345..60740b5 100644
+index d6a9d2e7..a919a67d 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
-@@ -2116,6 +2116,9 @@ mod tests {
+@@ -2266,6 +2266,9 @@ mod tests {
          atlas.extend_from_slice(&0u16.to_le_bytes());
          atlas.extend_from_slice(&[2, 0]);
          atlas.extend_from_slice(&coverage);
@@ -115,10 +126,10 @@ index 6527345..60740b5 100644
      }
  
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 36ccb22..9920a77 100644
+index 68f477bb..9cd50192 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
-@@ -412,9 +412,10 @@ pub mod style_table {
+@@ -440,9 +440,10 @@ pub mod style_table {
  /// FONT ATLAS blob format constants — full layout in spec.ts.
  pub mod font_atlas {
      pub const MAGIC: u32 = 0x41464344; // 'DCFA' LE
@@ -131,10 +142,10 @@ index 36ccb22..9920a77 100644
  }
  
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 56cbf58..33168e5 100644
+index afd3643d..7d0c9e22 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -181,6 +181,44 @@ fn encode_atlas_version_density(
+@@ -181,6 +181,52 @@ fn encode_atlas_version_density(
      let bytes_per_row = cell_w as usize * raster_density.max(1) as usize;
      let coverage_h = cell_h as usize * raster_density.max(1) as usize;
      out.extend_from_slice(&alloc::vec![0u8; glyph_count as usize * coverage_h * bytes_per_row]);
@@ -142,6 +153,14 @@ index 56cbf58..33168e5 100644
 +        out.extend_from_slice(&0u32.to_le_bytes());
 +    }
 +    out
++}
++
++/// The coverage bytes of an `encode_atlas*` blob: everything after the cmap
++/// and before a v4 blob's trailing kern section (a u32 pair count, 0 here).
++fn coverage_mut(blob: &mut [u8], start: usize) -> &mut [u8] {
++    let version = u16::from_le_bytes([blob[4], blob[5]]);
++    let end = blob.len() - if version >= 4 { 4 } else { 0 };
++    &mut blob[start..end]
 +}
 +
 +/// v4 atlas with an explicit kern section. `pairs` must be sorted by
@@ -179,7 +198,7 @@ index 56cbf58..33168e5 100644
      out
  }
  
-@@ -1098,6 +1136,70 @@ fn font_atlas_v3_scales_coverage_without_scaling_layout_metrics() {
+@@ -1433,6 +1479,70 @@ fn font_atlas_v3_scales_coverage_without_scaling_layout_metrics() {
      assert!(!ui.load_font_atlas(&hd[..hd.len() - 1]));
  }
  
@@ -250,8 +269,53 @@ index 56cbf58..33168e5 100644
  #[test]
  fn glyph_runs_render_with_alignment_and_color() {
      let mut ui = Ui::new();
+@@ -1807,7 +1917,7 @@ fn scaled_glyph_cells_follow_the_window_at_both_raster_densities() {
+         let mut ui = Ui::new_with_raster_density(density);
+         let mut blob = encode_atlas_version_density(spec::font_atlas::VERSION, density as u8,
+             0, 8, 8, 7, 8, 1, &[('A' as u32, 0, 8)]);
+-        blob[24..].fill(255);
++        coverage_mut(&mut blob, 24).fill(255);
+         assert!(ui.load_font_atlas(&blob));
+         let text = ui.create_node(spec::NodeType::Text as u8);
+         ui.set_text(text, "AA");
+@@ -1835,7 +1945,7 @@ fn scaled_glyph_cells_follow_the_window_at_both_raster_densities() {
+         let handle = words[1] as i32;
+         ui.set_prop(text, spec::prop::SCALE_X, 0.75);
+         assert_eq!(ui.draw().words[1] as i32, handle);
+-        blob[24..].fill(0);
++        coverage_mut(&mut blob, 24).fill(0);
+         assert!(ui.load_font_atlas(&blob));
+         let replaced = ui.draw().words.clone();
+         assert_ne!(replaced[1] as i32, handle);
+@@ -1909,7 +2019,7 @@ fn moving_inner_clip_does_not_resample_visible_scaled_glyph_ink() {
+         let mut ui = Ui::new_with_raster_density(density);
+         let mut atlas = encode_atlas_version_density(spec::font_atlas::VERSION, density as u8,
+             0, 8, 8, 7, 8, 1, &[('A' as u32, 0, 8)]);
+-        for (i, coverage) in atlas[24..].iter_mut().enumerate() { *coverage = (i % 8 * 31) as u8; }
++        for (i, coverage) in coverage_mut(&mut atlas, 24).iter_mut().enumerate() { *coverage = (i % 8 * 31) as u8; }
+         assert!(ui.load_font_atlas(&atlas));
+         let parent = ui.create_node(0);
+         for (p, v) in [(spec::prop::WIDTH, 11.0), (spec::prop::HEIGHT, 8.0)] { ui.set_prop(parent, p, v); }
+@@ -4679,7 +4789,7 @@ fn font_revision_changes_only_after_successful_load_and_is_slot_local() {
+     assert!(!ui.load_font_atlas(&atlas[..10]));
+     assert_eq!(ui.font_atlas_revision(3), 1);
+     let mut replacement = atlas.clone();
+-    *replacement.last_mut().unwrap() = 255;
++    *coverage_mut(&mut replacement, 24).last_mut().unwrap() = 255;
+     assert!(ui.load_font_atlas(&replacement));
+     assert_eq!(ui.font_atlas_revision(3), 2);
+     assert_eq!(ui.font_atlas_revision(0), 0);
+@@ -4864,7 +4974,7 @@ fn streamed_detach_reclaims_capacity_and_restores_baked_cells_across_slots() {
+             2,
+             &[(65, 1, 6), (0xfffd, 0, 8)]
+         );
+-        for (i, pixel) in atlas[32..].iter_mut().enumerate() {
++        for (i, pixel) in coverage_mut(&mut atlas, 32).iter_mut().enumerate() {
+             *pixel = (i + 1) as u8;
+         }
+         assert!(ui.load_font_atlas(&atlas));
 diff --git a/engine/core/src/text.rs b/engine/core/src/text.rs
-index af9fa68..cbda74e 100644
+index b6d98761..0a04ff03 100644
 --- a/engine/core/src/text.rs
 +++ b/engine/core/src/text.rs
 @@ -7,7 +7,7 @@
@@ -263,7 +327,7 @@ index af9fa68..cbda74e 100644
  
  use alloc::vec::Vec;
  use core::cell::Cell;
-@@ -61,6 +61,8 @@ pub struct Atlas {
+@@ -63,6 +63,8 @@ pub struct Atlas {
      /// Coverage cells: glyphCount x (cellH*density) x (cellW*density)
      /// alpha bytes, left-to-right.
      pub bitmap: Vec<u8>,
@@ -272,7 +336,7 @@ index af9fa68..cbda74e 100644
  }
  
  impl Atlas {
-@@ -73,10 +75,11 @@ impl Atlas {
+@@ -75,10 +77,11 @@ impl Atlas {
          }
          let version = rd_u16(bytes, 4)?;
          // Atlas v2 used bytes 14..15 as reserved and had one coverage sample
@@ -286,7 +350,7 @@ index af9fa68..cbda74e 100644
              let density = *bytes.get(14)?;
              if density == 0 {
                  return None;
-@@ -124,6 +127,35 @@ impl Atlas {
+@@ -126,6 +129,35 @@ impl Atlas {
          }
          let mut bitmap = Vec::with_capacity(bitmap_len);
          bitmap.extend_from_slice(&bytes[bitmap_off..bitmap_end]);
@@ -322,12 +386,16 @@ index af9fa68..cbda74e 100644
          Some(Atlas {
              cell_w,
              cell_h,
-@@ -135,9 +167,20 @@ impl Atlas {
-             glyph_count,
-             cmap,
+@@ -139,6 +171,7 @@ impl Atlas {
+             stream: None,
+             texture_cell_w: cell_w,
              bitmap,
 +            kern,
          })
+     }
+ 
+@@ -148,6 +181,16 @@ impl Atlas {
+         self.texture_cell_w * self.raster_density as u32
      }
  
 +    /// Logical-px pair adjustment, 0 when absent. Binary search, same
@@ -343,7 +411,7 @@ index af9fa68..cbda74e 100644
      /// Binary-search the cmap. `None` = unmapped codepoint (caller decides
      /// whether that bumps the miss counter).
      pub fn lookup(&self, codepoint: u32) -> Option<(u16, u8)> {
-@@ -330,15 +373,22 @@ impl Fonts {
+@@ -377,15 +420,22 @@ impl Fonts {
          let mut max_w = 0.0f32;
          let mut line_w = 0.0f32;
          let mut lines = 1u32;
@@ -368,7 +436,7 @@ index af9fa68..cbda74e 100644
          }
          max_w = max_w.max(line_w);
          (max_w, lines as f32 * lh)
-@@ -373,13 +423,18 @@ impl Fonts {
+@@ -508,9 +558,13 @@ impl Fonts {
              // at pen-from-0, then shift the whole line by the align offset.
              let line_start = out.len();
              let mut pen = 0.0f32;
@@ -381,14 +449,17 @@ index af9fa68..cbda74e 100644
 +                }
                  // The cell holds the outline shifted right by xoff (negative
                  // LSB accents) — place it at pen - xoff so ink lands at pen.
-                 out.push(GlyphPos { gid, x: pen - xoff, y });
+                 out.push(GlyphPos {
+@@ -520,6 +574,7 @@ impl Fonts {
+                     y,
+                 });
                  pen += adv + tracking;
 +                prev_gid = Some(gid);
              }
              let offset = match align {
                  a if a == spec::TextAlign::Center as u8 => (box_w - pen) * 0.5,
 diff --git a/engine/pocket3d/examples/note-widget/src/cjk.rs b/engine/pocket3d/examples/note-widget/src/cjk.rs
-index b28022d..0fdb249 100644
+index b28022d0..0fdb2491 100644
 --- a/engine/pocket3d/examples/note-widget/src/cjk.rs
 +++ b/engine/pocket3d/examples/note-widget/src/cjk.rs
 @@ -2,9 +2,10 @@
@@ -531,19 +602,19 @@ index b28022d..0fdb249 100644
      }
  }
 diff --git a/framework/compiler/bake-font.ts b/framework/compiler/bake-font.ts
-index 22d12ad..99d1e5b 100644
+index b4dea73d..bb1b6d66 100644
 --- a/framework/compiler/bake-font.ts
 +++ b/framework/compiler/bake-font.ts
-@@ -9,7 +9,7 @@
- //
+@@ -10,7 +10,7 @@
  // Rasterization: opentype.js outlines, flattened to polylines, scanline
- // non-zero winding fill with horizontally-biased supersampling into 8-bit coverage
--// cells. Atlas v3 keeps cell/line/cmap metrics in LOGICAL px while baking the
-+// cells. Atlas v4 keeps cell/line/cmap metrics in LOGICAL px while baking the
+ // nonzero-winding fill (the TrueType/CFF rule — even-odd cancels the shared
+ // edges and overlaps some outlines are built from) with horizontally-biased
+-// supersampling into 8-bit coverage cells. Atlas v3 keeps cell/line/cmap metrics in LOGICAL px while baking the
++// supersampling into 8-bit coverage cells. Atlas v4 keeps cell/line/cmap metrics in LOGICAL px while baking the
  // bitmap at `rasterDensity` samples per logical px. A Vita density-2 build can
  // therefore draw sharp 2x coverage without changing PSP-compatible layout.
  // Cells are tight in logical space: cellW = max inked logical width over the
-@@ -26,6 +26,7 @@ import {
+@@ -33,6 +33,7 @@ import {
    FONT_CMAP_ENTRY_SIZE,
    FONT_FLAG_BOLD,
    FONT_HEADER_SIZE,
@@ -551,7 +622,7 @@ index 22d12ad..99d1e5b 100644
    FONT_MAGIC,
    FONT_VERSION,
    MAX_FONT_SLOTS,
-@@ -51,6 +52,8 @@ export interface BakedAtlas {
+@@ -58,6 +59,8 @@ export interface BakedAtlas {
    cellH: number;
    coverageW: number;
    coverageH: number;
@@ -560,7 +631,7 @@ index 22d12ad..99d1e5b 100644
  }
  
  export interface BakeOptions {
-@@ -256,6 +259,130 @@ function tofu(
+@@ -264,6 +267,130 @@ function tofu(
    return [out, Math.min(255, w + 2)];
  }
  
@@ -691,24 +762,27 @@ index 22d12ad..99d1e5b 100644
  // ---------------------------------------------------------------------------
  // Atlas baking
  // ---------------------------------------------------------------------------
-@@ -311,6 +438,7 @@ export function bakeSlot(
+@@ -320,6 +447,10 @@ export function bakeSlot(
    // resolve glyphs first (skips codepoints the font doesn't map)
    interface G {
      cp: number;
++    /** The glyph's id in `font`, which the GPOS kerning pairs are keyed by;
++     *  -1 for a glyph a fallback face supplied, whose id means another face's
++     *  glyph and so must never match a pair. */
 +    fontGid: number;
      contours: Contour[];
      advance: number;
      maxX: number;
-@@ -352,7 +480,7 @@ export function bakeSlot(
+@@ -374,7 +505,7 @@ export function bakeSlot(
          p.y *= rasterDensity;
        }
      }
 -    glyphs.push({ cp, contours, advance, maxX, xoff });
-+    glyphs.push({ cp, fontGid: gi, contours, advance, maxX, xoff });
++    glyphs.push({ cp, fontGid: source === font ? gi : -1, contours, advance, maxX, xoff });
    }
  
    const tofuW = Math.max(4, Math.round(px * 0.55));
-@@ -369,7 +497,9 @@ export function bakeSlot(
+@@ -391,7 +522,9 @@ export function bakeSlot(
    if (!Number.isSafeInteger(coverageBytes)) {
      throw new RangeError("PocketJS bake-font: atlas coverage is too large");
    }
@@ -719,7 +793,7 @@ index 22d12ad..99d1e5b 100644
    const out = new Uint8Array(size);
    const dv = new DataView(out.buffer);
  
-@@ -415,6 +545,16 @@ export function bakeSlot(
+@@ -437,6 +570,16 @@ export function bakeSlot(
      out.set(rasterize(g.contours, coverageW, coverageH), coverageOff + (i + 1) * cellBytes);
    });
  
@@ -736,7 +810,7 @@ index 22d12ad..99d1e5b 100644
    return {
      slot,
      px,
-@@ -426,6 +566,7 @@ export function bakeSlot(
+@@ -448,6 +591,7 @@ export function bakeSlot(
      cellH,
      coverageW,
      coverageH,
@@ -744,8 +818,134 @@ index 22d12ad..99d1e5b 100644
    };
  }
  
+diff --git a/framework/src/font-coverage.ts b/framework/src/font-coverage.ts
+index a784428b..d00ea04e 100644
+--- a/framework/src/font-coverage.ts
++++ b/framework/src/font-coverage.ts
+@@ -13,7 +13,8 @@ export function createBakedFontCoverage() {
+       if (entries(key).includes(key)) {
+         const header = new DataView(get(key, 0, FONT_HEADER_SIZE).buffer);
+         const version = header.getUint16(4, true), count = header.getUint16(6, true);
+-        if (header.getUint32(0, true) === FONT_MAGIC && (version === 2 || version === 3) && header.getUint8(12) === slot) {
++        // v4 appends a kern section after the coverage; header and cmap are v3's.
++        if (header.getUint32(0, true) === FONT_MAGIC && version >= 2 && version <= 4 && header.getUint8(12) === slot) {
+           const cmap = new DataView(get(key, FONT_HEADER_SIZE, FONT_HEADER_SIZE + count * FONT_CMAP_ENTRY_SIZE).buffer);
+           for (let i = 0; i < count; i++) {
+             const offset = i * FONT_CMAP_ENTRY_SIZE;
+diff --git a/hosts/web/runtime-glyphs.d.ts b/hosts/web/runtime-glyphs.d.ts
+index 41014d7a..b4a74023 100644
+--- a/hosts/web/runtime-glyphs.d.ts
++++ b/hosts/web/runtime-glyphs.d.ts
+@@ -7,6 +7,7 @@ import type { HostOps } from "../../framework/src/host.ts";
+ export declare const FONT_MAGIC: number;
+ export declare const FONT_HEADER_SIZE: number;
+ export declare const FONT_CMAP_ENTRY_SIZE: number;
++export declare const FONT_KERN_PAIR_SIZE: number;
+ export declare const DEFAULT_FALLBACK_FAMILIES: string;
+ export declare const MAX_GLYPHS: number;
+ export declare const BITMAP_CUT: number;
+@@ -24,6 +25,8 @@ export interface RuntimeAtlas {
+   glyphs: number[][];
+   known: Set<number>;
+   coverage: Uint8Array;
++  /** A v4 blob's kern section (u32 pairCount + pairs), carried through; null for v2/v3. */
++  kern: Uint8Array | null;
+   em: number;
+   bilevel: boolean;
+ }
+diff --git a/hosts/web/runtime-glyphs.js b/hosts/web/runtime-glyphs.js
+index 4e130e51..d4d4e114 100644
+--- a/hosts/web/runtime-glyphs.js
++++ b/hosts/web/runtime-glyphs.js
+@@ -41,6 +41,7 @@
+ export const FONT_MAGIC = 0x41464344;
+ export const FONT_HEADER_SIZE = 16;
+ export const FONT_CMAP_ENTRY_SIZE = 8;
++export const FONT_KERN_PAIR_SIZE = 5;
+ 
+ /** Family list for glyphs the baked faces lack, Japanese forms first. */
+ export const DEFAULT_FALLBACK_FAMILIES = [
+@@ -70,8 +71,9 @@ export const BITMAP_CUT = 170;
+ const CAP_SHARE = 0.72;
+ 
+ /**
+- * Parse a FONT ATLAS blob (v2 or v3) into an appendable copy, or null when
+- * the bytes are not one.
++ * Parse a FONT ATLAS blob (v2, v3 or v4) into an appendable copy, or null
++ * when the bytes are not one. A v4 blob's kern section is kept as bytes:
++ * its pairs name existing gids, and appending only adds gids after them.
+  */
+ export function parseAtlas(bytes) {
+   const blob = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+@@ -79,9 +81,9 @@ export function parseAtlas(bytes) {
+   const view = new DataView(blob.buffer, blob.byteOffset, blob.byteLength);
+   if (view.getUint32(0, true) !== FONT_MAGIC) return null;
+   const version = view.getUint16(4, true);
+-  if (version !== 2 && version !== 3) return null;
++  if (version !== 2 && version !== 3 && version !== 4) return null;
+   const count = view.getUint16(6, true);
+-  const density = version === 3 ? Math.max(1, blob[14]) : 1;
++  const density = version >= 3 ? Math.max(1, blob[14]) : 1;
+   const atlas = {
+     cellW: blob[8],
+     cellH: blob[9],
+@@ -94,6 +96,8 @@ export function parseAtlas(bytes) {
+     glyphs: [],
+     known: new Set(),
+     coverage: null,
++    /** v4: the kern section (u32 pairCount + pairs), else null. */
++    kern: null,
+     em: 0,
+     bilevel: false,
+   };
+@@ -108,6 +112,14 @@ export function parseAtlas(bytes) {
+     atlas.known.add(entry[0]);
+   }
+   atlas.coverage = blob.slice(cmapEnd, cmapEnd + count * cell);
++  if (version === 4) {
++    const kernAt = cmapEnd + count * cell;
++    if (blob.length < kernAt + 4) return null;
++    const pairs = view.getUint32(kernAt, true);
++    const kernEnd = kernAt + 4 + pairs * FONT_KERN_PAIR_SIZE;
++    if (blob.length < kernEnd) return null;
++    atlas.kern = blob.slice(kernAt, kernEnd);
++  }
+   atlas.bilevel = isBilevel(atlas.coverage);
+   atlas.em = emOf(atlas);
+   return atlas;
+@@ -187,14 +199,17 @@ export function appendGlyph(atlas, codepoint, glyph) {
+   return true;
+ }
+ 
+-/** Serialize an atlas back to a v3 blob, cmap sorted by codepoint. */
++/** Serialize an atlas back to a blob, cmap sorted by codepoint: v4 with its
++ *  kern section when it was parsed from one, else v3. */
+ export function serializeAtlas(atlas) {
+   const count = atlas.glyphs.length;
+   const cmap = [...atlas.glyphs].sort((a, b) => a[0] - b[0]);
+-  const out = new Uint8Array(FONT_HEADER_SIZE + count * FONT_CMAP_ENTRY_SIZE + atlas.coverage.length);
++  const kern = atlas.kern ?? null;
++  const coverageAt = FONT_HEADER_SIZE + count * FONT_CMAP_ENTRY_SIZE;
++  const out = new Uint8Array(coverageAt + atlas.coverage.length + (kern ? kern.length : 0));
+   const view = new DataView(out.buffer);
+   view.setUint32(0, FONT_MAGIC, true);
+-  view.setUint16(4, 3, true);
++  view.setUint16(4, kern ? 4 : 3, true);
+   view.setUint16(6, count, true);
+   out.set([atlas.cellW, atlas.cellH, atlas.baseline, atlas.lineHeight, atlas.slot, atlas.flags, atlas.density, 0], 8);
+   cmap.forEach(([cp, gid, advance, xoff], i) => {
+@@ -204,7 +219,8 @@ export function serializeAtlas(atlas) {
+     out[at + 6] = advance;
+     out[at + 7] = xoff;
+   });
+-  out.set(atlas.coverage, FONT_HEADER_SIZE + count * FONT_CMAP_ENTRY_SIZE);
++  out.set(atlas.coverage, coverageAt);
++  if (kern) out.set(kern, coverageAt + atlas.coverage.length);
+   return out;
+ }
+ 
 diff --git a/tests/font-bake.test.ts b/tests/font-bake.test.ts
-index f252040..9c6180c 100644
+index 34c9b999..22c56952 100644
 --- a/tests/font-bake.test.ts
 +++ b/tests/font-bake.test.ts
 @@ -4,6 +4,7 @@ import { bakeSlot, DEFAULT_REGULAR } from "../framework/compiler/bake-font.ts";
@@ -772,11 +972,73 @@ index f252040..9c6180c 100644
      expect(coverage.some((sample) => sample > 0)).toBe(true);
      expect(coverage.some((sample) => sample > 0 && sample < 255)).toBe(true);
    });
+@@ -137,6 +137,39 @@ describe("monospace slots", () => {
+   });
+ });
+ 
++describe("kerning and fallback faces", () => {
++  // A fallback glyph's id is the FALLBACK face's; the slot face's GPOS pairs
++  // are keyed by its own ids. Matched by number, '二' from Noto Sans CJK
++  // picked up an Inter pair with '7' at 24 px.
++  test("no kern pair names a glyph a fallback face supplied", async () => {
++    const fallback = parseFont(
++      await Bun.file(new URL("../assets/fonts/NotoSansCJK-Demo.otf", import.meta.url)).arrayBuffer(),
++    );
++    const cjk: number[] = [];
++    for (let cp = 0x4e00; cp < 0x4e00 + 3000; cp++) {
++      const ch = String.fromCodePoint(cp);
++      if (font.charToGlyphIndex(ch) === 0 && fallback.charToGlyphIndex(ch) > 0) cjk.push(cp);
++    }
++    expect(cjk.length).toBeGreaterThan(0);
++    const ascii = Array.from({ length: 95 }, (_, i) => 32 + i);
++    const atlas = bakeSlot(font, 0, 24, false, [...ascii, ...cjk], 1, [fallback]);
++    const view = new DataView(atlas.bytes.buffer, atlas.bytes.byteOffset, atlas.bytes.byteLength);
++    const cpOf = new Map<number, number>();
++    for (let i = 0; i < atlas.glyphCount; i++) {
++      const e = FONT_HEADER_SIZE + i * FONT_CMAP_ENTRY_SIZE;
++      cpOf.set(view.getUint16(e + 4, true), view.getUint32(e, true));
++    }
++    const kernAt = FONT_HEADER_SIZE + atlas.glyphCount * (FONT_CMAP_ENTRY_SIZE + atlas.coverageW * atlas.coverageH);
++    const pairs = view.getUint32(kernAt, true);
++    expect(pairs).toBeGreaterThan(0);
++    for (let i = 0; i < pairs; i++) {
++      const o = kernAt + 4 + i * FONT_KERN_PAIR_SIZE;
++      expect(cpOf.get(view.getUint16(o, true))!).toBeLessThan(0x7f);
++      expect(cpOf.get(view.getUint16(o + 2, true))!).toBeLessThan(0x7f);
++    }
++  });
++});
++
+ describe("fill rule", () => {
+   // W95FA (a bitmap-font conversion) builds glyphs from stroke rectangles
+   // that SHARE EDGES — under the old even-odd pairing the shared spans
+diff --git a/tests/runtime-glyphs.test.ts b/tests/runtime-glyphs.test.ts
+index 5f93e735..c9295a31 100644
+--- a/tests/runtime-glyphs.test.ts
++++ b/tests/runtime-glyphs.test.ts
+@@ -8,7 +8,7 @@
+ import { describe, expect, test } from "bun:test";
+ import opentype from "opentype.js";
+ import { bakeSlot } from "../framework/compiler/bake-font.ts";
+-import { FONT_CMAP_ENTRY_SIZE, FONT_HEADER_SIZE, FONT_MAGIC } from "../contracts/spec/spec.ts";
++import { FONT_CMAP_ENTRY_SIZE, FONT_HEADER_SIZE, FONT_KERN_PAIR_SIZE, FONT_MAGIC } from "../contracts/spec/spec.ts";
+ import * as glyphs from "../hosts/web/runtime-glyphs.js";
+ import { createWasmUi } from "../hosts/web/wasm-ops.js";
+ 
+@@ -26,7 +26,7 @@ function boxes(width: number) {
+ 
+ describe("runtime glyphs: the atlas copy", () => {
+   test("the module's format constants are the spec's", () => {
+-    expect([glyphs.FONT_MAGIC, glyphs.FONT_HEADER_SIZE, glyphs.FONT_CMAP_ENTRY_SIZE]).toEqual([FONT_MAGIC, FONT_HEADER_SIZE, FONT_CMAP_ENTRY_SIZE]);
++    expect([glyphs.FONT_MAGIC, glyphs.FONT_HEADER_SIZE, glyphs.FONT_CMAP_ENTRY_SIZE, glyphs.FONT_KERN_PAIR_SIZE]).toEqual([FONT_MAGIC, FONT_HEADER_SIZE, FONT_CMAP_ENTRY_SIZE, FONT_KERN_PAIR_SIZE]);
+   });
+ 
+   test("a baked atlas parses and serializes back to the same bytes", () => {
 diff --git a/tools/build.ts b/tools/build.ts
-index 58ed61d..35db878 100644
+index 34147a04..62ec3d00 100644
 --- a/tools/build.ts
 +++ b/tools/build.ts
-@@ -319,7 +319,8 @@ const atlases = await bakeAtlases({
+@@ -410,7 +410,8 @@ const atlases = await bakeAtlases({
  for (const a of atlases) {
    console.log(
      `  font: slot ${a.slot} (${a.px}px${a.bold ? " bold" : ""}) ${a.glyphCount} glyphs, ` +
@@ -786,3 +1048,36 @@ index 58ed61d..35db878 100644
    );
  }
  
+diff --git a/tools/companion/glyphs.ts b/tools/companion/glyphs.ts
+index ea2d78fe..d3607eb7 100644
+--- a/tools/companion/glyphs.ts
++++ b/tools/companion/glyphs.ts
+@@ -12,7 +12,7 @@
+ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+ import { join } from "node:path";
+ import { AGENT_FONT, AGENT_FONT_MAX_GLYPHS, AGENT_FONT_SLOT, AGENT_LABEL_GLYPHS } from "../../contracts/spec/agent.ts";
+-import { FONT_CMAP_ENTRY_SIZE, FONT_HEADER_SIZE, FONT_MAGIC, FONT_VERSION } from "../../contracts/spec/spec.ts";
++import { FONT_CMAP_ENTRY_SIZE, FONT_HEADER_SIZE, FONT_MAGIC } from "../../contracts/spec/spec.ts";
+ import { helperCommand } from "./swift-helper.ts";
+ 
+ export const GLYPHS_SOURCE = join(import.meta.dir, "macos", "Glyphs.swift");
+@@ -65,7 +65,9 @@ export function tofuCell(font: AgentFont = AGENT_FONT): GlyphCell {
+ export const TOFU_CODEPOINT = 0xfffd;
+ 
+ /** A FONT ATLAS v3 blob: gid 0 the tofu box (mapped from U+FFFD), then
+- *  `cells`; one cmap entry per glyph, sorted by codepoint. */
++ *  `cells`; one cmap entry per glyph, sorted by codepoint. Version 3 rather
++ *  than FONT_VERSION: these cells carry no kerning, and v4 differs only by
++ *  the kern section after the coverage. */
+ export function packAgentAtlas(cells: ReadonlyMap<number, GlyphCell>, font: AgentFont = AGENT_FONT, slot = AGENT_FONT_SLOT): Uint8Array {
+   const codepoints = [...cells.keys()].filter((cp) => cp !== TOFU_CODEPOINT).sort((a, b) => a - b);
+   const count = codepoints.length + 1;
+@@ -75,7 +77,7 @@ export function packAgentAtlas(cells: ReadonlyMap<number, GlyphCell>, font: Agen
+   const out = new Uint8Array(coverageOffset + count * cellBytes);
+   const view = new DataView(out.buffer);
+   view.setUint32(0, FONT_MAGIC, true);
+-  view.setUint16(4, FONT_VERSION, true);
++  view.setUint16(4, 3, true);
+   view.setUint16(6, count, true);
+   out[8] = font.cellW;
+   out[9] = font.cellH;

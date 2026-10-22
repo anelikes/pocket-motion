@@ -10,7 +10,7 @@ What the patch adds, by file:
 - `contracts/spec/spec.ts`, `gen-rust.ts`, `engine/core/src/spec.rs`
   (regenerated): props `gradKind` (170), `gradAngle` (171),
   `gradFromPos`/`gradToPos` (172, 173), `gradVia1..4` and their positions
-  (174-181), `bgClip` (182); eleven animatable (bits 46-56); enums
+  (174-181), `bgClip` (182); eleven animatable (bits 47-57); enums
   `GradKind` {Legacy, Linear, Radial} and `BgClip` {Border, Text};
   `DRAW_OP.paintPush = 69`, `paintPop = 70`; `PAINT_MAX_STOPS = 6`.
 - `framework/compiler/tailwind.ts`: `via-<color>`, `from-N%`/`via-N%`/
@@ -47,13 +47,28 @@ What the patch adds, by file:
   glyphs, a changed gradient redraws in full and equals the full render,
   and a legacy two-stop gradient still emits GRAD_RECT.
 
+2026-10-22, rebased onto 66caf4e5. Main added one middle stop of its own
+(99af2166): `via-<color>` compiles to `gradVia` (82) and `gradViaPos` (83,
+0.5), and the core draws it on the legacy path as two GRAD_RECT boxes split
+at the position. A literal must not carry both, so a via waits until the
+literal has parsed: under a `bg-gradient-to-*` direction with no other
+paint feature — the gradient main draws itself — it is main's
+`gradVia`/`gradViaPos` (`via-N%` sets the position, which main's core
+honours); in a literal that needs the paint (an angle, radial, a from/to
+position, an arbitrary gradient, `bg-clip-text`) it is `gradVia1` and
+`gradVia1Pos`. A via alone no longer makes a literal a paint. `Resolved`'s
+stop array is `grad_vias`, beside main's `grad_via`. A run under a scale is
+drawn as glyph pages (0017), and `bg-clip-text` opens its paint around
+them too; `bg_clip_text_paints_scaled_glyph_pages_too` was red before. The
+two draw-list walkers main added know PAINT_PUSH (9 + 2n) and PAINT_POP.
+
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index 3b94a65e..d099ba67 100644
+index 558a52f7..a7383857 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
-@@ -74,6 +74,7 @@ import {
+@@ -101,6 +101,7 @@ import {
    STROKE_MAX_WIDTH,
    LAYER_MAX_DEPTH,
    BLUR_MAX,
@@ -61,7 +76,7 @@ index 3b94a65e..d099ba67 100644
    ENUMS,
    FIXED_DT,
    FONT_CMAP_ENTRY_SIZE,
-@@ -449,6 +450,7 @@ export function generateRust(): string {
+@@ -485,6 +486,7 @@ export function generateRust(): string {
    put(`    pub const STROKE_MAX_WIDTH: f32 = ${STROKE_MAX_WIDTH}.0;`);
    put(`    pub const LAYER_MAX_DEPTH: usize = ${LAYER_MAX_DEPTH};`);
    put(`    pub const BLUR_MAX: f32 = ${BLUR_MAX}.0;`);
@@ -70,10 +85,10 @@ index 3b94a65e..d099ba67 100644
    put("");
  
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index 30ba3a08..aede4e1b 100644
+index 1140b8f8..3df7fdeb 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -376,6 +376,21 @@ export const PROP = {
+@@ -447,6 +447,21 @@ export const PROP = {
    //                       1; > 1 thickens a glow), clamped at full coverage
    blendMode: 169, //       enum BlendMode — how the layer composites over what
    //                       is beneath (CSS `mix-blend-mode`)
@@ -95,25 +110,25 @@ index 30ba3a08..aede4e1b 100644
  } as const;
  
  export type PropName = keyof typeof PROP;
-@@ -442,6 +457,17 @@ export const ANIMATABLE: readonly PropName[] = [
-   "dropShadowBlur", //  43
-   "dropShadowColor", // 44
-   "dropShadowGain", //  45
-+  "gradAngle", //       46
-+  "gradFromPos", //     47
-+  "gradToPos", //       48
-+  "gradVia1", //        49
-+  "gradVia1Pos", //     50
-+  "gradVia2", //        51
-+  "gradVia2Pos", //     52
-+  "gradVia3", //        53
-+  "gradVia3Pos", //     54
-+  "gradVia4", //        55
-+  "gradVia4Pos", //     56
+@@ -514,6 +529,17 @@ export const ANIMATABLE: readonly PropName[] = [
+   "dropShadowBlur", //  44
+   "dropShadowColor", // 45
+   "dropShadowGain", //  46
++  "gradAngle", //     47
++  "gradFromPos", //   48
++  "gradToPos", //     49
++  "gradVia1", //      50
++  "gradVia1Pos", //   51
++  "gradVia2", //      52
++  "gradVia2Pos", //   53
++  "gradVia3", //      54
++  "gradVia3Pos", //   55
++  "gradVia4", //      56
++  "gradVia4Pos", //   57
  ];
  
  /** Anim bit index for a prop, or -1 if not animatable. */
-@@ -522,6 +548,13 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+@@ -596,6 +622,13 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
    dropShadowBlur: VALUE_KIND.f32, dropShadowColor: VALUE_KIND.color,
    dropShadowGain: VALUE_KIND.f32,
    blendMode: VALUE_KIND.int,
@@ -127,7 +142,7 @@ index 30ba3a08..aede4e1b 100644
  };
  
  // ---------------------------------------------------------------------------
-@@ -544,6 +577,10 @@ export const ENUMS = {
+@@ -620,6 +653,10 @@ export const ENUMS = {
    /** Layer composite (`mix-blend-*`, pocket-motion). Add is linear dodge,
     *  min(1, backdrop + source), composited like the others. */
    BlendMode: { Normal: 0, Multiply: 1, Screen: 2, Overlay: 3, Add: 4 },
@@ -138,7 +153,7 @@ index 30ba3a08..aede4e1b 100644
    /**
     * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
     * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
-@@ -1502,6 +1539,20 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+@@ -1579,6 +1616,20 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
  //                           layer and the rasteriser draws a deeper one's
  //                           ops unfiltered. Software rasteriser only.
  //   LAYER_POP   (1 word):   op — filter and composite the innermost layer.
@@ -159,7 +174,7 @@ index 30ba3a08..aede4e1b 100644
  //   TEXT_RUN    (8 + ceil(n/4) words):
  //                           op,
  //                           word1: bits 0-7 fontSlot,
-@@ -1546,8 +1597,13 @@ export const DRAW_OP = {
+@@ -1634,8 +1685,13 @@ export const DRAW_OP = {
    glyphStroke: 66,
    layerPush: 67,
    layerPop: 68,
@@ -173,11 +188,24 @@ index 30ba3a08..aede4e1b 100644
  /** Deepest nesting of filter layers (LAYER_PUSH). */
  export const LAYER_MAX_DEPTH = 4;
  /** Largest blur standard deviation, and largest drop-shadow blur radius / 2,
+diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
+index 16b0f234..8428bbeb 100644
+--- a/engine/core/src/compositor.rs
++++ b/engine/core/src/compositor.rs
+@@ -33,6 +33,8 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+         crate::spec::draw_op::GLYPH_STROKE => 5 + 2 * ((*words.get(at + 1)? >> 16) as usize),
+         crate::spec::draw_op::LAYER_PUSH => 8,
+         crate::spec::draw_op::LAYER_POP => 1,
++        crate::spec::draw_op::PAINT_PUSH => 9 + 2 * *words.get(at + 2)? as usize,
++        crate::spec::draw_op::PAINT_POP => 1,
+         _ => return None,
+     })
+ }
 diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
-index 36015ae5..4bae4841 100644
+index 4496e395..2e15a2eb 100644
 --- a/engine/core/src/damage.rs
 +++ b/engine/core/src/damage.rs
-@@ -457,6 +457,14 @@ impl<'a> DamageDecoder<'a> {
+@@ -464,6 +464,14 @@ impl<'a> DamageDecoder<'a> {
              }
              spec::draw_op::LAYER_PUSH => 8,
              spec::draw_op::LAYER_POP => 1,
@@ -192,7 +220,7 @@ index 36015ae5..4bae4841 100644
              _ => return Err(()),
          };
          let end = start.checked_add(len).ok_or(())?;
-@@ -507,6 +515,20 @@ impl<'a> DamageDecoder<'a> {
+@@ -514,6 +522,20 @@ impl<'a> DamageDecoder<'a> {
                  self.layers -= 1;
                  DamageRect::empty()
              }
@@ -213,7 +241,7 @@ index 36015ae5..4bae4841 100644
              // Native-text runs carry no glyph geometry the tracker can
              // measure; the core keeps every partially-clipped run inside a
              // scissor, so the current clip is a sound (conservative) bound.
-@@ -547,7 +569,11 @@ fn draw_list_damage<const MAX_REGIONS: usize>(
+@@ -555,7 +577,11 @@ fn draw_list_damage<const MAX_REGIONS: usize>(
                  if old_op.words != new_op.words {
                      // Inside a filter layer (or the layer's own parameters)
                      // a change reaches past its op: redraw everything.
@@ -227,10 +255,10 @@ index 36015ae5..4bae4841 100644
                      }
                      damage.add(old_op.bounds, screen);
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index fc26a4b9..ac07c31b 100644
+index 375c8395..76c62506 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
-@@ -1012,13 +1012,22 @@ impl<'a> Walker<'a> {
+@@ -1325,13 +1325,22 @@ impl<'a> Walker<'a> {
          let l = node.layout;
  
          // -- background + shadow --------------------------------------------
@@ -257,7 +285,7 @@ index fc26a4b9..ac07c31b 100644
              self.emit_shadow(dl, &world, l.w, l.h, r.radius, r.shadow, op, &clip);
          }
  
-@@ -1078,7 +1087,23 @@ impl<'a> Walker<'a> {
+@@ -1391,7 +1400,23 @@ impl<'a> Walker<'a> {
          } else if rounded_ring {
              self.emit_rounded_box(dl, &world, 0.0, 0.0, l.w, l.h, r.radius, Fill::Flat(border_color), &clip);
              let bw = r.border_width.min(l.w * 0.5).min(l.h * 0.5);
@@ -281,8 +309,8 @@ index fc26a4b9..ac07c31b 100644
 +            } else if has_grad {
                  let fill = Fill::Grad {
                      from: scale_alpha(r.grad_from, op),
-                     to: scale_alpha(r.grad_to, op),
-@@ -1098,6 +1123,12 @@ impl<'a> Walker<'a> {
+                     via: r.grad_via_pos.is_finite().then(|| (scale_alpha(r.grad_via, op), clampf(r.grad_via_pos, 0.0, 1.0))),
+@@ -1412,6 +1437,12 @@ impl<'a> Walker<'a> {
                      &clip,
                  );
              }
@@ -295,7 +323,7 @@ index fc26a4b9..ac07c31b 100644
          } else if has_grad {
              let fill = Fill::Grad {
                  from: scale_alpha(r.grad_from, op),
-@@ -2423,7 +2454,19 @@ impl<'a> Walker<'a> {
+@@ -2935,7 +2966,19 @@ impl<'a> Walker<'a> {
          box_w: f32,
          in_transform: bool,
      ) {
@@ -316,19 +344,52 @@ index fc26a4b9..ac07c31b 100644
          // Text stroke (pocket-motion): a run whose fill is transparent still
          // draws when it carries a stroke — the hollow form.
          let stroke_color = scale_alpha(r.text_stroke_color, op);
-@@ -2482,6 +2525,11 @@ impl<'a> Walker<'a> {
+@@ -3042,6 +3085,16 @@ impl<'a> Walker<'a> {
+         // the fill alone would ring glyphs of another size. A run with no
+         // stroke takes the scaled glyph pages.
+         if !stroke && world.is_axis_aligned() && (world.a != 1.0 || world.d != 1.0) {
++            // `bg-clip-text` (pocket-motion): the paint recolours whatever its
++            // span writes, glyph-page TEX_QUADs as well as a GLYPH_RUN.
++            let push_at = dl.words.len();
++            let painted = paint_grad && self.emit_paint_push(dl, world, box_w, node.layout.h, r);
++            if paint_grad && !painted {
++                self.glyph_scratch = scratch;
++                self.paint_cache.layouts = layouts;
++                return;
++            }
++            let quads_at = dl.words.len();
+             let mut page: Option<GlyphSampler> = None;
+             // The 2D overflow stack already clips pixels with SCISSOR. Keep
+             // full glyph endpoints inside the viewport: reconstructing UVs
+@@ -3067,6 +3120,14 @@ impl<'a> Walker<'a> {
+                 self.emit_tex_quad(dl, &glyph_world, cell_w, cell_h, texture, 1.0, glyph_clip, uv[0], uv[1], uv[2], uv[3]);
+                 if dl.words.len() > before { *dl.words.last_mut().unwrap() = color; }
+             }
++            if painted {
++                if dl.words.len() == quads_at {
++                    // Nothing drawn under the paint: drop the push as well.
++                    dl.words.truncate(push_at);
++                } else {
++                    dl.words.push(spec::draw_op::PAINT_POP);
++                }
++            }
              self.glyph_scratch = scratch;
+             self.paint_cache.layouts = layouts;
+             return;
+@@ -3085,6 +3146,12 @@ impl<'a> Walker<'a> {
+             self.paint_cache.layouts = layouts;
              return;
          }
 +        let painted = paint_grad && self.emit_paint_push(dl, world, box_w, node.layout.h, r);
 +        if paint_grad && !painted {
 +            self.glyph_scratch = scratch;
++            self.paint_cache.layouts = layouts;
 +            return;
 +        }
          let start = dl.words.len();
          dl.words.push(spec::draw_op::GLYPH_RUN);
          dl.words.push(0); // patched below: slot | count << 16
-@@ -2513,12 +2561,91 @@ impl<'a> Walker<'a> {
+@@ -3119,6 +3186,15 @@ impl<'a> Walker<'a> {
          } else {
              dl.words[start + 1] = (slot as u32) | (n << 16);
          }
@@ -342,9 +403,10 @@ index fc26a4b9..ac07c31b 100644
 +            }
 +        }
          if stroke && center {
-             self.emit_glyph_stroke(dl, &scratch, world, clip, slot, stroke_color, stroke_width, 1, cell_w, cell_h);
+             self.emit_glyph_stroke(dl, glyphs, world, clip, slot, stroke_color, stroke_width, 1, cell_w, cell_h);
          }
-         self.glyph_scratch = scratch;
+@@ -3126,6 +3202,76 @@ impl<'a> Walker<'a> {
+         self.paint_cache.layouts = layouts;
      }
  
 +    /// One PAINT_PUSH (pocket-motion; format in spec.ts) for the node's
@@ -407,7 +469,7 @@ index fc26a4b9..ac07c31b 100644
 +            n += 1;
 +        };
 +        stop(dl, r.grad_from, r.grad_from_pos);
-+        for &(color, pos) in r.grad_via.iter() {
++        for &(color, pos) in r.grad_vias.iter() {
 +            if pos.is_finite() {
 +                stop(dl, color, pos);
 +            }
@@ -420,23 +482,39 @@ index fc26a4b9..ac07c31b 100644
      /// One GLYPH_STROKE (pocket-motion; format in spec.ts): the run's cells
      /// placed exactly as GLYPH_RUN places them, kept when the cell widened
      /// by the stroke width reaches the clip — a stroke reaches past its
-@@ -2627,6 +2754,11 @@ impl<'a> Walker<'a> {
+@@ -3234,6 +3380,11 @@ impl<'a> Walker<'a> {
  
  /// Concatenated inline run of a text element (own text + text-type
  /// descendants through text nodes).
 +/// Stops a PAINT_PUSH for `r` carries: from, each via with a position, to.
 +fn paint_stops(r: &style::Resolved) -> usize {
-+    2 + r.grad_via.iter().filter(|v| v.1.is_finite()).count()
++    2 + r.grad_vias.iter().filter(|v| v.1.is_finite()).count()
 +}
 +
  fn collect_run_of(tree: &Tree, node: &crate::tree::Node, out: &mut alloc::string::String) {
      out.push_str(&node.text);
      for &cid in &node.children {
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index e9be894c..43cd7499 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -1288,6 +1288,11 @@ impl Ui {
+                 }
+                 x if x == spec::draw_op::LAYER_PUSH => 8,
+                 x if x == spec::draw_op::LAYER_POP => 1,
++                x if x == spec::draw_op::PAINT_PUSH => {
++                    let Some(n) = words.get(i + 2) else { break };
++                    9 + 2 * *n as usize
++                }
++                x if x == spec::draw_op::PAINT_POP => 1,
+                 _ => break,
+             };
+             let Some(end) = i.checked_add(len) else { break };
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index 4deb56d7..1ed657db 100644
+index 17b6feab..2cbc4fa5 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
-@@ -980,6 +980,24 @@ fn render_ops<T: RenderTarget>(
+@@ -1075,6 +1075,24 @@ fn render_ops<T: RenderTarget>(
                  layer.bytes[y0 * row..y1 * row].fill(0);
                  pool.free.push(layer.bytes);
              }
@@ -461,7 +539,7 @@ index 4deb56d7..1ed657db 100644
              draw_op::LAYER_POP => {
                  if ignored_layers > 0 {
                      ignored_layers -= 1;
-@@ -1600,6 +1618,136 @@ fn glyph_run<T: RenderTarget>(
+@@ -1695,6 +1713,136 @@ fn glyph_run<T: RenderTarget>(
      }
  }
  
@@ -599,10 +677,10 @@ index 4deb56d7..1ed657db 100644
  
  /// A LAYER_PUSH's parameters, decoded (spec.ts DRAWLIST op format).
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 7b1b7500..52ef8e83 100644
+index 6e92859f..47d97df0 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
-@@ -175,6 +175,19 @@ pub mod prop {
+@@ -194,6 +194,19 @@ pub mod prop {
      pub const DROP_SHADOW_COLOR: u8 = 167;
      pub const DROP_SHADOW_GAIN: u8 = 168;
      pub const BLEND_MODE: u8 = 169;
@@ -622,9 +700,9 @@ index 7b1b7500..52ef8e83 100644
  }
  
  /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
-@@ -196,8 +209,8 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+@@ -215,8 +228,8 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 -    0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 -    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -633,27 +711,27 @@ index 7b1b7500..52ef8e83 100644
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-@@ -217,8 +230,8 @@ pub const ANIM_BIT: [u8; 256] = [
+@@ -236,8 +249,8 @@ pub const ANIM_BIT: [u8; 256] = [
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-     0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0xff, 0xff, 0x20, 0x21, 0x22, 0xff, 0x23, 0x24, 0x25, 0xff,
+     0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0xff, 0xff, 0x20, 0x21, 0x22, 0xff, 0x23, 0x24, 0x25, 0x26,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
--    0x26, 0x27, 0xff, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 -    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-+    0x26, 0x27, 0xff, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0xff, 0xff, 0x2e, 0x2f, 0x30, 0x31, 0x32,
-+    0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0x2f, 0x30, 0x31, 0x32, 0x33,
++    0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-@@ -226,7 +239,7 @@ pub const ANIM_BIT: [u8; 256] = [
+@@ -245,7 +258,7 @@ pub const ANIM_BIT: [u8; 256] = [
  ];
  
  /// Bitset over prop ids: animatable props (tween/spring/transition targets).
--pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000001fb0000773f, 0x0000000000000000];
-+pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000773f, 0x0000000000000000];
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000001fb0000f73f, 0x0000000000000000];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x0000000000000000];
  /// Bitset over prop ids: props whose change invalidates layout.
- pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000007fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
  
-@@ -329,6 +342,23 @@ pub enum BlendMode {
+@@ -357,6 +370,23 @@ pub enum BlendMode {
      Add = 4,
  }
  
@@ -677,7 +755,7 @@ index 7b1b7500..52ef8e83 100644
  /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
  #[repr(u8)]
  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-@@ -470,11 +500,14 @@ pub mod draw_op {
+@@ -500,11 +530,14 @@ pub mod draw_op {
      pub const GLYPH_STROKE: u32 = 66;
      pub const LAYER_PUSH: u32 = 67;
      pub const LAYER_POP: u32 = 68;
@@ -693,10 +771,10 @@ index 7b1b7500..52ef8e83 100644
  
  /// .pak container constants (byte-compatible with dreamcart's format;
 diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
-index b3735554..bd89b851 100644
+index 53f0f75d..af6b9bb0 100644
 --- a/engine/core/src/style.rs
 +++ b/engine/core/src/style.rs
-@@ -316,6 +316,16 @@ pub struct Resolved {
+@@ -324,6 +324,16 @@ pub struct Resolved {
      pub drop_shadow_gain: f32,
      /// spec::BlendMode ordinal.
      pub blend_mode: u8,
@@ -707,13 +785,13 @@ index b3735554..bd89b851 100644
 +    pub grad_from_pos: f32,
 +    pub grad_to_pos: f32,
 +    /// Middle stops: (colour, position); NAN position = no stop.
-+    pub grad_via: [(u32, f32); 4],
++    pub grad_vias: [(u32, f32); 4],
 +    /// spec::BgClip ordinal.
 +    pub bg_clip: u8,
  }
  
  impl Default for Resolved {
-@@ -387,6 +397,12 @@ impl Default for Resolved {
+@@ -399,6 +409,12 @@ impl Default for Resolved {
              drop_shadow_color: 0,
              drop_shadow_gain: 1.0,
              blend_mode: spec::BlendMode::Normal as u8,
@@ -721,12 +799,12 @@ index b3735554..bd89b851 100644
 +            grad_angle: 180.0,
 +            grad_from_pos: 0.0,
 +            grad_to_pos: 1.0,
-+            grad_via: [(0, f32::NAN); 4],
++            grad_vias: [(0, f32::NAN); 4],
 +            bg_clip: spec::BgClip::Border as u8,
          }
      }
  }
-@@ -487,6 +503,19 @@ impl Resolved {
+@@ -504,6 +520,19 @@ impl Resolved {
              p::DROP_SHADOW_COLOR => self.drop_shadow_color = bits,
              p::DROP_SHADOW_GAIN => self.drop_shadow_gain = f,
              p::BLEND_MODE => self.blend_mode = bits as u8,
@@ -734,19 +812,19 @@ index b3735554..bd89b851 100644
 +            p::GRAD_ANGLE => self.grad_angle = f,
 +            p::GRAD_FROM_POS => self.grad_from_pos = f,
 +            p::GRAD_TO_POS => self.grad_to_pos = f,
-+            p::GRAD_VIA1 => self.grad_via[0].0 = bits,
-+            p::GRAD_VIA1_POS => self.grad_via[0].1 = f,
-+            p::GRAD_VIA2 => self.grad_via[1].0 = bits,
-+            p::GRAD_VIA2_POS => self.grad_via[1].1 = f,
-+            p::GRAD_VIA3 => self.grad_via[2].0 = bits,
-+            p::GRAD_VIA3_POS => self.grad_via[2].1 = f,
-+            p::GRAD_VIA4 => self.grad_via[3].0 = bits,
-+            p::GRAD_VIA4_POS => self.grad_via[3].1 = f,
++            p::GRAD_VIA1 => self.grad_vias[0].0 = bits,
++            p::GRAD_VIA1_POS => self.grad_vias[0].1 = f,
++            p::GRAD_VIA2 => self.grad_vias[1].0 = bits,
++            p::GRAD_VIA2_POS => self.grad_vias[1].1 = f,
++            p::GRAD_VIA3 => self.grad_vias[2].0 = bits,
++            p::GRAD_VIA3_POS => self.grad_vias[2].1 = f,
++            p::GRAD_VIA4 => self.grad_vias[3].0 = bits,
++            p::GRAD_VIA4_POS => self.grad_vias[3].1 = f,
 +            p::BG_CLIP => self.bg_clip = bits as u8,
              _ => {}
          }
      }
-@@ -571,6 +600,19 @@ impl Resolved {
+@@ -592,6 +621,19 @@ impl Resolved {
              p::DROP_SHADOW_COLOR => self.drop_shadow_color,
              p::DROP_SHADOW_GAIN => self.drop_shadow_gain.to_bits(),
              p::BLEND_MODE => self.blend_mode as u32,
@@ -754,23 +832,23 @@ index b3735554..bd89b851 100644
 +            p::GRAD_ANGLE => self.grad_angle.to_bits(),
 +            p::GRAD_FROM_POS => self.grad_from_pos.to_bits(),
 +            p::GRAD_TO_POS => self.grad_to_pos.to_bits(),
-+            p::GRAD_VIA1 => self.grad_via[0].0,
-+            p::GRAD_VIA1_POS => self.grad_via[0].1.to_bits(),
-+            p::GRAD_VIA2 => self.grad_via[1].0,
-+            p::GRAD_VIA2_POS => self.grad_via[1].1.to_bits(),
-+            p::GRAD_VIA3 => self.grad_via[2].0,
-+            p::GRAD_VIA3_POS => self.grad_via[2].1.to_bits(),
-+            p::GRAD_VIA4 => self.grad_via[3].0,
-+            p::GRAD_VIA4_POS => self.grad_via[3].1.to_bits(),
++            p::GRAD_VIA1 => self.grad_vias[0].0,
++            p::GRAD_VIA1_POS => self.grad_vias[0].1.to_bits(),
++            p::GRAD_VIA2 => self.grad_vias[1].0,
++            p::GRAD_VIA2_POS => self.grad_vias[1].1.to_bits(),
++            p::GRAD_VIA3 => self.grad_vias[2].0,
++            p::GRAD_VIA3_POS => self.grad_vias[2].1.to_bits(),
++            p::GRAD_VIA4 => self.grad_vias[3].0,
++            p::GRAD_VIA4_POS => self.grad_vias[3].1.to_bits(),
 +            p::BG_CLIP => self.bg_clip as u32,
              _ => 0,
          }
      }
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 9ebb13fa..6861a932 100644
+index 6f5a6363..a1760a98 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -255,6 +255,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -263,6 +263,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
      let mut depth = 0i32;
      let mut mask_depth = 0i32;
      let mut layer_depth = 0i32;
@@ -778,7 +856,7 @@ index 9ebb13fa..6861a932 100644
      let mut i = 0usize;
      while i < words.len() {
          let op = words[i];
-@@ -361,6 +362,25 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -377,6 +378,25 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
                  assert!(layer_depth as usize <= spec::draw_op::LAYER_MAX_DEPTH, "layers nested too deep");
                  i += 8;
              }
@@ -804,7 +882,7 @@ index 9ebb13fa..6861a932 100644
              spec::draw_op::LAYER_POP => {
                  layer_depth -= 1;
                  assert!(layer_depth >= 0, "unbalanced LAYER_POP");
-@@ -385,6 +405,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -401,6 +421,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
      assert_eq!(depth, 0, "unbalanced SCISSOR/SCISSOR_POP");
      assert_eq!(mask_depth, 0, "unbalanced MASK_PUSH/MASK_POP");
      assert_eq!(layer_depth, 0, "unbalanced LAYER_PUSH/LAYER_POP");
@@ -812,7 +890,7 @@ index 9ebb13fa..6861a932 100644
      counts
  }
  
-@@ -5122,3 +5143,181 @@ fn a_reused_layer_buffer_carries_nothing_from_the_layer_before() {
+@@ -6151,3 +6172,224 @@ fn a_reused_layer_buffer_carries_nothing_from_the_layer_before() {
          assert_eq!(sample_rgba(&one, x, 90), sample_rgba(&two, x, 90), "column {x} of the first node");
      }
  }
@@ -958,6 +1036,49 @@ index 9ebb13fa..6861a932 100644
 +}
 +
 +#[test]
++fn bg_clip_text_paints_scaled_glyph_pages_too() {
++    // Under an axis-aligned scale the run is drawn as glyph-page TEX_QUADs
++    // instead of a GLYPH_RUN; the paint recolours whatever its span writes,
++    // so the gradient still lands in the glyphs.
++    let (red, blue) = (abgr(255, 0, 0, 255), abgr(0, 0, 255, 255));
++    let mut ui = Ui::new();
++    assert!(ui.load_font_atlas(&block_atlas(0, 40, 0, 40)));
++    let ground = ui.create_node(0);
++    ui.set_prop(ground, spec::prop::WIDTH, 200.0);
++    ui.set_prop(ground, spec::prop::HEIGHT, 200.0);
++    ui.set_prop(ground, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.insert_before(spec::ROOT_ID, ground, 0);
++    let t = ui.create_node(spec::NodeType::Text as u8);
++    ui.set_prop(t, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(t, spec::prop::INSET_L, 40.0);
++    ui.set_prop(t, spec::prop::INSET_T, 40.0);
++    ui.set_prop(t, spec::prop::WIDTH, 120.0);
++    ui.set_text(t, "AAA");
++    ui.set_prop(t, spec::prop::TEXT_COLOR, 0.0);
++    ui.set_prop(t, spec::prop::BG_CLIP, spec::BgClip::Text as u32 as f64);
++    ui.set_prop(t, spec::prop::GRAD_KIND, spec::GradKind::Linear as u32 as f64);
++    ui.set_prop(t, spec::prop::GRAD_ANGLE, 90.0);
++    ui.set_prop(t, spec::prop::GRAD_FROM, red as f64);
++    ui.set_prop(t, spec::prop::GRAD_TO, blue as f64);
++    ui.set_prop(t, spec::prop::SCALE, 1.25);
++    ui.insert_before(ground, t, 0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let counts = validate_drawlist(&words);
++    assert_eq!(counts[spec::draw_op::PAINT_PUSH as usize], 1);
++    assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 0, "a scaled run draws glyph pages");
++    let p = words.iter().position(|&w| w == spec::draw_op::PAINT_PUSH).unwrap();
++    let q = words.iter().position(|&w| w == spec::draw_op::PAINT_POP).unwrap();
++    assert!(words[p..q].contains(&spec::draw_op::TEX_QUAD), "the paint wraps the glyph pages");
++    let fb = raster_fb(&mut ui);
++    // The box spans 40..160 scaled 1.25 about its centre: 25..175.
++    let left = sample_rgba(&fb, 30, 60);
++    let right = sample_rgba(&fb, 170, 60);
++    assert!(left[0] > 200 && left[2] < 60 && left[1] < 10, "the first glyph is red: {left:?}");
++    assert!(right[2] > 200 && right[0] < 60 && right[1] < 10, "the last glyph is blue: {right:?}");
++}
++
++#[test]
 +fn a_changed_gradient_redraws_in_full_and_equals_the_full_render() {
 +    use crate::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS};
 +    use crate::raster::{render_scaled, render_scaled_incremental};
@@ -994,11 +1115,46 @@ index 9ebb13fa..6861a932 100644
 +    assert_eq!(counts[spec::draw_op::GRAD_RECT as usize], 1);
 +    assert_eq!(counts[spec::draw_op::PAINT_PUSH as usize], 0);
 +}
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index aea967f8..5c06bdea 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -88,6 +88,19 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("dropShadowColor", 167, "u32"),
+     ("dropShadowGain", 168, "f32"),
+     ("blendMode", 169, "i32"),
++    ("gradKind", 170, "i32"),
++    ("gradAngle", 171, "f32"),
++    ("gradFromPos", 172, "f32"),
++    ("gradToPos", 173, "f32"),
++    ("gradVia1", 174, "u32"),
++    ("gradVia1Pos", 175, "f32"),
++    ("gradVia2", 176, "u32"),
++    ("gradVia2Pos", 177, "f32"),
++    ("gradVia3", 178, "u32"),
++    ("gradVia3Pos", 179, "f32"),
++    ("gradVia4", 180, "u32"),
++    ("gradVia4Pos", 181, "f32"),
++    ("bgClip", 182, "i32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+@@ -205,6 +218,10 @@ pub const STYLE_UNITS: &[(&str, &str)] = &[
+     ("skewX", "Deg"),
+     ("textStrokeColor", "Color"),
+     ("dropShadowColor", "Color"),
++    ("gradVia1", "Color"),
++    ("gradVia2", "Color"),
++    ("gradVia3", "Color"),
++    ("gradVia4", "Color"),
+ ];
+ pub const INPUT_ELEMENTS: &[(&str, &[&str], &[&str])] = &[
+     ("ActionHandler", &["button", "active", "latched"], &["press"]),
 diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
-index 8cd6c5fb..9ba2e96e 100644
+index 28172942..76a48017 100644
 --- a/framework/compiler/animation.ts
 +++ b/framework/compiler/animation.ts
-@@ -255,6 +255,19 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+@@ -273,6 +273,19 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
    dropShadowBlur: [[PROP.dropShadowBlur], pxBits],
    dropShadowColor: [[PROP.dropShadowColor], colorBits],
    dropShadowGain: [[PROP.dropShadowGain], scalarBits],
@@ -1019,10 +1175,10 @@ index 8cd6c5fb..9ba2e96e 100644
  
  /**
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index a1fffc84..f39acba5 100644
+index 56fc9c80..0a3e4a6d 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -23,6 +23,7 @@ import {
+@@ -25,6 +25,7 @@ import {
    SIZE_FULL,
    STROKE_MAX_WIDTH,
    BLUR_MAX,
@@ -1030,23 +1186,28 @@ index a1fffc84..f39acba5 100644
    TRANSITION_MASK_ALL,
    abgr,
    animBit,
-@@ -266,6 +267,15 @@ interface VariantAcc {
+@@ -280,6 +281,20 @@ interface VariantAcc {
    mono?: boolean;
    /** `font-[name]`: a named face declared to the build. */
    face?: string;
 +  /** Gradient paint (pocket-motion): something here needs the multi-stop
-+   *  path — a via, a stop position, an angle, radial, or `bg-clip-text`
-+   *  over a gradient. Resolved per variant once the literal has parsed. */
++   *  path — a from/to position, an angle, radial, an arbitrary gradient, or
++   *  `bg-clip-text` over a gradient. Resolved per variant once the literal
++   *  has parsed. */
 +  gradPaint?: boolean;
 +  gradKind?: number;
 +  gradAngle?: number;
-+  sawVia?: boolean;
++  /** `via-<color>` / `via-N%`, placed once the path is known: upstream's
++   *  gradVia/gradViaPos, or the paint's gradVia1/gradVia1Pos. */
++  viaColor?: number;
++  viaPos?: number;
++  /** An arbitrary gradient placed every via it declared. */
 +  sawViaPos?: boolean;
 +  clipText?: boolean;
    decls: Decl[];
    sizePx?: number;
    bold?: boolean;
-@@ -464,14 +474,32 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+@@ -484,18 +499,32 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
      case "bg": {
        const grad = /^gradient-to-([tblr])$/.exec(rest);
        if (grad) { D.push([PROP.gradDir, int(GRAD_DIR[grad[1]])]); return true; }
@@ -1056,31 +1217,33 @@ index a1fffc84..f39acba5 100644
        D.push([PROP.bgColor, c]);
        return true;
      }
--    case "from": case "to": {
-+    case "from": case "to": case "via": {
+     case "from": case "via": case "to": {
 +      // Stop position (Tailwind 3.3): `from-10%`, `via-40%`, `to-90%`.
++      // A via's colour and position wait until the literal has parsed: a
++      // gradient upstream draws — a `bg-gradient-to-*` direction, from, one
++      // via, to — keeps upstream's gradVia/gradViaPos, and one that needs
++      // the paint takes the stop table's gradVia1 instead. Never both.
 +      const pct = /^(\d+(?:\.\d+)?)%$/.exec(rest);
 +      if (pct) {
 +        const v = parseFloat(pct[1]!);
 +        if (v > 100) return false;
-+        const prop = head === "from" ? PROP.gradFromPos : head === "to" ? PROP.gradToPos : PROP.gradVia1Pos;
-+        D.push([prop, px(v / 100)]);
++        if (head === "via") { acc.viaPos = v / 100; return true; }
++        D.push([head === "from" ? PROP.gradFromPos : PROP.gradToPos, px(v / 100)]);
 +        acc.gradPaint = true;
-+        if (head === "via") acc.sawViaPos = true;
 +        return true;
 +      }
        const c = colorValue(rest);
        if (c === null) return false;
-+      if (head === "via") {
-+        D.push([PROP.gradVia1, c]);
-+        acc.sawVia = true;
-+        acc.gradPaint = true;
-+        return true;
-+      }
-       D.push([head === "from" ? PROP.gradFrom : PROP.gradTo, c]);
+       if (head === "from") D.push([PROP.gradFrom, c]);
+-      else if (head === "via") {
+-        D.push([PROP.gradVia, c], [PROP.gradViaPos, px(0.5)]);
+-      } else D.push([PROP.gradTo, c]);
++      else if (head === "via") acc.viaColor = c;
++      else D.push([PROP.gradTo, c]);
        return true;
      }
-@@ -730,6 +758,106 @@ function parseFilterUtility(tok: string, D: Decl[]): boolean {
+     case "rounded": {
+@@ -753,6 +782,106 @@ function parseFilterUtility(tok: string, D: Decl[]): boolean {
    return false;
  }
  
@@ -1187,7 +1350,7 @@ index a1fffc84..f39acba5 100644
  /** Literal-level animation accumulator (`animate-*` binds to the base style). */
  interface AnimAcc {
    ids: number[];
-@@ -936,6 +1064,21 @@ export function parseClassLiteral(
+@@ -1010,6 +1139,30 @@ export function parseClassLiteral(
      if (v.sizePx !== undefined || v.bold !== undefined || v.mono !== undefined || v.face !== undefined) {
        v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold, effMono, effFace))]);
      }
@@ -1204,16 +1367,49 @@ index a1fffc84..f39acba5 100644
 +        const angle = v.gradAngle ?? base.gradAngle ?? (dir ? DIR_ANGLE[dir[1]]! : 180);
 +        v.decls.push([PROP.gradAngle, px(angle)]);
 +      }
-+      if (v.sawVia && !v.sawViaPos && !base.sawViaPos) v.decls.push([PROP.gradVia1Pos, px(0.5)]);
++      if (v.viaColor !== undefined) v.decls.push([PROP.gradVia1, v.viaColor]);
++      if (v.viaPos !== undefined) v.decls.push([PROP.gradVia1Pos, px(v.viaPos)]);
++      else if (v.viaColor !== undefined && !v.sawViaPos && !base.sawViaPos && base.viaPos === undefined) {
++        v.decls.push([PROP.gradVia1Pos, px(0.5)]);
++      }
++    } else if (v.viaColor !== undefined || v.viaPos !== undefined) {
++      // A gradient upstream draws itself (99af2166): one middle stop, the
++      // core splitting the box at its position into two GRAD_RECTs.
++      if (v.viaColor !== undefined) v.decls.push([PROP.gradVia, v.viaColor]);
++      v.decls.push([PROP.gradViaPos, px(v.viaPos ?? base.viaPos ?? 0.5)]);
 +    }
      if (v.trackingWide) {
        v.decls.push([PROP.tracking, px(0.025 * effPx)]); // Tailwind tracking-wide = 0.025em
      }
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index 89735501..f534d888 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -83,6 +83,19 @@ export interface MicroTsStyleProps {
+   dropShadowColor?: Color;
+   dropShadowGain?: MicroTsFloatInput;
+   blendMode?: i32;
++  gradKind?: i32;
++  gradAngle?: MicroTsFloatInput;
++  gradFromPos?: MicroTsFloatInput;
++  gradToPos?: MicroTsFloatInput;
++  gradVia1?: Color;
++  gradVia1Pos?: MicroTsFloatInput;
++  gradVia2?: Color;
++  gradVia2Pos?: MicroTsFloatInput;
++  gradVia3?: Color;
++  gradVia3Pos?: MicroTsFloatInput;
++  gradVia4?: Color;
++  gradVia4Pos?: MicroTsFloatInput;
++  bgClip?: i32;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
 diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
-index ab8727ab..772d7088 100644
+index f8a37ffe..bc35d109 100644
 --- a/tests/tailwind.test.ts
 +++ b/tests/tailwind.test.ts
-@@ -678,3 +678,58 @@ describe("filter layers (pocket-motion)", () => {
+@@ -744,3 +744,72 @@ describe("filter layers (pocket-motion)", () => {
      );
    });
  });
@@ -1228,11 +1424,25 @@ index ab8727ab..772d7088 100644
 +    expect(m.has(PROP.gradKind)).toBe(false);
 +    expect(m.get(PROP.gradDir)).toBe(ENUMS.GradDir.ToRight);
 +  });
-+  test("a via makes it a paint, takes the direction as the angle and sits at 50%", () => {
++  test("a via under bg-gradient-to-* is upstream's middle stop; in a paint it is the stop table's; never both", () => {
 +    const m = props(parseClassLiteral("bg-gradient-to-r from-red-500 via-green-500 to-blue-500"));
-+    expect(stopsOf(m)).toEqual({ kind: ENUMS.GradKind.Linear, angle: 90 });
-+    expect(m.get(PROP.gradVia1)).toBe(paletteColor("green-500")!);
-+    expect(f32Of(m, PROP.gradVia1Pos)).toBe(0.5);
++    expect(m.has(PROP.gradKind)).toBe(false);
++    expect(m.get(PROP.gradVia)).toBe(paletteColor("green-500")!);
++    expect(f32Of(m, PROP.gradViaPos)).toBe(0.5);
++    expect(m.has(PROP.gradVia1)).toBe(false);
++    const at30 = props(parseClassLiteral("bg-gradient-to-r from-red-500 via-green-500 via-30% to-blue-500"));
++    expect(at30.has(PROP.gradKind)).toBe(false);
++    expect(f32Of(at30, PROP.gradViaPos)).toBeCloseTo(0.3, 6);
++    const p = props(parseClassLiteral("bg-linear-90 from-red-500 via-green-500 to-blue-500"));
++    expect(stopsOf(p)).toEqual({ kind: ENUMS.GradKind.Linear, angle: 90 });
++    expect(p.get(PROP.gradVia1)).toBe(paletteColor("green-500")!);
++    expect(f32Of(p, PROP.gradVia1Pos)).toBe(0.5);
++    expect(p.has(PROP.gradVia) || p.has(PROP.gradViaPos)).toBe(false);
++    // bg-clip-text over a legacy three-stop gradient takes the paint: only it reaches glyphs.
++    const t = props(parseClassLiteral("bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-green-500 to-blue-500"));
++    expect(stopsOf(t)).toEqual({ kind: ENUMS.GradKind.Linear, angle: 90 });
++    expect(t.get(PROP.gradVia1)).toBe(paletteColor("green-500")!);
++    expect(t.has(PROP.gradVia)).toBe(false);
 +  });
 +  test("positions, angles and radial", () => {
 +    const m = props(parseClassLiteral("bg-linear-45 from-red-500 from-10% via-white via-40% to-blue-500 to-90%"));

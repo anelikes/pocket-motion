@@ -36,13 +36,20 @@ What the patch adds, by file:
   equal the product of the two single masks read back from their own
   renders (red with a minimum in place of the product).
 
+2026-10-22, rebased onto 66caf4e5: main made the rasteriser generic over
+`RenderResources` in place of `&Ui`, and `render_ops` takes it too; main's
+`clip_fan` replaced `sutherland_hodgman`, and the outline is clipped by
+`clip_poly`, the same passes (0008). `Overflow.Mask` is 2 beside main's new
+`Contain` enum. The two draw-list walkers main added know MASK_PUSH
+(2 + N) and MASK_POP (1).
+
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index 5331e37..3deed2f 100644
+index 2ac06995..7f85bad4 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
-@@ -70,6 +70,7 @@ import {
+@@ -97,6 +97,7 @@ import {
    PAK_MAGIC,
    PAK_VERSION,
    DRAW_OP,
@@ -50,21 +57,21 @@ index 5331e37..3deed2f 100644
    ENUMS,
    FIXED_DT,
    FONT_CMAP_ENTRY_SIZE,
-@@ -300,7 +301,7 @@ export function generateRust(): string {
+@@ -334,7 +335,7 @@ export function generateRust(): string {
      Align: "align-items.",
      PosType: "position type.",
      Display: "display (None removes from layout AND paint).",
 -    Overflow: "overflow (Hidden => scissor in draw).",
 +    Overflow: "overflow (Hidden => scissor in draw; Mask => the same scissor plus a MASK_PUSH of the node's outline).",
+     Contain: "layout containment (Strict: own layout root; Baked: Strict plus build-time rects).",
      TextAlign: "text alignment within the node box.",
      GradDir: "gradient direction (`bg-gradient-to-t|b|l|r`).",
-     Easing:
-@@ -432,11 +433,14 @@ export function generateRust(): string {
-   // --- drawlist ------------------------------------------------------------------
+@@ -468,11 +469,14 @@ export function generateRust(): string {
    put("/// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).");
    put("/// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,");
--  put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N.");
-+  put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N,");
+   put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,");
+-  put("/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N.");
++  put("/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N,");
 +  put("/// MASK_PUSH 2+N, MASK_POP 1 (64 and up: software-rasteriser-only ops).");
    put("pub mod draw_op {");
    for (const [name, v] of Object.entries(DRAW_OP)) {
@@ -76,19 +83,19 @@ index 5331e37..3deed2f 100644
    put("");
  
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index 88e190c..2233c3f 100644
+index 5c40e0d0..38a723ee 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -498,7 +498,7 @@ export const ENUMS = {
+@@ -572,7 +572,7 @@ export const ENUMS = {
    Align: { Start: 0, Center: 1, End: 2, Stretch: 3 },
    PosType: { Relative: 0, Absolute: 1 },
    Display: { Flex: 0, None: 1 },
 -  Overflow: { Visible: 0, Hidden: 1 },
 +  Overflow: { Visible: 0, Hidden: 1, Mask: 2 },
+   /** Layout containment: `contain-strict` / `layout-baked`. */
+   Contain: { None: 0, Strict: 1, Baked: 2 },
    TextAlign: { Left: 0, Center: 1, Right: 2 },
-   /** Gradient direction: `bg-gradient-to-t|b|l|r`. */
-   GradDir: { ToTop: 0, ToBottom: 1, ToLeft: 2, ToRight: 3 },
-@@ -1401,6 +1401,22 @@ export const FONT_FLAG_BOLD = 1 << 0;
+@@ -1477,6 +1477,22 @@ export const FONT_FLAG_BOLD = 1 << 0;
  //                           polygon (interior run + boundary pixels) so a
  //                           box's shared diagonal is not an interior edge.
  //                           N > 8 falls back to a TRI fan.
@@ -111,10 +118,10 @@ index 88e190c..2233c3f 100644
  //   TEXT_RUN    (8 + ceil(n/4) words):
  //                           op,
  //                           word1: bits 0-7 fontSlot,
-@@ -1437,8 +1453,17 @@ export const DRAW_OP = {
-   texTri: 8,
+@@ -1524,8 +1540,17 @@ export const DRAW_OP = {
    textRun: 9,
-   poly: 10,
+   surfaceQuad: 10,
+   poly: 11,
 +  // 64 and up: ops the pocket-motion software rasteriser draws and no
 +  // upstream backend does. Upstream allocates densely from 1; these stay
 +  // out of its way (pocket-motion `src/vendor/draw-ops.ts`).
@@ -129,14 +136,27 @@ index 88e190c..2233c3f 100644
  // ---------------------------------------------------------------------------
  // PAK container constants
  // ---------------------------------------------------------------------------
+diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
+index d31fcbbc..cb538b98 100644
+--- a/engine/core/src/compositor.rs
++++ b/engine/core/src/compositor.rs
+@@ -28,6 +28,8 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+         crate::spec::draw_op::TEXT_RUN => 8 + (*words.get(at + 7)? as usize).div_ceil(4),
+         crate::spec::draw_op::SURFACE_QUAD => 9,
+         crate::spec::draw_op::POLY => 3 + *words.get(at + 1)? as usize,
++        crate::spec::draw_op::MASK_PUSH => 2 + *words.get(at + 1)? as usize,
++        crate::spec::draw_op::MASK_POP => 1,
+         _ => return None,
+     })
+ }
 diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
-index 1705ff8..72b79eb 100644
+index 93354a16..2f410a2a 100644
 --- a/engine/core/src/damage.rs
 +++ b/engine/core/src/damage.rs
-@@ -436,6 +436,14 @@ impl<'a> DamageDecoder<'a> {
-                 let bytes = *self.words.get(start + 7).ok_or(())? as usize;
+@@ -443,6 +443,14 @@ impl<'a> DamageDecoder<'a> {
                  8usize.checked_add(bytes.div_ceil(4)).ok_or(())?
              }
+             spec::draw_op::SURFACE_QUAD => 9,
 +            spec::draw_op::MASK_PUSH => {
 +                let n = self.words.get(start + 1).copied().ok_or(())? as usize;
 +                if !(3..=spec::draw_op::MASK_MAX_VERTS).contains(&n) {
@@ -148,7 +168,7 @@ index 1705ff8..72b79eb 100644
              _ => return Err(()),
          };
          let end = start.checked_add(len).ok_or(())?;
-@@ -468,6 +476,10 @@ impl<'a> DamageDecoder<'a> {
+@@ -475,6 +483,10 @@ impl<'a> DamageDecoder<'a> {
              spec::draw_op::TRI => triangle_bounds([words[1], words[2], words[3]], self.clip),
              spec::draw_op::TEX_TRI => triangle_bounds([words[2], words[5], words[8]], self.clip),
              spec::draw_op::POLY => polygon_bounds(&words[3..], self.clip),
@@ -159,7 +179,7 @@ index 1705ff8..72b79eb 100644
              // Native-text runs carry no glyph geometry the tracker can
              // measure; the core keeps every partially-clipped run inside a
              // scissor, so the current clip is a sound (conservative) bound.
-@@ -663,6 +675,44 @@ mod tests {
+@@ -675,6 +687,44 @@ mod tests {
          assert_eq!(changed.area(), 32);
      }
  
@@ -205,10 +225,10 @@ index 1705ff8..72b79eb 100644
      fn structure_target_and_invalidation_force_full_redraws() {
          let mut ui = Ui::new();
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index ce80177..9c3c059 100644
+index c2d6d4c9..19baf6a4 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
-@@ -765,7 +765,10 @@ fn hit_walk(
+@@ -990,7 +990,10 @@ fn hit_walk(
          return;
      }
      let mut child_clip = clip;
@@ -220,7 +240,7 @@ index ce80177..9c3c059 100644
          child_clip = clip.intersect(&world_aabb_of(screen, &world, l.w, l.h));
          if !child_clip.contains(px, py) {
              return;
-@@ -972,6 +975,52 @@ impl<'a> Walker<'a> {
+@@ -1285,6 +1288,52 @@ impl<'a> Walker<'a> {
              self.emit_shadow(dl, &world, l.w, l.h, r.radius, r.shadow, op, &clip);
          }
  
@@ -273,7 +293,7 @@ index ce80177..9c3c059 100644
          let is_arc = r.arc_width > 0.0 && r.arc_sweep != 0.0;
          if is_arc {
              // Arc primitive: the bg color strokes an annular sector instead
-@@ -1008,9 +1057,9 @@ impl<'a> Walker<'a> {
+@@ -1323,9 +1372,9 @@ impl<'a> Walker<'a> {
                  to: scale_alpha(r.grad_to, op),
                  dir: r.grad_dir,
              };
@@ -285,9 +305,9 @@ index ce80177..9c3c059 100644
          }
  
          // -- border: 4 inset strips ------------------------------------------
-@@ -1073,6 +1122,10 @@ impl<'a> Walker<'a> {
+@@ -1388,6 +1437,10 @@ impl<'a> Walker<'a> {
          if node.node_type == spec::NodeType::Text as u8 {
-             self.emit_text(dl, node, &r, &world, op, &clip, l.w, in_transform);
+             self.emit_text(dl, slot, node, &r, &world, op, &clip, l.w, in_transform);
              // Text children are absorbed into the run — do not recurse.
 +            if masked {
 +                dl.words.push(spec::draw_op::MASK_POP);
@@ -296,7 +316,7 @@ index ce80177..9c3c059 100644
              return;
          }
  
-@@ -1102,11 +1155,10 @@ impl<'a> Walker<'a> {
+@@ -1430,11 +1483,10 @@ impl<'a> Walker<'a> {
  
          // -- children (overflow-hidden scissor around them; z-index stable
          //    sort within siblings) ---------------------------------------------
@@ -311,7 +331,7 @@ index ce80177..9c3c059 100644
              let rect = self.world_aabb(&world, l.w, l.h);
              child_clip = clip.intersect(&rect);
              if child_clip.is_empty() {
-@@ -1122,6 +1174,9 @@ impl<'a> Walker<'a> {
+@@ -1450,6 +1502,9 @@ impl<'a> Walker<'a> {
              // 3D context root: the subtree composes 3x4 matrices, projects
              // through r.perspective about this node's center and painter-sorts.
              self.paint_3d(slot, &world, op, &child_clip, dl, r.perspective, l.w, l.h);
@@ -321,7 +341,7 @@ index ce80177..9c3c059 100644
              if scissored {
                  dl.words.push(spec::draw_op::SCISSOR_POP);
              }
-@@ -1135,6 +1190,9 @@ impl<'a> Walker<'a> {
+@@ -1463,6 +1518,9 @@ impl<'a> Walker<'a> {
              self.paint(cs, world, op, child_clip, in_transform, dl);
          });
  
@@ -331,8 +351,8 @@ index ce80177..9c3c059 100644
          if scissored {
              dl.words.push(spec::draw_op::SCISSOR_POP);
          }
-@@ -2581,6 +2639,114 @@ fn sutherland_hodgman(poly: &[ClipVert], clip: &Clip) -> Vec<ClipVert> {
-     cur
+@@ -3292,6 +3350,115 @@ fn clip_poly(poly: &[ClipVert], clip: &Clip, mut fan: impl FnMut(&[ClipVert])) {
+     fan(&cur);
  }
  
 +// ---- overflow-mask outline ------------------------------------------------------
@@ -414,7 +434,8 @@ index ce80177..9c3c059 100644
 +            ClipVert { x, y, color: [0.0; 4], u: 0.0, v: 0.0 }
 +        })
 +        .collect();
-+    let clipped = sutherland_hodgman(&verts, clip);
++    let mut clipped: Vec<ClipVert> = Vec::new();
++    clip_poly(&verts, clip, |v| clipped.extend_from_slice(v));
 +    let mut out: Vec<(f32, f32)> = Vec::with_capacity(clipped.len());
 +    for v in &clipped {
 +        let p = (
@@ -447,10 +468,10 @@ index ce80177..9c3c059 100644
  /// clipping a quad against a rect yields at most 8 vertices; anything
  /// larger falls back to the TRI fan. Degenerate polygons after rounding
 diff --git a/engine/core/src/layout.rs b/engine/core/src/layout.rs
-index 07c5778..91d4b0c 100644
+index 200c41ca..1cff3eb6 100644
 --- a/engine/core/src/layout.rs
 +++ b/engine/core/src/layout.rs
-@@ -162,12 +162,13 @@ pub fn to_taffy(r: &Resolved) -> taffy::Style {
+@@ -479,12 +479,13 @@ pub fn to_taffy(r: &Resolved) -> taffy::Style {
          taffy::Position::Relative
      };
      s.overflow = taffy::Point {
@@ -466,19 +487,35 @@ index 07c5778..91d4b0c 100644
              taffy::Overflow::Hidden
          } else {
              taffy::Overflow::Visible
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 698bfc78..5a570eef 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -1277,6 +1277,11 @@ impl Ui {
+                     let Some(n) = words.get(i + 1) else { break };
+                     3 + *n as usize
+                 }
++                x if x == spec::draw_op::MASK_PUSH => {
++                    let Some(n) = words.get(i + 1) else { break };
++                    2 + *n as usize
++                }
++                x if x == spec::draw_op::MASK_POP => 1,
+                 _ => break,
+             };
+             let Some(end) = i.checked_add(len) else { break };
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index d0c57a0..c9730a8 100644
+index a919a67d..12c08e3c 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
-@@ -42,6 +42,7 @@
- use crate::damage::{
+@@ -49,6 +49,7 @@ use crate::damage::{
      DamageError, DamagePlan, DamagePolicy, DamageRect, DamageTarget, DamageTracker,
  };
+ use crate::resources::RenderResources;
 +use alloc::vec::Vec;
  use crate::spec::{self, draw_op};
- use crate::{TexView, Ui};
- 
-@@ -137,6 +138,17 @@ trait RenderTarget {
+ use crate::TexView;
+ #[cfg(test)]
+@@ -146,6 +147,17 @@ trait RenderTarget {
      fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32);
      fn fill_opaque(&mut self, start: usize, len: usize, r: u32, g: u32, b: u32);
  
@@ -496,7 +533,7 @@ index d0c57a0..c9730a8 100644
      #[inline]
      fn clear_black(&mut self) {
          let len = self.pixel_len();
-@@ -686,16 +698,36 @@ fn render_scaled_clipped<T: RenderTarget>(
+@@ -772,16 +784,36 @@ fn render_scaled_clipped<T: RenderTarget>(
      scale: i32,
      screen: Clip,
  ) {
@@ -511,7 +548,7 @@ index d0c57a0..c9730a8 100644
 +/// further pushes onto its own stack instead, so the recursion is one level
 +/// deep whatever the nesting.
 +fn render_ops<T: RenderTarget>(
-+    ui: &Ui,
++    ui: &impl RenderResources,
 +    words: &[u32],
 +    target: &mut T,
 +    width: i32,
@@ -535,7 +572,7 @@ index d0c57a0..c9730a8 100644
                  }
                  let (x, y) = xy(words[i + 1], scale);
                  let (w, h) = wh(words[i + 2], scale);
-@@ -712,7 +744,7 @@ fn render_scaled_clipped<T: RenderTarget>(
+@@ -798,7 +830,7 @@ fn render_scaled_clipped<T: RenderTarget>(
              }
              draw_op::GRAD_RECT => {
                  if i + 6 > words.len() {
@@ -544,7 +581,7 @@ index d0c57a0..c9730a8 100644
                  }
                  let (x, y) = xy(words[i + 1], scale);
                  let (w, h) = wh(words[i + 2], scale);
-@@ -732,13 +764,13 @@ fn render_scaled_clipped<T: RenderTarget>(
+@@ -818,13 +850,13 @@ fn render_scaled_clipped<T: RenderTarget>(
              }
              draw_op::GLYPH_RUN => {
                  if i + 3 > words.len() {
@@ -560,7 +597,7 @@ index d0c57a0..c9730a8 100644
                  }
                  glyph_run(
                      ui,
-@@ -754,14 +786,14 @@ fn render_scaled_clipped<T: RenderTarget>(
+@@ -840,7 +872,7 @@ fn render_scaled_clipped<T: RenderTarget>(
              }
              draw_op::TEX_QUAD => {
                  if i + 9 > words.len() {
@@ -568,6 +605,14 @@ index d0c57a0..c9730a8 100644
 +                    return i;
                  }
                  tex_quad(ui, target, width, scale, clip, &words[i + 1..i + 9]);
+                 i += 9;
+@@ -849,13 +881,13 @@ fn render_scaled_clipped<T: RenderTarget>(
+             // application compositor and leave the shell fallback visible.
+             draw_op::SURFACE_QUAD => {
+                 if i + 9 > words.len() {
+-                    return;
++                    return i;
+                 }
                  i += 9;
              }
              draw_op::SCISSOR => {
@@ -577,7 +622,7 @@ index d0c57a0..c9730a8 100644
                  }
                  stack[depth] = clip;
                  depth += 1;
-@@ -788,25 +820,25 @@ fn render_scaled_clipped<T: RenderTarget>(
+@@ -882,25 +914,25 @@ fn render_scaled_clipped<T: RenderTarget>(
              }
              draw_op::TRI => {
                  if i + 7 > words.len() {
@@ -607,7 +652,7 @@ index d0c57a0..c9730a8 100644
                  }
                  poly(target, width, scale, clip, words[i + 2], &words[i + 3..i + 3 + n]);
                  i += 3 + n;
-@@ -818,16 +850,48 @@ fn render_scaled_clipped<T: RenderTarget>(
+@@ -912,16 +944,48 @@ fn render_scaled_clipped<T: RenderTarget>(
                  // stop: the op is a known member of the closed set. Variable
                  // length: 8 header words + the packed UTF-8 payload.
                  if i + 8 > words.len() {
@@ -658,7 +703,7 @@ index d0c57a0..c9730a8 100644
  }
  
  // ---- GRAD_RECT: per-axis gouraud lerp ---------------------------------------------
-@@ -977,14 +1041,7 @@ const POLY_MAX_VERTS: usize = 8;
+@@ -1071,14 +1135,7 @@ const POLY_MAX_VERTS: usize = 8;
  const POLY_SAMPLE_OFF: [i64; 4] = [-3, -1, 1, 3];
  
  #[inline]
@@ -674,7 +719,7 @@ index d0c57a0..c9730a8 100644
      let mut hits = 0u32;
      for &oy in &POLY_SAMPLE_OFF {
          for &ox in &POLY_SAMPLE_OFF {
-@@ -1003,96 +1060,125 @@ fn poly_hits(
+@@ -1097,96 +1154,125 @@ fn poly_hits(
      hits
  }
  
@@ -876,7 +921,7 @@ index d0c57a0..c9730a8 100644
                  (((k + s - 1).div_euclid(s)).clamp(0, span as i64) as i32, span)
              } else {
                  // s < 0 flips the inequality: cols satisfying it are 0..=floor(k/s).
-@@ -1104,44 +1190,71 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
+@@ -1198,44 +1284,71 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
          };
          let (mut il, mut ih, mut tl, mut th) = (0, span, 0, span);
          for e in 0..n {
@@ -959,7 +1004,7 @@ index d0c57a0..c9730a8 100644
              if hits == 0 {
                  continue;
              }
-@@ -1150,6 +1263,145 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
+@@ -1244,6 +1357,145 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
      }
  }
  
@@ -1106,10 +1151,10 @@ index d0c57a0..c9730a8 100644
  
  /// Map a scaled destination pixel (relative to its glyph cell origin) to the
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 9920a77..c42636a 100644
+index 9cd50192..1335ebf8 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
-@@ -272,12 +272,13 @@ pub enum Display {
+@@ -291,12 +291,13 @@ pub enum Display {
      None = 1,
  }
  
@@ -1123,21 +1168,21 @@ index 9920a77..c42636a 100644
 +    Mask = 2,
  }
  
- /// text alignment within the node box.
-@@ -421,7 +422,8 @@ pub mod font_atlas {
- 
+ /// layout containment (Strict: own layout root; Baked: Strict plus build-time rects).
+@@ -450,7 +451,8 @@ pub mod font_atlas {
  /// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).
  /// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,
--/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N.
-+/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N,
+ /// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,
+-/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N.
++/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N,
 +/// MASK_PUSH 2+N, MASK_POP 1 (64 and up: software-rasteriser-only ops).
  pub mod draw_op {
      pub const RECT: u32 = 1;
      pub const GRAD_RECT: u32 = 2;
-@@ -433,6 +435,10 @@ pub mod draw_op {
-     pub const TEX_TRI: u32 = 8;
+@@ -463,6 +465,10 @@ pub mod draw_op {
      pub const TEXT_RUN: u32 = 9;
-     pub const POLY: u32 = 10;
+     pub const SURFACE_QUAD: u32 = 10;
+     pub const POLY: u32 = 11;
 +    pub const MASK_PUSH: u32 = 64;
 +    pub const MASK_POP: u32 = 65;
 +    /// Largest vertex count a MASK_PUSH may carry.
@@ -1146,30 +1191,30 @@ index 9920a77..c42636a 100644
  
  /// .pak container constants (byte-compatible with dreamcart's format;
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 33168e5..0815535 100644
+index 7d0c9e22..9b74ba18 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -239,7 +239,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
+@@ -247,7 +247,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
  /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
  /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
  /// balanced, only known ops. Returns per-op counts (indexed by op code).
--fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+-fn validate_drawlist(words: &[u32]) -> [u32; 12] {
 +fn validate_drawlist(words: &[u32]) -> [u32; 66] {
      let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
      let xy_ok = |w: u32| {
          let (x, y) = decode_xy(w);
-@@ -251,8 +251,9 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+@@ -259,8 +259,9 @@ fn validate_drawlist(words: &[u32]) -> [u32; 12] {
          let (w, h) = decode_wh(whw);
          assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
      };
--    let mut counts = [0u32; 11];
+-    let mut counts = [0u32; 12];
 +    let mut counts = [0u32; 66];
      let mut depth = 0i32;
 +    let mut mask_depth = 0i32;
      let mut i = 0usize;
      while i < words.len() {
          let op = words[i];
-@@ -319,6 +320,25 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+@@ -335,6 +336,25 @@ fn validate_drawlist(words: &[u32]) -> [u32; 12] {
                  }
                  i += 3 + n;
              }
@@ -1195,7 +1240,7 @@ index 33168e5..0815535 100644
              spec::draw_op::TEXT_RUN => {
                  // Native-text op: origin is f32 (exempt from the i16 clip
                  // guarantee), box width is finite and non-negative, and the
-@@ -336,6 +356,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+@@ -352,6 +372,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 12] {
          }
      }
      assert_eq!(depth, 0, "unbalanced SCISSOR/SCISSOR_POP");
@@ -1203,11 +1248,10 @@ index 33168e5..0815535 100644
      counts
  }
  
-@@ -4189,3 +4210,387 @@ fn clearing_native_measure_restores_baked_goldens_path() {
-     assert_eq!(counts[spec::draw_op::TEXT_RUN as usize], 0);
-     assert_eq!(counts[spec::draw_op::GLYPH_RUN as usize], 1);
+@@ -5156,3 +5177,386 @@ fn text_capture_reports_painted_runs_with_their_visible_boxes() {
+     ui.draw();
+     assert_eq!(ui.captured_texts(0), "0,10,10,10\tBB\n");
  }
-+
 +// ---- overflow-mask (pocket-motion patch 0013) -----------------------------------
 +
 +/// A window with `overflow` set, holding one child that overhangs it.
@@ -1592,13 +1636,13 @@ index 33168e5..0815535 100644
 +}
 +
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index e2b5767..9c0916f 100644
+index 8f02e16f..da62c3da 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -356,6 +356,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
-     case "relative": D.push([PROP.posType, int(ENUMS.PosType.Relative)]); return true;
-     case "hidden": D.push([PROP.display, int(ENUMS.Display.None)]); return true;
-     case "overflow-hidden": D.push([PROP.overflow, int(ENUMS.Overflow.Hidden)]); return true;
+@@ -376,6 +376,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+     // `layout-baked` adds the MicroTS build-time proof and rect tables.
+     case "contain-strict": D.push([PROP.contain, int(ENUMS.Contain.Strict)]); return true;
+     case "layout-baked": D.push([PROP.contain, int(ENUMS.Contain.Baked)]); return true;
 +    case "overflow-mask": D.push([PROP.overflow, int(ENUMS.Overflow.Mask)]); return true;
      case "w-full": D.push([PROP.width, px(SIZE_FULL)]); return true;
      case "h-full": D.push([PROP.height, px(SIZE_FULL)]); return true;

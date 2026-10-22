@@ -23,7 +23,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { hardenedBootWorld, pocketjsRoot } from "../src/runtime/boot.ts";
-import { withBuildLock } from "../src/vendor/build-lock.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/\/$/, "");
 const FONTS = [
@@ -89,14 +88,12 @@ const CASES: readonly Case[] = [
 async function build(dir: string, source: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   await Bun.write(join(dir, "main.tsx"), `// @title paint bench\n${source}`);
-  await withBuildLock("a paint-bench build", async () => {
-    const p = Bun.spawn(
-      ["bun", join(pocketjsRoot(), "tools/build.ts"), join(dir, "main.tsx"), `--outdir=${join(dir, "dist")}`, "--framework=solid", "--hz=60", ...FONTS],
-      { stdout: "pipe", stderr: "pipe", cwd: ROOT },
-    );
-    const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
-    if ((await p.exited) !== 0) throw new Error(`paint-bench: build failed\n${out}\n${err}`);
-  });
+  const p = Bun.spawn(
+    ["bun", join(pocketjsRoot(), "tools/build.ts"), join(dir, "main.tsx"), `--outdir=${join(dir, "dist")}`, "--framework=solid", "--hz=60", ...FONTS],
+    { stdout: "pipe", stderr: "pipe", cwd: ROOT },
+  );
+  const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+  if ((await p.exited) !== 0) throw new Error(`paint-bench: build failed\n${out}\n${err}`);
 }
 
 async function measure(dir: string, reps: number): Promise<{ median: number; min: number }> {

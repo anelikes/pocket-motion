@@ -30,10 +30,21 @@ Red case: with the general blend path replaced by the opaque expression,
 `two_half_alpha_layers_over_transparent_compose_src_over` and
 `textures_and_font_coverage_are_sampled_at_physical_resolution` fail.
 
+2026-10-22, rebased onto 66caf4e5: main added a separate
+`PremultipliedTarget` behind `ui_render_premultiplied_scaled` (f26191a8),
+which keeps coverage by writing premultiplied colour. That is a second
+target with its own semantics, not this patch's: the default target here
+stays straight alpha. Main's target overrides the clear hook this patch
+renames, so it implements `fill_clear` (transparent) instead of
+`clear_black`, and its tests — core, `tests/wasm-premultiplied.test.ts`,
+`tests/pocket3d-web.test.ts` — compare against the default render over an
+opaque black root, which composites by the old expression, or expect the
+straight-alpha picture where they read the plain render.
+
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index c9730a8..5d17f90 100644
+index 12c08e3c..3ef961e8 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
 @@ -25,8 +25,13 @@
@@ -52,7 +63,7 @@ index c9730a8..5d17f90 100644
  //!
  //! [`render_scaled_argb`] emits the same pixels as B,G,R,A bytes instead —
  //! the little-endian memory layout of an ARGB8888 u32 word. Hosts whose blit
-@@ -149,10 +154,18 @@ trait RenderTarget {
+@@ -158,10 +163,18 @@ trait RenderTarget {
      fn push_mask(&mut self, _level: MaskLevel) {}
      fn pop_mask(&mut self) {}
  
@@ -73,7 +84,7 @@ index c9730a8..5d17f90 100644
      }
  }
  
-@@ -186,11 +199,28 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
+@@ -195,11 +208,28 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
              return;
          }
          let ia = 255 - a;
@@ -104,7 +115,7 @@ index c9730a8..5d17f90 100644
      }
  
      #[inline]
-@@ -198,6 +228,12 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
+@@ -207,11 +237,17 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
          let byte_start = start * 4;
          fill_opaque_span::<ARGB>(&mut self.bytes[byte_start..byte_start + len * 4], r, g, b);
      }
@@ -116,8 +127,27 @@ index c9730a8..5d17f90 100644
 +    }
  }
  
- struct Rgb565Target<'a> {
-@@ -569,7 +605,7 @@ fn render_scaled_impl<T: RenderTarget>(
+ /// RGBA8 target that keeps coverage. The colour bytes are premultiplied: they
+-/// follow the same integer src-over as [`RgbaTarget`] does over its black
+-/// clear, so they are the bytes that target writes. Alpha follows
++/// follow the same integer src-over as [`RgbaTarget`] does over an opaque
++/// black ground, so they are the bytes that target writes there. Alpha follows
+ /// `a + da × (1 − a)` with the same rounding.
+ struct PremultipliedTarget<'a> {
+     bytes: &'a mut [u8],
+@@ -257,8 +293,9 @@ impl RenderTarget for PremultipliedTarget<'_> {
+ 
+     /// The clear of this target is transparent: nothing is covered yet.
+     #[inline]
+-    fn clear_black(&mut self) {
+-        self.bytes.fill(0);
++    fn fill_clear(&mut self, start: usize, len: usize) {
++        let byte_start = start * 4;
++        self.bytes[byte_start..byte_start + len * 4].fill(0);
+     }
+ }
+ 
+@@ -651,7 +688,7 @@ fn render_scaled_impl<T: RenderTarget>(
  ) {
      let (width, _height, screen) = target_geometry(ui, target, scale);
      if clear {
@@ -126,7 +156,7 @@ index c9730a8..5d17f90 100644
      }
      render_scaled_clipped(ui, words, target, width, scale as i32, screen);
  }
-@@ -677,16 +713,16 @@ fn render_damage_regions<T: RenderTarget>(
+@@ -763,16 +800,16 @@ fn render_damage_regions<T: RenderTarget>(
          if physical.x0 >= physical.x1 || physical.y0 >= physical.y1 {
              continue;
          }
@@ -146,7 +176,7 @@ index c9730a8..5d17f90 100644
      }
  }
  
-@@ -1344,6 +1380,11 @@ impl RenderTarget for Masked<'_> {
+@@ -1438,6 +1475,11 @@ impl RenderTarget for Masked<'_> {
          self.inner.pixel_len()
      }
  
@@ -158,16 +188,34 @@ index c9730a8..5d17f90 100644
      #[inline]
      fn blend(&mut self, offset: usize, r: u32, g: u32, b: u32, a: u32) {
          let hits = self.top(offset);
-@@ -1796,7 +1837,7 @@ mod tests {
-         let mut cleared = framebuffer(1);
-         cleared.fill(7);
+@@ -1896,8 +1938,8 @@ mod tests {
          render_scaled(&ui, &words, &mut cleared, 1);
--        assert_eq!(rgba(&cleared, 1, 5, 5), [0, 0, 0, 255], "clearing variant blacks out");
-+        assert_eq!(rgba(&cleared, 1, 5, 5), [0, 0, 0, 0], "clearing variant clears transparent");
+         assert_eq!(
+             rgba(&cleared, 1, 5, 5),
+-            [0, 0, 0, 255],
+-            "clearing variant blacks out"
++            [0, 0, 0, 0],
++            "clearing variant clears transparent"
+         );
      }
  
-     #[test]
-@@ -2316,7 +2357,7 @@ mod tests {
+@@ -1932,8 +1974,14 @@ mod tests {
+             let mut over = framebuffer(scale);
+             over.fill(7); // the clear is this target's own: no earlier content survives
+             render_scaled_premultiplied(&ui, &words, &mut over, scale);
++            // The default target over an opaque black ground: with pocket-motion
++            // patch 0014 its clear is transparent, and over an opaque destination
++            // it composites by the expression it always had.
+             let mut opaque = framebuffer(scale);
+-            render_scaled(&ui, &words, &mut opaque, scale);
++            for pixel in opaque.chunks_exact_mut(4) {
++                pixel.copy_from_slice(&[0, 0, 0, 255]);
++            }
++            render_scaled_over(&ui, &words, &mut opaque, scale);
+             for (index, (a, b)) in over.chunks_exact(4).zip(opaque.chunks_exact(4)).enumerate() {
+                 assert_eq!(a[..3], b[..3], "colour bytes at pixel {index}, scale {scale}");
+                 assert_eq!(b[3], 255);
+@@ -2462,7 +2510,7 @@ mod tests {
          ui.set_viewport(7.0, 5.0);
          let mut fb = vec![0; 7 * 2 * 5 * 2 * 4];
          render_scaled(&ui, &[], &mut fb, 2);
@@ -176,7 +224,7 @@ index c9730a8..5d17f90 100644
      }
  
      #[test]
-@@ -2348,10 +2389,10 @@ mod tests {
+@@ -2494,10 +2542,10 @@ mod tests {
          let mut fb = framebuffer(2);
          render_scaled(&ui, &words, &mut fb, 2);
  
@@ -189,7 +237,7 @@ index c9730a8..5d17f90 100644
  
          let gradient = (8..12).map(|x| rgba(&fb, 2, x, 0)[0]).collect::<Vec<_>>();
          assert_eq!(gradient.len(), 4);
-@@ -2416,7 +2457,9 @@ mod tests {
+@@ -2562,7 +2610,9 @@ mod tests {
          let coverage = &expected[24..];
          for y in 0..4 {
              for x in 0..4 {
@@ -201,10 +249,10 @@ index c9730a8..5d17f90 100644
          }
      }
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 0815535..0fc3296 100644
+index 9b74ba18..de94a94d 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -2277,6 +2277,9 @@ fn rotated_flat_box_raster_has_coverage_levels() {
+@@ -2783,6 +2783,9 @@ fn rotated_flat_box_raster_has_coverage_levels() {
      let n = place_box(&mut ui, 240.0, 160.0, 120.0, 56.0);
      ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
      ui.set_prop(n, spec::prop::ROTATE, 20.0);
@@ -214,7 +262,7 @@ index 0815535..0fc3296 100644
      ui.tick();
      let fb = raster_fb(&mut ui);
      let (levels, _) = poly_luminance_stats(&fb);
-@@ -2584,7 +2587,7 @@ fn debug_hide_removes_pixels_and_clears_byte_for_byte() {
+@@ -3128,7 +3131,7 @@ fn debug_hide_removes_pixels_and_clears_byte_for_byte() {
      ui.debug_hide(a);
      let hidden = raster_fb(&mut ui);
      assert_ne!(hidden, baseline, "hiding a painted node must change a pixel");
@@ -223,7 +271,7 @@ index 0815535..0fc3296 100644
      assert_eq!(sample_rgba(&hidden, 90, 20), [0x20, 0x20, 0xcc, 0xff], "B is untouched");
  
      // Other nodes' inspect rects must not move: hide is draw-time only.
-@@ -2642,8 +2645,8 @@ fn debug_hide_parent_removes_children() {
+@@ -3186,8 +3189,8 @@ fn debug_hide_parent_removes_children() {
  
      ui.debug_hide(parent);
      let hidden = raster_fb(&mut ui);
@@ -234,7 +282,7 @@ index 0815535..0fc3296 100644
  
      ui.debug_hide(0);
      assert_eq!(raster_fb(&mut ui), baseline);
-@@ -4495,6 +4498,7 @@ fn rounded_full_mask_is_a_circle_with_coverage_on_its_edge() {
+@@ -5461,6 +5464,7 @@ fn rounded_full_mask_is_a_circle_with_coverage_on_its_edge() {
      let mut ui = Ui::new();
      let win = window(&mut ui, spec::Overflow::Mask, 200.0, 200.0, 0.0, 100.0);
      full_bleed_white_under(&mut ui, win, 200.0, 200.0);
@@ -242,7 +290,7 @@ index 0815535..0fc3296 100644
      ui.tick();
      let fb = raster_fb(&mut ui);
      // Centre (240,136): inside. The window's corner (140,36) is inside the
-@@ -4539,6 +4543,7 @@ fn nested_masks_multiply_their_coverage() {
+@@ -5505,6 +5509,7 @@ fn nested_masks_multiply_their_coverage() {
          ui.set_prop(b, spec::prop::ROTATE, -40.0);
          ui.insert_before(a, b, 0);
          full_bleed_white_under(&mut ui, b, 120.0, 120.0);
@@ -250,7 +298,7 @@ index 0815535..0fc3296 100644
          ui.tick();
          raster_fb(&mut ui)
      }
-@@ -4591,6 +4596,99 @@ fn a_mask_pop_with_no_push_stops_the_stream_like_any_corrupt_op() {
+@@ -5557,6 +5562,99 @@ fn a_mask_pop_with_no_push_stops_the_stream_like_any_corrupt_op() {
      let mut fb = alloc::vec![0u8; spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4];
      crate::raster::render(&ui, &words, &mut fb);
      ui.tick();
@@ -351,3 +399,62 @@ index 0815535..0fc3296 100644
 +    // matters: neither channel was pulled toward black.
 +    assert!(px[0] > 0x40 && px[2] > 0x80, "colour kept: {:?}", px);
 +}
+diff --git a/tests/fixtures/pocket3d-web/realm.ts b/tests/fixtures/pocket3d-web/realm.ts
+index db7dcb46..da5dd689 100644
+--- a/tests/fixtures/pocket3d-web/realm.ts
++++ b/tests/fixtures/pocket3d-web/realm.ts
+@@ -92,7 +92,8 @@ ui.turn(0x2000, [{ id: 1, x: 4, y: 4 }], 2);
+ out.heard = ui.drain().map((line: string) => JSON.parse(line));
+ out.drainedOnce = ui.drain().length;
+ 
+-// The opaque render is what it was: black where nothing is drawn, the panel over it.
++// The plain render: with pocket-motion 0014 it carries alpha (transparent where
++// nothing is drawn), so it is the premultiplied picture's straight-alpha twin.
+ const opaque = instance.render(2);
+ out.opaque = { inside: pixel(opaque, 64, 10, 6), outside: pixel(opaque, 64, 50, 20) };
+ 
+diff --git a/tests/pocket3d-web.test.ts b/tests/pocket3d-web.test.ts
+index db466ea1..5240d2f8 100644
+--- a/tests/pocket3d-web.test.ts
++++ b/tests/pocket3d-web.test.ts
+@@ -47,7 +47,10 @@ test("the staged directory holds what a page loads, and a guest runs in its real
+     // The picture has its alpha: white at half strength where the panel is, nothing elsewhere.
+     expect(out.changedAtFirst).toEqual([true, true]);
+     expect(out.picture).toEqual({ bytes: 64 * 32 * 4, size: [64, 32], inside: [128, 128, 128, 128], outside: [0, 0, 0, 0] });
+-    expect(out.opaque).toEqual({ inside: [128, 128, 128, 255], outside: [0, 0, 0, 255] });
++    // pocket-motion 0014: the default render clears to transparent and composites
++    // straight alpha, so the panel's white keeps its colour at half coverage and
++    // nothing is drawn elsewhere.
++    expect(out.opaque).toEqual({ inside: [255, 255, 255, 128], outside: [0, 0, 0, 0] });
+     expect(out.lower).toEqual([0, 255, 0, 255]);
+     // Each surface is drawn again when it has changed, and not when the other has.
+     expect(out.changedAfterReading).toEqual([false, false]);
+diff --git a/tests/wasm-premultiplied.test.ts b/tests/wasm-premultiplied.test.ts
+index 216e679f..73a2161b 100644
+--- a/tests/wasm-premultiplied.test.ts
++++ b/tests/wasm-premultiplied.test.ts
+@@ -21,7 +21,12 @@ test("the premultiplied render keeps coverage in one drawing and leaves the opaq
+     box(glass, { [PROP.width]: 10, [PROP.height]: 10, [PROP.bgColor]: abgr(255, 255, 255, 128) });
+     wasm.tick();
+ 
++    // pocket-motion 0014: the default render clears to transparent, so the
++    // opaque render this compares against is the default one over an opaque
++    // black root — over an opaque destination it composites as it always did.
++    ops.setProp(1, PROP.bgColor, 0xff000000);
+     const opaque = wasm.renderScaled(density).slice();
++    ops.setProp(1, PROP.bgColor, 0);
+     const hash = wasm.drawHash!();
+     const over = wasm.renderPremultiplied!(density).slice();
+     expect(over.length).toBe(opaque.length);
+@@ -49,9 +54,11 @@ test("the premultiplied render keeps coverage in one drawing and leaves the opaq
+ 
+     // The opaque buffer, its incremental repaint and the draw hash are what they were.
+     expect(wasm.drawHash!()).toBe(hash);
++    ops.setProp(1, PROP.bgColor, 0xff000000);
+     expect(wasm.renderScaled(density)).toEqual(opaque);
+     wasm.renderPremultiplied!(density);
+     expect(wasm.renderScaledIncremental(density)).toEqual(opaque);
++    ops.setProp(1, PROP.bgColor, 0);
+     expect(wasm.renderPremultiplied!(density)).toEqual(over);
+   }
+ });

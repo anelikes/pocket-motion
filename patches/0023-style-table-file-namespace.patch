@@ -1,0 +1,88 @@
+0023 — the build's style table stays in the file namespace, and a second
+copy of it is refused.
+
+Upstream #591 (586428b2, on main since the pin moved to 66caf4e5) serves
+each build's style table from memory instead of writing
+`framework/src/styles.generated.ts`. This project backported it onto the
+old pin with two departures; the pin now carries upstream's form, and this
+patch is those two departures against it.
+
+The namespace. Main resolves the framework's `styles.generated` import into
+a `pocketjs-generated-styles` namespace and loads it there. Bun names each
+module in a bundle above its code — a file by its path relative to the
+build's root, a namespaced module as `namespace:path` with the path as
+given — so main prints `// pocketjs-generated-styles:/<the
+checkout>/framework/src/styles.generated.ts` into every bundle, and the
+bundle's bytes depend on where the repository is checked out. Here the
+import resolves to the same path in the file namespace, and the `.tsx?`
+loader serves the table for that path with the `ts` loader main's namespace
+used, so the module's code is main's and its name is
+`vendor/pocketjs/framework/src/styles.generated.ts`.
+
+A refusal. The table is served for one path, compared as a string; Bun
+hands the loader realpaths, so a symlinked tree matches. A
+`styles.generated.ts` reaching the loader at any other path is an import
+that named another FILE — a copy of `framework/src` reached by a relative
+path, or any module of that name — and main bundles it from disk. With the
+committed empty table `mount` then throws a diagnosis that points
+elsewhere; with a stale copy a red class renders blue and the build exits
+0. The loader now throws, naming both paths.
+
+pocket-motion `tests/style-table.test.ts` holds both: "a bundle names no
+absolute path" and "a second copy of the framework's table fails the
+build" were red on main's form and are green with this patch.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/framework/compiler/jsx-plugin.ts b/framework/compiler/jsx-plugin.ts
+index 9020d53c..ccb037c5 100644
+--- a/framework/compiler/jsx-plugin.ts
++++ b/framework/compiler/jsx-plugin.ts
+@@ -758,17 +758,19 @@ export function jsxPlugin(
+       // nothing is written into the framework directory, which an installed
+       // framework may not allow, and concurrent builds share nothing. A
+       // plugin user without a table bundles the committed empty one.
++      //
++      // The import stays in the file namespace and the .tsx? loader below
++      // serves the table for that one path. A bundle names each module above
++      // its code — a file by its path relative to the build's root, a
++      // namespaced module as `namespace:path` with the path as given — so a
++      // namespace of its own prints this absolute path, and with it the
++      // checkout's location, into every bundle.
+       if (opts.generatedStyles !== undefined) {
+-        const generatedStyles = opts.generatedStyles;
+         build.onResolve({ filter: /(?:^|\/)styles\.generated(?:\.ts)?$/ }, (args) =>
+           resolveImport(args.importer, args.path) === GENERATED_STYLES_PATH
+-            ? { path: GENERATED_STYLES_PATH, namespace: "pocketjs-generated-styles" }
++            ? { path: GENERATED_STYLES_PATH }
+             : undefined,
+         );
+-        build.onLoad({ filter: /.*/, namespace: "pocketjs-generated-styles" }, () => ({
+-          contents: generatedStyles,
+-          loader: "ts",
+-        }));
+       }
+       build.onResolve({ filter: /^@pocketjs\/framework(?:\/.*)?$/ }, (args) => {
+         const path = packagePath(args.path, framework);
+@@ -839,6 +841,21 @@ export function jsxPlugin(
+         });
+       }
+       build.onLoad({ filter: /\.tsx?$/ }, async (args) => {
++        if (opts.generatedStyles !== undefined && /(?:^|\/)styles\.generated\.ts$/.test(args.path)) {
++          if (args.path === GENERATED_STYLES_PATH) return { contents: opts.generatedStyles, loader: "ts" };
++          // The table is served for ONE path, compared as a string, and Bun
++          // hands this hook realpaths, so a symlinked tree still matches. Any
++          // other style module here is an import that named another FILE — a
++          // copy of framework/src reached by a relative path, or a module of
++          // that name — and bundling it would hand `mount` that file's table:
++          // the committed one is empty, and a stale copy maps this build's
++          // literals to another build's ids, a wrong picture from a build
++          // that exits 0.
++          throw new Error(
++            `PocketJS: ${args.path} is not this build's style table, which is served only for ` +
++              `${GENERATED_STYLES_PATH}. Import the framework through ${PACKAGE_NAME}, not a copy of its sources.`,
++          );
++        }
+         if (isNodeModuleFile(args.path) || args.path.endsWith(".d.ts")) return undefined;
+         let src = await Bun.file(args.path).text();
+         if (framework === "vue-vapor" && args.path === opts.entry) {

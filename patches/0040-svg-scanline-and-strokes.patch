@@ -1,0 +1,2869 @@
+0040 — the SVG baker covers by scanline, and draws strokes.
+
+`framework/compiler/bake-svg.ts` decided every 4x4 subsample of a shape's
+box by testing it against every edge of the shape: pixels x 16 x edges. Real
+vector art does not survive that. One path holding a hex grid of 952 cells
+(11,424 edges over 1400x1000) took 23 minutes of CPU; a 300-path
+illustration three; a ring at 2x one. And it drew fills only, so a HUD's rings,
+grids and sparklines had to be rasterised by hand into PNGs before the
+build ever saw them.
+
+Coverage. Each sample row is crossed once per edge, with the reference's
+own predicate (`ay <= py ? by > py : by <= py`) and its own arithmetic
+(`ax + (bx - ax) * ((py - ay) / (by - ay))`, from the edge's first
+endpoint), the crossings are sorted, and the sample columns between two
+consecutive crossings share one verdict: inside when the crossings to their
+right wind nonzero, or are odd under evenodd. That is the per-sample test
+evaluated once per interval instead of once per sample, so every pixel's
+covered count is the same integer, and the compositing after it is
+untouched. A disc keeps its own test `dx * dx + dy * dy <= r * r`, which
+holds on one run of columns per sample row; the run's ends are found and
+the middle filled. The axis-aligned rect keeps its analytic coverage. The
+same line computed from the other endpoint is NOT the same: it moves a
+pixel about once in 1,500 random fills, and in 80% of the knife-edge cases
+below, so the endpoint order is load-bearing and the tests hold it.
+
+Strokes are flattened into fill contours — one quad per segment, a miter,
+round or bevel wedge on the outer side of each corner (a miter past
+stroke-miterlimit is a bevel), a butt, round or square cap at each end of
+an open subpath, a dot or square for a zero-length one — all wound one way
+and filled nonzero, so their union is the stroke and its edges get the
+fill's coverage. A vertex inside a flattened curve takes a round join,
+because the curve has no corner there. Arcs, circles, ellipses, rounded
+corners and round joins and caps are subdivided until each chord is within
+1/32 px, by bisecting unit vectors (square roots only); a span past a
+quarter turn has whole quarters split off by an exact 90-degree rotation
+first, so no bisection is ever of two nearly opposite vectors.
+
+The document is walked as a tree instead of scanned for three tag names:
+`<g>` composes its `transform` and passes fill and stroke properties to its
+children, `opacity` on a `<g>` — and on a shape with both a fill and a
+stroke — composites through a layer, `style=""` declarations count as
+attributes, and `display`/`visibility` are honoured. What would paint and
+is not implemented is refused rather than dropped.
+
+Measured against the reference, `tests/fixtures/bake-svg-reference.ts`
+(this file at 7dce4349, verbatim but for its `pak.ts` import, plus its two
+per-sample loops lifted out unchanged):
+- every SVG in this tree the reference bakes (`git ls-files '*.svg'`), at
+  densities 1, 2 and 3: byte-identical — 38 files — except
+  `docs/bench/three-frameworks-ppsspp-2026-07-{29,30}.svg`, whose `<text>`
+  the reference dropped and this refuses; with their `<text>`, `<line>`
+  and stroke attributes removed they are byte-identical too;
+- 1,500 random fills (one to four contours, either rule, vertices often on
+  a pixel edge or a sample position, horizontal, vertical, repeated and
+  self-crossing edges, windows smaller than the shape) and 1,500 random
+  discs (r = 0 and negative r included): identical counts;
+- 500 knife-edge fills, whose edges pass in exact arithmetic through two
+  sample positions so the verdict at those samples is decided by the last
+  bit of the crossing: identical counts;
+- four 24x24 windows of the hex grid: identical counts; and the whole hex
+  grid, ring, illustration and sparkline below: identical sha256.
+
+Timings, Bun 1.3.11 on an Apple-silicon Mac at load average 13 to 18 from
+other work. Before: one run each, beside other runs, given as CPU time
+(wall in brackets). After: the fastest of five. Every input is a generator
+in `tests/fixtures/svg-bake-cases.ts`, and on each of the four rows both
+bakers can draw, both produced the same sha256.
+
+| | before | after |
+|---|---|---|
+| hex grid, one path, 11,424 edges, 1400x1000 at 1x | 1,391 s (1,766 s) | 63 ms |
+| ring 1080x1080 at 2x, two bezier circles under evenodd | 60 s (80 s) | 17 ms |
+| 300 cubic blobs, 1920x1080 at 1x | 178 s (275 s) | 256 ms |
+| area under a 360-point sparkline, 1920x1080 at 1x | 53 s (72 s) | 15 ms |
+| the hex grid as one stroked path (952 hexagons, width 2) | not drawable | 54 ms |
+| the ring as `<circle fill="none" stroke-width="20">` at 2x | not drawable | 24 ms |
+| the sparkline as a stroked `<polyline>`, round joins and caps | not drawable | 6 ms |
+
+What changes besides speed, each checked against the reference:
+- refused where it was dropped or misread: `<text>`, `<image>`, `<use>`,
+  `<style>`, a nested `<svg>`, `<a>`, `<switch>`, `<foreignObject>` and any
+  element not listed; `clip-path`, `mask`, `filter`, `stroke-dasharray`,
+  `stroke-dashoffset`, markers, `paint-order`, `vector-effect` and
+  `mix-blend-mode` at anything but their no-op value; `preserveAspectRatio`
+  other than `none`; `transform` on the root; a transform function other
+  than the six (silently skipped before); a path command letter outside
+  `MLHVCSQTAZ` or any other stray character (skipped before); path data
+  not starting with a moveto; a number after Z (an endless loop before);
+- drawn where nothing, or the wrong thing, was: `transform` on a circle or
+  rect (ignored before); `rx`/`ry` (square corners before); `fill="none"`
+  on a circle or rect (refused before); paint on a `<g>` (ignored); a
+  transform list, which was applied leftmost first — the reverse of SVG,
+  so `translate(8 0) scale(2)` landed at 16..24 instead of 8..16; `A`
+  arcs (the letter was skipped and its numbers read as line-tos);
+  exponents written `E`; a circle with no cx or cy (refused as missing
+  before; 0, as SVG says); a drawing command straight after Z, which now
+  starts at the subpath's start point;
+- not drawn where it was: shapes inside a comment, and shapes inside a
+  `<clipPath>`, `<mask>` or gradient outside `<defs>`;
+- kept as they were, because the shipped icons are drawn against them: a
+  `<path>` (and now `<polyline>`, `<polygon>`) with no `fill` is not
+  filled; the viewBox is stretched onto width x height per axis; a
+  circle's radius takes the smaller of the two scales; a cubic or
+  quadratic segment is 16 steps (off a true circle by 0.32 px at 250 px
+  radius, 1.27 px at 1000 px — a large curve belongs in `A` or a shape;
+  flattened adaptively to 1/32 px instead, 1 shipped icon moves at 1x, 10
+  at 2x and 11 at 3x);
+  `rotate()` goes through `Math.cos`/`Math.sin`, as do `skewX`/`skewY`
+  (`Math.tan`) and an arc's x-axis-rotation.
+
+By file:
+- `framework/compiler/bake-svg.ts`: the baker. `coverPath` and
+  `coverCircle` are exported for the tests.
+- `tests/fixtures/bake-svg-reference.ts`: the reference, as above.
+- `tests/fixtures/svg-bake-cases.ts`: the seeded generators — random and
+  knife-edge fills, random discs, the hex grid, ring, illustration and
+  sparkline.
+- `tests/svg-bake.test.ts`: the identity checks above, the hex grid and
+  its stroked twin inside 5 s, and the strokes, joins, caps, arcs,
+  transforms, groups and refusals. Each of these edits turns it red:
+  the crossing from the other endpoint (random and knife-edge fills); `<`
+  made `<=` at a sample boundary (random and knife-edge fills, and four
+  shipped icons);
+  the disc's left candidate column dropped (random discs); the transform
+  list applied leftmost first; every miter made a bevel; fill and stroke
+  composited separately under `opacity`; a closed two-point subpath given
+  caps.
+
+Written on 66caf4e5; no file it touches is touched by another patch here.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/framework/compiler/bake-svg.ts b/framework/compiler/bake-svg.ts
+index c2e8e7bd..00baadb3 100644
+--- a/framework/compiler/bake-svg.ts
++++ b/framework/compiler/bake-svg.ts
+@@ -1,100 +1,140 @@
+-// framework/compiler/bake-svg.ts — tiny offline SVG rasterizer for baked UI icons.
++// framework/compiler/bake-svg.ts — offline SVG rasterizer for baked UI art.
+ //
+-// This is deliberately scoped to the assets we want to ship in pak today:
+-// pow2-sized SVGs containing filled <circle> and axis-aligned <rect>
+-// elements, composited in document order. Edges are supersampled before
+-// being written as straight-alpha RGBA, so icons keep subpixel coverage on
+-// both the wasm rasterizer and the PSP texture path.
++// Shapes are composited in document order into straight-alpha RGBA at the
++// SVG's own width x height times the raster density. Edges are supersampled
++// (SVG_SUPERSAMPLE x SVG_SUPERSAMPLE samples per pixel) so baked art keeps
++// subpixel coverage on both the wasm rasterizer and the PSP texture path.
+ //
+-// `fill="hole"` on any shape ERASES instead of painting (alpha-subtract with
+-// the same antialiased coverage) — that is how mask textures are baked, e.g.
+-// an opaque card with a transparent circle punched out for a circular-reveal
+-// animation (scale the mask up and the hole grows).
++// What is drawn:
++// - <circle>, <ellipse>, <rect> (with rx/ry), <line>, <polyline>, <polygon>,
++//   <path> (M L H V C S Q T A Z, absolute and relative).
++// - fill and stroke, each a colour (#rgb, #rrggbb, #rrggbbaa, white, black),
++//   `none`, or `hole`; fill-opacity, stroke-opacity, opacity; fill-rule
++//   nonzero | evenodd; stroke-width, stroke-linejoin miter | round | bevel,
++//   stroke-linecap butt | round | square, stroke-miterlimit. A stroke is
++//   flattened into fill contours and filled nonzero, so it is the same
++//   coverage machinery as a fill.
++// - transform on shapes and <g>: matrix, translate, scale, rotate, skewX,
++//   skewY, applied in SVG order (the rightmost function first, then the
++//   enclosing groups outward).
++// - <g> passes fill/stroke and their sub-properties down to its children;
++//   `opacity` on a <g> composites the group as one layer.
++// - presentation attributes may also be written in `style="prop: value"`.
++//
++// Anything that would paint and is not in that list is refused rather than
++// dropped: <text>, <image>, <use>, a <style> sheet, clip-path, mask, filter,
++// stroke-dasharray and the rest. <defs>, gradients, <title> and other
++// non-rendering elements are skipped as they always were.
++//
++// `fill="hole"` (or `stroke="hole"`) ERASES instead of painting
++// (alpha-subtract with the same antialiased coverage) — that is how mask
++// textures are baked, e.g. an opaque card with a transparent circle punched
++// out for a circular-reveal animation (scale the mask up and the hole grows).
++//
++// Coverage is a scanline over the same subsample positions and the same
++// crossing arithmetic as the per-subsample point-in-polygon test it replaced
++// (tests/fixtures/bake-svg-reference.ts), so a pixel's covered count is the
++// same integer: cost is edges crossing a row plus the pixels in the shape's
++// box, not pixels x samples x edges.
+ 
+ import type { DecodedImage } from "./pak.ts";
+ 
+ export const SVG_SUPERSAMPLE = 4;
+ 
+-interface Circle {
+-  kind: "circle";
+-  cx: number;
+-  cy: number;
+-  r: number;
+-  hole: boolean;
+-  rgba: [number, number, number, number];
+-}
++/** Flattening tolerance for arcs, circles, ellipses, joins and caps, in output pixels. */
++const FLATTEN_TOLERANCE_PX = 1 / 32;
+ 
+-interface Rect {
+-  kind: "rect";
+-  x: number;
+-  y: number;
+-  w: number;
+-  h: number;
+-  hole: boolean;
+-  rgba: [number, number, number, number];
+-}
++type Pt = [number, number];
++type RGBA = [number, number, number, number];
++type PointMap = (p: Pt) => Pt;
+ 
+-interface PathShape {
+-  kind: "path";
+-  /** Flattened closed contours in PIXEL coords (curves subdivided). */
+-  contours: [number, number][][];
+-  evenOdd: boolean;
++interface Paint {
+   hole: boolean;
+-  rgba: [number, number, number, number];
+-  /** Pixel-space AABB (clamped later). */
+-  bbox: [number, number, number, number];
++  rgba: RGBA;
+ }
+ 
+-type Shape = Circle | Rect | PathShape;
++/** One subpath as drawn: its vertices, and which of them are command endpoints. */
++interface Subpath {
++  points: Pt[];
++  /** corner[i]: points[i] ends a command (a join applies); false inside a flattened curve. */
++  corner: boolean[];
++  closed: boolean;
++}
+ 
+ // ---- SVG path data (`d`) parsing + flattening ------------------------------------
+ 
+ const CURVE_STEPS = 16;
+ 
+-/** Tokenize path data into commands + numbers. */
+-function pathTokens(d: string): (string | number)[] {
+-  const out: (string | number)[] = [];
+-  const re = /([MmLlHhVvCcSsQqTtZz])|(-?\d*\.?\d+(?:e[+-]?\d+)?)/g;
+-  let m: RegExpExecArray | null;
+-  while ((m = re.exec(d))) {
+-    if (m[1]) out.push(m[1]);
+-    else out.push(parseFloat(m[2]));
+-  }
+-  return out;
+-}
++const PATH_NUMBER = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y;
+ 
+ /**
+- * Flatten path data into closed polygonal contours (viewBox coords).
+- * Supports M/L/H/V/C/S/Q/T/Z (absolute + relative) — the fill-icon subset;
+- * elliptical arcs (A) are a loud error.
++ * Flatten path data into polygonal subpaths (user-space coords). Cubic and
++ * quadratic segments take CURVE_STEPS steps; an elliptical arc is subdivided
++ * until its chord error is under `tolerance` user units.
++ *
++ * `points` are the points the fill has always used — a subpath of three or
++ * more is a fill contour, closed implicitly — with one correction: a drawing
++ * command straight after Z now starts from the subpath's start point, where
++ * it used to start from nothing.
+  */
+-function flattenPath(d: string): [number, number][][] {
+-  const toks = pathTokens(d);
+-  const contours: [number, number][][] = [];
+-  let cur: [number, number][] = [];
++function flattenPath(d: string, tolerance: number): Subpath[] {
++  const subpaths: Subpath[] = [];
++  let cur: Pt[] = [];
++  let corner: boolean[] = [];
++  let closed = false;
+   let x = 0;
+   let y = 0;
+   let startX = 0;
+   let startY = 0;
+   let prevC: [number, number] | null = null; // last cubic control (for S)
+   let prevQ: [number, number] | null = null; // last quadratic control (for T)
+-  let i = 0;
++  let pos = 0;
+   let cmd = "";
+-  const num = () => {
+-    const v = toks[i++];
+-    if (typeof v !== "number") throw new Error(`svg bake: expected number in path data (got ${v})`);
+-    return v;
++  const skip = () => {
++    while (pos < d.length) {
++      const ch = d.charCodeAt(pos);
++      // space, tab, CR, LF, FF, comma
++      if (ch === 32 || ch === 9 || ch === 13 || ch === 10 || ch === 12 || ch === 44) pos++;
++      else break;
++    }
++  };
++  const num = (): number => {
++    skip();
++    PATH_NUMBER.lastIndex = pos;
++    const m = PATH_NUMBER.exec(d);
++    if (!m) throw new Error(`svg bake: expected number in path data (got ${d[pos] ?? "end of data"})`);
++    pos = PATH_NUMBER.lastIndex;
++    return parseFloat(m[0]);
++  };
++  const flag = (): boolean => {
++    skip();
++    const ch = d[pos];
++    if (ch !== "0" && ch !== "1") throw new Error(`svg bake: expected arc flag 0 or 1 in path data (got ${ch ?? "end of data"})`);
++    pos++;
++    return ch === "1";
+   };
+-  const close = () => {
+-    if (cur.length >= 3) contours.push(cur);
++  const finish = () => {
++    if (cur.length > 0) subpaths.push({ points: cur, corner, closed });
+     cur = [];
++    corner = [];
++    closed = false;
++  };
++  // A drawing command straight after Z starts a new subpath at the start point.
++  const ensureStart = () => {
++    if (cur.length === 0) {
++      cur.push([x, y]);
++      corner.push(true);
++    }
+   };
+   const lineTo = (nx: number, ny: number) => {
++    ensureStart();
+     x = nx;
+     y = ny;
+     cur.push([x, y]);
++    corner.push(true);
+   };
+   const cubicTo = (c1x: number, c1y: number, c2x: number, c2y: number, ex: number, ey: number) => {
++    ensureStart();
+     const sx = x;
+     const sy = y;
+     for (let s = 1; s <= CURVE_STEPS; s++) {
+@@ -103,16 +143,69 @@ function flattenPath(d: string): [number, number][][] {
+       const px = u * u * u * sx + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * ex;
+       const py = u * u * u * sy + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * ey;
+       cur.push([px, py]);
++      corner.push(s === CURVE_STEPS);
+     }
+     x = ex;
+     y = ey;
+     prevC = [c2x, c2y];
+   };
+-  while (i < toks.length) {
+-    const t = toks[i];
+-    if (typeof t === "string") {
+-      cmd = t;
+-      i++;
++  const arcTo = (rxIn: number, ryIn: number, angle: number, large: boolean, sweep: boolean, ex: number, ey: number) => {
++    ensureStart();
++    const sx = x;
++    const sy = y;
++    if (sx === ex && sy === ey) return; // the SVG rule: an arc to its own start is omitted
++    let rx = Math.abs(rxIn);
++    let ry = Math.abs(ryIn);
++    if (rx === 0 || ry === 0) {
++      lineTo(ex, ey);
++      return;
++    }
++    const rad = (angle * Math.PI) / 180;
++    const cos = Math.cos(rad);
++    const sin = Math.sin(rad);
++    // SVG 1.1 F.6.5: endpoint to centre parameterisation.
++    const hx = (sx - ex) / 2;
++    const hy = (sy - ey) / 2;
++    const x1 = cos * hx + sin * hy;
++    const y1 = -sin * hx + cos * hy;
++    const lambda = (x1 * x1) / (rx * rx) + (y1 * y1) / (ry * ry);
++    if (lambda > 1) {
++      const k = Math.sqrt(lambda);
++      rx *= k;
++      ry *= k;
++    }
++    const num2 = rx * rx * ry * ry - rx * rx * y1 * y1 - ry * ry * x1 * x1;
++    const den = rx * rx * y1 * y1 + ry * ry * x1 * x1;
++    const coef = (large === sweep ? -1 : 1) * Math.sqrt(Math.max(0, num2 / den));
++    const cx1 = (coef * rx * y1) / ry;
++    const cy1 = (-coef * ry * x1) / rx;
++    const cx = cos * cx1 - sin * cy1 + (sx + ex) / 2;
++    const cy = sin * cx1 + cos * cy1 + (sy + ey) / 2;
++    const u = unit((x1 - cx1) / rx, (y1 - cy1) / ry);
++    const v = unit((-x1 - cx1) / rx, (-y1 - cy1) / ry);
++    const steps: Pt[] = [];
++    sweepUnitArc(u, v, sweep ? 1 : -1, arcCosLimit(tolerance, Math.max(rx, ry)), steps);
++    for (const [ux, uy] of steps) {
++      cur.push([cx + cos * rx * ux - sin * ry * uy, cy + sin * rx * ux + cos * ry * uy]);
++      corner.push(false);
++    }
++    x = ex;
++    y = ey;
++    cur.push([x, y]);
++    corner.push(true);
++  };
++  for (;;) {
++    skip();
++    if (pos >= d.length) break;
++    const ch = d[pos]!;
++    if (/[A-Za-z]/.test(ch)) {
++      if (!/[MmLlHhVvCcSsQqTtAaZz]/.test(ch)) throw new Error(`svg bake: unsupported path command \`${ch}\`.`);
++      cmd = ch;
++      pos++;
++    } else if (cmd === "") {
++      throw new Error("svg bake: path data must begin with a moveto (M or m)");
++    } else if (cmd === "Z" || cmd === "z") {
++      throw new Error(`svg bake: a number after Z in path data (got ${ch})`);
+     }
+     // (implicit command repetition: keep the previous cmd)
+     switch (cmd) {
+@@ -120,12 +213,13 @@ function flattenPath(d: string): [number, number][][] {
+         const rel = cmd === "m";
+         const nx = num();
+         const ny = num();
+-        close();
++        finish();
+         x = rel ? x + nx : nx;
+         y = rel ? y + ny : ny;
+         startX = x;
+         startY = y;
+         cur.push([x, y]);
++        corner.push(true);
+         cmd = rel ? "l" : "L"; // subsequent pairs are implicit lineTos
+         prevC = prevQ = null;
+         break;
+@@ -197,58 +291,248 @@ function flattenPath(d: string): [number, number][][] {
+         prevC = null;
+         break;
+       }
++      case "A": case "a": {
++        const rel = cmd === "a";
++        const rx = num();
++        const ry = num();
++        const angle = num();
++        const large = flag();
++        const sweep = flag();
++        const ex = rel ? x + num() : num();
++        const ey = rel ? y + num() : num();
++        arcTo(rx, ry, angle, large, sweep, ex, ey);
++        prevC = prevQ = null;
++        break;
++      }
+       case "Z": case "z":
+-        lineTo(startX, startY);
+-        close();
++        if (cur.length > 0) {
++          lineTo(startX, startY);
++          closed = true;
++        }
++        finish();
++        x = startX;
++        y = startY;
+         prevC = prevQ = null;
+         break;
+-      case "A": case "a":
+-        throw new Error("svg bake: elliptical arcs (A) are not supported — convert to beziers.");
+-      default:
+-        throw new Error(`svg bake: unsupported path command \`${cmd}\`.`);
+     }
+   }
+-  close();
+-  return contours;
++  finish();
++  return subpaths;
+ }
+ 
+-/** `transform="rotate(a [cx cy])"` / translate / scale, composed left→right. */
+-function parseSvgTransform(value: string | undefined): (p: [number, number]) => [number, number] {
+-  if (!value) return (p) => p;
+-  const ops: Array<(p: [number, number]) => [number, number]> = [];
+-  const re = /(rotate|translate|scale)\(([^)]*)\)/g;
+-  let m: RegExpExecArray | null;
+-  while ((m = re.exec(value))) {
+-    const args = m[2].split(/[\s,]+/).filter((s) => s.length > 0).map(Number);
+-    if (m[1] === "rotate") {
+-      const rad = ((args[0] ?? 0) * Math.PI) / 180;
+-      const cx = args[1] ?? 0;
+-      const cy = args[2] ?? 0;
+-      const cos = Math.cos(rad);
+-      const sin = Math.sin(rad);
+-      ops.push(([px, py]) => {
+-        const dx = px - cx;
+-        const dy = py - cy;
+-        return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+-      });
+-    } else if (m[1] === "translate") {
+-      const tx = args[0] ?? 0;
+-      const ty = args[1] ?? 0;
+-      ops.push(([px, py]) => [px + tx, py + ty]);
+-    } else {
+-      const sx = args[0] ?? 1;
+-      const sy = args[1] ?? sx;
+-      ops.push(([px, py]) => [px * sx, py * sy]);
++/** The fill's contours: every subpath of three or more points, closed implicitly. */
++function fillContours(subpaths: Subpath[]): Pt[][] {
++  return subpaths.filter((s) => s.points.length >= 3).map((s) => s.points);
++}
++
++// ---- unit-circle arcs (square roots only, no trigonometry) ---------------------
++
++function unit(x: number, y: number): Pt {
++  const len = Math.sqrt(x * x + y * y);
++  return [x / len, y / len];
++}
++
++/**
++ * The cosine of the largest angle one chord of a circle of `radius` may span
++ * with its sagitta within `tolerance`: R(1 - cos(a/2)) <= tol.
++ */
++function arcCosLimit(tolerance: number, radius: number): number {
++  if (!(radius > tolerance)) return -1;
++  const c = 1 - tolerance / radius;
++  return 2 * c * c - 1;
++}
++
++/**
++ * Append the unit vectors strictly between `u` and `v` on the short arc,
++ * bisecting until each step's cosine is at least `cosLimit`. Callers keep
++ * the span at a quarter turn or less, where `u + v` is never short and the
++ * bisector is well conditioned.
++ */
++function shortUnitArc(u: Pt, v: Pt, cosLimit: number, out: Pt[]): void {
++  if (u[0] * v[0] + u[1] * v[1] >= cosLimit) return;
++  const m = unit(u[0] + v[0], u[1] + v[1]);
++  shortUnitArc(u, m, cosLimit, out);
++  out.push(m);
++  shortUnitArc(m, v, cosLimit, out);
++}
++
++/**
++ * Append the unit vectors from `u` (exclusive) to `v` (exclusive) turning in
++ * direction `dir` (+1 increases the angle, as SVG's sweep-flag 1 does), for
++ * any span short of a full turn. Whole quarter turns are split off first, by
++ * rotating 90 degrees in `dir` — exact, and never a bisection of two nearly
++ * opposite vectors, whose sum's direction is rounding noise — and the
++ * remainder, a quarter turn or less, is bisected.
++ */
++function sweepUnitArc(u: Pt, v: Pt, dir: number, cosLimit: number, out: Pt[]): void {
++  const cross = (u[0] * v[1] - u[1] * v[0]) * dir;
++  const dot = u[0] * v[0] + u[1] * v[1];
++  // Quarter turns wholly inside the span, read off the quadrant `v` is in.
++  const quarters = cross >= 0 ? (dot >= 0 ? 0 : 1) : dot < 0 ? 2 : 3;
++  let from = u;
++  for (let q = 0; q < quarters; q++) {
++    const m: Pt = dir > 0 ? [-from[1], from[0]] : [from[1], -from[0]];
++    shortUnitArc(from, m, cosLimit, out);
++    // A quarter that ends on `v` itself leaves `v` to the caller.
++    if (q === quarters - 1 && m[0] * v[0] + m[1] * v[1] > 1 - 1e-12) return;
++    out.push(m);
++    from = m;
++  }
++  shortUnitArc(from, v, cosLimit, out);
++}
++
++/** Unit vectors around a whole circle, starting at +x and increasing the angle. */
++function unitCircle(cosLimit: number): Pt[] {
++  const axes: Pt[] = [[1, 0], [0, 1], [-1, 0], [0, -1]];
++  const out: Pt[] = [];
++  for (let i = 0; i < 4; i++) {
++    out.push(axes[i]!);
++    shortUnitArc(axes[i]!, axes[(i + 1) % 4]!, cosLimit, out);
++  }
++  return out;
++}
++
++// ---- stroke outlining ------------------------------------------------------------
++
++interface StrokeStyle {
++  /** half the stroke width, user units */
++  hw: number;
++  join: "miter" | "round" | "bevel";
++  cap: "butt" | "round" | "square";
++  miterLimit: number;
++}
++
++/**
++ * The stroke of `subpaths` as fill contours, all wound the same way, so
++ * their nonzero union is the stroke: one quad per segment, a join on the
++ * outer side of every corner, a cap at both ends of an open subpath. A
++ * vertex inside a flattened curve takes a round join, because the curve it
++ * approximates has no corner there.
++ */
++function strokeOutline(subpaths: Subpath[], st: StrokeStyle, tolerance: number): Pt[][] {
++  const out: Pt[][] = [];
++  const hw = st.hw;
++  const cosLimit = arcCosLimit(tolerance, hw);
++  const emit = (poly: Pt[]) => {
++    let area = 0;
++    for (let i = 0; i < poly.length; i++) {
++      const a = poly[i]!;
++      const b = poly[(i + 1) % poly.length]!;
++      area += a[0] * b[1] - b[0] * a[1];
++    }
++    if (area === 0 || !Number.isFinite(area)) return;
++    out.push(area > 0 ? poly : poly.reverse());
++  };
++  const around = (c: Pt, dirs: Pt[]): Pt[] => dirs.map(([ux, uy]) => [c[0] + ux * hw, c[1] + uy * hw]);
++  for (const sp of subpaths) {
++    // Drop repeated points: a zero-length segment has no direction.
++    const pts: Pt[] = [];
++    const corners: boolean[] = [];
++    for (let i = 0; i < sp.points.length; i++) {
++      const p = sp.points[i]!;
++      const last = pts[pts.length - 1];
++      if (last && last[0] === p[0] && last[1] === p[1]) {
++        corners[corners.length - 1] ||= sp.corner[i]!;
++        continue;
++      }
++      pts.push(p);
++      corners.push(sp.corner[i]!);
++    }
++    if (sp.closed && pts.length > 1) {
++      const a = pts[0]!;
++      const b = pts[pts.length - 1]!;
++      if (a[0] === b[0] && a[1] === b[1]) {
++        pts.pop();
++        corners[0] ||= corners.pop()!;
++      }
++    }
++    const n = pts.length;
++    if (n === 0) continue;
++    if (n === 1) {
++      // A zero-length subpath draws its caps: a dot or a square, none for butt.
++      if (sp.points.length < 2) continue; // a lone moveto is not stroked
++      const p = pts[0]!;
++      if (st.cap === "round") emit(around(p, unitCircle(cosLimit)));
++      else if (st.cap === "square") {
++        emit([[p[0] - hw, p[1] - hw], [p[0] + hw, p[1] - hw], [p[0] + hw, p[1] + hw], [p[0] - hw, p[1] + hw]]);
++      }
++      continue;
++    }
++    // Two points closed is out and back: two segments and two reversal joins.
++    const closed = sp.closed;
++    const segs = closed ? n : n - 1;
++    const dirs: Pt[] = [];
++    for (let i = 0; i < segs; i++) {
++      const a = pts[i]!;
++      const b = pts[(i + 1) % n]!;
++      const d = unit(b[0] - a[0], b[1] - a[1]);
++      dirs.push(d);
++      const nx = -d[1] * hw;
++      const ny = d[0] * hw;
++      emit([[a[0] + nx, a[1] + ny], [b[0] + nx, b[1] + ny], [b[0] - nx, b[1] - ny], [a[0] - nx, a[1] - ny]]);
++    }
++    const join = (v: Pt, d0: Pt, d1: Pt, kind: StrokeStyle["join"]) => {
++      const cross = d0[0] * d1[1] - d0[1] * d1[0];
++      const dot = d0[0] * d1[0] + d0[1] * d1[1];
++      if (cross === 0 && dot > 0) return;
++      const s = cross > 0 ? -1 : 1; // the outer side
++      const n0: Pt = [-d0[1] * s, d0[0] * s];
++      const n1: Pt = [-d1[1] * s, d1[0] * s];
++      const a: Pt = [v[0] + n0[0] * hw, v[1] + n0[1] * hw];
++      const b: Pt = [v[0] + n1[0] * hw, v[1] + n1[1] * hw];
++      if (kind === "round") {
++        // The outer normals turn the way the path does; a reversal (cross 0,
++        // s = 1) turns from the left normal through d0, the half disc ahead.
++        const steps: Pt[] = [];
++        sweepUnitArc(n0, n1, cross > 0 ? 1 : -1, cosLimit, steps);
++        emit([v, a, ...around(v, steps), b]);
++        return;
++      }
++      // miter length / stroke width = 1 / sin(interior / 2) = 1 / cos(turn / 2)
++      if (kind === "miter" && 1 + dot > 0 && 1 / Math.sqrt((1 + dot) / 2) <= st.miterLimit) {
++        const k = hw / (1 + dot);
++        emit([v, a, [v[0] + (n0[0] + n1[0]) * k, v[1] + (n0[1] + n1[1]) * k], b]);
++        return;
++      }
++      emit([v, a, b]);
++    };
++    for (let i = closed ? 0 : 1; i < (closed ? n : n - 1); i++) {
++      const d0 = dirs[(i - 1 + segs) % segs]!;
++      const d1 = dirs[i % segs]!;
++      join(pts[i]!, d0, d1, corners[i] ? st.join : "round");
++    }
++    if (!closed) {
++      const cap = (p: Pt, o: Pt) => {
++        const nx = -o[1] * hw;
++        const ny = o[0] * hw;
++        if (st.cap === "square") {
++          const ox = o[0] * hw;
++          const oy = o[1] * hw;
++          emit([[p[0] + nx, p[1] + ny], [p[0] + nx + ox, p[1] + ny + oy], [p[0] - nx + ox, p[1] - ny + oy], [p[0] - nx, p[1] - ny]]);
++        } else if (st.cap === "round") {
++          const side: Pt = [-o[1], o[0]];
++          const steps: Pt[] = [];
++          shortUnitArc(side, o, cosLimit, steps);
++          steps.push(o);
++          shortUnitArc(o, [-side[0], -side[1]], cosLimit, steps);
++          emit([[p[0] + nx, p[1] + ny], ...around(p, steps), [p[0] - nx, p[1] - ny]]);
++        }
++      };
++      const first = dirs[0]!;
++      cap(pts[0]!, [-first[0], -first[1]]);
++      cap(pts[n - 1]!, dirs[segs - 1]!);
+     }
+   }
+-  return (p) => ops.reduce((acc, op) => op(acc), p);
++  return out;
+ }
+ 
++// ---- attributes, paint, transforms -----------------------------------------------
++
+ function attrs(tag: string): Record<string, string> {
+   const out: Record<string, string> = {};
+   const re = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+   let m: RegExpExecArray | null;
+-  while ((m = re.exec(tag))) out[m[1]] = m[2] ?? m[3] ?? "";
++  while ((m = re.exec(tag))) out[m[1]!] = m[2] ?? m[3] ?? "";
+   return out;
+ }
+ 
+@@ -259,15 +543,15 @@ function num(v: string | undefined, name: string): number {
+   return n;
+ }
+ 
+-function parseColor(value: string | undefined): [number, number, number, number] {
++function parseColor(value: string | undefined, what = "fill"): RGBA {
+   let s = value ?? "#000000";
+   if (s === "white") s = "#ffffff";
+   else if (s === "black") s = "#000000";
+   if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+     return [
+-      parseInt(s[1] + s[1], 16),
+-      parseInt(s[2] + s[2], 16),
+-      parseInt(s[3] + s[3], 16),
++      parseInt(s[1]! + s[1]!, 16),
++      parseInt(s[2]! + s[2]!, 16),
++      parseInt(s[3]! + s[3]!, 16),
+       255,
+     ];
+   }
+@@ -279,7 +563,7 @@ function parseColor(value: string | undefined): [number, number, number, number]
+       s.length === 9 ? parseInt(s.slice(7, 9), 16) : 255,
+     ];
+   }
+-  throw new Error(`svg bake: unsupported fill "${s}"`);
++  throw new Error(`svg bake: unsupported ${what} "${s}"`);
+ }
+ 
+ function parseOpacity(v: string | undefined): number {
+@@ -289,21 +573,435 @@ function parseOpacity(v: string | undefined): number {
+   return Math.max(0, Math.min(1, n));
+ }
+ 
+-function sourceOver(px: Uint8Array, i: number, src: [number, number, number, number], srcA01: number): void {
++/** Numbers in a transform argument list or a `points` attribute. */
++function numberList(v: string, what: string): number[] {
++  const out: number[] = [];
++  let pos = 0;
++  for (;;) {
++    while (pos < v.length && /[\s,]/.test(v[pos]!)) pos++;
++    if (pos >= v.length) return out;
++    PATH_NUMBER.lastIndex = pos;
++    const m = PATH_NUMBER.exec(v);
++    if (!m) throw new Error(`svg bake: invalid ${what} "${v}"`);
++    pos = PATH_NUMBER.lastIndex;
++    out.push(parseFloat(m[0]));
++  }
++}
++
++/**
++ * `transform="..."` as point maps in the order they apply to a point: the
++ * rightmost function first, as SVG composes a transform list.
++ */
++function parseSvgTransform(value: string | undefined): PointMap[] {
++  if (!value || value.trim() === "none") return [];
++  const ops: PointMap[] = [];
++  const re = /\s*,?\s*([A-Za-z]+)\s*\(([^)]*)\)/y;
++  let pos = 0;
++  while (pos < value.length) {
++    re.lastIndex = pos;
++    const m = re.exec(value);
++    if (!m) {
++      if (/^[\s,]*$/.test(value.slice(pos))) break;
++      throw new Error(`svg bake: invalid transform="${value}"`);
++    }
++    pos = re.lastIndex;
++    const name = m[1]!;
++    const args = numberList(m[2]!, `transform ${name}()`);
++    const want = (...counts: number[]) => {
++      if (!counts.includes(args.length)) {
++        throw new Error(`svg bake: ${name}() takes ${counts.join(" or ")} arguments (got ${args.length}) in transform="${value}"`);
++      }
++    };
++    if (name === "rotate") {
++      want(1, 3);
++      const rad = (args[0]! * Math.PI) / 180;
++      const cx = args[1] ?? 0;
++      const cy = args[2] ?? 0;
++      const cos = Math.cos(rad);
++      const sin = Math.sin(rad);
++      ops.push(([px, py]) => {
++        const dx = px - cx;
++        const dy = py - cy;
++        return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
++      });
++    } else if (name === "translate") {
++      want(1, 2);
++      const tx = args[0]!;
++      const ty = args[1] ?? 0;
++      ops.push(([px, py]) => [px + tx, py + ty]);
++    } else if (name === "scale") {
++      want(1, 2);
++      const sx = args[0]!;
++      const sy = args[1] ?? sx;
++      ops.push(([px, py]) => [px * sx, py * sy]);
++    } else if (name === "matrix") {
++      want(6);
++      const [a, b, c, d, e, f] = args as [number, number, number, number, number, number];
++      ops.push(([px, py]) => [a * px + c * py + e, b * px + d * py + f]);
++    } else if (name === "skewX" || name === "skewY") {
++      want(1);
++      const t = Math.tan((args[0]! * Math.PI) / 180);
++      ops.push(name === "skewX" ? ([px, py]) => [px + t * py, py] : ([px, py]) => [px, py + t * px]);
++    } else {
++      throw new Error(`svg bake: unsupported transform function ${name}() in transform="${value}"`);
++    }
++  }
++  return ops.reverse();
++}
++
++function sourceOver(px: Uint8Array, i: number, src: RGBA, srcA01: number): void {
+   if (srcA01 <= 0) return;
+-  const dstA01 = px[i + 3] / 255;
++  const dstA01 = px[i + 3]! / 255;
+   const outA = srcA01 + dstA01 * (1 - srcA01);
+   if (outA <= 0) return;
+-  px[i] = Math.round((src[0] * srcA01 + px[i] * dstA01 * (1 - srcA01)) / outA);
+-  px[i + 1] = Math.round((src[1] * srcA01 + px[i + 1] * dstA01 * (1 - srcA01)) / outA);
+-  px[i + 2] = Math.round((src[2] * srcA01 + px[i + 2] * dstA01 * (1 - srcA01)) / outA);
++  px[i] = Math.round((src[0] * srcA01 + px[i]! * dstA01 * (1 - srcA01)) / outA);
++  px[i + 1] = Math.round((src[1] * srcA01 + px[i + 1]! * dstA01 * (1 - srcA01)) / outA);
++  px[i + 2] = Math.round((src[2] * srcA01 + px[i + 2]! * dstA01 * (1 - srcA01)) / outA);
+   px[i + 3] = Math.round(outA * 255);
+ }
+ 
+ /** `fill="hole"`: alpha-subtract by coverage (colors untouched). */
+ function erase(px: Uint8Array, i: number, cov01: number): void {
+   if (cov01 <= 0) return;
+-  px[i + 3] = Math.round(px[i + 3] * (1 - cov01));
++  px[i + 3] = Math.round(px[i + 3]! * (1 - cov01));
++}
++
++// ---- coverage ----------------------------------------------------------------------
++
++/** Receives a pixel and its covered-subsample count (1..SVG_SUPERSAMPLE^2). */
++export type CoverageVisit = (x: number, y: number, covered: number) => void;
++
++/** The subsample offset `(k + 0.5) / ss` added to integer pixel coordinate `p`. */
++function samplePos(k: number): number {
++  const ss = SVG_SUPERSAMPLE;
++  const p = Math.floor(k / ss);
++  return p + (k - p * ss + 0.5) / ss;
++}
++
++/** The smallest sample index k in [lo, hi] with samplePos(k) >= v (hi when none). */
++function firstSampleAtOrAfter(v: number, lo: number, hi: number): number {
++  if (lo >= hi || !(v > samplePos(lo))) return lo;
++  if (v > samplePos(hi - 1)) return hi;
++  let k = Math.ceil(v * SVG_SUPERSAMPLE - 0.5);
++  if (k < lo + 1) k = lo + 1;
++  if (k > hi - 1) k = hi - 1;
++  while (samplePos(k - 1) >= v) k--;
++  while (samplePos(k) < v) k++;
++  return k;
++}
++
++/**
++ * Covered-subsample counts of filled contours over the pixel window
++ * [x0, x1) x [y0, y1), visited row by row.
++ *
++ * A subsample (px, py) is inside when the edges crossing the row at py to the
++ * RIGHT of px wind nonzero (or are odd in number under evenodd) — the test the
++ * reference baker made per subsample, with an edge crossing row py when
++ * `ay <= py ? by > py : by <= py` and at `ax + (bx - ax) * ((py - ay) / (by - ay))`.
++ * Here each row's crossings are computed once with that same arithmetic and
++ * sorted, and the subsample columns between two consecutive crossings share
++ * one verdict, so the counts are the same integers.
++ */
++export function coverPath(
++  contours: Pt[][],
++  evenOdd: boolean,
++  x0: number,
++  y0: number,
++  x1: number,
++  y1: number,
++  visit: CoverageVisit,
++): void {
++  if (!(x0 < x1 && y0 < y1)) return;
++  const ss = SVG_SUPERSAMPLE;
++  const kMin = y0 * ss;
++  const kMax = y1 * ss;
++  const cMin = x0 * ss;
++  const cMax = x1 * ss;
++  // Edge table: original endpoints (the crossing arithmetic depends on their
++  // order), the first and one-past-last sample rows they cross, the winding.
++  const ax: number[] = [];
++  const ay: number[] = [];
++  const bx: number[] = [];
++  const by: number[] = [];
++  const kFrom: number[] = [];
++  const kTo: number[] = [];
++  const wind: number[] = [];
++  for (const c of contours) {
++    for (let i = 0; i < c.length; i++) {
++      const a = c[i]!;
++      const b = c[(i + 1) % c.length]!;
++      const lo = a[1] < b[1] ? a[1] : b[1];
++      const hi = a[1] < b[1] ? b[1] : a[1];
++      // A horizontal edge crosses no row; one with a NaN never counts.
++      if (!(lo < hi) || Number.isNaN(a[0]) || Number.isNaN(b[0])) continue;
++      const from = firstSampleAtOrAfter(lo, kMin, kMax);
++      const to = firstSampleAtOrAfter(hi, kMin, kMax);
++      if (from >= to) continue;
++      ax.push(a[0]);
++      ay.push(a[1]);
++      bx.push(b[0]);
++      by.push(b[1]);
++      kFrom.push(from);
++      kTo.push(to);
++      wind.push(b[1] > a[1] ? 1 : -1);
++    }
++  }
++  const order = kFrom.map((_, i) => i).sort((p, q) => kFrom[p]! - kFrom[q]!);
++  let next = 0;
++  let active: number[] = [];
++  const xs = new Float64Array(order.length);
++  const ws = new Int32Array(order.length);
++  const es = new Int32Array(order.length);
++  const width = x1 - x0;
++  const cov = new Int32Array(width);
++  const diff = new Int32Array(width + 1);
++  let touchedLo = width;
++  let touchedHi = -1;
++  const addSpan = (cA: number, cB: number) => {
++    const pa = Math.floor(cA / ss) - x0;
++    const pb = Math.floor((cB - 1) / ss) - x0;
++    if (pa < touchedLo) touchedLo = pa;
++    if (pb > touchedHi) touchedHi = pb;
++    if (pa === pb) {
++      cov[pa]! += cB - cA;
++      return;
++    }
++    cov[pa]! += (pa + x0 + 1) * ss - cA;
++    cov[pb]! += cB - (pb + x0) * ss;
++    if (pb > pa + 1) {
++      diff[pa + 1]! += ss;
++      diff[pb]! -= ss;
++    }
++  };
++  for (let k = kMin; k < kMax; k++) {
++    const y = Math.floor(k / ss);
++    const yy = k - y * ss;
++    const py = y + (yy + 0.5) / ss;
++    while (next < order.length && kFrom[order[next]!]! <= k) active.push(order[next++]!);
++    if (active.length > 0) {
++      // Crossings at this row, in x order. `active` is kept in the previous
++      // row's x order, so the insertion sort mostly moves nothing.
++      let n = 0;
++      const unplaced: number[] = [];
++      for (const e of active) {
++        if (kTo[e]! <= k) continue;
++        const t = (py - ay[e]!) / (by[e]! - ay[e]!);
++        const ix = ax[e]! + (bx[e]! - ax[e]!) * t;
++        if (Number.isNaN(ix)) {
++          unplaced.push(e);
++          continue;
++        }
++        let j = n++;
++        while (j > 0 && xs[j - 1]! > ix) {
++          xs[j] = xs[j - 1]!;
++          ws[j] = ws[j - 1]!;
++          es[j] = es[j - 1]!;
++          j--;
++        }
++        xs[j] = ix;
++        ws[j] = wind[e]!;
++        es[j] = e;
++      }
++      active = Array.from(es.subarray(0, n)).concat(unplaced);
++      // Walk the intervals right to left, carrying the winding (and the
++      // count) of the crossings to the right of each.
++      let sum = 0;
++      let count = 0;
++      let spanEnd = cMax;
++      for (let j = n; j >= 0; j--) {
++        const inside = evenOdd ? (count & 1) === 1 : sum !== 0;
++        const lo = j === 0 ? cMin : firstSampleAtOrAfter(xs[j - 1]!, cMin, cMax);
++        if (inside) {
++          if (lo < spanEnd) addSpan(lo, spanEnd);
++        }
++        spanEnd = lo;
++        if (j > 0) {
++          sum += ws[j - 1]!;
++          count++;
++        }
++      }
++    }
++    if (yy === ss - 1) {
++      if (touchedHi >= 0) {
++        let run = 0;
++        for (let p = touchedLo; p <= touchedHi; p++) {
++          run += diff[p]!;
++          const covered = cov[p]! + run;
++          if (covered > 0) visit(x0 + p, y, covered);
++          cov[p] = 0;
++          diff[p] = 0;
++        }
++        diff[touchedHi + 1] = 0;
++        touchedLo = width;
++        touchedHi = -1;
++      }
++    }
++  }
++}
++
++/**
++ * Covered-subsample counts of a disc over the pixel window, by the reference
++ * baker's test `dx * dx + dy * dy <= r * r` per subsample. Along one sample
++ * row that test holds on one run of columns (|dx| only grows away from the
++ * centre, and every rounding step is monotonic), so each row finds the run's
++ * two ends and fills between them.
++ */
++export function coverCircle(
++  cx: number,
++  cy: number,
++  r: number,
++  x0: number,
++  y0: number,
++  x1: number,
++  y1: number,
++  visit: CoverageVisit,
++): void {
++  if (!(x0 < x1 && y0 < y1)) return;
++  const ss = SVG_SUPERSAMPLE;
++  const cMin = x0 * ss;
++  const cMax = x1 * ss;
++  const rr = r * r;
++  const width = x1 - x0;
++  const cov = new Int32Array(width);
++  for (let y = y0; y < y1; y++) {
++    let any = false;
++    for (let yy = 0; yy < ss; yy++) {
++      const py = y + (yy + 0.5) / ss;
++      const dy = py - cy;
++      const inside = (c: number) => {
++        const dx = samplePos(c) - cx;
++        return dx * dx + dy * dy <= rr;
++      };
++      // The column nearest the centre has the smallest |dx|.
++      const right = firstSampleAtOrAfter(cx, cMin, cMax);
++      let best = -1;
++      if (right < cMax && inside(right)) best = right;
++      else if (right > cMin && inside(right - 1)) best = right - 1;
++      if (best < 0) continue;
++      const half = Math.sqrt(Math.max(0, rr - dy * dy));
++      let lo = Math.min(best, Math.max(cMin, firstSampleAtOrAfter(cx - half, cMin, cMax)));
++      while (lo > cMin && inside(lo - 1)) lo--;
++      while (!inside(lo)) lo++;
++      let hi = Math.max(best, Math.min(cMax - 1, firstSampleAtOrAfter(cx + half, cMin, cMax)));
++      while (hi < cMax - 1 && inside(hi + 1)) hi++;
++      while (!inside(hi)) hi--;
++      for (let c = lo; c <= hi; c++) cov[Math.floor(c / ss) - x0]!++;
++      any = true;
++    }
++    if (!any) continue;
++    for (let p = 0; p < width; p++) {
++      if (cov[p]! > 0) {
++        visit(x0 + p, y, cov[p]!);
++        cov[p] = 0;
++      }
++    }
++  }
++}
++
++// ---- the document ------------------------------------------------------------------
++
++/** Presentation properties a <g> passes down to its children. */
++const INHERITED = [
++  "fill",
++  "fill-opacity",
++  "fill-rule",
++  "stroke",
++  "stroke-width",
++  "stroke-opacity",
++  "stroke-linejoin",
++  "stroke-linecap",
++  "stroke-miterlimit",
++  "visibility",
++] as const;
++
++const SHAPES = new Set(["circle", "ellipse", "rect", "line", "polyline", "polygon", "path"]);
++
++/** Elements that never paint, skipped with everything inside them. */
++const NON_RENDERING = new Set([
++  "defs",
++  "title",
++  "desc",
++  "metadata",
++  "clippath",
++  "mask",
++  "lineargradient",
++  "radialgradient",
++  "pattern",
++  "symbol",
++  "marker",
++  "filter",
++  "script",
++]);
++
++/**
++ * Attributes that would change what is painted and that this baker does not
++ * implement — refused rather than ignored, with the value that is a no-op.
++ */
++const REFUSED: Record<string, string | null> = {
++  "clip-path": "none",
++  mask: "none",
++  filter: "none",
++  "stroke-dasharray": "none",
++  "stroke-dashoffset": "0",
++  "marker-start": "none",
++  "marker-mid": "none",
++  "marker-end": "none",
++  marker: "none",
++  "paint-order": "normal",
++  "vector-effect": "none",
++  "mix-blend-mode": "normal",
++};
++
++const REFUSED_ELEMENTS: Record<string, string> = {
++  text: "convert the text to outlines (paths)",
++  image: "bake the picture as its own PNG",
++  use: "inline the referenced shapes",
++  style: "write the properties as presentation attributes or style=\"\" on the shapes",
++  svg: "a nested <svg> is not supported; use a <g transform>",
++  foreignobject: "it is not SVG",
++  switch: "keep the one branch that should draw",
++  a: "use a <g>",
++};
++
++/** An element's own presentation properties: attributes, overridden by `style=""`. */
++function ownProperties(a: Record<string, string>): Record<string, string> {
++  const out = { ...a };
++  if (a.style !== undefined) {
++    delete out.style;
++    for (const decl of a.style.split(";")) {
++      const i = decl.indexOf(":");
++      if (i < 0) {
++        if (decl.trim() !== "") throw new Error(`svg bake: invalid style="${a.style}"`);
++        continue;
++      }
++      out[decl.slice(0, i).trim()] = decl.slice(i + 1).trim();
++    }
++  }
++  for (const [name, noop] of Object.entries(REFUSED)) {
++    const v = out[name];
++    if (v !== undefined && v !== noop) {
++      throw new Error(`svg bake: ${name}="${v}" is not applied by this baker - remove it or flatten its effect into the shapes`);
++    }
++  }
++  return out;
++}
++
++interface Layer {
++  rgba: Uint8Array;
++  opacity: number;
++}
++
++interface Frame {
++  name: string;
++  /** Inherited presentation properties in effect inside this element. */
++  props: Record<string, string>;
++  /** Point maps from this element's user space to the root's, in order. */
++  xf: PointMap[];
++  /** Skip everything inside (a non-rendering element, or a shape's children). */
++  skip: boolean;
++  /** Set when the element composites its content as one layer (`opacity` on a <g>). */
++  layer?: Layer;
++  hidden: boolean;
+ }
+ 
+ export function bakeSvg(svg: string, rasterDensity = 1): DecodedImage {
+@@ -312,8 +1010,15 @@ export function bakeSvg(svg: string, rasterDensity = 1): DecodedImage {
+       `svg bake: rasterDensity must be an integer from 1 through 255 (got ${rasterDensity})`,
+     );
+   }
+-  const svgTag = svg.match(/<svg\b[^>]*>/i)?.[0];
+-  if (!svgTag) throw new Error("svg bake: missing <svg>");
++  // Comments, processing instructions, doctypes and CDATA never paint.
++  const source = svg
++    .replace(/<!--[\s\S]*?-->/g, "")
++    .replace(/<!\[CDATA\[[\s\S]*?\]\]>/g, "")
++    .replace(/<\?[\s\S]*?\?>/g, "")
++    .replace(/<!DOCTYPE[^>]*>/gi, "");
++  const svgMatch = /<svg\b[^>]*>/i.exec(source);
++  if (!svgMatch) throw new Error("svg bake: missing <svg>");
++  const svgTag = svgMatch[0];
+   const root = attrs(svgTag);
+   const logicalWidth = Math.round(num(root.width, "width"));
+   const logicalHeight = Math.round(num(root.height, "height"));
+@@ -326,169 +1031,319 @@ export function bakeSvg(svg: string, rasterDensity = 1): DecodedImage {
+   if (viewBox.length !== 4 || viewBox.some((n) => !Number.isFinite(n))) {
+     throw new Error(`svg bake: invalid viewBox="${root.viewBox}"`);
+   }
+-  const [vbX, vbY, vbW, vbH] = viewBox;
+-  const sx = width / vbW;
+-  const sy = height / vbH;
+-
+-  // <defs> content (clipPaths, masks) is never painted directly.
+-  const svgBody = svg.replace(/<defs[\s\S]*?<\/defs>/gi, "");
+-  // Shapes are scanned flat: a <g> wrapper is invisible to this baker, so a
+-  // transform on one would be silently dropped — shapes would pile up at
+-  // their untranslated coordinates (a sprite atlas with 7 blank cells shipped
+-  // this way once). Hard error; bake the offsets into the coordinates.
+-  if (/<g\b[^>]*\btransform=/i.test(svgBody)) {
++  if (root.preserveAspectRatio !== undefined && root.preserveAspectRatio.trim() !== "none") {
+     throw new Error(
+-      "svg bake: <g transform> is not applied by this baker - flatten the transform into the shapes' own coordinates",
++      `svg bake: preserveAspectRatio="${root.preserveAspectRatio}" is not applied - the viewBox is stretched onto width x height on each axis, as "none"`,
+     );
+   }
+-  const shapes: Shape[] = [];
+-  const shapeRe = /<(circle|rect|path)\b[^>]*\/?>/gi;
+-  let m: RegExpExecArray | null;
+-  while ((m = shapeRe.exec(svgBody))) {
+-    const a = attrs(m[0]);
+-    const tag = m[1].toLowerCase();
+-    if (tag === "path") {
+-      // Paths need an explicit paint: fill="none"/absent skips (clipPath
+-      // defs, stroke-only art) — the icon subset this bakes is fill-based.
+-      if (!a.fill || a.fill === "none") continue;
+-      const hole = a.fill === "hole";
+-      const rgba = hole ? ([0, 0, 0, 255] as [number, number, number, number]) : parseColor(a.fill);
+-      const op = parseOpacity(a.opacity) * parseOpacity(a["fill-opacity"]);
+-      rgba[3] = Math.round(rgba[3] * op);
+-      if (!a.d) continue;
+-      const xf = parseSvgTransform(a.transform);
+-      const contours = flattenPath(a.d).map((c) =>
+-        c.map((p) => {
+-          const [tx, ty] = xf(p);
+-          return [(tx - vbX) * sx, (ty - vbY) * sy] as [number, number];
+-        }),
+-      );
+-      if (contours.length === 0) continue;
+-      let bx0 = Infinity;
+-      let by0 = Infinity;
+-      let bx1 = -Infinity;
+-      let by1 = -Infinity;
+-      for (const c of contours) {
+-        for (const [px, py] of c) {
+-          bx0 = Math.min(bx0, px);
+-          by0 = Math.min(by0, py);
+-          bx1 = Math.max(bx1, px);
+-          by1 = Math.max(by1, py);
+-        }
+-      }
+-      shapes.push({
+-        kind: "path",
+-        contours,
+-        evenOdd: a["fill-rule"] === "evenodd" || a["clip-rule"] === "evenodd",
+-        hole,
+-        rgba,
+-        bbox: [bx0, by0, bx1, by1],
+-      });
+-      continue;
+-    }
+-    const hole = a.fill === "hole";
+-    const rgba = hole ? ([0, 0, 0, 255] as [number, number, number, number]) : parseColor(a.fill);
+-    const op = parseOpacity(a.opacity) * parseOpacity(a["fill-opacity"]);
+-    rgba[3] = Math.round(rgba[3] * op);
+-    if (tag === "circle") {
+-      shapes.push({
+-        kind: "circle",
+-        cx: (num(a.cx, "cx") - vbX) * sx,
+-        cy: (num(a.cy, "cy") - vbY) * sy,
+-        r: num(a.r, "r") * Math.min(sx, sy),
+-        hole,
+-        rgba,
+-      });
+-    } else {
+-      shapes.push({
+-        kind: "rect",
+-        x: (num(a.x ?? "0", "x") - vbX) * sx,
+-        y: (num(a.y ?? "0", "y") - vbY) * sy,
+-        w: num(a.width, "width") * sx,
+-        h: num(a.height, "height") * sy,
+-        hole,
+-        rgba,
+-      });
+-    }
+-  }
+-  if (shapes.length === 0) throw new Error("svg bake: no supported shapes");
++  const [vbX, vbY, vbW, vbH] = viewBox as [number, number, number, number];
++  const sx = width / vbW;
++  const sy = height / vbH;
++  const toPx: PointMap = ([tx, ty]) => [(tx - vbX) * sx, (ty - vbY) * sy];
+ 
+-  const rgba = new Uint8Array(width * height * 4);
++  const canvas = new Uint8Array(width * height * 4);
+   const ss = SVG_SUPERSAMPLE;
+   const samples = ss * ss;
+-  for (const s of shapes) {
+-    const [bx0, by0, bx1, by1] =
+-      s.kind === "circle"
+-        ? [s.cx - s.r - 1, s.cy - s.r - 1, s.cx + s.r + 1, s.cy + s.r + 1]
+-        : s.kind === "rect"
+-          ? [s.x - 1, s.y - 1, s.x + s.w + 1, s.y + s.h + 1]
+-          : [s.bbox[0] - 1, s.bbox[1] - 1, s.bbox[2] + 1, s.bbox[3] + 1];
+-    const x0 = Math.max(0, Math.floor(bx0));
+-    const y0 = Math.max(0, Math.floor(by0));
+-    const x1 = Math.min(width, Math.ceil(bx1));
+-    const y1 = Math.min(height, Math.ceil(by1));
++
++  const rootProps = ownProperties(root);
++  if (rootProps.transform !== undefined) throw new Error("svg bake: transform on the root <svg> is not applied - wrap the content in a <g transform>");
++  const inheritedFrom = (parent: Record<string, string>, own: Record<string, string>) => {
++    const props: Record<string, string> = { ...parent };
++    for (const k of INHERITED) if (own[k] !== undefined && own[k] !== "inherit") props[k] = own[k]!;
++    return props;
++  };
++  const stack: Frame[] = [
++    { name: "svg", props: inheritedFrom({}, rootProps), xf: [], skip: false, hidden: false },
++  ];
++  const target = (): Uint8Array => {
++    for (let i = stack.length - 1; i >= 0; i--) {
++      const l = stack[i]!.layer;
++      if (l) return l.rgba;
++    }
++    return canvas;
++  };
++
++  // ---- drawing one coverage into the current target ----
++  const paintPixel = (px: Uint8Array, paint: Paint): CoverageVisit => (x, y, covered) => {
++    const cov01 = covered / samples;
++    const i = (y * width + x) * 4;
++    if (paint.hole) erase(px, i, cov01);
++    else sourceOver(px, i, paint.rgba, (paint.rgba[3] / 255) * cov01);
++  };
++  const drawContours = (px: Uint8Array, contours: Pt[][], evenOdd: boolean, paint: Paint) => {
++    if (contours.length === 0) return;
++    let bx0 = Infinity;
++    let by0 = Infinity;
++    let bx1 = -Infinity;
++    let by1 = -Infinity;
++    for (const c of contours) {
++      for (const [x, y] of c) {
++        bx0 = Math.min(bx0, x);
++        by0 = Math.min(by0, y);
++        bx1 = Math.max(bx1, x);
++        by1 = Math.max(by1, y);
++      }
++    }
++    const x0 = Math.max(0, Math.floor(bx0 - 1));
++    const y0 = Math.max(0, Math.floor(by0 - 1));
++    const x1 = Math.min(width, Math.ceil(bx1 + 1));
++    const y1 = Math.min(height, Math.ceil(by1 + 1));
++    coverPath(contours, evenOdd, x0, y0, x1, y1, paintPixel(px, paint));
++  };
++  const drawCircle = (px: Uint8Array, cx: number, cy: number, r: number, paint: Paint) => {
++    const x0 = Math.max(0, Math.floor(cx - r - 1));
++    const y0 = Math.max(0, Math.floor(cy - r - 1));
++    const x1 = Math.min(width, Math.ceil(cx + r + 1));
++    const y1 = Math.min(height, Math.ceil(cy + r + 1));
++    coverCircle(cx, cy, r, x0, y0, x1, y1, paintPixel(px, paint));
++  };
++  const drawRect = (px: Uint8Array, rx: number, ry: number, rw: number, rh: number, paint: Paint) => {
++    const x0 = Math.max(0, Math.floor(rx - 1));
++    const y0 = Math.max(0, Math.floor(ry - 1));
++    const x1 = Math.min(width, Math.ceil(rx + rw + 1));
++    const y1 = Math.min(height, Math.ceil(ry + rh + 1));
++    const visit = paintPixel(px, paint);
+     for (let y = y0; y < y1; y++) {
+       for (let x = x0; x < x1; x++) {
+-        let covered = 0;
+-        if (s.kind === "circle") {
+-          const rr = s.r * s.r;
+-          for (let yy = 0; yy < ss; yy++) {
+-            const py = y + (yy + 0.5) / ss;
+-            for (let xx = 0; xx < ss; xx++) {
+-              const px = x + (xx + 0.5) / ss;
+-              const dx = px - s.cx;
+-              const dy = py - s.cy;
+-              if (dx * dx + dy * dy <= rr) covered++;
+-            }
+-          }
+-        } else if (s.kind === "rect") {
+-          // Axis-aligned rect: exact analytic pixel coverage.
+-          const ox = Math.max(0, Math.min(x + 1, s.x + s.w) - Math.max(x, s.x));
+-          const oy = Math.max(0, Math.min(y + 1, s.y + s.h) - Math.max(y, s.y));
+-          covered = ox * oy * samples;
+-        } else {
+-          for (let yy = 0; yy < ss; yy++) {
+-            const py = y + (yy + 0.5) / ss;
+-            for (let xx = 0; xx < ss; xx++) {
+-              const px = x + (xx + 0.5) / ss;
+-              if (pointInContours(s.contours, px, py, s.evenOdd)) covered++;
+-            }
+-          }
+-        }
+-        if (covered > 0) {
+-          const cov01 = covered / samples;
+-          const i = (y * width + x) * 4;
+-          if (s.hole) {
+-            erase(rgba, i, cov01);
+-          } else {
+-            sourceOver(rgba, i, s.rgba, (s.rgba[3] / 255) * cov01);
+-          }
+-        }
++        // Axis-aligned rect: exact analytic pixel coverage.
++        const ox = Math.max(0, Math.min(x + 1, rx + rw) - Math.max(x, rx));
++        const oy = Math.max(0, Math.min(y + 1, ry + rh) - Math.max(y, ry));
++        const covered = ox * oy * samples;
++        if (covered > 0) visit(x, y, covered);
+       }
+     }
+-  }
++  };
++  const compositeLayer = (dst: Uint8Array, src: Uint8Array, opacity: number) => {
++    for (let i = 0; i < src.length; i += 4) {
++      const a = src[i + 3]!;
++      if (a === 0) continue;
++      sourceOver(dst, i, [src[i]!, src[i + 1]!, src[i + 2]!, a], (a / 255) * opacity);
++    }
++  };
+ 
+-  return { width, height, rgba };
+-}
++  let painted = 0;
++  const tagRe = /<(\/?)([A-Za-z_][\w:.-]*)((?:[^>"']|"[^"]*"|'[^']*')*)>/g;
++  tagRe.lastIndex = svgMatch.index + svgTag.length;
++  let m: RegExpExecArray | null;
++  while ((m = tagRe.exec(source))) {
++    const closing = m[1] === "/";
++    const rawName = m[2]!;
++    const name = rawName.toLowerCase();
++    const body = m[3]!;
++    const selfClosing = body.trimEnd().endsWith("/");
++    const parent = stack[stack.length - 1]!;
++    if (closing) {
++      if (stack.length === 1 && name === "svg") break; // the root's own close
++      if (stack.length === 1 || parent.name !== name) {
++        throw new Error(`svg bake: </${rawName}> does not close <${parent.name}>`);
++      }
++      stack.pop();
++      if (parent.layer) compositeLayer(target(), parent.layer.rgba, parent.layer.opacity);
++      continue;
++    }
++    if (parent.skip || rawName.includes(":")) {
++      // Inside a non-rendering element, or an editor's namespaced metadata.
++      if (!selfClosing) stack.push({ ...parent, name, skip: true, layer: undefined });
++      continue;
++    }
++    if (NON_RENDERING.has(name)) {
++      if (!selfClosing) stack.push({ ...parent, name, skip: true, layer: undefined });
++      continue;
++    }
++    if (name !== "g" && !SHAPES.has(name)) {
++      const hint = REFUSED_ELEMENTS[name];
++      throw new Error(`svg bake: <${rawName}> is not drawn by this baker${hint ? ` - ${hint}` : ""}`);
++    }
++    const a = ownProperties(attrs(body));
++    const props = inheritedFrom(parent.props, a);
++    const xf = [...parseSvgTransform(a.transform), ...parent.xf];
++    const display = a.display?.trim();
++    const hidden = display === "none" || parent.hidden;
++    const visible = !hidden && (props.visibility ?? "visible") === "visible";
++    if (name === "g") {
++      const opacity = parseOpacity(a.opacity);
++      const frame: Frame = { name, props, xf, skip: hidden, hidden };
++      if (opacity < 1 && !hidden) frame.layer = { rgba: new Uint8Array(width * height * 4), opacity };
++      if (!selfClosing) stack.push(frame);
++      continue;
++    }
++    if (!selfClosing) stack.push({ name, props, xf, skip: true, hidden });
++    if (!visible) continue;
++    // ---- one shape ----
++    const fillValue = props.fill;
++    // A shape that encloses no area by default (path, polyline, polygon, line)
++    // is filled only when a fill is stated; circle, ellipse and rect default
++    // to black, as SVG does.
++    const fillDefaultsBlack = name === "circle" || name === "rect" || name === "ellipse";
++    const fillPaint = (): Paint | null => {
++      if (name === "line") return null;
++      if (fillValue === undefined && !fillDefaultsBlack) return null;
++      if (fillValue === "none") return null;
++      const hole = fillValue === "hole";
++      return { hole, rgba: hole ? [0, 0, 0, 255] : parseColor(fillValue, "fill") };
++    };
++    const strokePaint = (): Paint | null => {
++      const v = props.stroke;
++      if (v === undefined || v === "none") return null;
++      const hole = v === "hole";
++      return { hole, rgba: hole ? [0, 0, 0, 255] : parseColor(v, "stroke") };
++    };
++    const fill = fillPaint();
++    const stroke = strokePaint();
++    const strokeWidth = stroke ? num(props["stroke-width"] ?? "1", "stroke-width") : 0;
++    if (strokeWidth < 0) throw new Error(`svg bake: invalid stroke-width="${props["stroke-width"]}"`);
++    const strokes = stroke !== null && strokeWidth > 0;
++    if (!fill && !strokes) continue;
++    painted++;
++    const opacity = parseOpacity(a.opacity);
++    const fillOpacity = parseOpacity(props["fill-opacity"]);
++    const strokeOpacity = parseOpacity(props["stroke-opacity"]);
++    // Fill and stroke under one `opacity` are one group; a single paint
++    // carries the opacity in its own alpha, as the fill always has.
++    const group = !!fill && strokes && opacity < 1 && !fill.hole && !stroke!.hole;
++    if (fill && !fill.hole) fill.rgba[3] = Math.round(fill.rgba[3] * (group ? fillOpacity : opacity * fillOpacity));
++    if (stroke && !stroke.hole) stroke.rgba[3] = Math.round(stroke.rgba[3] * (group ? strokeOpacity : opacity * strokeOpacity));
++    const out = group ? new Uint8Array(width * height * 4) : target();
+ 
+-/** Winding test over flattened contours (nonzero or even-odd fill rule). */
+-function pointInContours(contours: [number, number][][], px: number, py: number, evenOdd: boolean): boolean {
+-  let winding = 0;
+-  let crossings = 0;
+-  for (const c of contours) {
+-    for (let i = 0; i < c.length; i++) {
+-      const [ax, ay] = c[i];
+-      const [bx, by] = c[(i + 1) % c.length];
+-      if (ay <= py ? by > py : by <= py) {
+-        // Edge crosses the horizontal ray at py; x of the intersection:
+-        const t = (py - ay) / (by - ay);
+-        const ix = ax + (bx - ax) * t;
+-        if (ix > px) {
+-          crossings++;
+-          winding += by > ay ? 1 : -1;
+-        }
++    const evenOdd = props["fill-rule"] === "evenodd" || a["clip-rule"] === "evenodd";
++    const map: PointMap = (p) => {
++      let q = p;
++      for (const op of xf) q = op(q);
++      return toPx(q);
++    };
++    // How many output pixels one user unit can span, for flattening tolerances.
++    const o = map([0, 0]);
++    const ex = map([1, 0]);
++    const ey = map([0, 1]);
++    const ja = ex[0] - o[0];
++    const jb = ex[1] - o[1];
++    const jc = ey[0] - o[0];
++    const jd = ey[1] - o[1];
++    const fro = ja * ja + jb * jb + jc * jc + jd * jd;
++    const det = ja * jd - jb * jc;
++    const pxPerUnit = Math.sqrt((fro + Math.sqrt(Math.max(0, fro * fro - 4 * det * det))) / 2);
++    const tolerance = pxPerUnit > 0 ? FLATTEN_TOLERANCE_PX / pxPerUnit : Infinity;
++    const mapAll = (cs: Pt[][]) => cs.map((c) => c.map(map));
++
++    // ---- geometry in user space ----
++    let subpaths: Subpath[] = [];
++    const closedPoly = (points: Pt[]): Subpath => ({
++      points: [...points, points[0]!],
++      corner: points.map(() => true).concat(true),
++      closed: true,
++    });
++    const ellipse = (cx: number, cy: number, rx: number, ry: number): Subpath => {
++      const pts = unitCircle(arcCosLimit(tolerance, Math.max(rx, ry))).map(([ux, uy]): Pt => [cx + rx * ux, cy + ry * uy]);
++      return { points: [...pts, pts[0]!], corner: pts.map(() => false).concat(false), closed: true };
++    };
++    const strokeStyle = (): StrokeStyle => {
++      const join = props["stroke-linejoin"] ?? "miter";
++      const cap = props["stroke-linecap"] ?? "butt";
++      if (join !== "miter" && join !== "round" && join !== "bevel") throw new Error(`svg bake: unsupported stroke-linejoin="${join}"`);
++      if (cap !== "butt" && cap !== "round" && cap !== "square") throw new Error(`svg bake: unsupported stroke-linecap="${cap}"`);
++      const miterLimit = num(props["stroke-miterlimit"] ?? "4", "stroke-miterlimit");
++      if (miterLimit < 1) throw new Error(`svg bake: invalid stroke-miterlimit="${props["stroke-miterlimit"]}"`);
++      return { hw: strokeWidth / 2, join, cap, miterLimit };
++    };
++    const drawStroke = () => {
++      if (!strokes) return;
++      const contours = strokeOutline(subpaths, strokeStyle(), tolerance);
++      drawContours(out, mapAll(contours), false, stroke!);
++    };
++
++    if (name === "path") {
++      if (!a.d) {
++        painted--;
++        continue;
++      }
++      subpaths = flattenPath(a.d, tolerance);
++      if (fill) drawContours(out, mapAll(fillContours(subpaths)), evenOdd, fill);
++      drawStroke();
++    } else if (name === "circle") {
++      const cx = num(a.cx ?? "0", "cx");
++      const cy = num(a.cy ?? "0", "cy");
++      const r = num(a.r, "r");
++      if (fill) {
++        if (xf.length === 0) drawCircle(out, (cx - vbX) * sx, (cy - vbY) * sy, r * Math.min(sx, sy), fill);
++        else if (r > 0) drawContours(out, mapAll([ellipse(cx, cy, r, r).points]), false, fill);
++      }
++      if (r > 0) {
++        subpaths = [ellipse(cx, cy, r, r)];
++        drawStroke();
++      }
++    } else if (name === "ellipse") {
++      const cx = num(a.cx ?? "0", "cx");
++      const cy = num(a.cy ?? "0", "cy");
++      const rx = num(a.rx, "rx");
++      const ry = num(a.ry, "ry");
++      if (rx < 0 || ry < 0) throw new Error(`svg bake: invalid ellipse radii ${rx} ${ry}`);
++      if (rx > 0 && ry > 0) {
++        subpaths = [ellipse(cx, cy, rx, ry)];
++        if (fill) drawContours(out, mapAll([subpaths[0]!.points]), false, fill);
++        drawStroke();
++      }
++    } else if (name === "rect") {
++      const x = num(a.x ?? "0", "x");
++      const y = num(a.y ?? "0", "y");
++      const w = num(a.width, "width");
++      const h = num(a.height, "height");
++      let rx = a.rx === undefined ? undefined : num(a.rx, "rx");
++      let ry = a.ry === undefined ? undefined : num(a.ry, "ry");
++      if ((rx ?? 0) < 0 || (ry ?? 0) < 0) throw new Error(`svg bake: invalid rect rx/ry`);
++      rx ??= ry ?? 0;
++      ry ??= rx;
++      rx = Math.min(rx, w / 2);
++      ry = Math.min(ry, h / 2);
++      const rounded = rx > 0 && ry > 0;
++      if (rounded) {
++        // Four quarter ellipses joined by the straight sides, clockwise from the top edge.
++        const pts: Pt[] = [];
++        const corners: boolean[] = [];
++        const lim = arcCosLimit(tolerance, Math.max(rx, ry));
++        const quarter = (ccx: number, ccy: number, from: Pt, to: Pt) => {
++          const steps: Pt[] = [from];
++          shortUnitArc(from, to, lim, steps);
++          steps.push(to);
++          for (const [ux, uy] of steps) {
++            pts.push([ccx + rx! * ux, ccy + ry! * uy]);
++            corners.push(false);
++          }
++        };
++        quarter(x + w - rx, y + ry, [0, -1], [1, 0]);
++        quarter(x + w - rx, y + h - ry, [1, 0], [0, 1]);
++        quarter(x + rx, y + h - ry, [0, 1], [-1, 0]);
++        quarter(x + rx, y + ry, [-1, 0], [0, -1]);
++        subpaths = [{ points: [...pts, pts[0]!], corner: corners.concat(false), closed: true }];
++      } else {
++        subpaths = [closedPoly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]])];
++      }
++      if (fill) {
++        if (!rounded && xf.length === 0) drawRect(out, (x - vbX) * sx, (y - vbY) * sy, w * sx, h * sy, fill);
++        else if (w > 0 && h > 0) drawContours(out, mapAll(fillContours(subpaths)), false, fill);
++      }
++      if (w > 0 && h > 0) drawStroke();
++    } else if (name === "line") {
++      const p1: Pt = [num(a.x1 ?? "0", "x1"), num(a.y1 ?? "0", "y1")];
++      const p2: Pt = [num(a.x2 ?? "0", "x2"), num(a.y2 ?? "0", "y2")];
++      subpaths = [{ points: [p1, p2], corner: [true, true], closed: false }];
++      drawStroke();
++    } else {
++      // polyline, polygon
++      const flat = numberList(a.points ?? "", "points");
++      if (flat.length % 2 !== 0) throw new Error(`svg bake: odd number of coordinates in points="${a.points}"`);
++      const pts: Pt[] = [];
++      for (let i = 0; i < flat.length; i += 2) pts.push([flat[i]!, flat[i + 1]!]);
++      if (pts.length > 0) {
++        subpaths = name === "polygon"
++          ? [closedPoly(pts)]
++          : [{ points: pts, corner: pts.map(() => true), closed: false }];
++        if (fill) drawContours(out, mapAll(fillContours(subpaths)), evenOdd, fill);
++        drawStroke();
+       }
+     }
++    if (group) compositeLayer(target(), out, opacity);
+   }
+-  return evenOdd ? (crossings & 1) === 1 : winding !== 0;
++  if (painted === 0) throw new Error("svg bake: no supported shapes");
++
++  return { width, height, rgba: canvas };
+ }
+diff --git a/tests/fixtures/bake-svg-reference.ts b/tests/fixtures/bake-svg-reference.ts
+new file mode 100644
+index 00000000..ab1a0259
+--- /dev/null
++++ b/tests/fixtures/bake-svg-reference.ts
+@@ -0,0 +1,564 @@
++// tests/fixtures/bake-svg-reference.ts — the SVG baker as it stood before its
++// coverage became a scanline (framework/compiler/bake-svg.ts at 7dce4349),
++// kept as the oracle that change is held to. Below the marker line the file
++// is that revision byte for byte except the `pak.ts` import path; the two
++// exported coverage loops at the end are its own per-subsample loops lifted
++// out of `bakeSvg` unchanged, so a test can compare coverage counts without
++// going through the compositing.
++//
++// Do not "fix" anything here. Its cost is pixels x subsamples x edges, which
++// is why it is no longer the baker; it is the definition the baker matches.
++// ---- verbatim below (import path aside) ----
++
++// framework/compiler/bake-svg.ts — tiny offline SVG rasterizer for baked UI icons.
++//
++// This is deliberately scoped to the assets we want to ship in pak today:
++// pow2-sized SVGs containing filled <circle> and axis-aligned <rect>
++// elements, composited in document order. Edges are supersampled before
++// being written as straight-alpha RGBA, so icons keep subpixel coverage on
++// both the wasm rasterizer and the PSP texture path.
++//
++// `fill="hole"` on any shape ERASES instead of painting (alpha-subtract with
++// the same antialiased coverage) — that is how mask textures are baked, e.g.
++// an opaque card with a transparent circle punched out for a circular-reveal
++// animation (scale the mask up and the hole grows).
++
++import type { DecodedImage } from "../../framework/compiler/pak.ts";
++
++export const SVG_SUPERSAMPLE = 4;
++
++interface Circle {
++  kind: "circle";
++  cx: number;
++  cy: number;
++  r: number;
++  hole: boolean;
++  rgba: [number, number, number, number];
++}
++
++interface Rect {
++  kind: "rect";
++  x: number;
++  y: number;
++  w: number;
++  h: number;
++  hole: boolean;
++  rgba: [number, number, number, number];
++}
++
++interface PathShape {
++  kind: "path";
++  /** Flattened closed contours in PIXEL coords (curves subdivided). */
++  contours: [number, number][][];
++  evenOdd: boolean;
++  hole: boolean;
++  rgba: [number, number, number, number];
++  /** Pixel-space AABB (clamped later). */
++  bbox: [number, number, number, number];
++}
++
++type Shape = Circle | Rect | PathShape;
++
++// ---- SVG path data (`d`) parsing + flattening ------------------------------------
++
++const CURVE_STEPS = 16;
++
++/** Tokenize path data into commands + numbers. */
++function pathTokens(d: string): (string | number)[] {
++  const out: (string | number)[] = [];
++  const re = /([MmLlHhVvCcSsQqTtZz])|(-?\d*\.?\d+(?:e[+-]?\d+)?)/g;
++  let m: RegExpExecArray | null;
++  while ((m = re.exec(d))) {
++    if (m[1]) out.push(m[1]);
++    else out.push(parseFloat(m[2]));
++  }
++  return out;
++}
++
++/**
++ * Flatten path data into closed polygonal contours (viewBox coords).
++ * Supports M/L/H/V/C/S/Q/T/Z (absolute + relative) — the fill-icon subset;
++ * elliptical arcs (A) are a loud error.
++ */
++function flattenPath(d: string): [number, number][][] {
++  const toks = pathTokens(d);
++  const contours: [number, number][][] = [];
++  let cur: [number, number][] = [];
++  let x = 0;
++  let y = 0;
++  let startX = 0;
++  let startY = 0;
++  let prevC: [number, number] | null = null; // last cubic control (for S)
++  let prevQ: [number, number] | null = null; // last quadratic control (for T)
++  let i = 0;
++  let cmd = "";
++  const num = () => {
++    const v = toks[i++];
++    if (typeof v !== "number") throw new Error(`svg bake: expected number in path data (got ${v})`);
++    return v;
++  };
++  const close = () => {
++    if (cur.length >= 3) contours.push(cur);
++    cur = [];
++  };
++  const lineTo = (nx: number, ny: number) => {
++    x = nx;
++    y = ny;
++    cur.push([x, y]);
++  };
++  const cubicTo = (c1x: number, c1y: number, c2x: number, c2y: number, ex: number, ey: number) => {
++    const sx = x;
++    const sy = y;
++    for (let s = 1; s <= CURVE_STEPS; s++) {
++      const t = s / CURVE_STEPS;
++      const u = 1 - t;
++      const px = u * u * u * sx + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * ex;
++      const py = u * u * u * sy + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * ey;
++      cur.push([px, py]);
++    }
++    x = ex;
++    y = ey;
++    prevC = [c2x, c2y];
++  };
++  while (i < toks.length) {
++    const t = toks[i];
++    if (typeof t === "string") {
++      cmd = t;
++      i++;
++    }
++    // (implicit command repetition: keep the previous cmd)
++    switch (cmd) {
++      case "M": case "m": {
++        const rel = cmd === "m";
++        const nx = num();
++        const ny = num();
++        close();
++        x = rel ? x + nx : nx;
++        y = rel ? y + ny : ny;
++        startX = x;
++        startY = y;
++        cur.push([x, y]);
++        cmd = rel ? "l" : "L"; // subsequent pairs are implicit lineTos
++        prevC = prevQ = null;
++        break;
++      }
++      case "L": case "l": {
++        const rel = cmd === "l";
++        const nx = num();
++        const ny = num();
++        lineTo(rel ? x + nx : nx, rel ? y + ny : ny);
++        prevC = prevQ = null;
++        break;
++      }
++      case "H": case "h": {
++        const nx = num();
++        lineTo(cmd === "h" ? x + nx : nx, y);
++        prevC = prevQ = null;
++        break;
++      }
++      case "V": case "v": {
++        const ny = num();
++        lineTo(x, cmd === "v" ? y + ny : ny);
++        prevC = prevQ = null;
++        break;
++      }
++      case "C": case "c": {
++        const rel = cmd === "c";
++        const c1x = rel ? x + num() : num();
++        const c1y = rel ? y + num() : num();
++        const c2x = rel ? x + num() : num();
++        const c2y = rel ? y + num() : num();
++        const ex = rel ? x + num() : num();
++        const ey = rel ? y + num() : num();
++        cubicTo(c1x, c1y, c2x, c2y, ex, ey);
++        prevQ = null;
++        break;
++      }
++      case "S": case "s": {
++        const rel = cmd === "s";
++        const c1x = prevC ? 2 * x - prevC[0] : x;
++        const c1y = prevC ? 2 * y - prevC[1] : y;
++        const c2x = rel ? x + num() : num();
++        const c2y = rel ? y + num() : num();
++        const ex = rel ? x + num() : num();
++        const ey = rel ? y + num() : num();
++        cubicTo(c1x, c1y, c2x, c2y, ex, ey);
++        prevQ = null;
++        break;
++      }
++      case "Q": case "q": {
++        const rel = cmd === "q";
++        const qx = rel ? x + num() : num();
++        const qy = rel ? y + num() : num();
++        const ex = rel ? x + num() : num();
++        const ey = rel ? y + num() : num();
++        // quadratic -> cubic
++        cubicTo(x + (2 / 3) * (qx - x), y + (2 / 3) * (qy - y), ex + (2 / 3) * (qx - ex), ey + (2 / 3) * (qy - ey), ex, ey);
++        prevQ = [qx, qy];
++        prevC = null;
++        break;
++      }
++      case "T": case "t": {
++        const rel = cmd === "t";
++        const qx: number = prevQ ? 2 * x - prevQ[0] : x;
++        const qy: number = prevQ ? 2 * y - prevQ[1] : y;
++        const ex = rel ? x + num() : num();
++        const ey = rel ? y + num() : num();
++        cubicTo(x + (2 / 3) * (qx - x), y + (2 / 3) * (qy - y), ex + (2 / 3) * (qx - ex), ey + (2 / 3) * (qy - ey), ex, ey);
++        prevQ = [qx, qy];
++        prevC = null;
++        break;
++      }
++      case "Z": case "z":
++        lineTo(startX, startY);
++        close();
++        prevC = prevQ = null;
++        break;
++      case "A": case "a":
++        throw new Error("svg bake: elliptical arcs (A) are not supported — convert to beziers.");
++      default:
++        throw new Error(`svg bake: unsupported path command \`${cmd}\`.`);
++    }
++  }
++  close();
++  return contours;
++}
++
++/** `transform="rotate(a [cx cy])"` / translate / scale, composed left→right. */
++function parseSvgTransform(value: string | undefined): (p: [number, number]) => [number, number] {
++  if (!value) return (p) => p;
++  const ops: Array<(p: [number, number]) => [number, number]> = [];
++  const re = /(rotate|translate|scale)\(([^)]*)\)/g;
++  let m: RegExpExecArray | null;
++  while ((m = re.exec(value))) {
++    const args = m[2].split(/[\s,]+/).filter((s) => s.length > 0).map(Number);
++    if (m[1] === "rotate") {
++      const rad = ((args[0] ?? 0) * Math.PI) / 180;
++      const cx = args[1] ?? 0;
++      const cy = args[2] ?? 0;
++      const cos = Math.cos(rad);
++      const sin = Math.sin(rad);
++      ops.push(([px, py]) => {
++        const dx = px - cx;
++        const dy = py - cy;
++        return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
++      });
++    } else if (m[1] === "translate") {
++      const tx = args[0] ?? 0;
++      const ty = args[1] ?? 0;
++      ops.push(([px, py]) => [px + tx, py + ty]);
++    } else {
++      const sx = args[0] ?? 1;
++      const sy = args[1] ?? sx;
++      ops.push(([px, py]) => [px * sx, py * sy]);
++    }
++  }
++  return (p) => ops.reduce((acc, op) => op(acc), p);
++}
++
++function attrs(tag: string): Record<string, string> {
++  const out: Record<string, string> = {};
++  const re = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
++  let m: RegExpExecArray | null;
++  while ((m = re.exec(tag))) out[m[1]] = m[2] ?? m[3] ?? "";
++  return out;
++}
++
++function num(v: string | undefined, name: string): number {
++  if (v === undefined) throw new Error(`svg bake: missing ${name}`);
++  const n = Number(v.replace(/px$/, ""));
++  if (!Number.isFinite(n)) throw new Error(`svg bake: invalid ${name}="${v}"`);
++  return n;
++}
++
++function parseColor(value: string | undefined): [number, number, number, number] {
++  let s = value ?? "#000000";
++  if (s === "white") s = "#ffffff";
++  else if (s === "black") s = "#000000";
++  if (/^#[0-9a-fA-F]{3}$/.test(s)) {
++    return [
++      parseInt(s[1] + s[1], 16),
++      parseInt(s[2] + s[2], 16),
++      parseInt(s[3] + s[3], 16),
++      255,
++    ];
++  }
++  if (/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(s)) {
++    return [
++      parseInt(s.slice(1, 3), 16),
++      parseInt(s.slice(3, 5), 16),
++      parseInt(s.slice(5, 7), 16),
++      s.length === 9 ? parseInt(s.slice(7, 9), 16) : 255,
++    ];
++  }
++  throw new Error(`svg bake: unsupported fill "${s}"`);
++}
++
++function parseOpacity(v: string | undefined): number {
++  if (v === undefined) return 1;
++  const n = Number(v);
++  if (!Number.isFinite(n)) throw new Error(`svg bake: invalid opacity="${v}"`);
++  return Math.max(0, Math.min(1, n));
++}
++
++function sourceOver(px: Uint8Array, i: number, src: [number, number, number, number], srcA01: number): void {
++  if (srcA01 <= 0) return;
++  const dstA01 = px[i + 3] / 255;
++  const outA = srcA01 + dstA01 * (1 - srcA01);
++  if (outA <= 0) return;
++  px[i] = Math.round((src[0] * srcA01 + px[i] * dstA01 * (1 - srcA01)) / outA);
++  px[i + 1] = Math.round((src[1] * srcA01 + px[i + 1] * dstA01 * (1 - srcA01)) / outA);
++  px[i + 2] = Math.round((src[2] * srcA01 + px[i + 2] * dstA01 * (1 - srcA01)) / outA);
++  px[i + 3] = Math.round(outA * 255);
++}
++
++/** `fill="hole"`: alpha-subtract by coverage (colors untouched). */
++function erase(px: Uint8Array, i: number, cov01: number): void {
++  if (cov01 <= 0) return;
++  px[i + 3] = Math.round(px[i + 3] * (1 - cov01));
++}
++
++export function bakeSvg(svg: string, rasterDensity = 1): DecodedImage {
++  if (!Number.isInteger(rasterDensity) || rasterDensity < 1 || rasterDensity > 255) {
++    throw new RangeError(
++      `svg bake: rasterDensity must be an integer from 1 through 255 (got ${rasterDensity})`,
++    );
++  }
++  const svgTag = svg.match(/<svg\b[^>]*>/i)?.[0];
++  if (!svgTag) throw new Error("svg bake: missing <svg>");
++  const root = attrs(svgTag);
++  const logicalWidth = Math.round(num(root.width, "width"));
++  const logicalHeight = Math.round(num(root.height, "height"));
++  if (logicalWidth <= 0 || logicalHeight <= 0) {
++    throw new Error(`svg bake: bad dimensions ${logicalWidth}x${logicalHeight}`);
++  }
++  const width = logicalWidth * rasterDensity;
++  const height = logicalHeight * rasterDensity;
++  const viewBox = (root.viewBox ?? `0 0 ${logicalWidth} ${logicalHeight}`).trim().split(/\s+/).map(Number);
++  if (viewBox.length !== 4 || viewBox.some((n) => !Number.isFinite(n))) {
++    throw new Error(`svg bake: invalid viewBox="${root.viewBox}"`);
++  }
++  const [vbX, vbY, vbW, vbH] = viewBox;
++  const sx = width / vbW;
++  const sy = height / vbH;
++
++  // <defs> content (clipPaths, masks) is never painted directly.
++  const svgBody = svg.replace(/<defs[\s\S]*?<\/defs>/gi, "");
++  // Shapes are scanned flat: a <g> wrapper is invisible to this baker, so a
++  // transform on one would be silently dropped — shapes would pile up at
++  // their untranslated coordinates (a sprite atlas with 7 blank cells shipped
++  // this way once). Hard error; bake the offsets into the coordinates.
++  if (/<g\b[^>]*\btransform=/i.test(svgBody)) {
++    throw new Error(
++      "svg bake: <g transform> is not applied by this baker - flatten the transform into the shapes' own coordinates",
++    );
++  }
++  const shapes: Shape[] = [];
++  const shapeRe = /<(circle|rect|path)\b[^>]*\/?>/gi;
++  let m: RegExpExecArray | null;
++  while ((m = shapeRe.exec(svgBody))) {
++    const a = attrs(m[0]);
++    const tag = m[1].toLowerCase();
++    if (tag === "path") {
++      // Paths need an explicit paint: fill="none"/absent skips (clipPath
++      // defs, stroke-only art) — the icon subset this bakes is fill-based.
++      if (!a.fill || a.fill === "none") continue;
++      const hole = a.fill === "hole";
++      const rgba = hole ? ([0, 0, 0, 255] as [number, number, number, number]) : parseColor(a.fill);
++      const op = parseOpacity(a.opacity) * parseOpacity(a["fill-opacity"]);
++      rgba[3] = Math.round(rgba[3] * op);
++      if (!a.d) continue;
++      const xf = parseSvgTransform(a.transform);
++      const contours = flattenPath(a.d).map((c) =>
++        c.map((p) => {
++          const [tx, ty] = xf(p);
++          return [(tx - vbX) * sx, (ty - vbY) * sy] as [number, number];
++        }),
++      );
++      if (contours.length === 0) continue;
++      let bx0 = Infinity;
++      let by0 = Infinity;
++      let bx1 = -Infinity;
++      let by1 = -Infinity;
++      for (const c of contours) {
++        for (const [px, py] of c) {
++          bx0 = Math.min(bx0, px);
++          by0 = Math.min(by0, py);
++          bx1 = Math.max(bx1, px);
++          by1 = Math.max(by1, py);
++        }
++      }
++      shapes.push({
++        kind: "path",
++        contours,
++        evenOdd: a["fill-rule"] === "evenodd" || a["clip-rule"] === "evenodd",
++        hole,
++        rgba,
++        bbox: [bx0, by0, bx1, by1],
++      });
++      continue;
++    }
++    const hole = a.fill === "hole";
++    const rgba = hole ? ([0, 0, 0, 255] as [number, number, number, number]) : parseColor(a.fill);
++    const op = parseOpacity(a.opacity) * parseOpacity(a["fill-opacity"]);
++    rgba[3] = Math.round(rgba[3] * op);
++    if (tag === "circle") {
++      shapes.push({
++        kind: "circle",
++        cx: (num(a.cx, "cx") - vbX) * sx,
++        cy: (num(a.cy, "cy") - vbY) * sy,
++        r: num(a.r, "r") * Math.min(sx, sy),
++        hole,
++        rgba,
++      });
++    } else {
++      shapes.push({
++        kind: "rect",
++        x: (num(a.x ?? "0", "x") - vbX) * sx,
++        y: (num(a.y ?? "0", "y") - vbY) * sy,
++        w: num(a.width, "width") * sx,
++        h: num(a.height, "height") * sy,
++        hole,
++        rgba,
++      });
++    }
++  }
++  if (shapes.length === 0) throw new Error("svg bake: no supported shapes");
++
++  const rgba = new Uint8Array(width * height * 4);
++  const ss = SVG_SUPERSAMPLE;
++  const samples = ss * ss;
++  for (const s of shapes) {
++    const [bx0, by0, bx1, by1] =
++      s.kind === "circle"
++        ? [s.cx - s.r - 1, s.cy - s.r - 1, s.cx + s.r + 1, s.cy + s.r + 1]
++        : s.kind === "rect"
++          ? [s.x - 1, s.y - 1, s.x + s.w + 1, s.y + s.h + 1]
++          : [s.bbox[0] - 1, s.bbox[1] - 1, s.bbox[2] + 1, s.bbox[3] + 1];
++    const x0 = Math.max(0, Math.floor(bx0));
++    const y0 = Math.max(0, Math.floor(by0));
++    const x1 = Math.min(width, Math.ceil(bx1));
++    const y1 = Math.min(height, Math.ceil(by1));
++    for (let y = y0; y < y1; y++) {
++      for (let x = x0; x < x1; x++) {
++        let covered = 0;
++        if (s.kind === "circle") {
++          const rr = s.r * s.r;
++          for (let yy = 0; yy < ss; yy++) {
++            const py = y + (yy + 0.5) / ss;
++            for (let xx = 0; xx < ss; xx++) {
++              const px = x + (xx + 0.5) / ss;
++              const dx = px - s.cx;
++              const dy = py - s.cy;
++              if (dx * dx + dy * dy <= rr) covered++;
++            }
++          }
++        } else if (s.kind === "rect") {
++          // Axis-aligned rect: exact analytic pixel coverage.
++          const ox = Math.max(0, Math.min(x + 1, s.x + s.w) - Math.max(x, s.x));
++          const oy = Math.max(0, Math.min(y + 1, s.y + s.h) - Math.max(y, s.y));
++          covered = ox * oy * samples;
++        } else {
++          for (let yy = 0; yy < ss; yy++) {
++            const py = y + (yy + 0.5) / ss;
++            for (let xx = 0; xx < ss; xx++) {
++              const px = x + (xx + 0.5) / ss;
++              if (pointInContours(s.contours, px, py, s.evenOdd)) covered++;
++            }
++          }
++        }
++        if (covered > 0) {
++          const cov01 = covered / samples;
++          const i = (y * width + x) * 4;
++          if (s.hole) {
++            erase(rgba, i, cov01);
++          } else {
++            sourceOver(rgba, i, s.rgba, (s.rgba[3] / 255) * cov01);
++          }
++        }
++      }
++    }
++  }
++
++  return { width, height, rgba };
++}
++
++/** Winding test over flattened contours (nonzero or even-odd fill rule). */
++function pointInContours(contours: [number, number][][], px: number, py: number, evenOdd: boolean): boolean {
++  let winding = 0;
++  let crossings = 0;
++  for (const c of contours) {
++    for (let i = 0; i < c.length; i++) {
++      const [ax, ay] = c[i];
++      const [bx, by] = c[(i + 1) % c.length];
++      if (ay <= py ? by > py : by <= py) {
++        // Edge crosses the horizontal ray at py; x of the intersection:
++        const t = (py - ay) / (by - ay);
++        const ix = ax + (bx - ax) * t;
++        if (ix > px) {
++          crossings++;
++          winding += by > ay ? 1 : -1;
++        }
++      }
++    }
++  }
++  return evenOdd ? (crossings & 1) === 1 : winding !== 0;
++}
++
++// ---- the per-subsample loops of `bakeSvg` above, lifted out unchanged ----
++
++/** Covered-subsample count per pixel of a flattened path, row-major over the window. */
++export function referencePathCoverage(
++  contours: [number, number][][],
++  evenOdd: boolean,
++  x0: number,
++  y0: number,
++  x1: number,
++  y1: number,
++): Uint8Array {
++  const ss = SVG_SUPERSAMPLE;
++  const out = new Uint8Array(Math.max(0, x1 - x0) * Math.max(0, y1 - y0));
++  for (let y = y0; y < y1; y++) {
++    for (let x = x0; x < x1; x++) {
++      let covered = 0;
++      for (let yy = 0; yy < ss; yy++) {
++        const py = y + (yy + 0.5) / ss;
++        for (let xx = 0; xx < ss; xx++) {
++          const px = x + (xx + 0.5) / ss;
++          if (pointInContours(contours, px, py, evenOdd)) covered++;
++        }
++      }
++      out[(y - y0) * (x1 - x0) + (x - x0)] = covered;
++    }
++  }
++  return out;
++}
++
++/** Covered-subsample count per pixel of a disc, row-major over the window. */
++export function referenceCircleCoverage(
++  s: { cx: number; cy: number; r: number },
++  x0: number,
++  y0: number,
++  x1: number,
++  y1: number,
++): Uint8Array {
++  const ss = SVG_SUPERSAMPLE;
++  const out = new Uint8Array(Math.max(0, x1 - x0) * Math.max(0, y1 - y0));
++  for (let y = y0; y < y1; y++) {
++    for (let x = x0; x < x1; x++) {
++      let covered = 0;
++      const rr = s.r * s.r;
++      for (let yy = 0; yy < ss; yy++) {
++        const py = y + (yy + 0.5) / ss;
++        for (let xx = 0; xx < ss; xx++) {
++          const px = x + (xx + 0.5) / ss;
++          const dx = px - s.cx;
++          const dy = py - s.cy;
++          if (dx * dx + dy * dy <= rr) covered++;
++        }
++      }
++      out[(y - y0) * (x1 - x0) + (x - x0)] = covered;
++    }
++  }
++  return out;
++}
+diff --git a/tests/fixtures/svg-bake-cases.ts b/tests/fixtures/svg-bake-cases.ts
+new file mode 100644
+index 00000000..516929b4
+--- /dev/null
++++ b/tests/fixtures/svg-bake-cases.ts
+@@ -0,0 +1,253 @@
++// tests/fixtures/svg-bake-cases.ts — inputs for holding framework/compiler/bake-svg.ts
++// to its reference (tests/fixtures/bake-svg-reference.ts) and for timing it.
++// Everything here is generated from a seed, so a failing case reproduces.
++
++type Pt = [number, number];
++
++/** A seeded 32-bit LCG; `next()` is uniform on [0, 1). */
++export function lcg(seed: number): () => number {
++  let s = seed >>> 0;
++  return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
++}
++
++const fmt = (n: number) => +n.toFixed(3);
++
++/**
++ * A coordinate in [lo, hi) that lands, often, exactly on a pixel edge, a
++ * subsample position or a subsample midpoint — the places where a crossing
++ * test that is not the reference's exact arithmetic would decide differently.
++ */
++function coord(next: () => number, lo: number, hi: number): number {
++  const v = lo + next() * (hi - lo);
++  switch (Math.floor(next() * 6)) {
++    case 0: return Math.round(v);
++    case 1: return Math.round(v * 8) / 8;
++    case 2: return Math.round(v * 4) / 4 + 0.125;
++    case 3: return v + 1e-12;
++    default: return v;
++  }
++}
++
++function contour(next: () => number, w: number, h: number): Pt[] {
++  const kind = Math.floor(next() * 5);
++  const n = kind === 0 ? 3 : kind === 1 ? 4 + Math.floor(next() * 4) : 3 + Math.floor(next() * 30);
++  const cx = coord(next, -5, w + 5);
++  const cy = coord(next, -5, h + 5);
++  const r = 0.2 + next() * Math.max(w, h) * (next() < 0.3 ? 1.5 : 0.5);
++  const pts: Pt[] = [];
++  for (let i = 0; i < n; i++) {
++    if (kind === 2) {
++      // a self-intersecting scribble reaching outside the window
++      pts.push([coord(next, -10, w + 10), coord(next, -10, h + 10)]);
++      continue;
++    }
++    const a = (i / n) * Math.PI * 2 * (next() < 0.2 ? -1 : 1);
++    const rr = r * (0.3 + next());
++    let p: Pt = [cx + rr * Math.cos(a), cy + rr * Math.sin(a)];
++    const prev = pts[pts.length - 1];
++    if (next() < 0.2) p = [Math.round(p[0] * 4) / 4 + 0.125, Math.round(p[1] * 4) / 4 + 0.125];
++    if (prev && next() < 0.1) p = [prev[0], p[1]]; // vertical edge
++    if (prev && next() < 0.1) p = [p[0], prev[1]]; // horizontal edge
++    if (prev && next() < 0.05) p = [prev[0], prev[1]]; // repeated point
++    pts.push(p);
++  }
++  if (kind === 4) pts.reverse();
++  return pts;
++}
++
++export interface PathCase {
++  contours: Pt[][];
++  evenOdd: boolean;
++  window: [number, number, number, number];
++}
++
++export interface CircleCase {
++  cx: number;
++  cy: number;
++  r: number;
++  window: [number, number, number, number];
++}
++
++/** Random fills over small canvases: 1-4 contours, either rule, a sub-window. */
++export function coverageCases(seed: number, count: number): { paths: PathCase[]; circles: CircleCase[] } {
++  const next = lcg(seed);
++  const paths: PathCase[] = [];
++  const circles: CircleCase[] = [];
++  for (let t = 0; t < count; t++) {
++    const w = 1 + Math.floor(next() * 64);
++    const h = 1 + Math.floor(next() * 64);
++    const contours: Pt[][] = [];
++    const k = 1 + Math.floor(next() * 4);
++    for (let i = 0; i < k; i++) contours.push(contour(next, w, h));
++    const evenOdd = next() < 0.5;
++    const x0 = Math.floor((next() * w) / 2);
++    const y0 = Math.floor((next() * h) / 2);
++    const x1 = x0 + Math.floor(next() * (w - x0)) + (next() < 0.05 ? 0 : 1);
++    const y1 = y0 + Math.floor(next() * (h - y0)) + 1;
++    paths.push({ contours, evenOdd, window: [x0, y0, x1, y1] });
++
++    const cx = coord(next, -10, w + 10);
++    const cy = coord(next, -10, h + 10);
++    const radii = [0, -coord(next, 0, 5), coord(next, 0, 2), coord(next, 0, Math.max(w, h)), Math.round(next() * 20) / 4, 0.125 * Math.floor(next() * 100)];
++    const r = radii[Math.floor(next() * radii.length)]!;
++    // the window the baker gives a circle
++    circles.push({
++      cx,
++      cy,
++      r,
++      window: [
++        Math.max(0, Math.floor(cx - r - 1)),
++        Math.max(0, Math.floor(cy - r - 1)),
++        Math.min(w, Math.ceil(cx + r + 1)),
++        Math.min(h, Math.ceil(cy + r + 1)),
++      ],
++    });
++  }
++  return { paths, circles };
++}
++
++/**
++ * Fills whose edges pass, in exact arithmetic, through two subsample
++ * positions: each edge runs from a fraction of a step before one sample to a
++ * fraction past another, so its endpoints are rounded and the crossing lands
++ * within an ulp or two of the sample it should hit. Whether such a sample is
++ * covered is decided by the last bit of the crossing — which is what makes
++ * these the cases that tell the reference's exact arithmetic from the same
++ * line computed in another order. Random coordinates almost never land there.
++ */
++export function knifeEdgeCases(seed: number, count: number): PathCase[] {
++  const next = lcg(seed);
++  const sample = (lo: number, hi: number) => (Math.floor((lo + next() * (hi - lo)) * 4) + 0.5) / 4;
++  const out: PathCase[] = [];
++  for (let t = 0; t < count; t++) {
++    const size = 4 + Math.floor(next() * 12);
++    const contours: Pt[][] = [];
++    const k = 1 + Math.floor(next() * 3);
++    for (let i = 0; i < k; i++) {
++      const pts: Pt[] = [];
++      const n = 3 + Math.floor(next() * 3);
++      for (let j = 0; j < n; j++) {
++        const s1: Pt = [sample(0, size), sample(0, size)];
++        const s2: Pt = [sample(0, size), sample(0, size)];
++        const a = 0.1 + next() * 0.9;
++        const b = 0.1 + next() * 0.9;
++        pts.push([s1[0] - a * (s2[0] - s1[0]), s1[1] - a * (s2[1] - s1[1])]);
++        pts.push([s2[0] + b * (s2[0] - s1[0]), s2[1] + b * (s2[1] - s1[1])]);
++      }
++      contours.push(pts);
++    }
++    out.push({ contours, evenOdd: next() < 0.5, window: [0, 0, size, size] });
++  }
++  return out;
++}
++
++function hexagon(cx: number, cy: number, r: number): string {
++  let d = "";
++  for (let k = 0; k < 6; k++) {
++    const a = (Math.PI / 180) * (60 * k - 30);
++    d += (k === 0 ? "M" : "L") + fmt(cx + r * Math.cos(a)) + " " + fmt(cy + r * Math.sin(a));
++  }
++  return d + "Z";
++}
++
++function hexCentres(width: number, height: number, r: number): Pt[] {
++  const dx = Math.sqrt(3) * r;
++  const dy = 1.5 * r;
++  const out: Pt[] = [];
++  for (let row = 0; r + row * dy <= height - r; row++) {
++    for (let col = 0; r + col * dx + (row % 2 ? dx / 2 : 0) <= width - r; col++) {
++      out.push([r + col * dx + (row % 2 ? dx / 2 : 0), r + row * dy]);
++    }
++  }
++  return out;
++}
++
++/**
++ * The case that made the per-subsample baker unusable: one path holding a hex
++ * grid of 952 cells drawn as rings (outer and inner hexagon, evenodd) — 11,424
++ * edges over 1400x1000. Measured at more than ten minutes before.
++ */
++export function hexGridSvg(): string {
++  const d = hexCentres(1400, 1000, 23).map(([x, y]) => hexagon(x, y, 23) + hexagon(x, y, 21)).join("");
++  return `<svg width="1400" height="1000" viewBox="0 0 1400 1000"><path fill="#38bdf8" fill-rule="evenodd" d="${d}"/></svg>`;
++}
++
++/** The same grid as one stroked path: 952 closed hexagons, stroke-width 2. */
++export function hexGridStrokeSvg(): string {
++  const d = hexCentres(1400, 1000, 23).map(([x, y]) => hexagon(x, y, 22)).join("");
++  return `<svg width="1400" height="1000" viewBox="0 0 1400 1000"><path fill="none" stroke="#38bdf8" stroke-width="2" d="${d}"/></svg>`;
++}
++
++function bezierCircle(cx: number, cy: number, r: number): string {
++  const k = 0.5522847498 * r;
++  return (
++    `M${cx + r} ${cy}C${cx + r} ${fmt(cy + k)} ${fmt(cx + k)} ${cy + r} ${cx} ${cy + r}` +
++    `C${fmt(cx - k)} ${cy + r} ${cx - r} ${fmt(cy + k)} ${cx - r} ${cy}` +
++    `C${cx - r} ${fmt(cy - k)} ${fmt(cx - k)} ${cy - r} ${cx} ${cy - r}` +
++    `C${fmt(cx + k)} ${cy - r} ${cx + r} ${fmt(cy - k)} ${cx + r} ${cy}Z`
++  );
++}
++
++/** A 20-unit ring on a 1080x1080 canvas, as two bezier circles under evenodd (bake it at 2x). */
++export function ringPathSvg(): string {
++  return `<svg width="1080" height="1080" viewBox="0 0 1080 1080"><path fill="#f59e0b" fill-rule="evenodd" d="${bezierCircle(540, 540, 520)}${bezierCircle(540, 540, 500)}"/></svg>`;
++}
++
++/** The same ring as a stroked circle. */
++export function ringStrokeSvg(): string {
++  return `<svg width="1080" height="1080" viewBox="0 0 1080 1080"><circle cx="540" cy="540" r="510" fill="none" stroke="#f59e0b" stroke-width="20"/></svg>`;
++}
++
++/** 300 closed blobs of 8 cubic segments, translucent fills, on 1920x1080. */
++export function illustrationSvg(paths = 300): string {
++  const next = lcg(12345);
++  let body = "";
++  for (let p = 0; p < paths; p++) {
++    const cx = next() * 1920;
++    const cy = next() * 1080;
++    const r = 20 + next() * 220;
++    const pts: Pt[] = [];
++    for (let i = 0; i < 8; i++) {
++      const a = (i / 8) * Math.PI * 2;
++      const rr = r * (0.6 + 0.4 * next());
++      pts.push([cx + rr * Math.cos(a), cy + rr * Math.sin(a)]);
++    }
++    let d = `M${fmt(pts[0]![0])} ${fmt(pts[0]![1])}`;
++    for (let i = 0; i < 8; i++) {
++      const [a, b, pa, nb] = [pts[i]!, pts[(i + 1) % 8]!, pts[(i + 7) % 8]!, pts[(i + 2) % 8]!];
++      d += `C${fmt(a[0] + (b[0] - pa[0]) / 6)} ${fmt(a[1] + (b[1] - pa[1]) / 6)} ${fmt(b[0] - (nb[0] - a[0]) / 6)} ${fmt(b[1] - (nb[1] - a[1]) / 6)} ${fmt(b[0])} ${fmt(b[1])}`;
++    }
++    const colour = "#" + Math.floor(next() * 0xffffff).toString(16).padStart(6, "0");
++    body += `<path fill="${colour}" fill-opacity="${fmt(0.4 + 0.6 * next())}" d="${d}Z"/>`;
++  }
++  return `<svg width="1920" height="1080" viewBox="0 0 1920 1080">${body}</svg>`;
++}
++
++function sparklinePoints(): string[] {
++  const pts: string[] = [];
++  for (let i = 0; i < 360; i++) {
++    const x = 40 + i * (1840 / 359);
++    const y = 540 - 300 * Math.sin(i / 17) * Math.cos(i / 41) - 80 * Math.sin(i / 3.3);
++    pts.push(`${fmt(x)},${fmt(y)}`);
++  }
++  return pts;
++}
++
++/** The area under a 360-point sparkline, as a filled path. */
++export function sparklineAreaSvg(): string {
++  return `<svg width="1920" height="1080" viewBox="0 0 1920 1080"><path fill="#22c55e" d="M40 1000L${sparklinePoints().join("L")}L1880 1000Z"/></svg>`;
++}
++
++/** The 360-point sparkline itself, stroked with round joins and caps. */
++export function sparklineStrokeSvg(): string {
++  return `<svg width="1920" height="1080" viewBox="0 0 1920 1080"><polyline fill="none" stroke="#22c55e" stroke-width="4" stroke-linejoin="round" stroke-linecap="round" points="${sparklinePoints().join(" ")}"/></svg>`;
++}
++
++/** The contours of a path made only of M, L and Z, in its own coordinates. */
++export function polygonContours(d: string): Pt[][] {
++  return d
++    .split(/[Zz]/)
++    .map((c) => c.trim())
++    .filter(Boolean)
++    .map((c) => c.slice(1).split("L").map((p) => p.trim().split(/[\s,]+/).map(Number) as Pt));
++}
+diff --git a/tests/svg-bake.test.ts b/tests/svg-bake.test.ts
+index 9c62ca53..fe17db2e 100644
+--- a/tests/svg-bake.test.ts
++++ b/tests/svg-bake.test.ts
+@@ -1,9 +1,22 @@
+ import { describe, expect, test } from "bun:test";
+-import { bakeSvg } from "../framework/compiler/bake-svg.ts";
++import { join } from "node:path";
++import { bakeSvg, coverCircle, coverPath } from "../framework/compiler/bake-svg.ts";
+ import {
+   assertDensityVariantDimensions,
+   densityVariantPath,
+ } from "../framework/compiler/raster-assets.ts";
++import {
++  bakeSvg as referenceBakeSvg,
++  referenceCircleCoverage,
++  referencePathCoverage,
++} from "./fixtures/bake-svg-reference.ts";
++import {
++  coverageCases,
++  hexGridStrokeSvg,
++  hexGridSvg,
++  knifeEdgeCases,
++  polygonContours,
++} from "./fixtures/svg-bake-cases.ts";
+ 
+ describe("svg bake", () => {
+   test("circle edges are supersampled into subpixel alpha", () => {
+@@ -80,3 +93,338 @@ describe("PNG density variants", () => {
+     ).toThrow("expected 64x32 for logo.png");
+   });
+ });
++
++// ---- coverage: the scanline against the per-subsample reference ----------------
++
++type Window = [number, number, number, number];
++
++function counts(
++  run: (visit: (x: number, y: number, covered: number) => void) => void,
++  [x0, y0, x1, y1]: Window,
++): Uint8Array {
++  const w = Math.max(0, x1 - x0);
++  const out = new Uint8Array(w * Math.max(0, y1 - y0));
++  run((x, y, covered) => {
++    if (x < x0 || x >= x1 || y < y0 || y >= y1) throw new Error(`visited ${x},${y} outside the window`);
++    const i = (y - y0) * w + (x - x0);
++    if (out[i] !== 0) throw new Error(`visited ${x},${y} twice`);
++    out[i] = covered;
++  });
++  return out;
++}
++
++function firstDifference(want: Uint8Array, got: Uint8Array, [x0, y0, x1]: Window): string | null {
++  for (let i = 0; i < want.length; i++) {
++    if (want[i] !== got[i]) {
++      const w = x1 - x0;
++      return `pixel ${x0 + (i % w)},${y0 + Math.floor(i / w)}: reference ${want[i]}, scanline ${got[i]}`;
++    }
++  }
++  return null;
++}
++
++describe("svg bake coverage is the reference's, count for count", () => {
++  const { paths, circles } = coverageCases(1, 1500);
++
++  test("1500 random fills: 1-4 contours, nonzero and evenodd, vertices on subsample positions", () => {
++    for (const [i, c] of paths.entries()) {
++      const want = referencePathCoverage(c.contours, c.evenOdd, ...c.window);
++      const got = counts((v) => coverPath(c.contours, c.evenOdd, ...c.window, v), c.window);
++      const at = firstDifference(want, got, c.window);
++      if (at) throw new Error(`case ${i}: ${at}\n${JSON.stringify(c)}`);
++    }
++  }, 60_000);
++
++  test("500 knife-edge fills: edges through subsample positions, decided by the last bit", () => {
++    for (const [i, c] of knifeEdgeCases(1, 500).entries()) {
++      const want = referencePathCoverage(c.contours, c.evenOdd, ...c.window);
++      const got = counts((v) => coverPath(c.contours, c.evenOdd, ...c.window, v), c.window);
++      const at = firstDifference(want, got, c.window);
++      if (at) throw new Error(`case ${i}: ${at}\n${JSON.stringify(c)}`);
++    }
++  }, 60_000);
++
++  test("1500 random discs, r = 0 and negative r included", () => {
++    for (const [i, c] of circles.entries()) {
++      const want = referenceCircleCoverage(c, ...c.window);
++      const got = counts((v) => coverCircle(c.cx, c.cy, c.r, ...c.window, v), c.window);
++      const at = firstDifference(want, got, c.window);
++      if (at) throw new Error(`case ${i}: ${at}\n${JSON.stringify(c)}`);
++    }
++  }, 60_000);
++
++  test("the hex grid: 11,424 edges in one path, at four windows", () => {
++    const d = /d="([^"]*)"/.exec(hexGridSvg())![1]!;
++    const contours = polygonContours(d);
++    expect(contours.reduce((n, c) => n + c.length, 0)).toBe(11424);
++    for (const window of [[0, 0, 24, 24], [700, 480, 724, 504], [1376, 976, 1400, 1000], [313, 857, 337, 881]] as Window[]) {
++      const want = referencePathCoverage(contours, true, ...window);
++      const got = counts((v) => coverPath(contours, true, ...window, v), window);
++      expect(firstDifference(want, got, window)).toBeNull();
++    }
++  }, 60_000);
++});
++
++describe("svg bake: every SVG in this tree the reference bakes, bakes to the same bytes", () => {
++  const ROOT = join(import.meta.dir, "..");
++  const listed = Bun.spawnSync(["git", "ls-files", "*.svg"], { cwd: ROOT }).stdout.toString().trim();
++  const files = listed ? listed.split("\n") : [];
++  // <text> was dropped by the reference and is refused now; with it, the
++  // strokes and the <line>s the reference also dropped taken out, the rest
++  // of such a file is held to the same bytes.
++  const withoutDroppedMarkup = (svg: string) =>
++    svg
++      .replace(/<text\b[\s\S]*?<\/text>/g, "")
++      .replace(/<line\b[^>]*\/>/g, "")
++      .replace(/\sstroke[\w-]*="[^"]*"/g, "");
++
++  test("the tree carries SVGs to check", () => {
++    expect(files.length).toBeGreaterThan(0);
++  });
++
++  for (const file of files) {
++    test(file, async () => {
++      const svg = await Bun.file(join(ROOT, file)).text();
++      for (const density of [1, 2, 3]) {
++        let want;
++        try {
++          want = referenceBakeSvg(svg, density);
++        } catch {
++          return; // the reference refuses it; nothing to hold
++        }
++        if (/<text\b/.test(svg)) {
++          expect(() => bakeSvg(svg, density)).toThrow("<text> is not drawn by this baker");
++          const stripped = withoutDroppedMarkup(svg);
++          expect(bakeSvg(stripped, density).rgba).toEqual(referenceBakeSvg(stripped, density).rgba);
++          continue;
++        }
++        const got = bakeSvg(svg, density);
++        expect([got.width, got.height]).toEqual([want.width, want.height]);
++        expect(Buffer.from(got.rgba).equals(Buffer.from(want.rgba))).toBe(true);
++      }
++    }, 60_000);
++  }
++});
++
++describe("svg bake cost", () => {
++  // The reference took more than ten minutes on this path; the scanline
++  // touches each crossing once per sample row.
++  test("the 952-cell hex grid and its stroked twin bake inside five seconds", () => {
++    const t = performance.now();
++    bakeSvg(hexGridSvg());
++    bakeSvg(hexGridStrokeSvg());
++    expect(performance.now() - t).toBeLessThan(5000);
++  });
++});
++
++// ---- strokes, transforms, groups -------------------------------------------------
++
++const doc = (w: number, h: number, body: string) => `<svg width="${w}" height="${h}">${body}</svg>`;
++const sameBytes = (a: string, b: string, density = 1) =>
++  Buffer.from(bakeSvg(a, density).rgba).equals(Buffer.from(bakeSvg(b, density).rgba));
++const pixel = (img: { width: number; rgba: Uint8Array }, x: number, y: number) =>
++  Array.from(img.rgba.slice((y * img.width + x) * 4, (y * img.width + x) * 4 + 4));
++/** Pixels whose alpha differs, and by how much at most. */
++function alphaDiff(a: string, b: string, density = 1): { pixels: number; max: number } {
++  const x = bakeSvg(a, density).rgba;
++  const y = bakeSvg(b, density).rgba;
++  let pixels = 0;
++  let max = 0;
++  for (let i = 3; i < x.length; i += 4) {
++    const d = Math.abs(x[i]! - y[i]!);
++    if (d > 0) pixels++;
++    max = Math.max(max, d);
++  }
++  return { pixels, max };
++}
++/** One subsample of sixteen, in alpha. */
++const ONE_SAMPLE = 16;
++
++describe("svg bake strokes", () => {
++  test("a butt-capped line is the rectangle it sweeps", () => {
++    expect(
++      sameBytes(
++        doc(32, 20, `<line x1="4" y1="10" x2="28" y2="10" stroke="#fff" stroke-width="4"/>`),
++        doc(32, 20, `<rect x="4" y="8" width="24" height="4" fill="#fff"/>`),
++      ),
++    ).toBe(true);
++  });
++
++  test("a square cap extends the line by half the width", () => {
++    expect(
++      sameBytes(
++        doc(32, 20, `<line x1="4" y1="10" x2="28" y2="10" stroke="#fff" stroke-width="4" stroke-linecap="square"/>`),
++        doc(32, 20, `<rect x="2" y="8" width="28" height="4" fill="#fff"/>`),
++      ),
++    ).toBe(true);
++  });
++
++  test("a round cap is a half disc", () => {
++    expect(
++      sameBytes(
++        doc(32, 20, `<line x1="4" y1="10" x2="28" y2="10" stroke="#fff" stroke-width="4" stroke-linecap="round"/>`),
++        doc(32, 20, `<rect x="4" y="8" width="24" height="4" fill="#fff"/><circle cx="4" cy="10" r="2" fill="#fff"/><circle cx="28" cy="10" r="2" fill="#fff"/>`),
++      ),
++    ).toBe(true);
++  });
++
++  test("miter and bevel joins at a right angle are the outlines they describe", () => {
++    const line = (join: string) =>
++      doc(64, 64, `<polyline points="10,10 50,10 50,50" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="${join}"/>`);
++    expect(sameBytes(line("miter"), doc(64, 64, `<path fill="#fff" d="M10 8H52V50H48V12H10Z"/>`))).toBe(true);
++    expect(sameBytes(line("bevel"), doc(64, 64, `<path fill="#fff" d="M10 8H50L52 10V50H48V12H10Z"/>`))).toBe(true);
++  });
++
++  test("a miter past stroke-miterlimit is a bevel", () => {
++    const sharp = (extra: string) =>
++      doc(64, 64, `<polyline points="10,40 50,30 10,20" fill="none" stroke="#fff" stroke-width="4" ${extra}/>`);
++    expect(sameBytes(sharp(`stroke-miterlimit="1"`), sharp(`stroke-linejoin="bevel"`))).toBe(true);
++    expect(sameBytes(sharp(`stroke-miterlimit="10"`), sharp(`stroke-linejoin="bevel"`))).toBe(false);
++  });
++
++  test("a closed rect, polygon or Z path strokes to a ring with mitred corners", () => {
++    const ring = doc(64, 64, `<path fill="#fff" fill-rule="evenodd" d="M8 8H52V42H8ZM12 12H48V38H12Z"/>`);
++    expect(sameBytes(doc(64, 64, `<rect x="10" y="10" width="40" height="30" fill="none" stroke="#fff" stroke-width="4"/>`), ring)).toBe(true);
++    expect(sameBytes(doc(64, 64, `<polygon points="10,10 50,10 50,40 10,40" fill="none" stroke="#fff" stroke-width="4"/>`), ring)).toBe(true);
++    expect(sameBytes(doc(64, 64, `<path d="M10 10H50V40H10Z" fill="none" stroke="#fff" stroke-width="4"/>`), ring)).toBe(true);
++  });
++
++  test("a stroked circle is the annulus to within one subsample per pixel", () => {
++    const stroked = bakeSvg(doc(64, 64, `<circle cx="32" cy="32" r="20" fill="none" stroke="#fff" stroke-width="6"/>`), 2);
++    let worst = 0;
++    for (let y = 0; y < 128; y++) {
++      for (let x = 0; x < 128; x++) {
++        let covered = 0;
++        for (let yy = 0; yy < 4; yy++) {
++          for (let xx = 0; xx < 4; xx++) {
++            const dx = x + (xx + 0.5) / 4 - 64;
++            const dy = y + (yy + 0.5) / 4 - 64;
++            const d2 = dx * dx + dy * dy;
++            if (d2 <= 46 * 46 && d2 > 34 * 34) covered++;
++          }
++        }
++        worst = Math.max(worst, Math.abs(Math.round((255 * covered) / 16) - stroked.rgba[(y * 128 + x) * 4 + 3]!));
++      }
++    }
++    expect(worst).toBeLessThanOrEqual(ONE_SAMPLE);
++  });
++
++  test("a zero-length subpath draws its round or square cap, and nothing for butt", () => {
++    const dot = (cap: string) =>
++      bakeSvg(doc(16, 16, `<path stroke="#fff" stroke-width="6" stroke-linecap="${cap}" d="M8 8Z"/><rect width="1" height="1" fill="#000"/>`));
++    expect(pixel(dot("round"), 8, 8)[3]).toBe(255);
++    expect(pixel(dot("square"), 10, 10)[3]).toBe(255);
++    expect(pixel(dot("butt"), 8, 8)[3]).toBe(0);
++  });
++
++  test("a closed subpath of two points goes out and back: joins at both ends, no caps", () => {
++    const bar = doc(32, 16, `<rect x="4" y="6" width="24" height="4" fill="#fff"/>`);
++    expect(sameBytes(doc(32, 16, `<path d="M4 8L28 8Z" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="square"/>`), bar)).toBe(true);
++    expect(sameBytes(doc(32, 16, `<polygon points="4,8 28,8" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="square"/>`), bar)).toBe(true);
++  });
++
++  test("a drawing command after Z starts its subpath at the start point", () => {
++    const img = bakeSvg(doc(32, 32, `<path fill="none" stroke="#fff" stroke-width="2" d="M4 4H12V12ZL4 28"/>`));
++    expect(pixel(img, 4, 20)[3]).toBe(255);
++  });
++
++  test("fill and stroke under opacity composite as one group", () => {
++    const grouped = bakeSvg(doc(32, 32, `<rect x="8" y="8" width="16" height="16" fill="#ff0000" stroke="#0000ff" stroke-width="4" opacity="0.5"/>`));
++    expect(pixel(grouped, 8, 16)).toEqual([0, 0, 255, 128]); // the stroke over the fill: no red through it
++    expect(pixel(grouped, 16, 16)).toEqual([255, 0, 0, 128]);
++    const separate = bakeSvg(doc(32, 32, `<rect x="8" y="8" width="16" height="16" fill="#ff0000" stroke="#0000ff" stroke-width="4" fill-opacity="0.5" stroke-opacity="0.5"/>`));
++    expect(pixel(separate, 8, 16)).toEqual([85, 0, 170, 192]);
++  });
++
++  test("stroke=\"hole\" erases along the stroke", () => {
++    const img = bakeSvg(doc(16, 16, `<rect width="16" height="16" fill="#fff"/><line x1="0" y1="8" x2="16" y2="8" stroke="hole" stroke-width="2"/>`));
++    expect(pixel(img, 4, 7)[3]).toBe(0);
++    expect(pixel(img, 4, 4)[3]).toBe(255);
++  });
++});
++
++describe("svg bake arcs and shapes", () => {
++  test("two arcs make the circle they describe", () => {
++    const circle = doc(64, 64, `<circle cx="32" cy="32" r="20" fill="#fff"/>`);
++    for (const d of ["M12 32A20 20 0 1 0 52 32A20 20 0 1 0 12 32Z", "M12 32a20 20 0 0 1 40 0a20,20,0,0,1-40,0z"]) {
++      expect(alphaDiff(doc(64, 64, `<path fill="#fff" d="${d}"/>`), circle, 2).max).toBeLessThanOrEqual(ONE_SAMPLE);
++    }
++  });
++
++  test("an arc's x-axis-rotation and radius scale-up follow the SVG rules", () => {
++    expect(sameBytes(
++      doc(64, 64, `<path fill="#fff" d="M32 2A30 20 90 0 1 32 62A30 20 90 0 1 32 2Z"/>`),
++      doc(64, 64, `<ellipse cx="32" cy="32" rx="20" ry="30" fill="#fff"/>`),
++      2,
++    )).toBe(true);
++    expect(sameBytes(
++      doc(64, 64, `<path fill="#fff" d="M12 32A1 1 0 0 1 52 32Z"/>`),
++      doc(64, 64, `<path fill="#fff" d="M12 32A20 20 0 0 1 52 32Z"/>`),
++      2,
++    )).toBe(true);
++  });
++
++  test("rect rx rounds the corners", () => {
++    const img = bakeSvg(doc(32, 32, `<rect x="0" y="0" width="32" height="32" rx="8" fill="#fff"/>`));
++    expect(pixel(img, 0, 0)[3]).toBe(0);
++    expect(pixel(img, 16, 0)[3]).toBe(255);
++  });
++});
++
++describe("svg bake document structure", () => {
++  const square = doc(32, 32, `<path fill="#fff" d="M8 0H16V8H8Z"/>`);
++
++  test("<g transform> composes with the shape's own, outermost last", () => {
++    expect(sameBytes(doc(32, 32, `<g transform="translate(8 0)"><rect width="4" height="4" transform="scale(2)" fill="#fff"/></g>`), square)).toBe(true);
++    expect(sameBytes(doc(32, 32, `<g transform="translate(8 0)"><g transform="scale(2)"><path fill="#fff" d="M0 0H4V4H0Z"/></g></g>`), square)).toBe(true);
++  });
++
++  test("a transform list applies its rightmost function first", () => {
++    expect(sameBytes(doc(32, 32, `<path fill="#fff" transform="translate(8 0) scale(2)" d="M0 0H4V4H0Z"/>`), square)).toBe(true);
++    expect(sameBytes(doc(32, 32, `<path fill="#fff" transform="matrix(2 0 0 2 8 0)" d="M0 0H4V4H0Z"/>`), square)).toBe(true);
++  });
++
++  test("a <g> passes fill and stroke to its children", () => {
++    expect(pixel(bakeSvg(doc(16, 16, `<g fill="#ff0000"><path d="M0 0H8V8H0Z"/></g>`)), 4, 4)).toEqual([255, 0, 0, 255]);
++    expect(pixel(bakeSvg(doc(16, 16, `<g stroke="#00ff00" stroke-width="2"><line x1="0" y1="8" x2="16" y2="8"/></g>`)), 4, 7)).toEqual([0, 255, 0, 255]);
++  });
++
++  test("opacity on a <g> composites its children as one layer", () => {
++    const img = bakeSvg(doc(16, 16, `<g opacity="0.5"><rect width="10" height="10" fill="#ff0000"/><rect x="5" y="5" width="10" height="10" fill="#0000ff"/></g>`));
++    expect(pixel(img, 7, 7)).toEqual([0, 0, 255, 128]);
++  });
++
++  test("display none and visibility hidden paint nothing", () => {
++    expect(pixel(bakeSvg(doc(16, 16, `<g display="none"><rect width="16" height="16" fill="#fff"/></g><rect width="1" height="1"/>`)), 8, 8)[3]).toBe(0);
++    const vis = bakeSvg(doc(16, 16, `<g visibility="hidden"><rect width="16" height="16" fill="#fff"/><rect width="4" height="4" visibility="visible" fill="#fff"/></g>`));
++    expect(pixel(vis, 2, 2)[3]).toBe(255);
++    expect(pixel(vis, 8, 8)[3]).toBe(0);
++  });
++
++  test("style=\"\" declarations are presentation attributes", () => {
++    expect(pixel(bakeSvg(doc(16, 16, `<rect width="16" height="16" style="fill: #ff0000; fill-opacity:0.5"/>`)), 8, 8)).toEqual([255, 0, 0, 128]);
++  });
++
++  test("what would paint and is not implemented is refused, not dropped", () => {
++    const refused: [string, string][] = [
++      [`<text x="0" y="10">hi</text>`, "<text> is not drawn"],
++      [`<use href="#a"/>`, "<use> is not drawn"],
++      [`<image href="a.png" width="4" height="4"/>`, "<image> is not drawn"],
++      [`<style>.a{fill:red}</style><rect width="4" height="4"/>`, "<style> is not drawn"],
++      [`<rect width="4" height="4" clip-path="url(#c)"/>`, "clip-path"],
++      [`<line x2="8" stroke="#fff" stroke-dasharray="2 2"/>`, "stroke-dasharray"],
++      [`<rect width="4" height="4" style="stroke-dasharray:2"/>`, "stroke-dasharray"],
++      [`<rect width="4" height="4" transform="perspective(2)"/>`, "unsupported transform function perspective()"],
++      [`<rect width="4" height="4" stroke="#fff" stroke-linejoin="arcs"/>`, "stroke-linejoin"],
++      [`<path fill="#fff" d="M0 0L4 0L4 4Z 2 2"/>`, "a number after Z"],
++      [`<path fill="#fff" d="M0 0R4 4"/>`, "unsupported path command"],
++    ];
++    for (const [body, message] of refused) expect(() => bakeSvg(doc(16, 16, body))).toThrow(message);
++    expect(() => bakeSvg(`<svg width="16" height="16" viewBox="0 0 8 8" preserveAspectRatio="xMidYMid meet"><rect width="4" height="4"/></svg>`)).toThrow("preserveAspectRatio");
++  });
++
++  test("comments, <defs> and editor metadata never paint", () => {
++    const img = bakeSvg(doc(16, 16, `<!-- <rect width="16" height="16" fill="#fff"/> --><defs><rect width="16" height="16" fill="#fff"/></defs><sodipodi:namedview pagecolor="#fff"/><rect width="1" height="1"/>`));
++    expect(pixel(img, 8, 8)[3]).toBe(0);
++  });
++});
