@@ -73,7 +73,8 @@ const RESID = 4;
 const ATTACK = 620;
 const RESIDUAL = 1600;
 
-const keyframes: Record<string, Record<string, Record<string, string>>> = {};
+// a keyframe value is what the theme takes, a string or a number (KeyframeProps in the framework's animation compiler)
+const keyframes: Record<string, Record<string, Record<string, string | number>>> = {};
 const animation: Record<string, string> = {};
 
 Object.assign(keyframes, {

@@ -110,7 +110,10 @@ export const LEFT: (Form | null)[] = ACTS.map((a, k) => {
   const box = { x: cellX(i), y: cellY(j), w: MOD, h: MOD };
   // a fold over the bottom-left/top-right diagonal leaves the half whose right angle is the bottom-right corner
   if (a === "F") return { id: `tri-${k}`, kind: "tri", ink, ...box };
-  return a === "S" ? { id: `disc-${k}`, kind: "disc", ink, ...box } : { id: `stamp-${k}`, kind: "quarter", ink, ...box, rot: SWEEP[a] };
+  if (a === "S") return { id: `disc-${k}`, kind: "disc", ink, ...box };
+  // a swing about the frame centre sweeps no quarter of a cell: its LEAVES entry has to be null, and SWEEP has no row for it
+  if (a === "C") throw new Error(`LEAVES[${k}] is ${ink}, but move ${k} is a swing about the frame centre and leaves nothing`);
+  return { id: `stamp-${k}`, kind: "quarter", ink, ...box, rot: SWEEP[a] };
 });
 export const TRAIL: Form[] = LEFT.filter((f): f is Form => f !== null);
 

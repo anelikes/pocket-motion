@@ -45,7 +45,7 @@ const nodes: string[] = [];
 try {
   WORDS.forEach((w, wi) => {
     const text = upper[wi]!;
-    const size = LADDER.find((s) => m.width(text, s) <= MAX_W) ?? LADDER[LADDER.length - 1];
+    const size = LADDER.find((s) => m.width(text, s) <= MAX_W) ?? LADDER[LADDER.length - 1]!;
     const width = m.width(text, size);
     const lineH = m.lineHeight(size);
     const a = anim(`${ENTRANCES[wi % 4]} ${ms(w.start)}ms both, gout 100ms ${EASE.power2in} ${ms(w.end)}ms forwards`);
