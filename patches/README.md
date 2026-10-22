@@ -106,6 +106,7 @@ patch's own header carries the full note.
 | 0030 | upstream | TRI and TEX_TRI draw a pixel centre lying exactly on an edge two triangles share once, by an edge-ownership rule, where both drew it: under a translucent texture every perspective image's cell diagonal was a line blended twice | unsubmitted | new at this pin |
 | 0032 | motion | straight-alpha src-over onto a partly transparent destination (0014) and a filter layer's content over its shadow (0018) divide by the exact new alpha, where they divided by the stored, rounded one: the colour was inflated, and white over white wrapped to black — speckle where translucent whites overlap in a glow layer | never; the header says why | new at this pin |
 | 0033 | motion | `glow-mode-luma` (PROP `glowMode` 185, `glowThreshold` 186): a glow made from the layer's bright pixels' own colour above a brightness threshold and added over the content — a bloom — where `glow-*` is CSS's drop shadow, made from alpha and drawn under, which lightens a dark translucent plate. Carried in LAYER_PUSH's blend word; an alpha glow's words are unchanged | never; the header says why | new at this pin |
+| 0034 | motion | a shutter: `ui_render_exposure` renders a frame as the integer average of N renders whose transform timelines are evaluated between ticks (`engine/core/src/shutter.rs`), never across a keyframe jump, centred on the frame's tick; `shutter-hold` (prop 198) keeps one node's own timelines at the tick. The sidecar's `shutter` key is what asks for it; design in `docs/shutter.design.md` | never; the header says why | new at this pin, after `0024`–`0033`; prop 198, past `glowThreshold` 186 |
 | 0040 | upstream | the build's SVG baker covers by scanline instead of testing every subsample against every edge — the same 4x4 samples, the same crossing arithmetic, so every pixel's count is the integer it was (`tests/fixtures/bake-svg-reference.ts` is the old baker, kept as the oracle) and a 952-cell hex grid takes 63 ms instead of 23 minutes of CPU — and draws strokes (width, miter/round/bevel joins, butt/round/square caps, miter limit, stroke-opacity), `<g>` with transform, inherited paint and group opacity, `A` arcs, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>` and `rect` `rx`; what would paint and is not drawn is refused instead of dropped | unsubmitted | written on 66caf4e5 |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
@@ -127,7 +128,7 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Twenty patches are class `upstream` and twelve `motion`. Of the twenty,
+Twenty patches are class `upstream` and thirteen `motion`. Of the twenty,
 seventeen are unsubmitted declaration- or build-layer changes, `0040`, the
 build-time SVG baker every target's pak goes through, among them; `0008` is
 #301, and `0021` and `0030` are rasteriser changes with no target-side cost.
