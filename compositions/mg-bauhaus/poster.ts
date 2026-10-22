@@ -29,12 +29,16 @@ export const INK = {
 } as const;
 export type Ink = keyof typeof INK;
 
-/** Per-ink plate offset: a press never registers four plates perfectly. Visible where two inks meet. */
+/**
+ * Per-ink plate offset: a press never registers four plates perfectly. Visible where two inks meet. No offset passes
+ * the 2 px every printed form overprints its edge by (OVER in gen.ts): red at +3 px opened a cream sliver along the
+ * left of every red form, which read as a layout error rather than a press.
+ */
 export const MISREG: Record<Ink, [number, number]> = {
   paper: [1, -1],
-  red: [3, -1],
-  yellow: [1, 2],
-  blue: [-2, 2],
+  red: [2, -1],
+  yellow: [1, 1],
+  blue: [-1, 1],
   black: [1, -1],
 };
 
@@ -72,7 +76,8 @@ export const ACTS: Act[] = ["R", "U", "S", "C", "R", "D", "F", "L", "L", "U", "U
  * What each move leaves, in its ink; null where the cell already holds what a spin or a fold left. The inks are
  * chosen so that nothing the module passes, and nothing in the finished poster, sits beside its own ink.
  */
-const LEAVES: (Ink | null)[] = ["black", "blue", "black", null, "yellow", "blue", "yellow", null, "red", "yellow", "black"];
+// the spin's disc is yellow: black, over the black and blue quarters under it, read as a head on shoulders
+const LEAVES: (Ink | null)[] = ["black", "blue", "yellow", null, "yellow", "blue", "yellow", null, "red", "yellow", "black"];
 /** The corner each roll turns about, as a fraction of the cell, and which way. */
 export type Roll = Exclude<Act, "S" | "F" | "C">;
 export const PIVOT: Record<Roll, [number, number]> = { R: [1, 1], U: [1, 0], D: [0, 1], L: [0, 1] };

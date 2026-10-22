@@ -6,7 +6,7 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 
 mount(() => (
   <View class="w-full h-full bg-[#F1E9DA]">
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-ld2" src="paper.png" />
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-ld8" src="paper.png" />
     <View class="absolute left-[0px] top-[59px] w-[1920px] h-[2px] origin-center animate-a3" />
     <View class="absolute left-[0px] top-[179px] w-[1920px] h-[2px] origin-center animate-a7" />
     <View class="absolute left-[0px] top-[299px] w-[1920px] h-[2px] origin-center animate-ab" />
@@ -31,26 +31,26 @@ mount(() => (
     <View class="absolute left-[1559px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2f" />
     <View class="absolute left-[1679px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2j" />
     <View class="absolute left-[1799px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2n" />
-    <View class="absolute left-[476px] top-[540px] w-[484px] h-[484px] origin-center  animate-a2p"><Image class="w-[484px] h-[484px]" src="f-disc-blue-484x484-110.png" /></View>
+    <View class="absolute left-[477px] top-[539px] w-[484px] h-[484px] origin-center  animate-a2p"><Image class="w-[484px] h-[484px]" src="f-disc-blue-484x484-110.png" /></View>
     <View class="absolute left-[479px] top-[297px] w-[244px] h-[244px] origin-center  animate-a2r"><Image class="w-[244px] h-[244px]" src="f-quarter-black-244x244-100-q3.png" /></View>
-    <View class="absolute left-[716px] top-[300px] w-[244px] h-[244px] origin-center  animate-a2t"><Image class="w-[244px] h-[244px]" src="f-quarter-blue-244x244-101-q2.png" /></View>
-    <View class="absolute left-[719px] top-[57px] w-[244px] h-[244px] origin-center  animate-a2v"><Image class="w-[244px] h-[244px]" src="f-disc-black-244x244-102.png" /></View>
-    <View class="absolute left-[1199px] top-[300px] w-[244px] h-[244px] origin-center  animate-a2x"><Image class="w-[244px] h-[244px]" src="f-quarter-yellow-244x244-103-q3.png" /></View>
-    <View class="absolute left-[1436px] top-[300px] w-[244px] h-[244px] origin-center  animate-a2z"><Image class="w-[244px] h-[244px]" src="f-quarter-blue-244x244-104.png" /></View>
-    <View class="absolute left-[1439px] top-[540px] w-[244px] h-[244px] origin-center  animate-a31"><Image class="w-[244px] h-[244px]" src="f-tri-yellow-244x244-105.png" /></View>
-    <View class="absolute left-[1201px] top-[537px] w-[244px] h-[244px] origin-center  animate-a33"><Image class="w-[244px] h-[244px]" src="f-quarter-red-244x244-106.png" /></View>
-    <View class="absolute left-[959px] top-[540px] w-[244px] h-[244px] origin-center  animate-a35"><Image class="w-[244px] h-[244px]" src="f-quarter-yellow-244x244-107-q2.png" /></View>
+    <View class="absolute left-[717px] top-[299px] w-[244px] h-[244px] origin-center  animate-a2t"><Image class="w-[244px] h-[244px]" src="f-quarter-blue-244x244-101-q2.png" /></View>
+    <View class="absolute left-[719px] top-[59px] w-[244px] h-[244px] origin-center  animate-a2v"><Image class="w-[244px] h-[244px]" src="f-disc-yellow-244x244-102.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[244px] h-[244px] origin-center  animate-a2x"><Image class="w-[244px] h-[244px]" src="f-quarter-yellow-244x244-103-q3.png" /></View>
+    <View class="absolute left-[1437px] top-[299px] w-[244px] h-[244px] origin-center  animate-a2z"><Image class="w-[244px] h-[244px]" src="f-quarter-blue-244x244-104.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[244px] h-[244px] origin-center  animate-a31"><Image class="w-[244px] h-[244px]" src="f-tri-yellow-244x244-105.png" /></View>
+    <View class="absolute left-[1200px] top-[537px] w-[244px] h-[244px] origin-center  animate-a33"><Image class="w-[244px] h-[244px]" src="f-quarter-red-244x244-106.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[244px] h-[244px] origin-center  animate-a35"><Image class="w-[244px] h-[244px]" src="f-quarter-yellow-244x244-107-q2.png" /></View>
     <View class="absolute left-[959px] top-[297px] w-[244px] h-[244px] origin-center  animate-a37"><Image class="w-[244px] h-[244px]" src="f-quarter-black-244x244-108-q2.png" /></View>
-    <View class="absolute left-[963px] top-[59px] w-[240px] h-[240px] origin-center  animate-a3b"><View class="absolute inset-0 origin-center rotate-45"><View class="absolute inset-0 origin-center animate-a39"><View class="absolute inset-0 origin-center rotate-315"><Image class="w-[240px] h-[240px]" src="f-box-red-240x240-109.png" /></View></View></View></View>
+    <View class="absolute left-[962px] top-[59px] w-[240px] h-[240px] origin-center  animate-a3b"><View class="absolute inset-0 origin-center rotate-45"><View class="absolute inset-0 origin-center animate-a39"><View class="absolute inset-0 origin-center rotate-315"><Image class="w-[240px] h-[240px]" src="f-box-red-240x240-109.png" /></View></View></View></View>
     <View class="absolute left-[948px] top-[528px] animate-a3d"><Image class="w-[24px] h-[24px]" src="pivot.png" /></View><View class="absolute left-[938px] top-[518px] w-[44px] h-[44px] border-[#111111] border-2 rounded-[22px] animate-a3d" />
     <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3g"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
     <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3i"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
     <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3l"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
     <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3o"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3r"><Image class="w-[242px] h-[242px]" src="field-yellow-q1.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3t"><Image class="w-[242px] h-[242px]" src="field-yellow-q2.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3w"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3z"><Image class="w-[242px] h-[242px]" src="field-yellow-q1.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3r"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3t"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3w"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3z"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
     <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a41"><Image class="w-[242px] h-[242px]" src="cell-720-60-q0.png" /></View>
     <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a43"><Image class="w-[242px] h-[242px]" src="cell-720-60-q3.png" /></View>
     <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a45"><Image class="w-[242px] h-[242px]" src="cell-720-60-q2.png" /></View>
@@ -181,9 +181,9 @@ mount(() => (
     <View class="absolute left-[120px] top-[220px] w-[240px] h-[240px] origin-center  animate-acs"><Image class="w-[240px] h-[240px]" src="letter-4.png" /></View>
     <View class="absolute left-[120px] top-[80px] w-[240px] h-[240px] origin-center  animate-acu"><Image class="w-[240px] h-[240px]" src="letter-5.png" /></View>
     <View class="absolute left-[120px] top-[-60px] w-[240px] h-[240px] origin-center  animate-acw"><Image class="w-[240px] h-[240px]" src="letter-6.png" /></View>
-    <View class="absolute left-[1080px] top-[780px] w-[720px] h-[3px] bg-[#111111] origin-left animate-acy" />
-    <View class="absolute left-[1080px] top-[802px] w-[720px] h-[90px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[720px] h-[90px] origin-center  animate-ad0"><View class="flex-row items-start"><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FORM"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"形式"}</Text></View><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FARBE"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"色彩"}</Text></View><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FUNKTION"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"功能"}</Text></View></View></View></View>
-    <View class="absolute left-[120px] top-[1034px] flex-row items-center gap-[12px] animate-ad4"><Text class="font-bold text-[18px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-bold text-[18px] text-[#3A342C]">{"·"}</Text><Text class="font-[cjk] font-bold text-[19px] text-[#3A342C]">{"模数构成"}</Text></View>
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-20 animate-ld2" src="grain.png" />
+    <View class="absolute left-[960px] top-[780px] w-[720px] h-[4px] bg-[#111111] origin-left animate-ad4" />
+    <View class="absolute left-[960px] top-[794px] w-[720px] h-[48px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[720px] h-[48px] origin-center  animate-ad6"><View class="absolute left-[0px] top-[0px] w-[720px] h-[48px] flex-row justify-end items-center"><View class="flex-row items-center gap-[18px]"><View class="flex-row items-center gap-[8px]"><Text class="font-[geo] text-[26px] text-[#111111] animate-acy">{"FORM"}</Text><Text class="font-[cjk] font-bold text-[21px] text-[#111111]">{"形式"}</Text></View><Text class="font-[geo] text-[26px] text-[#111111]">{"·"}</Text><View class="flex-row items-center gap-[8px]"><Text class="font-[geo] text-[26px] text-[#111111] animate-ad0">{"FARBE"}</Text><Text class="font-[cjk] font-bold text-[21px] text-[#111111]">{"色彩"}</Text></View><Text class="font-[geo] text-[26px] text-[#111111]">{"·"}</Text><View class="flex-row items-center gap-[8px]"><Text class="font-[geo] text-[26px] text-[#111111] animate-ad2">{"FUNKTION"}</Text><Text class="font-[cjk] font-bold text-[21px] text-[#111111]">{"功能"}</Text></View></View></View></View></View>
+    <View class="absolute left-[120px] top-[1034px] flex-row items-center gap-[12px] animate-ada"><Text class="font-bold text-[18px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-bold text-[18px] text-[#3A342C]">{"·"}</Text><Text class="font-[cjk] font-bold text-[19px] text-[#3A342C]">{"模数构成"}</Text></View>
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-20 animate-ld8" src="grain.png" />
   </View>
 ));

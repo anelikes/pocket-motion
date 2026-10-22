@@ -8,7 +8,7 @@
   "f-quarter-blue-244x244-101-q2.png": {
     "linear": true
   },
-  "f-disc-black-244x244-102.png": {
+  "f-disc-yellow-244x244-102.png": {
     "linear": true
   },
   "f-quarter-yellow-244x244-103-q3.png": {
@@ -45,18 +45,6 @@
     "linear": true
   },
   "field-red-q3.png": {
-    "linear": true
-  },
-  "field-yellow-q0.png": {
-    "linear": true
-  },
-  "field-yellow-q1.png": {
-    "linear": true
-  },
-  "field-yellow-q2.png": {
-    "linear": true
-  },
-  "field-yellow-q3.png": {
     "linear": true
   },
   "cell-720-60-q0.png": {
@@ -192,6 +180,18 @@
     "linear": true
   },
   "cell-1440-540-q3.png": {
+    "linear": true
+  },
+  "field-yellow-q0.png": {
+    "linear": true
+  },
+  "field-yellow-q1.png": {
+    "linear": true
+  },
+  "field-yellow-q2.png": {
+    "linear": true
+  },
+  "field-yellow-q3.png": {
     "linear": true
   },
   "letter-0.png": {

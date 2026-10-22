@@ -121,6 +121,7 @@ sfx:
   - { type: sub-drop, at: "0:06.5", level: 0.8 }
   - { type: whoosh, at: "0:06.8", level: 0.5 }
   # the push lands on the vessel, the Kelvin V is drawn, the evidence is confirmed, the cutter's vector comes in
+  - { type: pop, at: "0:07.5", level: 0.45 }                     # 括号第二次咬上船体
   - { type: pop, at: "0:07.57", level: 0.35 }
   - { type: ding, at: "0:08.1", level: 0.4 }
   - { type: whoosh, at: "0:08.5", level: 0.3 }

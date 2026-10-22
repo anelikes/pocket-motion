@@ -96,6 +96,9 @@ const T_LAST = b(18); // the module turns once more, about its own centre; from 
 
 /** A roll tips slowly and lands hard: power-in, arriving at speed on the beat. */
 const tip = (u: number) => u ** 2.2;
+/** A letter's turn: out of the sixteenth at speed and settled ten ticks later, power3.out. */
+const settle = (u: number) => 1 - (1 - u) ** 3;
+const LETTER_SETTLE = 8;
 
 // ── grid: horizontals on the eighths, verticals on the sixteenths between, from the centre out ──
 
@@ -275,7 +278,8 @@ const circleFlip = (n: number) => T_POSTER - 6 - 4 * (3 - n);
 /** The turn of the field's quarter in a cell at home, by its place in its block: its corner on the block centre (BL 0, TL 1, TR 2, BR 3). */
 const homeTurn = (px: number, py: number) => (py === 0 ? (px === 0 ? 3 : 0) : px === 0 ? 2 : 1);
 /** Each block's ink; the circle's block is black until it turns blue. Black is two blocks of eight. */
-const BLOCK_INK: Record<string, Ink> = { "-1,0": "red", "0,0": "yellow", "1,0": "black", "2,0": "red", "-1,1": "blue", "0,1": "black", "1,1": "yellow", "2,1": "blue" };
+// the top-left block is red: the spin's disc in it is yellow now, and a yellow quarter beside it merged with it
+const BLOCK_INK: Record<string, Ink> = { "-1,0": "red", "0,0": "red", "1,0": "black", "2,0": "red", "-1,1": "blue", "0,1": "black", "1,1": "yellow", "2,1": "blue" };
 
 const BLEED = 1;
 function cells(): string {
@@ -400,37 +404,44 @@ function type(): string {
     // upright in the gutter: the letter turned a quarter clockwise about the corner it will tip over
     const px = WORD_X + MOD;
     const el = new El(reg, home, { cx: px + M, cy: foot - M, rot: 90, op: 0 });
-    el.set(t - 6, { op: 0 }).orbit(t - 6, t, px, foot, -90, tip);
-    // first seen two ticks into the tip, already turning, and from then on to the end
-    for (const [k, v] of el.keys) if (k >= t - 4) el.keys.set(k, { ...v, op: 1 });
+    // the turn starts on the sixteenth and settles out of it: half of it is done by the first frame that shows the
+    //   letter, the next four are crisp. Tipped on a power-in over six ticks, both frames it was seen in were its fastest,
+    //   and under the shutter a 240 px letter smeared across 16° read as a grey fade rather than a move
+    el.set(t - 2, { op: 0 }).orbit(t - 2, t + LETTER_SETTLE, px, foot, -90, settle);
+    for (const [k, v] of el.keys) if (k >= t) el.keys.set(k, { ...v, op: 1 });
     el.s.op = 1;
-    el.set(t + 1, { rot: 0 });
+    el.set(t + LETTER_SETTLE + 1, { rot: 0 });
     out.push(el.node(img(file, MOD, MOD)));
   });
 
-  // the tagline under a rule across the bottom right, drawn on b18
+  // the rule under the right-hand group, from its first column to the triangle's right edge, drawn on b18; the
+  //   tagline under it as one line of tracked capitals in a geometric face, set to the rule's right end so it clears
+  //   the circle, each gloss beside its word and centred on the capitals. Stacked at the top right it read as a list
+  //   of bullets; started at the rule's left end it sat 5 px from the circle
   const S = INK.black;
-  const tx = cellX(2) + M;
+  const tx = cellX(2);
   const ty = gy(6);
-  const RW = 3 * MOD; // three 240 px columns, the rule ending on the grid's line at x 1800 (to 1680 it clipped FUNKTION)
-  const rule = (a: string) => `<View class="absolute left-[${tx}px] top-[${ty}px] w-[${RW}px] h-[3px] bg-[${S}] origin-left ${a}" />`;
+  const RW = 3 * MOD;
+  // 4 px: the yellow plate's misregistration and overprint put the triangle's base 3 px under the grid line
+  const rule = (a: string) => `<View class="absolute left-[${tx}px] top-[${ty}px] w-[${RW}px] h-[4px] bg-[${S}] origin-left ${a}" />`;
   const track = (px: number) => reg.anim(reg.prop("letterSpacing", [[0, `${px}px`], [TICKS, `${px}px`]]));
-  const dot = `<Text class="font-bold text-[30px] text-[${S}]">{"·"}</Text>`;
-  const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[30px] text-[${S}]">${jsx(w)}</Text>`;
-  const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}]">${jsx(w)}</Text>`;
-  const col = (w: string, z: string) => `<View class="flex-col gap-[6px] w-[${MOD}px]">${en(w)}${zh(z)}</View>`;
-  const lines = [`<View class="flex-row items-start">${col("FORM", "形式")}${col("FARBE", "色彩")}${col("FUNKTION", "功能")}</View>`];
+  const en = (w: string) => `<Text class="font-[geo] text-[26px] text-[${S}] animate-${track(5)}">${jsx(w)}</Text>`;
+  const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[21px] text-[${S}]">${jsx(w)}</Text>`;
+  const dot = `<Text class="font-[geo] text-[26px] text-[${S}]">{"·"}</Text>`;
+  const word = (w: string, z: string) => `<View class="flex-row items-center gap-[8px]">${en(w)}${zh(z)}</View>`;
+  const line = `<View class="flex-row items-center gap-[18px]">${word("FORM", "形式")}${dot}${word("FARBE", "色彩")}${dot}${word("FUNKTION", "功能")}</View>`;
+  const LH = 48;
+  const row = `<View class="absolute left-[0px] top-[0px] w-[${RW}px] h-[${LH}px] flex-row justify-end items-center">${line}</View>`;
   if (STATIC) {
     out.push(rule(""));
-    lines.forEach((l) => out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22}px]">${l}</View>`));
+    out.push(`<View class="absolute left-[${tx}px] top-[${ty + 14}px] w-[${RW}px] h-[${LH}px]">${row}</View>`);
   } else {
     out.push(rule(`animate-${reg.anim([reg.prop("scaleX", [[T_TAG - 8, "0"], [T_TAG, "1"]], "cubic-bezier(0.45,0,0.55,1)")])}`));
-    lines.forEach((l, i) => {
-      const t = T_TAG + 4 + 8 * i;
-      const el = new El(reg, { x: 0, y: 0, w: RW, h: 90 }, { cy: 45 + 90 });
-      el.to(t - 6, t, { cy: 45 }, outCubic);
-      out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22 + i * 90}px] w-[${RW}px] h-[90px] overflow-hidden">${el.node(l)}</View>`);
-    });
+    const t = T_TAG + 4;
+    const el = new El(reg, { x: 0, y: 0, w: RW, h: LH }, { cy: LH / 2 - LH });
+    el.to(t - 8, t, { cy: LH / 2 }, outCubic);
+    // it drops out from under the rule, as if the rule were the edge it was printed behind
+    out.push(`<View class="absolute left-[${tx}px] top-[${ty + 14}px] w-[${RW}px] h-[${LH}px] overflow-hidden">${el.node(row)}</View>`);
   }
   return out.join("\n    ");
 }
@@ -509,13 +520,17 @@ await Bun.write(
       durationFrames: STATIC ? 1 : (DUR_MS / 1000) * FPS,
       fps: FPS,
       supersample: 1,
-      // motion blur: each frame an exposure of 8 renders over 144° of the frame's duration (patches/0034); only transform
+      // motion blur: each frame an exposure of 16 renders over 144° of the frame's duration (patches/0034); only transform
       //   timelines are sampled between ticks, so cuts, gates and fades stay where they are
-      ...(process.env.SHUTTER === "0" ? {} : { shutter: { angle: 144, samples: 8 } }),
+      ...(process.env.SHUTTER === "0" ? {} : { shutter: { angle: 144, samples: 16 } }),
       fonts: {
         regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf",
         bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf",
-        faces: { cjk: { regular: "assets/fonts/NotoSansSC-Regular.otf", bold: "assets/fonts/NotoSansSC-Bold.otf" } },
+        faces: {
+          cjk: { regular: "assets/fonts/NotoSansSC-Regular.otf", bold: "assets/fonts/NotoSansSC-Bold.otf" },
+          // the tagline's face: a geometric sans of the period's construction (OFL, fonts/OFL-Poppins.txt)
+          geo: { regular: "compositions/mg-bauhaus/fonts/Poppins-Black.ttf", bold: "compositions/mg-bauhaus/fonts/Poppins-Black.ttf" },
+        },
       },
     },
     null,

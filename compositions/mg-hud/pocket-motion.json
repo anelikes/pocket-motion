@@ -5,7 +5,7 @@
   "supersample": 1,
   "shutter": {
     "angle": 120,
-    "samples": 6
+    "samples": 12
   },
   "fonts": {
     "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
