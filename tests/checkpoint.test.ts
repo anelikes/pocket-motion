@@ -8,11 +8,13 @@ import { describe, expect, test } from "bun:test";
 import {
   CHECKPOINT_LADDER_MAX,
   CheckpointLadder,
+  captureSnapshot,
+  restoreSnapshot,
   type CoreSnapshot,
 } from "../src/runtime/checkpoint.ts";
 
 function snap(frame: number): CoreSnapshot {
-  return { memory: new Uint8Array([frame & 0xff]), frame, bytes: 1 };
+  return { memory: new Uint8Array([frame & 0xff]), tail: new Uint8Array(0), skip: { ptr: 0, len: 0 }, frame, bytes: 1 };
 }
 
 describe("CheckpointLadder bounds", () => {
@@ -50,5 +52,26 @@ describe("CheckpointLadder bounds", () => {
 
   test("rejects a non-positive max", () => {
     expect(() => new CheckpointLadder(30, 0)).toThrow(/max/);
+  });
+});
+
+describe("a snapshot skips the exposure scratch", () => {
+  test("the range is left out of the copy and left alone by the restore", () => {
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    const view = new Uint8Array(memory.buffer);
+    for (let i = 0; i < view.length; i++) view[i] = i & 0xff;
+    const skip = { ptr: 1000, len: 4096 };
+    const snap = captureSnapshot({ memory }, 0, skip);
+    expect(snap.bytes).toBe(view.length - skip.len);
+    view.fill(7);
+    restoreSnapshot({ memory }, snap);
+    for (const i of [0, 999, 5096, view.length - 1]) expect(view[i]).toBe(i & 0xff);
+    for (const i of [1000, 3000, 5095]) expect(view[i]).toBe(7);
+  });
+  test("no range is the whole memory, as before", () => {
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    const snap = captureSnapshot({ memory }, 3);
+    expect(snap.bytes).toBe(memory.buffer.byteLength);
+    expect(snap.tail.length).toBe(0);
   });
 });

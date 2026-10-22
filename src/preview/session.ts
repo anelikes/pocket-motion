@@ -297,6 +297,7 @@ async function bootSource(
     hz: composition.fps,
     durationFrames: composition.durationFrames,
     renderScale: composition.supersample,
+    shutter: composition.shutter,
     checkpointInterval,
     checkpointMax,
     onRestore: undefined,

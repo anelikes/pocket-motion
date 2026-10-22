@@ -443,6 +443,48 @@ animate (`gradAngle`, `gradVia1Pos`, …; `compositions/gradients` turns a
 headline's angle and sweeps a via across a bar). Drawn by this repository's
 rasteriser only (`patches/0019`).
 
+**Motion blur is a sidecar key, not a filter.** Each frame is otherwise one
+tick drawn sharp, so a form crossing 180 px between two frames is shown at
+two places with nothing between them. Declare a shutter in
+`pocket-motion.json`:
+
+```json
+"shutter": { "angle": 180, "samples": 8 }
+```
+
+and every frame becomes an exposure: eight renders spread over half the
+frame's duration (180 of 360 degrees), centred on the frame's own tick, and
+averaged in integers by the core (`patches/0034`). What a sample moves is
+narrow, and each limit is a rule rather than a tuning:
+
+- Only translate, scale, rotate and skew timelines are evaluated between
+  ticks. Opacity, colour, size, insets and every paint value keep the frame's
+  own tick in every sample, so a 34 ms gate opens on the frame it opens on
+  without a shutter, and a fade reads the same.
+- A sample never crosses a jump: a one-tick segment, a zero-length keyframe
+  interval (`50%` beside `50.01%`), a start or end with no fill, a loop or
+  iteration wrap whose two sides differ. A cut stays a cut. `keyframes` lists
+  every jump a declared shutter will not blur across. A spin through 360
+  degrees is not a jump and blurs through its wrap.
+- `shutter-hold` keeps the node's OWN timelines at the tick in every sample —
+  a fast caption that has to read in every frame. It is not inherited: a node
+  is drawn under its ancestors' transforms, so text inside a sliding group
+  blurs with the group, and the hold belongs on the group. `lint` warns about
+  a hold the source text shows cannot work (`shutter.holdUnderAnimatedAncestor`,
+  `shutter.holdsNothing`).
+- Tracks started by `animate()`, springs and physics are not baked timelines
+  and keep their tick value.
+
+The shutter is an input to identity, `trace` prints it beside the digest, and
+there is no flag that could stand in for it. `samples: 1` is refused — it is
+the unblurred frame under another identity; remove the key instead. A frame
+costs `samples` rasters plus about 1 ms a sample to average at 1080p
+(`baselines/shutter.md`); samples sit `speed · angle/360 / samples` pixels
+apart, so a fast move wants more of them before the steps stop showing.
+`layout`, `visibility` and `assert` ask whether a node is in the picture of
+the exposure, and read rects and ink at the tick; `check` renders none and
+says so. `compositions/shutter-blur` is the fixture.
+
 **What does not exist** (the checker will catch most of these, but knowing
 saves a round trip): per-frame callbacks (`onFrame`), timers (`after`),
 effects, signals that change after mount — a composition mounts once and

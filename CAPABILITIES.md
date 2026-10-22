@@ -22,6 +22,7 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | durationFrames | yes | — | integer 1..216000 (2 hours at 30 fps) | src/manifest/sidecar.ts:356 | probed |
 | fps | yes | — | integer that divides 60 exactly (1,2,3,4,5,6,10,12,15,20,30,60) | src/manifest/sidecar.ts:389 | probed |
 | supersample | no | 1 | one of 1, 2, 4; default 1 when absent | src/manifest/sidecar.ts:419 | probed |
+| shutter | no | — | object with `angle` and `samples`; every frame is then an EXPOSURE — the integer average of `samples` renders across `angle`/360 of the frame, centred on its tick (patches/0034). Absent means no shutter, and the parser fills in nothing, so identity moves only for a composition that declares one. Part of input identity; there is no CLI flag | src/manifest/sidecar.ts:852 | probed |
 | footage | no | [] | array of track objects; default [] when absent | src/manifest/sidecar.ts:486 | probed |
 | fonts | no | — | object with regular and bold paths (the default face) and optional named `faces`, or absent for the build default face | src/manifest/sidecar.ts:435 | probed |
 | sound | no | { narration: [], dialogue: [], cues: [] } | optional object of bed / narration / dialogue / cues; absent materialises empty arrays and omits bed. ids are one namespace across narration, dialogue and cues | src/manifest/sidecar.ts:523 | probed |
@@ -59,6 +60,13 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | dialogue | no | [] | array of lines on the clip clock; track must be a declared footage[].id; derived composition frame must fall inside that track's window | src/manifest/sidecar.ts:1132 | probed |
 | cues | no | [] | array of beat-pinned spot effects on the composition clock; id+src+atFrame required; gain default 1 | src/manifest/sidecar.ts:1251 | probed |
 
+## Shutter (`pocket-motion.json` `shutter`)
+
+| key | required | default | constraint | source | verified |
+|---|---|---|---|---|---|
+| angle | yes | — | integer degrees 1..360: the shutter is open for angle/360 of a frame, which the host passes to the core as the exact fraction angle·(60/fps)/360 ticks, so no sample time is a float. Only translate, scale, rotate and skew timelines are evaluated between ticks; opacity, colour and layout keep the frame's own tick in every sample, and no sample crosses a keyframe jump | src/manifest/sidecar.ts:876 | probed |
+| samples | yes | — | integer 2..64: renders averaged per frame, so a frame costs that many rasters. 1 is refused on its own code — it is the unblurred frame under another identity, and the fix is to remove the key | src/manifest/sidecar.ts:887 | probed |
+
 ## Assets (discovered, not declared)
 
 | key | required | default | constraint | source | verified |
@@ -79,6 +87,7 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | animate-<name> | no | — | binds a theme.animation entry to the node; a name no theme declares is refused and the message lists the declared names. The refusal needs evidence that the literal IS a class, because every string literal in the module reaches this parser: either the literal was the whole value of a JSX class= attribute, which the collector records (patches/0012), or some other token in it parsed. Neither holds for a class built by concatenation or interpolation — an operand of + and a quasi of an interpolated template are never the whole value, are not recorded, and still drop silently. A backtick with nothing interpolated into it IS the whole value and is recorded | vendor/pocketjs/framework/compiler/tailwind.ts:592 | probed |
 | animate-spin \| ping \| pulse \| bounce | no | — | four animations exist with no config at all (tailwindcss defaultTheme); bounce's translate of -25% is not bakeable and pins -25% of the 1.5rem default, -6px | vendor/pocketjs/framework/compiler/animation.ts:76 | pinned |
 | overflow-mask | no | — | clips the node's children AND its own ground to the node's outline — its rounded rectangle under its transform — where `overflow-hidden` clips to the axis-aligned bounding box. Lays out and hit-tests as `overflow-hidden`. The outline is exact to a sixteenth of a pixel (patches/0024): no pixel is inked whose every sample lies outside it. A square-cornered, unrotated window whose box lands on whole pixels emits no mask and is `overflow-hidden` word for word; at a fractional position (a translate keyframe) it is masked to its edge. Drawn by this repository's software rasteriser only (patches/0013, class motion): no upstream backend knows the op | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
+| shutter-hold | no | — | under a declared shutter, keeps THIS node's own baked timelines at the frame's tick in every sample, so a fast caption stays readable. Not inherited: a node drawn under a moving ancestor blurs with it whatever it holds, and `lint` warns when the source text shows one (`shutter.holdUnderAnimatedAncestor`) or a hold on a literal that starts no animation (`shutter.holdsNothing`). Prop 198 in the style table (patches/0034) | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
 | theme.animation[name].value | yes | — | CSS animation shorthand subset, comma list: <name> <duration> [easing] [delay] [iterations] [direction] [fill]. A duration is required and at most two times may appear; iterations is `infinite` or an integer, fill is none/forwards/backwards/both; any other token is refused | vendor/pocketjs/framework/compiler/animation.ts:387 | probed |
 | easing (shorthand slot) | no | ease | linear, ease, ease-in, ease-out, ease-in-out, or cubic-bezier(x1,y1,x2,y2); any other word is refused as an unknown token. Absent means CSS's initial value, ease | vendor/pocketjs/framework/compiler/animation.ts:321 | probed |
 | named easing curves | no | — | the named easings bake to their canonical CSS bezier parameters rather than to the core's polynomial easing ordinals, so a baked timeline plays the browser's curve | vendor/pocketjs/framework/compiler/animation.ts:321 | pinned |
@@ -214,6 +223,11 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.motion.invalid | sidecar.motion |
 | sidecar.motion.required | sidecar.motion |
 | sidecar.notObject | sidecar.motion |
+| sidecar.shutter.angle | shutter.angle |
+| sidecar.shutter.notObject | sidecar.shutter |
+| sidecar.shutter.oneSample | shutter.samples |
+| sidecar.shutter.samples | shutter.samples |
+| sidecar.shutter.unknownKey | sidecar.shutter |
 | sidecar.sound.bed.fadeInMs.notInteger | sound.bed |
 | sidecar.sound.bed.fadeInMs.outOfRange | sound.bed |
 | sidecar.sound.bed.fadeOutMs.notInteger | sound.bed |

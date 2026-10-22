@@ -1,0 +1,30 @@
+{
+  "bun": "1.3.11",
+  "platform": "darwin/arm64",
+  "wasm": "c479624341ddef5e14fa02a4e56f7e197170a62ef5b9f0a9cbaf04f59ebed456",
+  "size": [
+    1920,
+    1080
+  ],
+  "fps": 30,
+  "frames": 60,
+  "from": 380,
+  "angle": 180,
+  "foldMsPerFrame": 0.116,
+  "perN": [
+    {
+      "n": 1,
+      "digest": "415f5c18e98a66ba9bc57f791c884b5d435b79abf01c6daaa8cb4a20dc537764",
+      "msPerFrame": 4.54
+    },
+    {
+      "n": 8,
+      "digest": "07c083f196a1b13a5dea46575080afec612119a8abb82581106898cd01caec96",
+      "msPerFrame": 27.54
+    }
+  ],
+  "opacityIntegrated": false,
+  "restoreMismatch": 0,
+  "regions": {},
+  "exempt": []
+}

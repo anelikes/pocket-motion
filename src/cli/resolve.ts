@@ -15,6 +15,7 @@ import {
   parseSidecar,
   type Diagnostic,
   type MotionSidecar,
+  type SidecarShutter,
 } from "../manifest/sidecar.ts";
 import {
   assertBuildRecord,
@@ -59,6 +60,12 @@ export interface ResolvedComposition {
   readonly fps: number;
   readonly durationFrames: number;
   readonly supersample: 1 | 2 | 4;
+  /**
+   * The sidecar's `shutter`, or null. Only the sidecar sets it — there is no
+   * flag — and every command that boots a world passes it on, because
+   * `BootOptions.shutter` has no default.
+   */
+  readonly shutter: SidecarShutter | null;
   /** Absolute paths to the declared faces, or undefined for the build default.
    *  `faces` holds the named faces (`fonts.faces`), present only when declared. */
   readonly fontPaths?: {
@@ -425,6 +432,7 @@ export async function resolveComposition(
       fps,
       durationFrames,
       supersample,
+      shutter: parsed.value.shutter ?? null,
       ...(fontPaths ? { fontPaths } : {}),
       buildCommand,
       buildArgs,

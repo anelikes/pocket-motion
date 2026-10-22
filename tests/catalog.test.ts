@@ -27,6 +27,7 @@ import {
   SOUND_BED_KEYS,
   SOUND_CUE_KEYS,
   SOUND_DIALOGUE_KEYS,
+  SHUTTER_KEYS,
   SOUND_KEYS,
   SOUND_NARRATION_KEYS,
   SOUND_SRC_ROLES,
@@ -223,16 +224,18 @@ describe("catalog gates", () => {
       footage: SURFACE.filter((row) => row.group === "footage"),
       fonts: SURFACE.filter((row) => row.group === "fonts"),
       sound: SURFACE.filter((row) => row.group === "sound"),
+      shutter: SURFACE.filter((row) => row.group === "shutter"),
     };
     const sets = {
       sidecar: ROOT_KEYS,
       footage: FOOTAGE_KEYS,
       fonts: FONT_KEYS,
       sound: SOUND_KEYS,
+      shutter: SHUTTER_KEYS,
     } as const;
 
     const parts: string[] = [];
-    for (const group of ["sidecar", "footage", "fonts", "sound"] as const) {
+    for (const group of ["sidecar", "footage", "fonts", "sound", "shutter"] as const) {
       const setName =
         group === "sidecar"
           ? "ROOT_KEYS"
@@ -240,7 +243,9 @@ describe("catalog gates", () => {
             ? "FOOTAGE_KEYS"
             : group === "fonts"
               ? "FONT_KEYS"
-              : "SOUND_KEYS";
+              : group === "sound"
+                ? "SOUND_KEYS"
+                : "SHUTTER_KEYS";
       const declared = sets[group];
       const rows = rowsByGroup[group];
       const rowKeys = new Set(rows.map((row) => row.key));
@@ -589,6 +594,12 @@ describe("catalog gates", () => {
         code: "sidecar.sound.unknownKey",
       },
       {
+        label: "shutter",
+        input: { motion: 1, durationFrames: 10, fps: 30, shutter: { angle: 180, samples: 8, nope: 1 } },
+        keys: SHUTTER_KEYS,
+        code: "sidecar.shutter.unknownKey",
+      },
+      {
         label: "assertions[0]",
         input: {
           motion: 1,
@@ -710,6 +721,7 @@ describe("catalog gates", () => {
           "fonts.faces[name]": "FONT_FACE_KEYS",
           "footage[0]": "FOOTAGE_KEYS",
           sound: "SOUND_KEYS",
+          shutter: "SHUTTER_KEYS",
           "layoutAllow[0]": "LAYOUT_ALLOW_KEYS",
           "assertions[0]": "ASSERTION_KEYS",
           "sound.bed": "SOUND_BED_KEYS",

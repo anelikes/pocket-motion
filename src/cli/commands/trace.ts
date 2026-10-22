@@ -2,9 +2,10 @@
  * `trace <composition-dir>`
  * Question: what is the frame-hash sequence + digest?
  *
- * `--json` is `{ frames, digest, identity }`. `digest` is the frame
- * sequence — the field the ledger and `diff` compare. `identity` is the
- * input hash (`src/render/identity.ts`).
+ * `--json` is `{ frames, digest, identity }`, plus `shutter` when the sidecar
+ * declares one. `digest` is the frame sequence — the field the ledger and
+ * `diff` compare. `identity` is the input hash (`src/render/identity.ts`),
+ * and the shutter is part of it.
  */
 
 import { existsSync } from "node:fs";
@@ -14,6 +15,7 @@ import {
   sidecarCanonicalOf,
 } from "../../render/identity.ts";
 import { render as renderComposition } from "../../render/render.ts";
+import { describeShutter } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage, scratchTree, type FootageHandle } from "../footage.ts";
 import { errMsg, resolveComposition } from "../resolve.ts";
@@ -62,6 +64,7 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
       hz: c.fps,
       durationFrames: c.durationFrames,
       renderScale: c.supersample,
+      shutter: c.shutter,
       buildCommand: c.buildCommand,
       hashAlgorithm: options.flags.hash,
       // no outputPath — hash-only path
@@ -101,6 +104,7 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
       frames: result.frameHashes,
       digest: result.digest,
       identity,
+      ...(c.shutter ? { shutter: c.shutter } : {}),
     };
 
     return {
@@ -110,6 +114,9 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
         `trace ok — ${result.frames} frames`,
         `digest ${result.digest}`,
         `identity ${identity.digest}`,
+        // A digest says which picture it is a digest of: with a shutter
+        // declared every frame hashed above is an exposure.
+        ...(c.shutter ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure`] : []),
         ...result.frameHashes.map((h, i) => `  [${i}] ${h}`),
       ],
     };

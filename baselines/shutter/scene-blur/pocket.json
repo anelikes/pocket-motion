@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-shutter-proto",
+  "name": "pocketjs-motion-shutter-proto",
+  "title": "PocketJS Motion: shutter prototype",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/blur/main.tsx",
+    "output": "shutter-proto",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

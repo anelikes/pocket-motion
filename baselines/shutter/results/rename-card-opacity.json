@@ -1,0 +1,74 @@
+{
+  "composition": "compositions/rename-card",
+  "scale": 2,
+  "angle": 180,
+  "samples": 8,
+  "frames": 180,
+  "wasm": "c479624341ddef5e14fa02a4e56f7e197170a62ef5b9f0a9cbaf04f59ebed456",
+  "framesBlurredUnderHold": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    19,
+    20,
+    23,
+    24,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49
+  ],
+  "framesChangedByIntegratingOpacity": [
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    18,
+    27,
+    28,
+    30,
+    31,
+    32,
+    33,
+    34,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    174
+  ],
+  "digests": {
+    "n1": "1ce28215c8be8385ea3bff41f75b3d9164b09c8f7cdc6e7fc7894a7a7ec1bdfb",
+    "n8Hold": "ef20ad146c34dc72b0d0322a7764d5e499765f4d39daea494c3e2c4a67480f7f",
+    "n8IntegrateOpacity": "6fa873a66f80d3e6d0b51b920d7fb61c96e43e69571c6aff193b2e7b806f795c"
+  },
+  "deltas": {
+    "13": {
+      "px": 3304,
+      "maxDelta": 8,
+      "pxLitOverGround": 1260
+    },
+    "31": {
+      "px": 2466,
+      "maxDelta": 1,
+      "pxLitOverGround": 0
+    },
+    "45": {
+      "px": 40991,
+      "maxDelta": 3,
+      "pxLitOverGround": 4114
+    }
+  }
+}

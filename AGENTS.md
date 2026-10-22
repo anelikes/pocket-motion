@@ -449,6 +449,34 @@ mechanisms with the file or test beside them.
   gets. `verify`, `check`, `layout` and `visibility` see the op through the
   draw list as they see a scissor; a node a mask leaves no pixel of reads as
   covered, a third cause under an existing name.
+- **Motion blur is a declared shutter, evaluated and averaged in the core**
+  (`patches/0034-shutter.patch`, class `motion`; the design and every number
+  it rests on in `docs/shutter.design.md` and `baselines/shutter.md`). The
+  sidecar's `shutter: { angle, samples }` makes every frame an exposure: the
+  core re-evaluates each playing baked timeline's TRANSFORM tracks at
+  `samples` instants centred on the frame's tick (`Ui::shutter_sample`, exact
+  i64 fractions of a tick), rasterises each, and averages premultiplied in
+  u32, rounding half up. Three properties hold it to the unblurred film and
+  each is a test. A one-sample exposure is the tick by construction — the
+  samples are centred — and the fixture traces equal frame for frame at
+  N=1 (`tests/shutter.test.ts`). Opacity, colour and layout keep the tick
+  in every sample, so a gate is never integrated and the dark-node
+  classification reads the same; and no sample crosses a keyframe jump, so a
+  cut is never a streak (the core's `shutter_*` tests, red under each
+  one-line edit the patch header lists). Higher bake rates were measured and
+  refused: they move the UNBLURRED film (175 of `transitions`' 756 frames at
+  240 Hz). `BootOptions.shutter` has NO default, so every boot site states
+  which exposure it renders and the type checker found all of them; the
+  measurer and a tree read pass `null` and say why. A declared shutter on a
+  core without the exports is refused at boot rather than rendered sharp.
+  `layout`, `visibility` and `assert` ask in-picture of the exposure (and
+  `paints` of every sample's draw list) and read rects and ink at the tick;
+  `check` renders none and prints that the exposure is outside its verdict.
+  Checkpoints skip the 5×-framebuffer scratch, which `ui_exposure_reserve`
+  sizes before the first snapshot so a restore never reallocates it.
+  `compositions/shutter-blur` is the fixture, in both ledgers; it traced to
+  the stage-1 prototype's recorded digests at N = 1, 4 and 8 before its
+  `known` node was added.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -790,6 +818,20 @@ mechanisms with the file or test beside them.
   `undefined` would throw rather than go quiet.
 
 ## What does not reach them yet
+
+- **The shutter blurs baked timelines and nothing else.** Tracks `animate()`
+  and transitions spawn, springs and physics keep their tick value in every
+  sample; a mount-only composition cannot start one after mount, and one
+  started during mount and still running holds rather than blurs. Footage
+  content is not resampled in time — every sample of a frame draws the same
+  decoded texture — though a track's tiles moved by a timeline blur like any
+  node. `lint`'s two `shutter.*` warnings read the source text: ancestry is
+  lexical within one file and the keyframes an `animate-*` names are not
+  read, so a hold under an ancestor that only fades is warned about too, and
+  a hold placed by a component in another file is not seen. Every probe of
+  `layout`, `visibility` and `assert` costs `samples` renders under a
+  shutter; `reel` declares none, so what that does to a film-length sweep is
+  unmeasured.
 
 Stated rather than smoothed. Each is a known hole, not an oversight.
 

@@ -1,0 +1,28 @@
+{
+  "motion": 1,
+  "durationFrames": 90,
+  "fps": 30,
+  "supersample": 1,
+  "shutter": { "angle": 180, "samples": 8 },
+  "layoutAllow": [
+    {
+      "node": "ring",
+      "allow": "overlap",
+      "reason": "the ring's box is its rotated bounding box, 950 px across at 45 degrees, so it reaches the caption's line and the sweep's lane; the forms on it reach neither"
+    },
+    {
+      "node": "gated",
+      "allow": "occlusion",
+      "reason": "the dot is opacity 0 outside its two gates by declaration, which is the case the shutter has to leave alone"
+    }
+  ],
+  "assertions": [
+    { "node": "static", "inPicture": [0, 89] },
+    { "node": "label-crisp", "inPicture": [0, 89] },
+    { "node": "label-blur", "inPicture": [0, 89] },
+    { "node": "flick", "inPicture": [0, 89] },
+    { "node": "known", "inPicture": [0, 89] },
+    { "node": "gated", "entersBy": 31 },
+    { "node": "gated", "exitsBy": 61 }
+  ]
+}

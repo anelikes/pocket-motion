@@ -44,6 +44,7 @@
  */
 
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
+import { describeShutter } from "../../runtime/boot.ts";
 import { RUN_ID_ENV } from "../emit.ts";
 import { errMsg, resolveComposition } from "../resolve.ts";
 import {
@@ -130,6 +131,7 @@ export async function run(options: VerifyOptions): Promise<CommandResult> {
   // A sidecar that will not parse is not a usage error: `lint` is the command
   // that reports it, and the envelope should carry its diagnostics.
   const durationFrames = resolved.ok ? resolved.value.durationFrames : 1;
+  const shutter = resolved.ok ? resolved.value.shutter : null;
 
   const layoutFrames =
     options.at ??
@@ -194,6 +196,9 @@ export async function run(options: VerifyOptions): Promise<CommandResult> {
       errors,
       warnings,
       layoutFrames,
+      // The envelope names the shutter once; each section that reads pixels
+      // names it again in its own JSON, verbatim.
+      ...(shutter ? { shutter } : {}),
       lint: lint.json,
       realm: realm.json,
       keyframes: keyframes.json,
@@ -214,6 +219,9 @@ export async function run(options: VerifyOptions): Promise<CommandResult> {
       "`visibility` and `assert` sweep their own default grid, so those sections",
       "are the same objects those commands print on their own.",
       "A warning is an active layout finding; --strict counts them.",
+      ...(shutter
+        ? [`Shutter ${describeShutter(shutter)}: the pixel sections read exposures; \`realm\` renders none.`]
+        : []),
     ],
     stderrLines: errors.map((name) => `verify: ${name} failed`),
   };

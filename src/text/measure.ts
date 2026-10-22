@@ -509,6 +509,7 @@ async function measurerOver(
     width: 64,
     height: 64,
     hz: 30,
+    shutter: null,
     allowMetricsOnly: o.metricsOnly,
   });
   world.frame(0);

@@ -47,6 +47,7 @@ async function readFrame(at: number): Promise<Uint8Array> {
     width: c.width,
     height: c.height,
     hz: c.fps,
+    shutter: c.shutter,
     durationFrames: c.durationFrames,
     renderScale: c.supersample,
     buildCommand: c.buildCommand,

@@ -7,7 +7,7 @@ import { existsSync } from "node:fs";
 import { lintImages } from "../../lint/images.ts";
 import { lintSource, type LintFinding } from "../../lint/mount-only.ts";
 import { countingOps } from "../../lint/oracle.ts";
-import { hardenedBootWorld, totalPendingWork } from "../../runtime/boot.ts";
+import { describeShutter, hardenedBootWorld, totalPendingWork } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage, scratchTree } from "../footage.ts";
 import { errMsg, listCompositionSources, resolveComposition } from "../resolve.ts";
@@ -101,6 +101,9 @@ export async function run(options: CheckOptions): Promise<CommandResult> {
       height: c.height,
       hz: c.fps,
       renderScale: c.supersample,
+      // Passed so a core that cannot expose is refused here as everywhere;
+      // `check` renders nothing, and an exposure runs no guest code.
+      shutter: c.shutter,
       buildCommand: c.buildCommand,
       wrapOps: (ops) => {
         counter = countingOps(ops);
@@ -231,6 +234,15 @@ export async function run(options: CheckOptions): Promise<CommandResult> {
       json: payload,
       stdoutLines: [
         `check ok — realm clean, mount-only (mountOps=${report.mountOps}, totalOps=0 over ${frames} frames), ${structural}`,
+        // Said rather than left to be assumed either way: this run rendered no
+        // exposure, and needed none — the samples run inside one core call
+        // after the frame's guest turn and ticks.
+        ...(c.shutter
+          ? [
+              `shutter ${describeShutter(c.shutter)} — outside this verdict: an exposure is one core call ` +
+                "after a frame's guest turn and ticks, and runs no guest code",
+            ]
+          : []),
       ],
     };
   } catch (e) {

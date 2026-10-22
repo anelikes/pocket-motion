@@ -98,10 +98,11 @@ import {
   openProber,
   probe,
   rect,
+  type ProbeWorld,
   type Visibility,
 } from "../../render/visibility.ts";
-import type { LayoutAllowance } from "../../manifest/sidecar.ts";
-import { hardenedBootWorld } from "../../runtime/boot.ts";
+import type { LayoutAllowance, SidecarShutter } from "../../manifest/sidecar.ts";
+import { describeShutter, hardenedBootWorld } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage } from "../footage.ts";
 import { errMsg, resolveComposition } from "../resolve.ts";
@@ -213,8 +214,7 @@ const signed16 = (v: number): number => (v & 0x8000 ? v - 0x10000 : v);
 
 /** The world already sitting on frame `at`. Preview reuses this so a scrub
  *  does not boot a second core; `layout` still boots its own. */
-export interface LayoutWorld {
-  render(): Uint8Array;
+export interface LayoutWorld extends ProbeWorld {
   readonly exports: object;
 }
 
@@ -440,6 +440,19 @@ export function inspectLayout(
   };
 }
 
+/**
+ * What a declared shutter changes about a reading, in the words every
+ * inspecting command prints. Nothing when there is none.
+ */
+export function shutterLines(shutter: SidecarShutter | null): string[] {
+  if (!shutter) return [];
+  return [
+    `Shutter ${describeShutter(shutter)}: in-picture and covered are read from the`,
+    "exposure, every sample re-rendered with the node hidden; rects and ink",
+    "boxes are the frame's own tick, the centre of the exposure.",
+  ];
+}
+
 export async function run(options: LayoutOptions): Promise<CommandResult> {
   const resolved = await resolveComposition({
     dir: options.dir,
@@ -470,6 +483,7 @@ export async function run(options: LayoutOptions): Promise<CommandResult> {
       height: c.height,
       hz: c.fps,
       renderScale: c.supersample,
+      shutter: c.shutter,
       buildCommand: c.buildCommand,
     });
 
@@ -564,6 +578,10 @@ export async function run(options: LayoutOptions): Promise<CommandResult> {
         // evidence that an allowance is dead, which is why this is reported and
         // not failed on.
         unusedAllow,
+        // Present when the sidecar declares one. `inPicture` and `paints`
+        // then read the exposure; rects and ink read the frame's own tick
+        // (`src/render/visibility.ts`, "UNDER A SHUTTER").
+        ...(c.shutter ? { shutter: c.shutter } : {}),
         nodes,
       },
       stdoutLines: [
@@ -581,6 +599,7 @@ export async function run(options: LayoutOptions): Promise<CommandResult> {
         "covered when it emitted geometry and none of that survived.",
         "Findings are reported, never failed on: `verify --strict` is what",
         "turns one into an exit code, and `layoutAllow` is what turns one off.",
+        ...shutterLines(c.shutter),
       ],
     };
   } catch (e) {

@@ -5,7 +5,7 @@
 
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { pocketjsRoot } from "../../runtime/boot.ts";
+import { describeShutter, pocketjsRoot } from "../../runtime/boot.ts";
 import { WasmFrameSource } from "../../runtime/frame-source.ts";
 import {
   UsageError,
@@ -71,6 +71,7 @@ export async function run(options: FrameOptions): Promise<CommandResult> {
       hz: c.fps,
       durationFrames: c.durationFrames,
       renderScale: c.supersample,
+      shutter: c.shutter,
       buildCommand: c.buildCommand,
     });
 
@@ -104,6 +105,7 @@ export async function run(options: FrameOptions): Promise<CommandResult> {
       width: physicalW,
       height: physicalH,
       bytes: png.byteLength,
+      ...(c.shutter ? { shutter: c.shutter } : {}),
     };
 
     return {
@@ -111,6 +113,7 @@ export async function run(options: FrameOptions): Promise<CommandResult> {
       json: payload,
       stdoutLines: [
         `frame ${options.at} → ${outPath} (${physicalW}×${physicalH}, ${png.byteLength} bytes)`,
+        ...(c.shutter ? [`shutter ${describeShutter(c.shutter)} — the PNG is the frame's exposure`] : []),
       ],
     };
   } catch (e) {

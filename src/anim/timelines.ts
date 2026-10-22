@@ -39,6 +39,16 @@
  *     later one is writing; an earlier one merely holding its end value under
  *     a later one is the ordinary hand-off and is not reported.
  *
+ *   - a JUMP in a transform track, for a composition that declares a shutter.
+ *     The shutter evaluates translate, scale, rotate and skew between ticks
+ *     and never across a place the realm itself shows no motion in progress
+ *     (`engine/core/src/shutter.rs`, patches/0034): a one-tick segment, or a
+ *     value that changes between two ticks with no segment between them — a
+ *     zero-length keyframe interval, or two segments that do not meet. The
+ *     blur stops there, which is what the declaration asked for; the reading
+ *     is where an author can see it. Iteration and loop wraps are jumps too
+ *     when the two sides differ, and are the timeline's period, not listed.
+ *
  * This module reports. It does not re-time anything, and it says nothing about
  * whether an animated node is on screen — `layout` answers that, one frame at a
  * time, and neither command answers it across a node's whole span.
@@ -79,6 +89,37 @@ export interface TimelineUse {
   /** Segments no longer than one rendered frame that a sampled tick lands
    *  strictly inside, so the render shows the step part-way. */
   readonly partialCuts: readonly PartialCut[];
+  /** Where a shutter's blur stops in this timeline's transform tracks. */
+  readonly shutterJumps: readonly ShutterJump[];
+}
+
+/**
+ * The props a shutter evaluates between ticks, by spec name — `integrates` in
+ * `engine/core/src/shutter.rs`. Every other prop keeps the frame's own tick in
+ * every sample. `tests/shutter.test.ts` holds this list to that function.
+ */
+export const SHUTTER_INTEGRATED: readonly string[] = [
+  "translateX",
+  "translateY",
+  "translateZ",
+  "scale",
+  "scaleX",
+  "scaleY",
+  "rotate",
+  "rotateX",
+  "rotateY",
+  "skewX",
+];
+
+/** A place in a transform track the shutter never samples across. */
+export interface ShutterJump {
+  readonly prop: string;
+  /** Ticks from the node's clock start, first iteration: the tick that shows
+   *  the value after the jump. */
+  readonly tick: number;
+  /** `step`: a one-tick segment, which no tick shows in progress. `cut`: the
+   *  value changes between two ticks with no segment between them. */
+  readonly kind: "step" | "cut";
 }
 
 /** A step the render takes one frame inside of. */
@@ -144,7 +185,7 @@ interface SpecModule {
       periodFrames: number;
       iterations: number;
       fill: number;
-      tracks: Array<{ prop: number; segments: Array<{ t0: number; t1: number }> }>;
+      tracks: Array<{ prop: number; segments: Array<{ t0: number; t1: number; from: number; to: number }> }>;
     }>;
   };
   PROP: Record<string, number>;
@@ -258,7 +299,7 @@ interface BakedAnim {
   periodFrames: number;
   iterations: number;
   fill: number;
-  tracks: Array<{ prop: number; segments: Array<{ t0: number; t1: number }> }>;
+  tracks: Array<{ prop: number; segments: Array<{ t0: number; t1: number; from: number; to: number }> }>;
 }
 
 interface ContentionInputs {
@@ -334,7 +375,7 @@ interface AnalyseInputs {
     delayFrames: number;
     periodFrames: number;
     iterations: number;
-    tracks: Array<{ prop: number; segments: Array<{ t0: number; t1: number }> }>;
+    tracks: Array<{ prop: number; segments: Array<{ t0: number; t1: number; from: number; to: number }> }>;
   };
   readonly propName: ReadonlyMap<number, string>;
   readonly ticksPerFrame: number;
@@ -388,6 +429,15 @@ function analyse(i: AnalyseInputs): TimelineUse {
   }
   partialCuts.sort((a, b) => a.t0 - b.t0);
 
+  const integrated = new Set(SHUTTER_INTEGRATED);
+  const shutterJumps: ShutterJump[] = [];
+  for (const track of anim.tracks) {
+    const prop = i.propName.get(track.prop) ?? `prop${track.prop}`;
+    if (!integrated.has(prop)) continue;
+    shutterJumps.push(...jumpsOf(prop, track.segments, anim.delayFrames, windowTicks));
+  }
+  shutterJumps.sort((a, b) => a.tick - b.tick || a.prop.localeCompare(b.prop));
+
   const iterationsEnd =
     anim.iterations === 0
       ? Infinity
@@ -409,7 +459,30 @@ function analyse(i: AnalyseInputs): TimelineUse {
     periodOffGrid: anim.iterations !== 1 && anim.periodFrames % ticksPerFrame !== 0,
     loopOffGrid: i.loopFrames > 0 && i.loopFrames % ticksPerFrame !== 0,
     partialCuts,
+    shutterJumps,
   };
+}
+
+/**
+ * The jumps in one transform track's first iteration, by the rule
+ * `engine/core/src/shutter.rs` applies between two ticks: a segment of one
+ * tick, and a change of value with no segment across it. Raw payloads compare
+ * as the realm compares them — bit for bit.
+ */
+function jumpsOf(
+  prop: string,
+  segments: ReadonlyArray<{ t0: number; t1: number; from: number; to: number }>,
+  delay: number,
+  windowTicks: number,
+): ShutterJump[] {
+  const out: ShutterJump[] = [];
+  for (let k = 0; k < segments.length; k++) {
+    const seg = segments[k]!;
+    if (seg.t1 - seg.t0 === 1 && seg.from !== seg.to) out.push({ prop, tick: delay + seg.t1, kind: "step" });
+    const prev = segments[k - 1];
+    if (prev && prev.to !== seg.from) out.push({ prop, tick: delay + seg.t0, kind: "cut" });
+  }
+  return out.filter((j) => j.tick < windowTicks);
 }
 
 /** The one sampled tick strictly inside a step, or null when the segment is
