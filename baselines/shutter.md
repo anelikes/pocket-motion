@@ -257,7 +257,7 @@ The rest checked here (`alpha`, `curves`, `filters`, `masked`, `reel`,
 
 ## Stage 2: the patch, 2026-10-23
 
-`patches/0031-shutter.patch` and the host changes `docs/shutter.design.md`
+`patches/0034-shutter.patch` and the host changes `docs/shutter.design.md`
 lists, on the pin bump's stage 2 (`64cb6ca`, pin `66caf4e5` plus
 `0001`–`0023`). Same machine. Before any change here, `bun test ./tests/`
 was 723 pass, 4 skip, 0 fail.
@@ -346,16 +346,18 @@ reference; these say the patch is in the same range as the prototype under
 roughly fifteen times the contention, not what it costs on an idle machine.
 `visibility` over the fixture's 24-frame grid took 6.4 s, before `known` was added.
 
-### Rebased onto `claude/overnight` (`04dc055`)
+### Rebased onto `claude/overnight`
 
-`0031` regenerated on top of `0024`–`0030`, the rasteriser-defect fixes:
-the spec tables and the end of the core's tests had grown there, so the
-hunks moved; the code is the same and the prop stays 198, past `arcCap`
-183 and `gradShape` 184. Vendored, the tree is `66caf4e5` plus 31 patches.
+Written as `0031`, the patch was regenerated on top of the rasteriser-defect
+fixes, first `0024`–`0030` (`04dc055`) and then `0032`–`0033` as well
+(`0814f31`), and renumbered `0034` so it applies after them. The spec tables
+and the end of the core's tests had grown there, so the hunks moved; the
+code is the same and the prop stays 198, past `glowThreshold` 186.
+Vendored, the tree is `66caf4e5` plus 32 patches and this one.
 
 The fixture's ledger digest moved, `9327b2b1…` to `cb2a8c7e…`, and the move
 is the core's, not the shutter's. The same bundle traced through a core of
-`0001`–`0023` plus `0031` gives `9327b2b1…` exactly, and with the `shutter`
+`0001`–`0023` plus this patch gives `9327b2b1…` exactly, and with the `shutter`
 key removed the two cores still disagree on all 90 unblurred frames: the
 ring's forms are rounded boxes under a rotation, which `0028` now draws with
 their corners.

@@ -3,7 +3,7 @@
  *
  * Under a declared shutter, `shutter-hold` keeps the timelines of the node
  * whose class literal carries it at the frame's tick in every sample
- * (`Ui::shutter_sample`, patches/0031). Two things follow from that rule and
+ * (`Ui::shutter_sample`, patches/0034). Two things follow from that rule and
  * both are easy to miss from the authoring side, because the picture is drawn
  * by the tree rather than by the literal:
  *

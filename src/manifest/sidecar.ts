@@ -175,7 +175,7 @@ export type SidecarAssertion =
  * A shutter: every frame is delivered as an EXPOSURE, the average of
  * `samples` renders with the transform timelines evaluated across `angle`/360
  * of the frame's duration, centred on the frame's own tick
- * (`patches/0031-shutter.patch`, `docs/shutter.design.md`).
+ * (`patches/0034-shutter.patch`, `docs/shutter.design.md`).
  *
  * It moves pixels, so it is a sidecar key and an input to identity, and there
  * is no CLI flag that could stand in for it.

@@ -297,7 +297,7 @@ const UNSIMULABLE: Record<string, string> = {
 };
 
 describe("shutter — an input, and only where it is declared", () => {
-  // A shutter moves pixels (patches/0031), so unlike `sound` it is NOT dropped
+  // A shutter moves pixels (patches/0034), so unlike `sound` it is NOT dropped
   // by the projection; and unlike `supersample` the parser fills in no
   // default, so a composition that declares none hashes as it did before the
   // key existed.

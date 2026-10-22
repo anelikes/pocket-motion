@@ -454,7 +454,7 @@ two places with nothing between them. Declare a shutter in
 
 and every frame becomes an exposure: eight renders spread over half the
 frame's duration (180 of 360 degrees), centred on the frame's own tick, and
-averaged in integers by the core (`patches/0031`). What a sample moves is
+averaged in integers by the core (`patches/0034`). What a sample moves is
 narrow, and each limit is a rule rather than a tuning:
 
 - Only translate, scale, rotate and skew timelines are evaluated between

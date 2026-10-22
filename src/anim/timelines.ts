@@ -42,7 +42,7 @@
  *   - a JUMP in a transform track, for a composition that declares a shutter.
  *     The shutter evaluates translate, scale, rotate and skew between ticks
  *     and never across a place the realm itself shows no motion in progress
- *     (`engine/core/src/shutter.rs`, patches/0031): a one-tick segment, or a
+ *     (`engine/core/src/shutter.rs`, patches/0034): a one-tick segment, or a
  *     value that changes between two ticks with no segment between them — a
  *     zero-length keyframe interval, or two segments that do not meet. The
  *     blur stops there, which is what the declaration asked for; the reading

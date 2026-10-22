@@ -450,7 +450,7 @@ mechanisms with the file or test beside them.
   draw list as they see a scissor; a node a mask leaves no pixel of reads as
   covered, a third cause under an existing name.
 - **Motion blur is a declared shutter, evaluated and averaged in the core**
-  (`patches/0031-shutter.patch`, class `motion`; the design and every number
+  (`patches/0034-shutter.patch`, class `motion`; the design and every number
   it rests on in `docs/shutter.design.md` and `baselines/shutter.md`). The
   sidecar's `shutter: { angle, samples }` makes every frame an exposure: the
   core re-evaluates each playing baked timeline's TRANSFORM tracks at

@@ -92,7 +92,7 @@ paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
 
 **Motion blur is the sidecar's `shutter`** (`{ "angle": 180, "samples": 8 }`):
 each frame is the integer average of that many renders across the open
-fraction of the frame, centred on its tick (`patches/0031`). Only translate,
+fraction of the frame, centred on its tick (`patches/0034`). Only translate,
 scale, rotate and skew move between samples — opacity and colour keep the
 frame's tick, and no sample crosses a keyframe jump, so gates and cuts stay
 sharp. `shutter-hold` keeps one node's own timelines at the tick; it is not

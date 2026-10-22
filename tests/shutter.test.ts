@@ -1,5 +1,5 @@
 /**
- * The shutter (patches/0031) end to end, read off `compositions/shutter-blur`
+ * The shutter (patches/0034) end to end, read off `compositions/shutter-blur`
  * after a real build.
  *
  * The sub-tick rule itself — where a sample sits inside a segment, and every

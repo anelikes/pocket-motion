@@ -20,7 +20,7 @@
  * index, so rebuilding is both simpler and self-evidently correct. See
  * `FootageLayer.present`.
  *
- * The exposure scratch of a declared shutter (`patches/0031`). Per physical
+ * The exposure scratch of a declared shutter (`patches/0034`). Per physical
  * pixel it is four u32 sums and the resolved exposure, five times the
  * framebuffer — 39.6 of the 51.3 MiB a 1080p core holds after one exposure
  * (`baselines/shutter.md`, stage 2) — and

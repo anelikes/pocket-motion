@@ -265,7 +265,7 @@ export function describeShutter(shutter: SidecarShutter | null | undefined): str
   return shutter ? `${shutter.angle}° × ${shutter.samples} samples` : "none";
 }
 
-/** The exports a declared shutter needs, all from `patches/0031-shutter.patch`. */
+/** The exports a declared shutter needs, all from `patches/0034-shutter.patch`. */
 const EXPOSURE_EXPORTS = ["ui_render_exposure", "ui_draw_hash_exposure", "ui_exposure_reserve"] as const;
 
 /**
@@ -349,7 +349,7 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
     if (missing.length > 0) {
       throw new Error(
         `PocketJS Motion: this composition declares a shutter (${describeShutter(options.shutter)}) ` +
-          `and ${wasmPath} has no ${missing.join(", ")} (patches/0031-shutter.patch). ` +
+          `and ${wasmPath} has no ${missing.join(", ")} (patches/0034-shutter.patch). ` +
           "Rebuild the core:\n  bun scripts/vendor.ts",
       );
     }

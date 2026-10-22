@@ -163,7 +163,7 @@ export function openProber(
     if (exposure) {
       const folded = need<(n: number, d: number, s: number) => bigint | number>(
         "ui_draw_hash_exposure",
-        "patches/0031",
+        "patches/0034",
       );
       rawDrawHash = () => folded(exposure.spanNum, exposure.spanDen, exposure.samples);
     } else {

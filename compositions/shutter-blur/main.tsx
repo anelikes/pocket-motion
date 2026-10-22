@@ -2,7 +2,7 @@
 //
 // The sidecar declares `shutter: { angle: 180, samples: 8 }`, so every frame
 // is an exposure: eight renders across half a frame centred on its tick, the
-// transform timelines evaluated between ticks (patches/0031). Each node is
+// transform timelines evaluated between ticks (patches/0034). Each node is
 // here for one case (pocket.config.ts says which):
 //
 //   static       no timeline, so the same bytes at any sample count

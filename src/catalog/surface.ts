@@ -410,7 +410,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "object with `angle` and `samples`; every frame is then an EXPOSURE — the integer average of `samples` renders across `angle`/360 of the frame, centred on its tick (patches/0031). Absent means no shutter, and the parser fills in nothing, so identity moves only for a composition that declares one. Part of input identity; there is no CLI flag",
+      "object with `angle` and `samples`; every frame is then an EXPOSURE — the integer average of `samples` renders across `angle`/360 of the frame, centred on its tick (patches/0034). Absent means no shutter, and the parser fills in nothing, so identity moves only for a composition that declares one. Part of input identity; there is no CLI flag",
     source: "src/manifest/sidecar.ts:852",
     verification: "probed",
     diagnostics: ["sidecar.shutter.notObject", "sidecar.shutter.unknownKey"],
@@ -1654,7 +1654,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "under a declared shutter, keeps THIS node's own baked timelines at the frame's tick in every sample, so a fast caption stays readable. Not inherited: a node drawn under a moving ancestor blurs with it whatever it holds, and `lint` warns when the source text shows one (`shutter.holdUnderAnimatedAncestor`) or a hold on a literal that starts no animation (`shutter.holdsNothing`). Prop 198 in the style table (patches/0031)",
+      "under a declared shutter, keeps THIS node's own baked timelines at the frame's tick in every sample, so a fast caption stays readable. Not inherited: a node drawn under a moving ancestor blurs with it whatever it holds, and `lint` warns when the source text shows one (`shutter.holdUnderAnimatedAncestor`) or a hold on a literal that starts no animation (`shutter.holdsNothing`). Prop 198 in the style table (patches/0034)",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],

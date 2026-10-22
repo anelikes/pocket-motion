@@ -1,6 +1,6 @@
 # Motion blur as a declared shutter — design (stage 1)
 
-**Stage 2 has landed** as `patches/0031-shutter.patch` and the host changes
+**Stage 2 has landed** as `patches/0034-shutter.patch` and the host changes
 listed at the end of this document. Where the build departs from the plan
 below, the last section, "Stage 2 as built", says how and why.
 
@@ -428,9 +428,10 @@ In this repository:
 What differs from the file-by-file plan above, each for a reason found while
 building it:
 
-- **The patch is `0031`, the prop is 198.** `0024`–`0030` and props 183/184
-  are another branch's (the rasteriser-defect fixes), and the vector-paths
-  design has pencilled the thirteen props after them.
+- **The patch is `0034`, the prop is 198.** `0024`–`0033` and props 183–186
+  are the rasteriser-defect fixes', and the vector-paths design has pencilled
+  thirteen props after the last one allocated. The patch was written as
+  `0031` and renumbered to apply after them.
 - **An exposure ends with a draw walk at the tick.** Writing the tick's values
   back restores the tree, but the DrawList and the inspector latch would still
   be the last sample's. One walk without a raster makes the state after an
