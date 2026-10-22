@@ -352,6 +352,40 @@ describe("build.json — the two omissions it makes on purpose", () => {
     expect(written.argv.join(" ")).not.toContain(ROOT);
   });
 
+  test("a composition outside this package records its paths relative to its own repository", async () => {
+    // An installed package: the compiler under the package, the composition
+    // under the project that installed it. Two projects in two places must
+    // write the same record. Red with `relativise` given the package root
+    // alone — the composition, outdir and face stay absolute.
+    const ROOT = resolve(import.meta.dir, "..");
+    const record = async (project: string) =>
+      (
+        await currentBuildRecord(
+          [
+            "bun",
+            join(ROOT, "vendor/pocketjs/tools/build.ts"),
+            join(project, "compositions/card/main.tsx"),
+            `--outdir=${join(project, "dist/compositions/card")}`,
+            "--framework=solid",
+            "--hz=60",
+            `--font-regular=${join(project, "fonts/Face-Regular.ttf")}`,
+          ],
+          project,
+        )
+      ).argv;
+    const here = await record("/srv/one/project");
+    expect(here).toEqual([
+      "bun",
+      "vendor/pocketjs/tools/build.ts",
+      "compositions/card/main.tsx",
+      "--outdir=dist/compositions/card",
+      "--framework=solid",
+      "--hz=60",
+      "--font-regular=fonts/Face-Regular.ttf",
+    ]);
+    expect(await record("/home/someone/elsewhere")).toEqual(here);
+  });
+
   test("no timestamp: two records of the same build are the same bytes", async () => {
     const argv = ["bun", "tools/build.ts", "--outdir=dist/x"];
     const a = await currentBuildRecord(argv);
