@@ -19,13 +19,32 @@
  * layer is re-presented after every restore: it is a pure function of the frame
  * index, so rebuilding is both simpler and self-evidently correct. See
  * `FootageLayer.present`.
+ *
+ * The exposure scratch of a declared shutter (`patches/0031`). Per physical
+ * pixel it is four u32 sums and the resolved exposure, five times the
+ * framebuffer — 39.6 of the 51.3 MiB a 1080p core holds after one exposure
+ * (`baselines/shutter.md`, stage 2) — and
+ * no exposure reads a byte of it before writing it. A snapshot skips that
+ * range and a restore leaves it alone. The allocation itself is reserved at
+ * boot, before the first snapshot, so the allocator state every snapshot
+ * restores already owns it.
  */
 
+/** A byte range of linear memory a snapshot leaves out. `len: 0` is none. */
+export interface SkipRange {
+  readonly ptr: number;
+  readonly len: number;
+}
+
 export interface CoreSnapshot {
-  /** Copy of the whole linear memory at capture time. */
+  /** Linear memory below the skipped range (all of it when nothing is skipped). */
   readonly memory: Uint8Array;
+  /** Linear memory above the skipped range, restored at `skip.ptr + skip.len`. */
+  readonly tail: Uint8Array;
+  readonly skip: SkipRange;
   /** Frame index this snapshot represents. */
   readonly frame: number;
+  /** What the snapshot holds: the memory minus the skipped range. */
   readonly bytes: number;
 }
 
@@ -37,11 +56,21 @@ export interface WasmMemoryAccess {
  * Copy linear memory. Cost is the memory's whole size, so callers should space
  * checkpoints out rather than taking one per frame.
  */
-export function captureSnapshot(ex: WasmMemoryAccess, frame: number): CoreSnapshot {
+export function captureSnapshot(
+  ex: WasmMemoryAccess,
+  frame: number,
+  skip: SkipRange = { ptr: 0, len: 0 },
+): CoreSnapshot {
   const view = new Uint8Array(ex.memory.buffer);
-  const copy = new Uint8Array(view.length);
-  copy.set(view);
-  return { memory: copy, frame, bytes: copy.length };
+  if (skip.len > 0 && (skip.ptr < 0 || skip.ptr + skip.len > view.length)) {
+    throw new Error(
+      `PocketJS Motion: skip range ${skip.ptr}+${skip.len} is outside linear memory (${view.length})`,
+    );
+  }
+  const cut = skip.len > 0 ? skip.ptr : view.length;
+  const memory = view.slice(0, cut);
+  const tail = skip.len > 0 ? view.slice(skip.ptr + skip.len) : new Uint8Array(0);
+  return { memory, tail, skip, frame, bytes: memory.length + tail.length };
 }
 
 /**
@@ -62,13 +91,15 @@ export function captureSnapshot(ex: WasmMemoryAccess, frame: number): CoreSnapsh
  */
 export function restoreSnapshot(ex: WasmMemoryAccess, snap: CoreSnapshot): void {
   const view = new Uint8Array(ex.memory.buffer);
-  if (snap.memory.length > view.length) {
+  const extent = snap.memory.length + snap.skip.len + snap.tail.length;
+  if (extent > view.length) {
     throw new Error(
-      `PocketJS Motion: snapshot (${snap.memory.length} bytes) is larger than current ` +
+      `PocketJS Motion: snapshot (${extent} bytes) is larger than current ` +
         `linear memory (${view.length}) — linear memory should never shrink`,
     );
   }
   view.set(snap.memory);
+  if (snap.tail.length > 0) view.set(snap.tail, snap.skip.ptr + snap.skip.len);
 }
 
 /**

@@ -66,8 +66,25 @@
  * word stream, so a hide that moves no word cannot move a pixel. It is in the
  * type because a caller that saw it would be looking at a broken host, and
  * silently folding it into one of the other three would hide that.
+ *
+ * UNDER A SHUTTER
+ *
+ * A composition that declares `shutter` delivers exposures, and both
+ * questions are asked of the exposure. `inPicture` hides the node and
+ * re-renders all N samples, so a node blurred into a region the frame's own
+ * tick leaves empty is in the picture — the verdict is about the delivered
+ * pixels. `paints` folds the N samples' draw-list hashes
+ * (`ui_draw_hash_exposure`), so it is "emitted geometry in at least one
+ * sample". Opacity is never integrated by the shutter, so a node its own or
+ * an ancestor's opacity hides at the tick is hidden in every sample, and
+ * invisible-by-declaration reads as it does without the shutter; a node off
+ * the canvas at the tick and on it in some sample paints, because some of
+ * the delivered picture is its. Rects and ink boxes are geometry and are read
+ * at the frame's own tick, the centre of the exposure: a moving glyph run's
+ * smear is not a run that overflows its box. Every probe costs N renders.
  */
 
+import type { Exposure } from "../runtime/boot.ts";
 import { hashFrame, type FrameHash } from "./hash.ts";
 
 /** The exports this module drives, resolved once per world. */
@@ -82,7 +99,11 @@ export interface Prober {
    *  `src/cli/commands/layout.ts` for why that is a scope choice and not a
    *  speed one — measured, the two cost the same. */
   readonly drawHash: (() => string) | null;
+  /** The delivered frame: the exposure under a shutter. */
   readonly render: () => Uint8Array;
+  /** The frame's own tick. `render` when there is no shutter. */
+  readonly renderTick: () => Uint8Array;
+  readonly exposure: Exposure | null;
 }
 
 export interface ProbeOptions {
@@ -92,6 +113,9 @@ export interface ProbeOptions {
 
 export interface ProbeWorld {
   readonly render: () => Uint8Array;
+  /** Absent on a world with no shutter, where `render` is the tick. */
+  readonly renderTick?: () => Uint8Array;
+  readonly exposure?: Exposure | null;
 }
 
 /** Both hashes of one frame with nothing hidden. Every probe reads against it. */
@@ -133,9 +157,20 @@ export function openProber(
     }
     return fn as T;
   };
-  const rawDrawHash = options.classify
-    ? need<() => bigint | number>("ui_draw_hash", "upstream")
-    : null;
+  const exposure = world.exposure ?? null;
+  let rawDrawHash: (() => bigint | number) | null = null;
+  if (options.classify) {
+    if (exposure) {
+      const folded = need<(n: number, d: number, s: number) => bigint | number>(
+        "ui_draw_hash_exposure",
+        "patches/0031",
+      );
+      rawDrawHash = () => folded(exposure.spanNum, exposure.spanDen, exposure.samples);
+    } else {
+      rawDrawHash = need<() => bigint | number>("ui_draw_hash", "upstream");
+    }
+  }
+  const hashOf = rawDrawHash;
   return {
     inspect: need<(id: number) => void>("ui_debug_inspect", "patches/0007"),
     rectXY: need<() => number>("ui_debug_rect_xy", "patches/0007"),
@@ -143,8 +178,10 @@ export function openProber(
     hide: need<(id: number) => void>("ui_debug_hide", "patches/0007"),
     // The wasm signature is i64, so this arrives as a BigInt on Bun and a
     // Number on hosts that lower it. Compared as a string either way.
-    drawHash: rawDrawHash === null ? null : () => String(rawDrawHash()),
+    drawHash: hashOf === null ? null : () => String(hashOf()),
     render: world.render,
+    renderTick: world.renderTick ?? world.render,
+    exposure,
   };
 }
 
@@ -163,11 +200,10 @@ export function baseline(p: Prober, keepPixels = false): Baseline {
   // render() returns a view into wasm memory that the next render overwrites,
   // so the hash is taken before anything else touches it.
   const rgba = p.render();
-  return {
-    draw,
-    frame: hashFrame(rgba, "fast"),
-    pixels: keepPixels ? new Uint8Array(rgba) : null,
-  };
+  const frame = hashFrame(rgba, "fast");
+  // Ink is read at the tick (see the header); with no shutter that is `rgba`.
+  const pixels = keepPixels ? new Uint8Array(p.exposure ? p.renderTick() : rgba) : null;
+  return { draw, frame, pixels };
 }
 
 /**
@@ -221,7 +257,9 @@ export function rect(p: Prober, id: number): { xy: number; wh: number } {
   // skip the child's walk and the rect would come back -1.
   p.hide(0);
   p.inspect(id);
-  p.render();
+  // The tick, not the exposure: a rect is the box at the centre of the
+  // exposure, and one raster fills the latch where an exposure would cost N.
+  p.renderTick();
   return { xy: p.rectXY(), wh: p.rectWH() };
 }
 
@@ -285,7 +323,10 @@ export function probe(
           "call baseline(prober, true)",
       );
     }
-    const raw = changedBox(base.pixels, hidden, ink.width);
+    // Under a shutter the ink is the node's pixels at the tick, read under
+    // the same hide. `hidden` is the exposure's buffer and has been hashed;
+    // the tick renders into the framebuffer, not into it.
+    const raw = changedBox(base.pixels, p.exposure ? p.renderTick() : hidden, ink.width);
     inkBox =
       raw === null
         ? null

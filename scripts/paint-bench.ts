@@ -103,6 +103,7 @@ async function measure(dir: string, reps: number): Promise<{ median: number; min
     width: 1920,
     height: 1080,
     hz: 30,
+    shutter: null,
   });
   world.frame(0);
   for (let t = 0; t < world.ticksPerFrame; t++) world.tick();

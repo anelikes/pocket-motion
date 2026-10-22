@@ -171,11 +171,34 @@ export type SidecarAssertion =
   /** First shown at a sampled frame strictly earlier than this other node's. */
   | { readonly node: string; readonly before: string };
 
+/**
+ * A shutter: every frame is delivered as an EXPOSURE, the average of
+ * `samples` renders with the transform timelines evaluated across `angle`/360
+ * of the frame's duration, centred on the frame's own tick
+ * (`patches/0031-shutter.patch`, `docs/shutter.design.md`).
+ *
+ * It moves pixels, so it is a sidecar key and an input to identity, and there
+ * is no CLI flag that could stand in for it.
+ */
+export interface SidecarShutter {
+  /** Degrees of the frame the shutter is open, 1..360. */
+  readonly angle: number;
+  /** Renders averaged per frame, 2..64. */
+  readonly samples: number;
+}
+
 export interface MotionSidecar {
   readonly motion: 1;
   readonly durationFrames: number;
   readonly fps: number;
   readonly supersample: 1 | 2 | 4; // defaulted to 1 when absent
+  /**
+   * Absent means no shutter, and the parser fills in NOTHING when the key is
+   * absent: identity hashes every key the parser returns, so a materialised
+   * default would move the identity of every composition in the tree without
+   * moving a pixel.
+   */
+  readonly shutter?: SidecarShutter;
   readonly footage: readonly FootageTrack[]; // defaulted to [] when absent
   /** Absent means the build's default face (upstream's Inter Display). */
   readonly fonts?: SidecarFonts;
@@ -223,11 +246,26 @@ export const GRID_PRODUCT_MAX = 4096;
 
 export const SUPERSAMPLE_VALUES = [1, 2, 4] as const;
 
+/** `shutter.angle`, in whole degrees. */
+export const SHUTTER_ANGLE_MIN = 1;
+export const SHUTTER_ANGLE_MAX = 360;
+/**
+ * `shutter.samples`. One sample is the unblurred frame under another
+ * identity, so the floor is 2. The core's sums are exact to 256; 64 caps a
+ * frame at 64 rasters, which is about 3 s on the heaviest scene measured
+ * (`baselines/shutter.md`).
+ */
+export const SHUTTER_SAMPLES_MIN = 2;
+export const SHUTTER_SAMPLES_MAX = 64;
+
+export const SHUTTER_KEYS = new Set(["angle", "samples"]);
+
 export const ROOT_KEYS = new Set([
   "motion",
   "durationFrames",
   "fps",
   "supersample",
+  "shutter",
   "footage",
   "fonts",
   "sound",
@@ -668,6 +706,9 @@ export function parseSidecar(input: unknown): ParseResult {
     }
   }
 
+  // --- shutter (optional; absent = none, and nothing is filled in) ---
+  const shutter = "shutter" in input ? parseShutter(input.shutter, diagnostics) : undefined;
+
   // --- fonts (optional; absent = the build's default face) ---
   let fonts: SidecarFonts | undefined;
   if ("fonts" in input) {
@@ -787,6 +828,7 @@ export function parseSidecar(input: unknown): ParseResult {
       durationFrames: durationFrames!,
       fps: fps!,
       supersample,
+      ...(shutter ? { shutter } : {}),
       footage,
       ...(fonts ? { fonts } : {}),
       sound,
@@ -794,6 +836,75 @@ export function parseSidecar(input: unknown): ParseResult {
       assertions,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// shutter
+// ---------------------------------------------------------------------------
+
+/**
+ * `{ "angle": 180, "samples": 8 }`. Both keys required, both integers.
+ *
+ * `samples: 1` is refused on its own code rather than as out of range: it
+ * would render exactly the unblurred frame under a different identity, so the
+ * fix is to remove the key, and the message says that.
+ */
+function parseShutter(raw: unknown, diagnostics: Diagnostic[]): SidecarShutter | undefined {
+  if (!isPlainObject(raw)) {
+    diagnostics.push(
+      diag(
+        "sidecar.shutter.notObject",
+        "/shutter",
+        `\`shutter\` must be an object with \`angle\` and \`samples\`; got ${describeType(raw)}`,
+      ),
+    );
+    return undefined;
+  }
+  let ok = true;
+  for (const key of Object.keys(raw)) {
+    if (!SHUTTER_KEYS.has(key)) {
+      ok = false;
+      diagnostics.push(
+        diag(
+          "sidecar.shutter.unknownKey",
+          `/shutter/${key}`,
+          `unknown key ${JSON.stringify(key)}; allowed keys are ${[...SHUTTER_KEYS].join(", ")}`,
+        ),
+      );
+    }
+  }
+  const angle = raw.angle;
+  if (!isInteger(angle) || angle < SHUTTER_ANGLE_MIN || angle > SHUTTER_ANGLE_MAX) {
+    ok = false;
+    diagnostics.push(
+      diag(
+        "sidecar.shutter.angle",
+        "/shutter/angle",
+        `\`shutter.angle\` must be an integer number of degrees in ${SHUTTER_ANGLE_MIN}..${SHUTTER_ANGLE_MAX}; got ${"angle" in raw ? JSON.stringify(angle) : "nothing"}`,
+      ),
+    );
+  }
+  const samples = raw.samples;
+  if (samples === 1) {
+    ok = false;
+    diagnostics.push(
+      diag(
+        "sidecar.shutter.oneSample",
+        "/shutter/samples",
+        "`shutter.samples` of 1 renders the unblurred frame under a different identity; remove the `shutter` key instead",
+      ),
+    );
+  } else if (!isInteger(samples) || samples < SHUTTER_SAMPLES_MIN || samples > SHUTTER_SAMPLES_MAX) {
+    ok = false;
+    diagnostics.push(
+      diag(
+        "sidecar.shutter.samples",
+        "/shutter/samples",
+        `\`shutter.samples\` must be an integer in ${SHUTTER_SAMPLES_MIN}..${SHUTTER_SAMPLES_MAX}; got ${"samples" in raw ? JSON.stringify(samples) : "nothing"}`,
+      ),
+    );
+  }
+  return ok ? { angle: angle as number, samples: samples as number } : undefined;
 }
 
 // ---------------------------------------------------------------------------

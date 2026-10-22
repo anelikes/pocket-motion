@@ -13,7 +13,8 @@ import {
   isOutputFormat,
   type OutputFormat,
 } from "../../render/encode.ts";
-import { pocketjsRoot } from "../../runtime/boot.ts";
+import type { SidecarShutter } from "../../manifest/sidecar.ts";
+import { describeShutter, pocketjsRoot } from "../../runtime/boot.ts";
 import { framesToMs, mixGraph, soundDeclared } from "../../sound/mix.ts";
 import { muxSound } from "../../sound/mux.ts";
 import { probeSoundDurations, resolveSound } from "../../sound/resolve.ts";
@@ -215,6 +216,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       hz: c.fps,
       durationFrames: c.durationFrames,
       renderScale: c.supersample,
+      shutter: c.shutter,
       buildCommand: c.buildCommand,
       scaleTo: encodeScaleTo(c),
       hashAlgorithm: options.flags.hash,
@@ -241,6 +243,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       digest: string;
       elapsedMs: number;
       msPerFrame: number;
+      shutter?: SidecarShutter;
       soundSkipped?: string;
       sound?: {
         sha256: string;
@@ -258,12 +261,16 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       digest: result.digest,
       elapsedMs: result.elapsedMs,
       msPerFrame: result.msPerFrame,
+      ...(c.shutter ? { shutter: c.shutter } : {}),
     };
 
     const stdoutLines = [
       `render ok — ${result.frames} frames → ${payload.outputPath} (${format})`,
       `digest ${result.digest}`,
       `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
+      ...(c.shutter
+        ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure of ${c.shutter.samples} renders`]
+        : []),
     ];
     if (result.alphaFloor !== undefined) {
       // Reported every time: the number is the evidence. The rasteriser

@@ -7,6 +7,7 @@
  *   2 — the invocation itself was wrong (bad flags, missing file)
  */
 
+import type { SidecarShutter } from "../manifest/sidecar.ts";
 import type { HashAlgorithm } from "../render/hash.ts";
 import type { InputIdentity } from "../render/identity.ts";
 
@@ -62,6 +63,9 @@ export interface TraceJson {
   readonly frames: readonly string[];
   readonly digest: string;
   readonly identity?: InputIdentity;
+  /** Present exactly when the sidecar declares one: the digest is then of
+   *  the exposures, and says which. */
+  readonly shutter?: SidecarShutter;
 }
 
 export function isTraceJson(value: unknown): value is TraceJson {

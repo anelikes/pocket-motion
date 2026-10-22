@@ -259,6 +259,7 @@ async function probe(
       width: VIEW.w,
       height: VIEW.h,
       hz: FPS,
+      shutter: null,
     });
 
     world.frame(0);

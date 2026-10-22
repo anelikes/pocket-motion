@@ -14,6 +14,10 @@ import {
   FOOTAGE_FIT_VALUES,
   GRID_PRODUCT_MAX,
   ID_RE,
+  SHUTTER_ANGLE_MAX,
+  SHUTTER_ANGLE_MIN,
+  SHUTTER_SAMPLES_MAX,
+  SHUTTER_SAMPLES_MIN,
   SUPERSAMPLE_VALUES,
   TEX_MAX_DIM,
   VALID_FPS,
@@ -161,6 +165,7 @@ export interface CapabilityRow {
     | "footage"
     | "fonts"
     | "sound"
+    | "shutter"
     | "assets"
     | "animation"
     | "paint"
@@ -395,6 +400,24 @@ export const SURFACE: readonly CapabilityRow[] = [
     verification: "probed",
     diagnostics: ["sidecar.supersample.invalid"],
     probes: [{ code: "sidecar.supersample.invalid", input: { ...MIN, supersample: 3 } }],
+    pinned: [],
+  },
+  {
+    id: "sidecar.shutter",
+    group: "sidecar",
+    declaredIn: "pocket-motion.json",
+    key: "shutter",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "object with `angle` and `samples`; every frame is then an EXPOSURE — the integer average of `samples` renders across `angle`/360 of the frame, centred on its tick (patches/0031). Absent means no shutter, and the parser fills in nothing, so identity moves only for a composition that declares one. Part of input identity; there is no CLI flag",
+    source: "src/manifest/sidecar.ts:852",
+    verification: "probed",
+    diagnostics: ["sidecar.shutter.notObject", "sidecar.shutter.unknownKey"],
+    probes: [
+      { code: "sidecar.shutter.notObject", input: { ...MIN, shutter: 180 } },
+      { code: "sidecar.shutter.unknownKey", input: { ...MIN, shutter: { angle: 180, samples: 8, jitter: 1 } } },
+    ],
     pinned: [],
   },
   {
@@ -1250,6 +1273,47 @@ export const SURFACE: readonly CapabilityRow[] = [
   // -------------------------------------------------------------------------
   // Assets (discovered, not declared)
   // -------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // Shutter
+  // -------------------------------------------------------------------------
+  {
+    id: "shutter.angle",
+    group: "shutter",
+    declaredIn: "pocket-motion.json",
+    key: "angle",
+    required: true,
+    defaultValue: null,
+    constraint: `integer degrees ${SHUTTER_ANGLE_MIN}..${SHUTTER_ANGLE_MAX}: the shutter is open for angle/360 of a frame, which the host passes to the core as the exact fraction angle·(60/fps)/360 ticks, so no sample time is a float. Only translate, scale, rotate and skew timelines are evaluated between ticks; opacity, colour and layout keep the frame's own tick in every sample, and no sample crosses a keyframe jump`,
+    source: "src/manifest/sidecar.ts:876",
+    verification: "probed",
+    diagnostics: ["sidecar.shutter.angle"],
+    probes: [
+      { code: "sidecar.shutter.angle", input: { ...MIN, shutter: { angle: 0, samples: 8 } } },
+      { code: "sidecar.shutter.angle", input: { ...MIN, shutter: { angle: 361, samples: 8 } } },
+      { code: "sidecar.shutter.angle", input: { ...MIN, shutter: { angle: 172.8, samples: 8 } } },
+      { code: "sidecar.shutter.angle", input: { ...MIN, shutter: { samples: 8 } } },
+    ],
+    pinned: [],
+  },
+  {
+    id: "shutter.samples",
+    group: "shutter",
+    declaredIn: "pocket-motion.json",
+    key: "samples",
+    required: true,
+    defaultValue: null,
+    constraint: `integer ${SHUTTER_SAMPLES_MIN}..${SHUTTER_SAMPLES_MAX}: renders averaged per frame, so a frame costs that many rasters. 1 is refused on its own code — it is the unblurred frame under another identity, and the fix is to remove the key`,
+    source: "src/manifest/sidecar.ts:887",
+    verification: "probed",
+    diagnostics: ["sidecar.shutter.samples", "sidecar.shutter.oneSample"],
+    probes: [
+      { code: "sidecar.shutter.samples", input: { ...MIN, shutter: { angle: 180, samples: 65 } } },
+      { code: "sidecar.shutter.samples", input: { ...MIN, shutter: { angle: 180, samples: 0 } } },
+      { code: "sidecar.shutter.samples", input: { ...MIN, shutter: { angle: 180 } } },
+      { code: "sidecar.shutter.oneSample", input: { ...MIN, shutter: { angle: 180, samples: 1 } } },
+    ],
+    pinned: [],
+  },
   {
     id: "assets.image",
     group: "assets",
@@ -1577,6 +1641,35 @@ export const SURFACE: readonly CapabilityRow[] = [
       {
         what: "a misspelling drops the literal like any unknown utility",
         literals: ["overflow-masked w-[200px] h-[200px]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+  {
+    id: "shutter.hold",
+    group: "animation",
+    declaredIn: "class literal",
+    key: "shutter-hold",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "under a declared shutter, keeps THIS node's own baked timelines at the frame's tick in every sample, so a fast caption stays readable. Not inherited: a node drawn under a moving ancestor blurs with it whatever it holds, and `lint` warns when the source text shows one (`shutter.holdUnderAnimatedAncestor`) or a hold on a literal that starts no animation (`shutter.holdsNothing`). Prop 198 in the style table (patches/0031)",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "shutter-hold compiles to shutterHold = 1 in the style table",
+        literals: ["absolute left-[10px] shutter-hold"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "shutterHold", value: 1 } },
+      },
+      {
+        what: "a misspelling drops the literal like any unknown utility",
+        literals: ["absolute left-[10px] shutter-held"],
         fromClassAttribute: true,
         outcome: { dropsLiteral: true },
       },

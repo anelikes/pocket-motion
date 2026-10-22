@@ -140,7 +140,7 @@ import {
   type CommandResult,
   type GlobalFlags,
 } from "../types.ts";
-import { flattenTree } from "./layout.ts";
+import { flattenTree, shutterLines } from "./layout.ts";
 
 /** One node of the DevTools tree (`framework/src/devtools.ts` serializeNode). */
 interface TreeNode {
@@ -287,6 +287,7 @@ export async function run(options: VisibilityOptions): Promise<CommandResult> {
       height: c.height,
       hz: c.fps,
       renderScale: c.supersample,
+      shutter: c.shutter,
       buildCommand: c.buildCommand,
     });
 
@@ -426,6 +427,7 @@ export async function run(options: VisibilityOptions): Promise<CommandResult> {
       "Only a NAMED node is a failure — never shown, or shown and then buried;",
       "the rest of both columns is reported. `bun scripts/visibility.ts` is what",
       "holds these counts across the tree — this run measured only this one.",
+      ...shutterLines(c.shutter),
     ];
 
     return {
@@ -444,6 +446,7 @@ export async function run(options: VisibilityOptions): Promise<CommandResult> {
         everCovered: everCovered.length,
         neverPaints: neverPaints.length,
         impossible: impossible.map(label),
+        ...(c.shutter ? { shutter: c.shutter } : {}),
       },
       stdoutLines,
       stderrLines: [
