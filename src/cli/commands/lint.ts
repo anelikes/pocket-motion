@@ -6,6 +6,7 @@
 import { basename, resolve } from "node:path";
 import { lintImages } from "../../lint/images.ts";
 import { lintSource, type LintFinding } from "../../lint/mount-only.ts";
+import { lintShutterHolds, type ShutterWarning } from "../../lint/shutter.ts";
 import { lintTileNames, type TileWarning } from "../../lint/tiles.ts";
 import type { Diagnostic } from "../../manifest/sidecar.ts";
 import { resolveSound } from "../../sound/resolve.ts";
@@ -68,10 +69,14 @@ export async function run(options: LintOptions): Promise<CommandResult> {
   // what the composition does, and the module states in its own header what
   // it cannot see. `openFootage` is what refuses a track whose tiles are
   // actually absent or the wrong size.
-  const warnings: TileWarning[] = lintTileNames(
+  const warnings: (TileWarning | ShutterWarning)[] = lintTileNames(
     texts,
     resolved.ok ? resolved.value.sidecar.footage.map((t) => t.nodePrefix) : [],
   );
+  // A `shutter-hold` the source text shows cannot do anything: not inherited,
+  // and it holds only the node's own timelines. Warnings for the same reason
+  // the tile names are — `src/lint/shutter.ts` says what it cannot see.
+  warnings.push(...(await lintShutterHolds(texts, resolved.ok && resolved.value.shutter !== null)));
   // A referenced still picture with no file behind it. Upstream bakes a
   // placeholder and succeeds, so this is the only place the loss is refused
   // rather than logged. It reads the build's module graph, not `sources`

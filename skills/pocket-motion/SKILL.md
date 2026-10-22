@@ -90,6 +90,15 @@ clipped to text (`via-*`, `bg-linear-*`, `bg-radial`, `bg-clip-text`). All
 paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
 `0016`–`0019`).
 
+**Motion blur is the sidecar's `shutter`** (`{ "angle": 180, "samples": 8 }`):
+each frame is the integer average of that many renders across the open
+fraction of the frame, centred on its tick (`patches/0034`). Only translate,
+scale, rotate and skew move between samples — opacity and colour keep the
+frame's tick, and no sample crosses a keyframe jump, so gates and cuts stay
+sharp. `shutter-hold` keeps one node's own timelines at the tick; it is not
+inherited, so hold the moving group, not the caption inside it. It is part of
+identity and costs `samples` rasters a frame.
+
 **What does not exist**: backdrop blur, conic gradients, footage effects at
 render time (grading and filtering belong to the ingest).
 
@@ -116,6 +125,7 @@ catalogue of every key and every diagnostic.
   "durationFrames": 240,
   "fps": 30,                  // must divide 60
   "supersample": 1,           // 1 | 2 | 4
+  "shutter": { "angle": 180, "samples": 8 },  // optional; absent = no blur
   "fonts": { "regular": "assets/fonts/NotoSansSC-Regular.otf",
              "bold":    "assets/fonts/NotoSansSC-Bold.otf" },
   "footage": [ /* host-owned tile grids */ ],

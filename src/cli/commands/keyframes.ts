@@ -145,6 +145,7 @@ export async function run(options: KeyframesOptions): Promise<CommandResult> {
   const endsPast = report.timelines.filter((t) => t.endsPastWindow);
   const phaseDrift = report.timelines.filter((t) => t.periodOffGrid || t.loopOffGrid);
   const partialCuts = report.timelines.filter((t) => t.partialCuts.length > 0);
+  const jumps = report.timelines.filter((t) => t.shutterJumps.length > 0);
   const ok = neverStarts.length === 0;
 
   const json = {
@@ -163,7 +164,9 @@ export async function run(options: KeyframesOptions): Promise<CommandResult> {
       phaseDrift: phaseDrift.length,
       partialCuts: partialCuts.length,
       contended: report.contended.length,
+      shutterJumps: jumps.length,
     },
+    ...(c.shutter ? { shutter: c.shutter } : {}),
     timelines: report.timelines,
     contended: report.contended,
   };
@@ -174,6 +177,7 @@ export async function run(options: KeyframesOptions): Promise<CommandResult> {
     endsPast,
     phaseDrift,
     partialCuts,
+    jumps: c.shutter ? jumps : null,
     all: options.all,
   });
 
@@ -196,6 +200,9 @@ interface Buckets {
   readonly endsPast: readonly TimelineUse[];
   readonly phaseDrift: readonly TimelineUse[];
   readonly partialCuts: readonly TimelineUse[];
+  /** Timelines with a transform jump, or null when no shutter is declared and
+   *  where a blur stops is not a question. */
+  readonly jumps: readonly TimelineUse[] | null;
   readonly all: boolean;
 }
 
@@ -254,6 +261,23 @@ function summarise(report: TimelineReport, b: Buckets): string[] {
     }
     if (!b.all && report.contended.length > EXAMPLES) {
       lines.push(`    … ${report.contended.length - EXAMPLES} more; --all lists every one`);
+    }
+  }
+  if (b.jumps !== null) {
+    const count = b.jumps.reduce((n, t) => n + t.shutterJumps.length, 0);
+    lines.push(
+      `  ${count} transform jump(s) in ${b.jumps.length} timeline(s): the declared shutter ` +
+        "does not blur across a one-tick step or a cut, so motion there reads as a cut",
+    );
+    for (const t of b.jumps.slice(0, b.all ? b.jumps.length : EXAMPLES)) {
+      const shown = t.shutterJumps.slice(0, 4).map((j) => `${j.prop} ${j.kind}@${j.tick}`);
+      lines.push(
+        `    timeline ${t.animId} (style ${t.styleIndex}): ${shown.join(", ")}` +
+          (t.shutterJumps.length > 4 ? ` (+${t.shutterJumps.length - 4})` : ""),
+      );
+    }
+    if (!b.all && b.jumps.length > EXAMPLES) {
+      lines.push(`    … ${b.jumps.length - EXAMPLES} more; --all lists every one`);
     }
   }
   if (b.endsPast.length > 0) {

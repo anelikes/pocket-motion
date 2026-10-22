@@ -176,11 +176,17 @@ export class WasmFrameSource implements FrameSource {
       for (let t = 0; t < this.#world.ticksPerFrame; t++) this.#world.tick();
       this.#position++;
       if (this.#ladder?.isBoundary(this.#position)) {
-        this.#ladder.put(captureSnapshot(this.#world.exports, this.#position));
+        this.#ladder.put(captureSnapshot(this.#world.exports, this.#position, this.#world.exposureScratch()));
       }
     }
   }
 
+  /**
+   * The frame's pixels — under a declared shutter, its exposure. Every
+   * command that delivers or hashes a frame reads it here, so `frame --at N`,
+   * `/frame`, `trace` and `render` cannot disagree about which picture a
+   * frame is.
+   */
   read(): Uint8Array {
     if (this.#position < 0) {
       throw new Error("PocketJS Motion: read() before the first seekFrame()");
@@ -197,7 +203,7 @@ export class WasmFrameSource implements FrameSource {
     if (this.#disposed) throw new Error("PocketJS Motion: FrameSource is disposed");
     if (!this.#ladder || this.#position < 0) return;
     if (!this.#ladder.isBoundary(this.#position)) return;
-    this.#ladder.put(captureSnapshot(this.#world.exports, this.#position));
+    this.#ladder.put(captureSnapshot(this.#world.exports, this.#position, this.#world.exposureScratch()));
   }
 
   async dispose(): Promise<void> {

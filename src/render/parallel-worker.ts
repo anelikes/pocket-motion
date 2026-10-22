@@ -8,6 +8,7 @@
  * against ~5 ms of rasterisation (see parallel.ts).
  */
 
+import type { SidecarShutter } from "../manifest/sidecar.ts";
 import { WasmFrameSource } from "../runtime/frame-source.ts";
 import { hashFrame, type FrameHash, type HashAlgorithm } from "./hash.ts";
 import { createEncodeSink } from "./encode.ts";
@@ -25,6 +26,8 @@ interface Job {
   durationFrames: number;
   renderScale?: number;
   rasterDensity?: number;
+  /** Each worker renders exposures for its own range; nothing is shared. */
+  shutter: SidecarShutter | null;
   crf?: number;
   preset?: string;
   encoder?: string;

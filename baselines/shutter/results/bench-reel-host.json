@@ -1,0 +1,46 @@
+{
+  "label": "reel-host",
+  "platform": "darwin/arm64",
+  "size": [
+    1920,
+    1080
+  ],
+  "from": 400,
+  "frames": 8,
+  "reps": 3,
+  "angle": 180,
+  "rows": [
+    {
+      "n": 1,
+      "exposureMedianMs": 1.06,
+      "exposureMinMs": 0.92,
+      "rasterMedianMs": 1.54,
+      "averagingMedianMs": -0.48,
+      "hostExposureMedianMs": 1.34
+    },
+    {
+      "n": 4,
+      "exposureMedianMs": 15.6,
+      "exposureMinMs": 12.36,
+      "rasterMedianMs": 7.25,
+      "averagingMedianMs": 8.35,
+      "hostExposureMedianMs": 48.98
+    },
+    {
+      "n": 8,
+      "exposureMedianMs": 31.43,
+      "exposureMinMs": 28.14,
+      "rasterMedianMs": 15.72,
+      "averagingMedianMs": 15.72,
+      "hostExposureMedianMs": 82.06
+    },
+    {
+      "n": 16,
+      "exposureMedianMs": 65.95,
+      "exposureMinMs": 42.19,
+      "rasterMedianMs": 29.79,
+      "averagingMedianMs": 36.16,
+      "hostExposureMedianMs": 188.47
+    }
+  ]
+}

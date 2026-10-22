@@ -130,6 +130,7 @@ describe("a bundle actually built at another rate", () => {
         width: 640,
         height: 360,
         hz: 30,
+        shutter: null,
         renderScale: 1,
         buildCommand: BUILD,
       });

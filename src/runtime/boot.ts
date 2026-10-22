@@ -15,6 +15,7 @@
  */
 
 import { createSandbox, type AuditReport, type Sandbox } from "../harness/sandbox.ts";
+import type { SidecarShutter } from "../manifest/sidecar.ts";
 import { parseAtlases } from "../text/atlas.ts";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +54,14 @@ export interface BootOptions {
    *  which is a blank frame with a clean realm and a stable digest. Only
    *  `src/text/measure.ts` passes it. */
   readonly allowMetricsOnly?: boolean;
+  /**
+   * The composition's declared shutter, or null for none. REQUIRED, with no
+   * default: a caller that renders frames and forgot to pass it would deliver
+   * the unblurred picture of a composition that declares one, with nothing
+   * reporting it — so every boot site says which it is. Callers that never
+   * produce a frame (the measurer, a tree read) pass null and say why.
+   */
+  readonly shutter: SidecarShutter | null;
   /** Wrap the ops object before it is handed to the guest (the mount-only oracle). */
   readonly wrapOps?: (ops: Record<string, unknown>) => Record<string, unknown>;
   /** The command that rebuilds this bundle, quoted back when the bundle's baked
@@ -66,8 +75,28 @@ export interface BootedWorld {
   readonly frame: (buttons: number) => void;
   /** One core tick: animations advance, layout if dirty. */
   readonly tick: () => void;
-  /** Rasterise the current core state. Returns RGBA at physical size. */
+  /**
+   * Rasterise the current core state. Returns RGBA at physical size.
+   *
+   * Under a declared shutter this is the EXPOSURE (`ui_render_exposure`): the
+   * frame every command that produces or hashes pixels delivers. The view is
+   * into wasm memory and the next render overwrites it.
+   */
   readonly render: () => Uint8Array;
+  /**
+   * The frame's own tick, unblurred, whatever the shutter. What `layout`'s
+   * rects and ink boxes read: geometry at the centre of the exposure. Equal to
+   * `render` when no shutter is declared.
+   */
+  readonly renderTick: () => Uint8Array;
+  /** The declared shutter as the core takes it, or null. */
+  readonly exposure: Exposure | null;
+  /**
+   * The exposure scratch's byte range in linear memory — `{ ptr: 0, len: 0 }`
+   * with no shutter. A snapshot skips it: every exposure writes all of it
+   * before reading any of it (`src/runtime/checkpoint.ts`).
+   */
+  readonly exposureScratch: () => { readonly ptr: number; readonly len: number };
   readonly ticksPerFrame: number;
   readonly physicalWidth: number;
   readonly physicalHeight: number;
@@ -202,6 +231,44 @@ const VALID_HZ = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60] as const;
 export const TICKS_PER_SECOND = 60;
 
 /**
+ * A declared shutter as the core takes it.
+ *
+ * The shutter is open for `angle/360` of a frame, which is
+ * `angle/360 · 60/hz` ticks. That is passed as an exact fraction,
+ * `angle · (60/hz)` over 360 — `60/hz` is a whole number for every rate the
+ * realm accepts — and the core forms each sample's offset from it in i64, so
+ * no sample time is a float two hosts could round differently.
+ */
+export interface Exposure {
+  readonly angle: number;
+  readonly samples: number;
+  /** Ticks the shutter is open: `spanNum / spanDen`. */
+  readonly spanNum: number;
+  readonly spanDen: number;
+}
+
+export function exposureOf(shutter: SidecarShutter, hz: number): Exposure {
+  const ticksPerFrame = TICKS_PER_SECOND / hz;
+  if (!Number.isInteger(ticksPerFrame)) {
+    throw new Error(`PocketJS Motion: hz must divide ${TICKS_PER_SECOND}; got ${hz}`);
+  }
+  return {
+    angle: shutter.angle,
+    samples: shutter.samples,
+    spanNum: shutter.angle * ticksPerFrame,
+    spanDen: 360,
+  };
+}
+
+/** `180° × 8` — how every command prints a shutter beside what it read. */
+export function describeShutter(shutter: SidecarShutter | null | undefined): string {
+  return shutter ? `${shutter.angle}° × ${shutter.samples} samples` : "none";
+}
+
+/** The exports a declared shutter needs, all from `patches/0034-shutter.patch`. */
+const EXPOSURE_EXPORTS = ["ui_render_exposure", "ui_draw_hash_exposure", "ui_exposure_reserve"] as const;
+
+/**
  * Refuse a bundle whose baked tick rate is not the one this realm drives.
  *
  * `tools/build.ts --hz=N` compiles N into the bundle as a constant, and every
@@ -270,6 +337,29 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
   const wasmBytes = await Bun.file(wasmPath).arrayBuffer();
   const wasm = await createWasmUi(wasmBytes, { width, height, rasterDensity });
 
+  // A declared shutter on a core that cannot expose is refused here, not at
+  // the first frame: `renderExposure` would throw then too, but a command that
+  // only asks for the tick (a rect) would otherwise answer about a film this
+  // core cannot render.
+  const exposure = options.shutter ? exposureOf(options.shutter, hz) : null;
+  if (exposure) {
+    const missing = EXPOSURE_EXPORTS.filter(
+      (name) => typeof (wasm.exports as unknown as Record<string, unknown>)[name] !== "function",
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `PocketJS Motion: this composition declares a shutter (${describeShutter(options.shutter)}) ` +
+          `and ${wasmPath} has no ${missing.join(", ")} (patches/0034-shutter.patch). ` +
+          "Rebuild the core:\n  bun scripts/vendor.ts",
+      );
+    }
+    // Sized before anything is snapshotted, so the scratch is in every
+    // snapshot's heap and a restore never allocates it again past the
+    // restored watermark; and before the boot reading preview's rebuild
+    // threshold multiplies.
+    wasm.reserveExposure(renderScale);
+  }
+
   const rawOps = wasm.ops as unknown as Record<string, unknown>;
   const ops = options.wrapOps ? options.wrapOps(rawOps) : rawOps;
 
@@ -322,7 +412,12 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
   return {
     frame: guestFrame,
     tick: wasm.tick,
-    render: () => wasm.renderScaled(renderScale),
+    render: exposure
+      ? () => wasm.renderExposure(renderScale, exposure.spanNum, exposure.spanDen, exposure.samples)
+      : () => wasm.renderScaled(renderScale),
+    renderTick: () => wasm.renderScaled(renderScale),
+    exposure,
+    exposureScratch: () => (exposure ? wasm.exposureScratch() : { ptr: 0, len: 0 }),
     ticksPerFrame: TICKS_PER_SECOND / hz,
     physicalWidth: width * renderScale,
     physicalHeight: height * renderScale,
@@ -355,6 +450,9 @@ interface WasmUi {
   readonly ops: unknown;
   readonly tick: () => void;
   readonly renderScaled: (scale: number) => Uint8Array;
+  readonly renderExposure: (scale: number, spanNum: number, spanDen: number, samples: number) => Uint8Array;
+  readonly reserveExposure: (scale: number) => void;
+  readonly exposureScratch: () => { readonly ptr: number; readonly len: number };
   readonly exports: { readonly memory: WebAssembly.Memory };
 }
 

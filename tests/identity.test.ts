@@ -296,6 +296,40 @@ const UNSIMULABLE: Record<string, string> = {
     "identity hashes only the paths it is given; a system face the build never opened cannot be introduced here",
 };
 
+describe("shutter — an input, and only where it is declared", () => {
+  // A shutter moves pixels (patches/0034), so unlike `sound` it is NOT dropped
+  // by the projection; and unlike `supersample` the parser fills in no
+  // default, so a composition that declares none hashes as it did before the
+  // key existed.
+  const base = { motion: 1, durationFrames: 30, fps: 30 };
+  const parsed = (input: object) => {
+    const r = parseSidecar(input);
+    if (!r.ok) throw new Error(JSON.stringify(r.diagnostics));
+    return r.value;
+  };
+
+  test("two sidecars that differ only in the shutter have two identities", async () => {
+    const eight = parsed({ ...base, shutter: { angle: 180, samples: 8 } });
+    const four = parsed({ ...base, shutter: { angle: 180, samples: 4 } });
+    const wide = parsed({ ...base, shutter: { angle: 360, samples: 8 } });
+    const none = parsed(base);
+    const ids = await Promise.all(
+      [eight, four, wide, none].map((s) => computeIdentity(inputs({ sidecarCanonical: sidecarCanonicalOf(s) }))),
+    );
+    expect(new Set(ids.map((i) => i.components.sidecar)).size).toBe(4);
+    expect(new Set(ids.map((i) => i.digest)).size).toBe(4);
+  });
+
+  test("a sidecar without the key carries no shutter, so its identity did not move", () => {
+    const none = parsed(base);
+    expect("shutter" in none).toBe(false);
+    expect(sidecarCanonicalOf(none)).not.toContain("shutter");
+    expect(sidecarCanonicalOf(none)).toBe(
+      canonicalise(identityProjection({ ...none })),
+    );
+  });
+});
+
 describe("build.json — the two omissions it makes on purpose", () => {
   test("the argv is recorded repo-relative, so the checkout's location is not an input", async () => {
     const ROOT = resolve(import.meta.dir, "..");

@@ -1,0 +1,42 @@
+{
+  "label": "heavy",
+  "platform": "darwin/arm64",
+  "size": [
+    1920,
+    1080
+  ],
+  "from": 10,
+  "frames": 12,
+  "reps": 3,
+  "angle": 180,
+  "rows": [
+    {
+      "n": 1,
+      "exposureMedianMs": 54.81,
+      "exposureMinMs": 41.87,
+      "rasterMedianMs": 56.25,
+      "averagingMedianMs": -1.44
+    },
+    {
+      "n": 4,
+      "exposureMedianMs": 238,
+      "exposureMinMs": 195.17,
+      "rasterMedianMs": 236.36,
+      "averagingMedianMs": 1.64
+    },
+    {
+      "n": 8,
+      "exposureMedianMs": 457.43,
+      "exposureMinMs": 379.99,
+      "rasterMedianMs": 489.51,
+      "averagingMedianMs": -32.08
+    },
+    {
+      "n": 16,
+      "exposureMedianMs": 970.77,
+      "exposureMinMs": 725.94,
+      "rasterMedianMs": 941.44,
+      "averagingMedianMs": 29.33
+    }
+  ]
+}

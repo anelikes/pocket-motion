@@ -85,6 +85,7 @@ async function shoot(rawPath: string, linear: boolean, upTo: number): Promise<Sh
     bundlePath: join(DIST, "main.js"),
     pakPath: existsSync(join(DIST, "main.pak")) ? join(DIST, "main.pak") : undefined,
     width: VIEW.w, height: VIEW.h, hz: FPS,
+    shutter: null,
   });
   world.frame(0);
   for (let t = 0; t < world.ticksPerFrame; t++) world.tick();

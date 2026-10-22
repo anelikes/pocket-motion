@@ -103,6 +103,8 @@ export async function scratchTree(c: ResolvedComposition): Promise<unknown> {
     height: c.height,
     hz: c.fps,
     renderScale: c.supersample,
+    // The tree only; this world renders nothing.
+    shutter: null,
     buildCommand: c.buildCommand,
   });
   return world.getTree();

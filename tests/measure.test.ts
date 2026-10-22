@@ -141,10 +141,11 @@ describe("the metrics cache", () => {
     const entries = (await import("node:fs")).readdirSync(cacheDir).filter((e) => !e.includes(".tmp-"));
     const dist = join(cacheDir, entries[0]!, "dist");
     await expect(
-      hardenedBootWorld({ bundlePath: join(dist, "main.js"), pakPath: join(dist, "main.pak"), width: 64, height: 64, hz: 30 }),
+      hardenedBootWorld({ bundlePath: join(dist, "main.js"), pakPath: join(dist, "main.pak"), width: 64, height: 64, shutter: null, hz: 30 }),
     ).rejects.toThrow(/metrics-only/);
     const ok = await hardenedBootWorld({
       bundlePath: join(dist, "main.js"), pakPath: join(dist, "main.pak"), width: 64, height: 64, hz: 30,
+      shutter: null,
       allowMetricsOnly: true,
     });
     expect(typeof ok.frame).toBe("function");

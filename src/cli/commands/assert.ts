@@ -44,7 +44,7 @@ import {
   type CommandResult,
   type GlobalFlags,
 } from "../types.ts";
-import { inspectLayout } from "./layout.ts";
+import { inspectLayout, shutterLines } from "./layout.ts";
 import { DEFAULT_SAMPLES, parseSamples, sampleFrames } from "./visibility.ts";
 
 export interface AssertOptions {
@@ -114,6 +114,7 @@ export async function run(options: AssertOptions): Promise<CommandResult> {
         durationFrames: c.durationFrames,
         assertions: verdicts,
         failures: failures.map((v) => `${v.node} ${v.predicate}`),
+        ...(c.shutter ? { shutter: c.shutter } : {}),
       },
       stdoutLines: [
         `assert over ${frames.length} of ${c.durationFrames} frame(s) — ` +
@@ -125,6 +126,7 @@ export async function run(options: AssertOptions): Promise<CommandResult> {
           frames.length === 1 ? frames[0] : `${frames[0]}…${frames[frames.length - 1]}`
         } (--samples ${requested}). Every verdict is about those frames and`,
         "nothing between them; --samples <durationFrames> is the exact case.",
+        ...shutterLines(c.shutter),
       ],
       stderrLines: failures.map(
         (v) => `assert: ${v.node} ${v.predicate} ${JSON.stringify(v.expected)} — ${v.detail}`,
@@ -163,6 +165,7 @@ export async function sweepNamedNodes(
       height: c.height,
       hz: c.fps,
       renderScale: c.supersample,
+      shutter: c.shutter,
       buildCommand: c.buildCommand,
     });
     // getTree runs one frame turn and leaves the world at frame 0 — the same

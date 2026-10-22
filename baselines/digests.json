@@ -110,6 +110,10 @@
       "frames": 150,
       "digest": "1de1098e2e4f95984bb4e4f98bbbeb34638bc6b37e3259befdbef4304add8841"
     },
+    "compositions/shutter-blur": {
+      "frames": 90,
+      "digest": "cb2a8c7ee001cb45a4929660e3a8d37dd5e3b72239470c1aa408d38df7d35fd2"
+    },
     "compositions/smoke": {
       "frames": 450,
       "digest": "17bc445ebf250da679371277cbec985bef8a68ec0c6f53157a3b24cd9afec163"

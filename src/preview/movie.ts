@@ -147,6 +147,7 @@ export class MovieJob {
         hz: c.fps,
         durationFrames: c.durationFrames,
         renderScale: c.supersample,
+        shutter: c.shutter,
         scaleTo: c.supersample > 1 ? [c.width, c.height] : undefined,
         hashAlgorithm: "fast",
         preset: "veryfast",
