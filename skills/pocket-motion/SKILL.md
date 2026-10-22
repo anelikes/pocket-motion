@@ -53,7 +53,10 @@ literal. Class strings must be static literals — the compiler reads them at
 build time. A misspelt `animate-*` written as the whole value of a `class=`
 attribute is a build error listing the names that exist; one assembled out of
 pieces (`"animate-lid-" + which()`) carries no evidence and is silently
-dropped, so write whole literals.
+dropped, so write whole literals. Any other token the compiler does not read,
+in such a literal, is a build error too, located and with the form that
+compiles where the token says it: `left-[1e-14px]` (a generator's
+`String(n)`) is `left-[0.00000000000001px]`, `rotate--18` is `rotate-342`.
 
 **A window has a shape.** `overflow-mask` clips a node's children and its own
 ground to its outline (rounded corners, rotation) where `overflow-hidden`

@@ -255,6 +255,25 @@ typo (e.g. `items-baseline` does not exist; `rounded-full` needs a
 build-time-known width/height in the same class literal — use `rounded-[Npx]`
 when the size is content-driven).
 
+A class literal compiles whole or not at all, so one token the compiler does
+not read would cost the node every utility beside it. Written as the whole
+value of a `class=` attribute, such a literal stops the build, and the error
+names every bad token at its file, line and column. Where the token alone
+says why, the message says so, and offers a rewrite only when the rewrite
+compiles:
+
+```
+error: compositions/my-film/app.tsx:5:19: class "absolute left-[1e-14px] w-[300px] rotate--18" does not compile: unknown utilities left-[1e-14px], rotate--18
+  `left-[1e-14px]`: a number in exponent notation is not read — `left-[0.00000000000001px]` compiles.
+  `rotate--18`: `rotate-N` takes N >= 0 degrees with no brackets or unit, and 342 is the same angle as -18 — `rotate-342` compiles.
+```
+
+The first is what a generator gets from `String(n)` or a template literal
+for a number below 1e-6 in magnitude; round before printing
+(`n.toFixed(3)`). The rule, its messages and the located error are
+`patches/0041-loud-unparseable-class-token.patch`, held by
+`tests/catalog.test.ts` G6 and G6b.
+
 **Motion comes from baked keyframe timelines, not from code.** Declare
 keyframes and named animations in `pocket.config.ts`:
 
