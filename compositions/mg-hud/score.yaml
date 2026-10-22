@@ -3,11 +3,11 @@
 #   0.375–1.375 s 自检日志五行，每行一声 beep（奇数十六分音符）
 #   2.0–5.5 s 底层让开（能量压低），雷达扫到 C-01/02/03 各一声，视距每拍滚动一次各一声轻 chirp
 #   4.0 s 扫描第一圈扫过 C-04：双响 + ding
-#   5.5–6.5 s 锁定读数 0→100%：锁定音每个十六分音符升一级，6.0 s 起音乐被压出一个洞
-#   6.5 s 括号落定 = 全画面翻橙：冲击 + 低频下潜 + 双音警报；6.9 s 俯冲 whoosh
-#   6.33 s 括号咬合一记 · 7.5 s 一路推进落在那艘船的雷达图像上，开尔文角画上尾迹 · 8.1 s CONFIRMED
-#   8.5 s 巡逻艇的航向矢量进来 · 9.0 s 拦截已指派 · 9.6 / 9.75 s 括号再咬两下 · 最后降下去
-#   9.0 / 9.25 / 9.5 s 底部「目标锁定」告警闪三下，各一声
+#   5.5 s 括号张开 · 5.9–6.5 s 括号转正、锁定读数 0→100%：锁定音每个十六分音符升一级，6.0 s 起音乐被压出一个洞
+#   6.5 s 括号落定 = 一道橙色波前从目标扫出、全画面翻橙：冲击 + 低频下潜 + 双音警报；6.9 s 俯冲 whoosh
+#   6.5 s 括号以速度咬上目标点，「目标锁定」在同一帧落下（白热两帧） · 7.5 s 推进落在船的雷达图像上，船体勾边、开尔文角画上尾迹、拦截矢量画进来
+#   7.57 / 9.3 s 两次告警扫频，画面边缘随之闪橙 · 8.1 s CONFIRMED，航向虚线往黄浦江延伸 · 9.0 s 拦截已下达
+#   9.5 s 括号闪白，系统按搭建的反序撤下：面板、环、镜头，只留下锁定框、船和结论，HANDOFF 打字
 title: Vega-7
 meta:
   bpm: 120
@@ -37,7 +37,8 @@ tracks:
   pulse:
     sound: synth-bass
     texture: bassline
-    in: [track, alert]
+    # in the search too, so the bed never drops out under the sweep
+    in: [search, track, alert]
     articulation: staccato
     rhythm: "1111 1111 1111 1111"
     by_section:
@@ -56,8 +57,8 @@ tracks:
       search: "r/16 r/16 r/16 A6/16' r/16 r/16 r/16 F6/16' r/16 r/16 r/16 A6/16' r/16 r/16 r/16 D7/16'"
       # the lock tone: one step up every 16th from the brackets opening (5.5 s) to the snap landing (6.5 s)
       track:  "D7/16' r/16 D7/16' r/16 r/4 r/4 D6/16' F6/16' A6/16' D7/16'"
-      # …then the tail: the intercept vector at 8.5, TASKED at 9.0, the brackets' double bite at 9.6 / 9.75
-      alert:  "E7/16' F7/16' A7/16' A7/16' r/4 r/2 | r/4 C7/16' r/16 r/8 A6/16' r/16 r/8 r/16 D7/16' D7/16' r/16"
+      # …then the tail: the intercept vector at 7.5, TASKED at 9.0, the brackets' white flash at 9.5
+      alert:  "E7/16' F7/16' A7/16' A7/16' r/4 r/4 C7/16' r/16 r/8 | r/4 r/4 A6/16' r/16 r/8 D7/16' r/16 r/8"
 
   # the distance readout rolls on every beat of the search: a short high chirp each time it settles
   chirp:
@@ -123,7 +124,6 @@ sfx:
   - { type: pop, at: "0:07.57", level: 0.35 }
   - { type: ding, at: "0:08.1", level: 0.4 }
   - { type: whoosh, at: "0:08.5", level: 0.3 }
-  # the double bite, then the suite powers down under the last frames
-  - { type: pop, at: "0:09.6", level: 0.45 }
-  - { type: pop, at: "0:09.73", level: 0.45 }
+  # the brackets flash white, then the picture collapses like a tube switched off
+  - { type: impact, at: "0:09.5", level: 0.5 }
   - { type: downlifter, at: "0:09.0", length: 2, level: 0.4 }

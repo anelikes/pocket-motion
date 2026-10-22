@@ -14,7 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { bezier, echo, El, MAX_KEYS, Reg, stateAt } from "../src/anim/sampled.ts";
+import { bezier, decodeSeq, echo, El, glyphCell, MAX_KEYS, Reg, rng, stateAt } from "../src/anim/sampled.ts";
 
 const reg = () => new Reg(600, 10_000);
 const opacityAt = (r: Reg, entry: string, t: number) => {
@@ -49,6 +49,16 @@ describe("El", () => {
     expect(s.cx).toBeCloseTo(0, 9);
     expect(s.cy).toBeCloseTo(100, 9);
     expect(s.rot).toBe(90);
+  });
+
+  test("refuses a key written behind a later one, which would leave the later key's stale state baked", () => {
+    const el = new El(reg(), { x: 0, y: 0, w: 10, h: 10 }, { op: 1 });
+    el.to(100, 110, { rot: 90 }).set(111, { rot: 0 });
+    expect(() => el.set(110, { op: 0 })).toThrow(/time order/);
+    // the same tick as the last key is an overwrite, which set() does as it hands over from a move
+    const ok = new El(reg(), { x: 0, y: 0, w: 10, h: 10 });
+    ok.to(10, 20, { cx: 50 });
+    expect(() => ok.set(21, { op: 0 })).not.toThrow();
   });
 
   test("entry refuses a track the baker cannot hold", () => {
@@ -117,3 +127,44 @@ describe("helpers", () => {
     expect(stateAt(g, 200).op).toBe(0);
   });
 });
+
+describe("glyphCell", () => {
+  /** Each glyph's opacity at tick t, read off its baked track the way the core plays it (linear between stops). */
+  const lit = (r: Reg, html: string, t: number) => {
+    const out: string[] = [];
+    for (const m of html.matchAll(/animate-(\w+)">(.)<\/View>/g)) {
+      const film = r.animation[m[1]!]!.split(" ")[0]!;
+      const stops = Object.entries(r.keyframes[film]!).map(([p, v]) => [(parseFloat(p) / 100) * r.ticks, Number(v.opacity)] as [number, number]);
+      stops.sort((a, b) => a[0] - b[0]);
+      let v = stops[0]![1];
+      for (let i = 0; i + 1 < stops.length; i++) {
+        const [a, va] = stops[i]!;
+        const [z, vz] = stops[i + 1]!;
+        if (t >= a && t <= z) v = z === a ? vz : va + ((vz - va) * (t - a)) / (z - a);
+      }
+      if (t > stops[stops.length - 1]![0]) v = stops[stops.length - 1]![1];
+      if (v > 0.5) out.push(m[2]!);
+    }
+    return out;
+  };
+
+  test("is dark before its first change and shows exactly one glyph at every tick after", () => {
+    const r = reg();
+    const seq = decodeSeq("Z", "ABC", 100, 5, rng(3));
+    const html = glyphCell(r, seq, (g) => g, 20, 30);
+    for (let t = 0; t < 100; t++) expect(lit(r, html, t)).toEqual([]);
+    for (let t = 100; t <= 600; t++) {
+      const want = [...seq].reverse().find(([k]) => k <= t)![1];
+      expect(lit(r, html, t)).toEqual([want]);
+    }
+    expect(lit(r, html, 110)).toEqual(["Z"]);
+  });
+
+  test("a later change on the same tick wins, and a change back in time is refused", () => {
+    const r = reg();
+    const html = glyphCell(r, [[10, "A"], [20, "B"], [20, "C"]], (g) => g, 20, 30);
+    expect(lit(r, html, 25)).toEqual(["C"]);
+    expect(() => glyphCell(reg(), [[10, "A"], [5, "B"]], (g) => g, 20, 30)).toThrow(/forward in time/);
+  });
+});
+

@@ -4,18 +4,23 @@
  *
  * 10 s · 1920×1080 · 30 fps · 120 BPM, twenty beats. Written against the
  * "Geometric / Bauhaus" prompt of github.com/Vincentwei1021/mg-styles-15 and
- * judged by that repository's rubric.md; v3 answers the second jury's notes.
+ * judged by that repository's rubric.md; v6 is a redesign around the one
+ * move every jury praised, a module rolling about its own corner.
  *
- * Everything is one module. The grid is ruled in black and settles to a
- * hairline; a red 240 px module lands, rolls three modules about its own
- * corner printing a quarter, a half and a triangle behind it; the row ripples
- * and turns a quarter about the frame centre; the forms take their places
- * one per beat, each on a path through empty modules (poster.ts). On the drop
- * the poster is cut into its 128 cells and every cell snaps a quarter about
- * its own centre in two frames; a diagonal wave turns each cell over to the
- * same red module, a sine wave runs out through the field of 128, and a wave
- * from the other corner turns them back onto the finished poster. BAUHAUS is
- * stamped a letter per sixteenth.
+ * The poster is the trace of one module (poster.ts). The grid is ruled in
+ * black and settles to a hairline; a red 240 px module slides in on b1 and
+ * makes one move a beat, b2 to b12, over a 6 × 4 grid of its own size. A
+ * roll turns it a quarter about the corner it rolls over and leaves, in the
+ * cell it lifts off, the quarter disc that corner swept; a spin turns it
+ * about its own centre and leaves the disc its edges swept. The last roll
+ * lands on the drop. On the downbeat the empty cells fill with black quarter
+ * discs, an empty block a whole disc four modules across, and four waves —
+ * out from the module, down, across, out from the centre — turn every cell a
+ * quarter, neighbours opposite ways, so the field of discs walks half a block
+ * at each and is home after the fourth. The field goes along the last wave
+ * except one block, which stays as the poster's circle. BAUHAUS is built from
+ * the same squares and quarter discs: each letter stands upright beside its
+ * column and tips into it about its corner, one a sixteenth, reading upward.
  *
  * Motion is sampled here at 60 Hz and baked as linear keyframes (src/anim/sampled.ts).
  * Forms are signed-distance PNGs with a printed edge (src/image/print.ts), each ink
@@ -26,11 +31,10 @@
  */
 
 import { fileURLToPath } from "node:url";
-import { El, Reg, inOut, jsxText as jsx, stateAt } from "../../src/anim/sampled.ts";
+import { El, Reg, inOut, outCubic, jsxText as jsx, type Stops } from "../../src/anim/sampled.ts";
 import * as print from "../../src/image/print.ts";
 import { encodePlate, turnPlate, type Plate } from "../../src/image/raster.ts";
-import { loadFace, setWord } from "../../src/text/outline.ts";
-import { BAND, FLOOR_PIVOT, GY, INK, M, MISREG, POSTER, gx, gy, type Form, type Ink } from "./poster.ts";
+import { ACTS, CIRCLE, CIRCLE_BLOCK, COLS, GY, INK, LEFT, M, MISREG, MOD, MODULE, PATH, PIVOT, POSTER, ROWS, TRAIL, TURN as ROLL_TURN, WORD, WORD_X, cellX, cellY, gx, gy, letterFoot, letterForms, type Form, type Ink } from "./poster.ts";
 
 const OUT = fileURLToPath(new URL(".", import.meta.url));
 const STATIC = process.env.POSTER_ONLY === "1";
@@ -79,28 +83,19 @@ function formInner(f: Form, seed: number): string {
   return img(formFile(f, seed, f.rot ?? 0), f.w, f.h);
 }
 
-// ── type as outlines ───────────────────────────────────────────────────────
-
-const archivo = await loadFace(`${OUT}fonts/ArchivoBlack-Regular.ttf`);
-
-/**
- * BAUHAUS set vertically, reading upward, its cap height exactly one module
- * and its length exactly eight: the word is scaled to the box, not to a size
- * (src/text/outline.ts), and cut between its glyphs into one picture per
- * letter, so each letter can be stamped on its own sixteenth.
- */
-function verticalWord(text: string, capH: number, length: number, color: string): { letters: { file: string; top: number; h: number }[]; w: number; h: number } {
-  const set = setWord(archivo, text, capH, length, rgb(color), "up", 2);
-  return { letters: set.letters.map((l, i) => ({ file: png(`word-${i}-${text[i]}`, l.plate), top: l.at, h: l.size })), w: set.w, h: set.h };
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 
-const T_TURN = b(6);
-const T_DROP = b(12);
+const T_LAND = b(1);
+const ROLL = 14; // ticks a move takes, landing on its beat
+const actEnd = (k: number) => b(2 + k);
+const T_DROP = b(12); // the last roll lands on the drop
 const T_POSTER = b(16); // 8.0 s: the finished poster
-const T_STAND = T_POSTER + 14; // the floor has stood up into the band
 const T_TYPE = b(16);
+const T_TAG = b(18);
+const T_LAST = b(19); // the module turns once more, about its own centre, on the last accent
+
+/** A roll tips slowly and lands hard: power-in, arriving at speed on the beat. */
+const tip = (u: number) => u ** 2.2;
 
 // ── grid: horizontals on the eighths, verticals on the sixteenths between, from the centre out ──
 
@@ -139,310 +134,281 @@ function misreg(f: Form): Form {
 }
 const seedOf = (id: string) => 100 + POSTER.findIndex((f) => f.id === id);
 
-/** The poster drawn statically, with the frame origin at (ox, oy). */
-function posterNodes(ox: number, oy: number): string {
+/** The poster drawn statically. */
+function posterNodes(): string {
   return POSTER.map((f0) => {
     const f = misreg(f0);
-    return `<View class="absolute left-[${f.x + ox}px] top-[${f.y + oy}px] w-[${f.w}px] h-[${f.h}px]">${formInner(f, seedOf(f.id))}</View>`;
+    return `<View class="absolute left-[${f.x}px] top-[${f.y}px] w-[${f.w}px] h-[${f.h}px]">${formInner(f, seedOf(f.id))}</View>`;
   }).join("");
 }
 
 function forms(): string {
-  if (STATIC) return posterNodes(0, 0);
-  const P = Object.fromEntries(POSTER.map((f) => [f.id, misreg(f)])) as Record<string, Form>;
-  const centre = (f: Form) => ({ cx: f.x + f.w / 2, cy: f.y + f.h / 2 });
+  if (STATIC) return posterNodes();
+  const [mdx, mdy] = MISREG.red;
+  const home = misreg(MODULE);
+  const at = ([i, j]: [number, number]) => ({ cx: cellX(i) + MOD / 2 + mdx, cy: cellY(j) + MOD / 2 + mdy });
 
-  // the row: four 240 px cells, columns 4..11, rows 2..3 — its bottom edge on the centre line
-  const ROW_Y = gy(2);
-  const cell = (k: number) => ({ cx: gx(4 + 2 * k) + M, cy: ROW_Y + M });
-
-  // b1 · the module lands, sliding in from the left edge
-  const mod = new El(reg, P.module!, { ...cell(0), sx: 2, sy: 2, op: 0 });
-  mod.set(b(1) - 14, { op: 1, cx: -2 * M }).to(b(1) - 14, b(1), { cx: cell(0).cx }, inOut);
-  // b2..b4 · it rolls about its bottom-right corner, touching down on each beat
-  for (let k = 0; k < 3; k++) {
-    const t1 = b(2 + k);
-    mod.orbit(t1 - 12, t1, gx(4 + 2 * k) + 2 * M, ROW_Y + 2 * M, 90);
-  }
-  // the three stamps it prints as it lifts off, each its poster form at the cell's size; the half sits in the
-  // cell's top row, so its flat edge is on a grid line rather than half a module down
-  const stamp = (id: string, k: number, scale: number, cy?: number) => {
-    const el = new El(reg, P[id]!, { ...cell(k), ...(cy === undefined ? {} : { cy }), sx: scale, sy: scale, op: 0 });
-    el.set(b(2 + k) - 12, { op: 1 });
-    return el;
+  // b1 · the module slides in from the left edge to its first cell
+  const mod = new El(reg, home, { ...at(PATH[0]!), op: 0 });
+  mod.set(T_LAND - 14, { op: 1, cx: -MOD / 2 }).to(T_LAND - 14, T_LAND, { cx: at(PATH[0]!).cx }, outCubic);
+  // b2..b12 · one move a beat: a roll about a corner, or a spin about its own centre. A square a quarter
+  //   turned looks as it did, so its angle goes back to 0 the tick after it lands and it never rests as a turned quad
+  //   — except the last, which lands on the drop, where the cells take the module over
+  const turn = (k: number, f: () => void) => {
+    f();
+    if (k < ACTS.length - 1) mod.set(actEnd(k) + 1, { rot: 0 });
+    else mod.set(T_DROP + 1, { rot: 0, op: 0 });
   };
-  // the quarter's picture carries its poster turn, so its angle here is measured from that (0 at rest)
-  const quarter = stamp("quarter", 0, 1);
-  const half = stamp("half", 1, 1, ROW_Y + M / 2);
-  const tri = stamp("tri", 2, 0.5);
-  const row = [quarter, half, tri, mod];
-
-  // b4½..b5¼ · a ripple along the row: each cell hops one whole module, three frames up and three down,
-  //   landing on its sixteenth rounded to a whole frame
-  row.forEach((el) => {
-    const k = row.indexOf(el);
-    const land = 2 * Math.round((b(4.5) + 7.5 * k) / 2);
-    const y0 = el.s.cy;
-    el.to(land - 12, land - 6, { cy: y0 - M }, inOut).to(land - 6, land, { cy: y0 }, inOut);
+  ACTS.forEach((a, k) => {
+    const [i, j] = PATH[k]!;
+    if (a === "S") turn(k, () => mod.to(actEnd(k) - ROLL, actEnd(k), { rot: 90 }, inOut));
+    else if (a === "F") return; // the fold is the picture's own: foldWrap
+    else {
+      const [fx, fy] = PIVOT[a];
+      turn(k, () => mod.orbit(actEnd(k) - ROLL, actEnd(k), cellX(i) + fx * MOD + mdx, cellY(j) + fy * MOD + mdy, ROLL_TURN[a], tip));
+    }
   });
 
-  // b6 · the row turns a quarter about the frame centre
-  for (const el of row) el.orbit(T_TURN - 16, T_TURN, CX, CY, 90);
-  // after the turn, down column 8–9: quarter (rows 0–1), half (column 9, rows 2–3), triangle (rows 4–5), module (rows 6–7)
+  // what each move leaves is under the module as it starts to move: a roll's trailing edge uncovers its quarter,
+  // and a spin's disc is uncovered by the move after it
+  const left = LEFT.flatMap((f0, k) => {
+    if (!f0) return [];
+    const f = misreg(f0);
+    const el = new El(reg, f, { op: 0 });
+    el.set(actEnd(k) - ROLL, { op: 1 });
+    return [{ el, f }];
+  });
+  // the drop hands the poster to the cells; the finished poster takes it back on b16, with the circle the drop left
+  //   (the module's own hand-over is its last landing, above: an element's keys are written in time order)
+  for (const l of left) l.el.set(T_DROP, { op: 0 }).set(T_POSTER, { op: 1 });
+  mod.set(T_POSTER, { op: 1 });
+  const circle = misreg(CIRCLE);
+  const circleEl = new El(reg, circle, { op: 0 });
+  circleEl.set(T_POSTER, { op: 1 });
+  // b19 · the module turns once more about its own centre, the last accent
+  mod.to(T_LAST - ROLL, T_LAST, { rot: 90 }, inOut).set(T_LAST + 1, { rot: 0 });
 
-  // Each form now takes its place by moves along the grid, one per half beat, on paths that cross nothing
-  // already standing: a slide, a turn about its own centre or a corner, a growth about a corner.
-  // Targets come from the poster itself, misregistration included, so each form lands on the pixel the
-  // drop's cells will show; the moves between are whole modules.
-  const Q = centre(P.quarter!);
-  const T = centre(P.tri!);
-  const Md = centre(P.module!);
-  const Hf = P.half!;
-  // b7 · the module (still doubled) slides four modules right along the bottom rows, its top-right corner
-  //      landing on the corner its own cell has
-  mod.to(b(7) - 16, b(7), { cx: Md.cx - M / 2 }, inOut);
-  // b7½ · the quarter slides seven modules left along the top rows
-  quarter.to(b(7.5) - 24, b(7.5), { cx: Q.cx }, inOut);
-  // b8 · the triangle turns upright about its own centre; b8½ it slides a module right, clear of the disc to come
-  tri.to(b(8) - 8, b(8), { rot: 0 }, inOut);
-  tri.to(b(8.5) - 10, b(8.5), { cx: T.cx - M }, inOut);
-  // b9 · the module halves about its top-right corner; b9½ it rises six modules to the corner it signs,
-  //      while the quarter drops six to the foot
-  mod.to(b(9) - 8, b(9), { cx: Md.cx, cy: mod.s.cy - M / 2, sx: 1, sy: 1 }, inOut);
-  mod.to(b(9.5) - 14, b(9.5), { cy: Md.cy }, inOut);
-  quarter.to(b(9.5) - 14, b(9.5), { cy: Q.cy }, inOut);
-  // b10 · the half goes left three modules and down three, still on its side, to where a quarter turn
-  //       about its bottom-left corner lays it flat in its place
-  const pivot = { x: Hf.x + Hf.w, y: Hf.y + Hf.h };
-  half.to(b(10) - 14, b(10) - 7, { cx: pivot.x + M / 2 }, inOut).to(b(10) - 7, b(10), { cy: pivot.y - M }, inOut);
-  // b10½ · it turns flat about that corner into place, while the quarter squares about its own centre
-  half.orbit(b(10.5) - 9, b(10.5), pivot.x, pivot.y, -90);
-  quarter.to(b(10.5) - 9, b(10.5), { rot: 0 }, inOut);
-  // b11 · the disc closes: its top half from above the frame, its bottom half in from the left;
-  //       the triangle doubles about its bottom-left corner into the space the half has left
-  const D = P.disc!;
-  const dc = centre(D);
-  const halfBox = { x: D.x, y: D.y, w: D.w, h: D.h / 2 };
-  const top = new El(reg, halfBox, { cx: dc.cx, cy: D.y + D.h / 4 - 3 * D.h / 4 - 60, op: 0 });
-  top.set(b(11) - 12, { op: 1 }).to(b(11) - 12, b(11), { cy: D.y + D.h / 4 }, inOut);
-  const bottom = new El(reg, halfBox, { cx: -D.w / 2 - 60, cy: D.y + (3 * D.h) / 4, op: 0 });
-  bottom.set(b(11) - 12, { op: 1 }).to(b(11) - 12, b(11), { cx: dc.cx }, inOut);
-  top.set(b(11) + 1, { op: 0 });
-  bottom.set(b(11) + 1, { op: 0 });
-  const disc = new El(reg, D, { op: 0 });
-  disc.set(b(11) + 1, { op: 1 });
-  tri.to(b(11) - 12, b(11), { cx: T.cx, cy: T.cy, sx: 1, sy: 1 }, inOut);
-  // b11½ · the floor slides in from the right edge along the bottom row, and the blue square drops into its corner
-  const br = centre(P.bar!);
-  const bar = new El(reg, P.bar!, { cx: W + P.bar!.w / 2, cy: br.cy, op: 0 });
-  bar.set(b(11.5) - 12, { op: 1 }).to(b(11.5) - 12, b(11.5), { cx: br.cx }, inOut);
-  const bs = centre(P.bluesq!);
-  const bsq = new El(reg, P.bluesq!, { cx: bs.cx, cy: bs.cy - 3 * M, op: 0 });
-  bsq.set(b(11.5) - 10, { op: 1 }).to(b(11.5) - 10, b(11.5), { cy: bs.cy }, inOut);
-
-  // the drop hands the poster to the cells; the finished poster takes it back on b16
-  const live = [disc, bar, tri, bsq, half, quarter, mod];
-  for (const el of live) el.set(T_DROP, { op: 0 }).set(T_POSTER, { op: 1 });
-
-  // b16 · the payoff: the floor stands up about its right corner and becomes the band down column 14.
-  //   It turns as a picture for seven frames, then rests as a picture already turned in pixels.
-  bar.orbit(T_POSTER, T_STAND, FLOOR_PIVOT.x + MISREG.black[0], FLOOR_PIVOT.y + MISREG.black[1], 90);
-  bar.set(T_STAND + 1, { op: 0 });
-  const bandForm: Form = { id: "bar", kind: "box", ink: "black", x: BAND.x + MISREG.black[0], y: BAND.y + MISREG.black[1], w: BAND.w, h: BAND.h };
-  const band = new El(reg, bandForm, { op: 0 });
-  band.set(T_STAND + 1, { op: 1 });
-
-  // b18 · the press shifts its colour plates a few pixels and they snap back into register; black does not move
-  const plate: Record<string, [number, number]> = { red: [3, -2], yellow: [-3, 1], blue: [2, 3] };
-  const live2: [El, string][] = [[disc, "disc"], [tri, "tri"], [bsq, "bluesq"], [half, "half"], [mod, "module"]];
-  for (const [el, id] of live2) {
-    const off = plate[P[id]!.ink];
-    if (!off) continue;
-    const s0 = { ...stateAt(el, b(18) - 1) };
-    el.set(b(18), { cx: s0.cx + off[0], cy: s0.cy + off[1] }).set(b(18) + 6, { cx: s0.cx, cy: s0.cy });
-  }
-
-  const node = (el: El, id: string, f?: Form) => el.node(formInner(f ?? P[id]!, seedOf(id)));
-  const halfForm: Form = { id: "disc", kind: "half", ink: "red", x: halfBox.x, y: halfBox.y, w: halfBox.w, h: halfBox.h };
-  const topForm: Form = { ...halfForm, rot: 2 };
   return [
-    node(top, "disc", topForm),
-    node(bottom, "disc", halfForm),
-    node(disc, "disc"),
-    node(tri, "tri"),
-    node(bsq, "bluesq"),
-    node(half, "half"),
-    node(quarter, "quarter"),
-    node(mod, "module"),
-    node(bar, "bar"),
-    band.node(img(formFile({ kind: "box", ink: "black", w: P.bar!.w, h: P.bar!.h }, seedOf("bar"), 1), BAND.w, BAND.h)),
+    circleEl.node(formInner(circle, seedOf("circle"))),
+    ...left.map((l) => l.el.node(formInner(l.f, seedOf(l.f.id)))),
+    mod.node(foldWrap(formInner(home, seedOf("module")))),
   ].join("\n    ");
 }
 
-// ── the drop: four waves of quarter turns, one from each corner, one per beat ──
+/**
+ * A fold over the module's bottom-left/top-right diagonal: in a frame turned
+ * 45°, the picture squeezes across that diagonal to a line and opens again,
+ * so the square reads as turning over on it. The two turns cancel, so at rest
+ * the picture is upright and never a turned quad.
+ */
+function foldWrap(inner: string): string {
+  const keys: [number, string][] = [[0, "1"]];
+  ACTS.forEach((a, k) => {
+    if (a !== "F") return;
+    const t = actEnd(k);
+    keys.push([t - ROLL, "1"], [t - ROLL / 2, "0.02"], [t, "1"]);
+  });
+  if (keys.length === 1) return inner;
+  return `<View class="absolute inset-0 origin-center rotate-45"><View class="absolute inset-0 origin-center animate-${reg.anim(reg.prop("scaleX", keys, "cubic-bezier(0.45,0,0.55,1)"))}"><View class="absolute inset-0 origin-center rotate-315">${inner}</View></View></View>`;
+}
+
+// ── the drop: every cell turns, four waves, one per beat ───────────────────
 
 /**
- * On the drop every cell of the poster that carries ink is cut out and turns
- * a quarter about its own centre as a wave crosses it — one wave per beat,
- * each from a different corner, three quarters of a tick between
- * neighbouring diagonals, so a wave crosses the grid inside its beat. Neighbours turn opposite ways, so the poster passes through
- * three mosaics of itself in all four inks; after the fourth wave every cell
- * has turned a whole turn and the poster is back, on b16.
+ * The cells are the module's own: the 6 × 4 grid it moves on, and the four
+ * cells of the word's column. A cell the poster holds shows its form whole,
+ * and turns a quarter on each of four waves, one per beat — out from the
+ * module, down, across, out from the centre — neighbours opposite ways, so
+ * after four it is home.
  *
- * A cell between waves is a picture already turned in pixels (turnPlate),
- * so nothing rests as a turned quad; only the six frames of each turn are.
+ * Every other cell takes a quarter disc, its corner on the centre of its
+ * 2 × 2 block, in its block's ink — a quarter of the field black at most, so
+ * the primaries hold. The field flips in on the drop as a wave out from where
+ * the module landed, a step of the grid every frame; it turns on the second
+ * and third waves, and on the fourth beat flips out again, the far cells
+ * first and the module's neighbours last. Its quarters are set so that after
+ * two turns each block is a whole disc, and the one empty block of the
+ * module's grid stays: its four quarters flip over to blue on sixteenths and
+ * the poster takes it back as its circle.
+ *
+ * A cell between turns is a picture already turned in pixels (turnPlate),
+ * drawn a pixel larger on every side than its cell (print.cell's bleed), so
+ * nothing rests as a turned quad; only the six frames of a turn are.
  */
-const WAVES: { from: [number, number]; at: number }[] = [
-  { from: [0, 0], at: b(12) },
-  { from: [15, 0], at: b(13) },
-  { from: [15, 7], at: b(14) },
-  { from: [0, 7], at: b(15) },
+const centreOf = (x: number, y: number): [number, number] => [x + MOD / 2, y + MOD / 2];
+const MOD_C = centreOf(MODULE.x, MODULE.y);
+const MOD_CELL = PATH[PATH.length - 1]!;
+const WAVES: { at: number; delay: (x: number, y: number, j: number) => number }[] = [
+  { at: b(12), delay: (x, y) => Math.round((3 * Math.hypot(x - MOD_C[0], y - MOD_C[1])) / MOD) },
+  { at: b(13), delay: (_x, _y, j) => 5 * j },
+  { at: b(14), delay: (x, y) => Math.round(1.6 * ((x - WORD_X - MOD / 2) / MOD + (y - GY - MOD / 2) / MOD)) },
+  { at: b(15), delay: (x, y) => Math.round((4.5 * Math.hypot(x - CX, y - CY)) / MOD) },
 ];
 const TURN = 12; // ticks: six frames, power2.inOut
-/** A wave reaches a cell ¾ tick per diagonal step from its corner: 22 steps and a 12-tick turn fit inside its beat. */
-const waveStart = (w: number, c: number, r: number) => {
-  const [fc, fr] = WAVES[w]!.from;
-  return WAVES[w]!.at + Math.round(0.75 * (Math.abs(c - fc) + Math.abs(r - fr)));
-};
+const FLIP = 6; // ticks a tile takes to flip in or out
+const T_OUT = b(15); // the field flips out
+/** The circle's four quarters flip to blue on sixteenths, the last landing on the poster's downbeat. */
+const circleFlip = (n: number) => T_POSTER - 6 - 4 * (3 - n);
 
+/** The turn of the field's quarter in a cell at home, by its place in its block: its corner on the block centre (BL 0, TL 1, TR 2, BR 3). */
+const homeTurn = (px: number, py: number) => (py === 0 ? (px === 0 ? 3 : 0) : px === 0 ? 2 : 1);
+/** Each block's ink; the circle's block is black until it turns blue. Black is two blocks of eight. */
+const BLOCK_INK: Record<string, Ink> = { "-1,0": "red", "0,0": "yellow", "1,0": "black", "2,0": "red", "-1,1": "blue", "0,1": "black", "1,1": "yellow", "2,1": "blue" };
+
+const BLEED = 1;
 function cells(): string {
   if (STATIC) return "";
-  const placed: (Form & print.Placed)[] = POSTER.map((f0) => {
+  const placed: (Form & print.Placed)[] = [...TRAIL, MODULE].map((f0) => {
     const f = misreg(f0);
     return { ...f, rot: f.rot ?? 0, rgb: rgb(INK[f.ink]), seed: seedOf(f.id) };
   });
+  // the field's quarter in each ink, sliced out of a whole disc so its bleed is ink where the disc continues
+  const fieldFiles = new Map<Ink, string[]>();
+  const fieldOf = (ink: Ink) => {
+    if (!fieldFiles.has(ink)) {
+      const [dx, dy] = MISREG[ink];
+      const disc: print.Placed = { kind: "disc", x: dx, y: dy, w: 2 * MOD, h: 2 * MOD, rot: 0, rgb: rgb(INK[ink]), seed: 77 };
+      const slice = print.cell([disc], 0, 0, MOD, 2, BLEED); // the top-left quarter: its corner at the bottom-right, turn 3
+      fieldFiles.set(ink, [0, 1, 2, 3].map((q) => png(`field-${ink}-q${q}`, turnPlate(slice, (q + 1) % 4))));
+    }
+    return fieldFiles.get(ink)!;
+  };
+
+  // the module's grid, and the word's column as the right half of a block whose left half is off the grid
+  const grid: { x: number; y: number; i: number; j: number; px: number; py: number; circle: boolean }[] = [];
+  for (let j = 0; j < ROWS; j++) {
+    grid.push({ x: WORD_X, y: cellY(j), i: -1, j, px: 1, py: j % 2, circle: false });
+    for (let i = 0; i < COLS; i++) {
+      const circle = Math.floor(i / 2) * 2 === CIRCLE_BLOCK[0] && Math.floor(j / 2) * 2 === CIRCLE_BLOCK[1];
+      grid.push({ x: cellX(i), y: cellY(j), i, j, px: i % 2, py: j % 2, circle });
+    }
+  }
   const out: string[] = [];
-  const SCALE = 2;
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 16; c++) {
-      const x = gx(c);
-      const y = gy(r);
-      // the forms whose registered box overlaps this cell; a misregistered overhang stays in its own cell
-      const here = placed.filter((f, i) => {
-        const g = POSTER[i]!;
-        return g.x < x + M && g.x + g.w > x && g.y < y + M && g.y + g.h > y;
-      });
-      if (!here.length) continue;
-      const slice = print.cell(here, x, y, M, SCALE);
-      const dir = (c + r) % 2 === 0 ? 1 : -1;
-      const files = [0, 1, 2, 3].map((q) => png(`cell-${c}-${r}-q${q}`, turnPlate(slice, q)));
-      const starts = WAVES.map((_, w) => waveStart(w, c, r));
-      // rest pictures: after wave k the cell has turned k quarters in its direction
+  const box = (x: number, y: number) => `left-[${x - BLEED}px] top-[${y - BLEED}px] w-[${MOD + 2 * BLEED}px] h-[${MOD + 2 * BLEED}px]`;
+  const pic = (file: string) => img(file, MOD + 2 * BLEED, MOD + 2 * BLEED);
+  const view = (x: number, y: number, file: string, tracks: string[]) => `<View class="absolute ${box(x, y)} origin-center animate-${reg.anim(tracks)}">${pic(file)}</View>`;
+  const ease = "cubic-bezier(0.45,0,0.55,1)";
+  const turning = (g: { x: number; y: number }, file: string, dir: number, turns: [number, number][]) => {
+    // the turning picture: shown only while a wave turns it; turns are [start tick, quarters already turned]
+    const rot: [number, string][] = [[0, "0deg"]];
+    const vis: [number, string][] = [[0, "0"]];
+    for (const [t, k] of turns) {
+      rot.push([t, `${dir * 90 * k}deg`], [t + TURN, `${dir * 90 * (k + 1)}deg`]);
+      vis.push([t, "1"], [t + TURN, "0"]);
+    }
+    return view(g.x, g.y, file, [reg.prop("rotate", rot, ease), reg.step("opacity", vis)]);
+  };
+  for (const g of grid) {
+    const [cx, cy] = centreOf(g.x, g.y);
+    const dir = g.px === g.py ? 1 : -1;
+    const starts = WAVES.map((w) => w.at + w.delay(cx, cy, g.j));
+    const here = placed.filter((f) => f.x - MISREG[f.ink][0] === g.x && f.y - MISREG[f.ink][1] === g.y);
+    if (here.length) {
+      const slice = print.cell(here, g.x, g.y, MOD, 2, BLEED);
+      const files = [0, 1, 2, 3].map((q) => png(`cell-${g.x}-${g.y}-q${q}`, turnPlate(slice, q)));
+      const turned = (k: number) => files[(((dir * k) % 4) + 4) % 4]!;
       for (let k = 0; k <= 4; k++) {
         const from = k === 0 ? T_DROP : starts[k - 1]! + TURN;
         const until = k === 4 ? T_POSTER : starts[k]!;
-        const q = (((dir * k) % 4) + 4) % 4;
+        if (from === until && (k === 0 || k === 4)) continue;
         // an empty window would bake as a ramp from tick 0
-        if (from >= until) throw new Error(`cell ${c},${r}: rest ${k} is empty (${from}..${until}); the waves overrun their beats`);
-        out.push(`<View class="absolute left-[${x}px] top-[${y}px] animate-${reg.anim(reg.window(from, until))}">${img(files[q]!, M, M)}</View>`);
+        if (from >= until) throw new Error(`cell ${g.x},${g.y}: rest ${k} is empty (${from}..${until}); the waves overrun their beats`);
+        out.push(`<View class="absolute ${box(g.x, g.y)} animate-${reg.anim(reg.window(from, until))}">${pic(turned(k))}</View>`);
       }
-      // the turning picture: shown only while a wave turns it
-      const rot: [number, string][] = [[0, "0deg"]];
-      const vis: [number, string][] = [[0, "0"]];
-      starts.forEach((t, k) => {
-        rot.push([t, `${dir * 90 * k}deg`], [t + TURN, `${dir * 90 * (k + 1)}deg`]);
-        vis.push([t, "1"], [t + TURN, "0"]);
-      });
-      out.push(
-        `<View class="absolute left-[${x}px] top-[${y}px] w-[${M}px] h-[${M}px] origin-center animate-${reg.anim([reg.prop("rotate", rot, "cubic-bezier(0.45,0,0.55,1)"), reg.step("opacity", vis)])}">${img(files[0]!, M, M)}</View>`,
-      );
+      out.push(turning(g, files[0]!, dir, starts.map((t, k) => [t, k] as [number, number])));
+      continue;
     }
+    // the field: in on the drop, two turns, out on the fourth beat
+    const block = `${g.i < 0 ? -1 : Math.floor(g.i / 2)},${Math.floor(g.j / 2)}`;
+    const files = fieldOf(BLOCK_INK[block]!);
+    const q0 = (((homeTurn(g.px, g.py) - 2 * dir) % 4) + 4) % 4;
+    const turned = (k: number) => files[(((q0 + dir * k) % 4) + 4) % 4]!;
+    const steps = Math.abs((g.i < 0 ? -1 : g.i) - MOD_CELL[0]) + Math.abs(g.j - MOD_CELL[1]);
+    const tin = T_DROP + 2 * steps;
+    const [s1, s2] = [starts[1]!, starts[2]!];
+    out.push(view(g.x, g.y, turned(0), [reg.window(tin, s1), reg.prop("scaleX", [[tin, "0"], [tin + FLIP, "1"]], ease)]));
+    out.push(view(g.x, g.y, turned(1), [reg.window(s1 + TURN, s2)]));
+    if (g.circle) {
+      const n = (g.py === 0 ? (g.px === 0 ? 0 : 1) : g.px === 1 ? 2 : 3);
+      const ft = circleFlip(n);
+      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, ft + FLIP / 2), reg.prop("scaleX", [[ft, "1"], [ft + FLIP / 2, "0"]], ease)]));
+      out.push(view(g.x, g.y, fieldOf("blue")[(((q0 + 2 * dir) % 4) + 4) % 4]!, [reg.window(ft + FLIP / 2, T_POSTER), reg.prop("scaleX", [[ft + FLIP / 2, "0"], [ft + FLIP, "1"]], ease)]));
+    } else {
+      const fo = T_OUT + 2 * (7 - steps);
+      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, fo + FLIP), reg.prop("scaleX", [[fo, "1"], [fo + FLIP, "0"]], ease)]));
+    }
+    out.push(turning(g, files[q0]!, dir, [[s1, 0], [s2, 1]]));
   }
   return out.join("\n    ");
 }
 
-// ── type ───────────────────────────────────────────────────────────────────
+// ── the word ───────────────────────────────────────────────────────────────
 
+/**
+ * BAUHAUS in the column the drop has cleared, each letter printed from its
+ * squares and quarter discs exactly as the forms are. A letter stands upright
+ * in the gutter beside its place for a frame, then tips into the column about
+ * its foot's corner, landing on its sixteenth, B first.
+ */
 function type(): string {
-  // BAUHAUS knocked out of the band the floor becomes: paper-coloured letters, inset a quarter module on
-  // every side, so the band reads as black around them
-  const inset = M / 4;
-  const word = verticalWord("BAUHAUS", BAND.w - 2 * inset, BAND.h - 2 * inset, INK.paper);
-  const x = BAND.x + MISREG.black[0] + inset;
-  const y = BAND.y + MISREG.black[1] + inset;
   const out: string[] = [];
-  // one letter per sixteenth once the band stands, the first at the foot: each is stamped, not slid
-  word.letters.forEach((l, i) => {
-    const t = T_STAND + 2 + 2 * Math.round((7.5 * i) / 2);
-    const a = STATIC ? "" : `animate-${reg.anim(reg.window(t))}`;
-    out.push(`<View class="absolute left-[${x}px] top-[${y + l.top}px] ${a}">${img(l.file, word.w, l.h)}</View>`);
+  [...WORD].forEach((_, k) => {
+    const foot = letterFoot(k);
+    // one compound form per letter: its parts printed as one edge, its counters cut out of it, so no joint
+    //   between two parts shows; offset by the black plate's misregistration
+    const [dx, dy] = MISREG.black;
+    const parts: print.Part[] = letterForms(k).map((f) => ({ kind: f.kind, x: f.x + dx, y: f.y + dy, w: f.w, h: f.h, rot: f.rot ?? 0, cut: f.ink === "paper" }));
+    // a square picture over the letter and the slot above it: the letter is its lower half
+    const file = png(`letter-${k}`, print.compound(parts, rgb(INK.black), 300 + k, WORD_X, foot - MOD, MOD, MOD, 2));
+    const home = { x: WORD_X, y: foot - MOD, w: MOD, h: MOD };
+    if (STATIC) {
+      out.push(`<View class="absolute left-[${home.x}px] top-[${home.y}px]">${img(file, MOD, MOD)}</View>`);
+      return;
+    }
+    const t = T_TYPE + 2 * Math.round((7.5 * k) / 2);
+    // upright in the gutter: the letter turned a quarter clockwise about the corner it will tip over
+    const px = WORD_X + MOD;
+    const el = new El(reg, home, { cx: px + M, cy: foot - M, rot: 90, op: 0 });
+    el.set(t - 8, { op: 1 }).orbit(t - 6, t, px, foot, -90, tip);
+    el.set(t + 1, { rot: 0 });
+    out.push(el.node(img(file, MOD, MOD)));
   });
-  // the tagline takes the bottom row the floor has left, sliding in a module from the right on b17½;
-  // both lines take their middle dot from the Latin face, spaced evenly, so the separators match
+
+  // the tagline under a rule across the bottom right, drawn on b18
+  const S = INK.black;
+  const tx = cellX(2);
+  const ty = gy(6);
+  const RW = 3.5 * MOD; // the rule runs from column 8 to the grid's last line but one, x 1800
+  const rule = (a: string) => `<View class="absolute left-[${tx}px] top-[${ty}px] w-[${RW}px] h-[3px] bg-[${S}] origin-left ${a}" />`;
   const track = (px: number) => reg.anim(reg.prop("letterSpacing", [[0, `${px}px`], [TICKS, `${px}px`]]));
-  const dot = `<Text class="font-bold text-[24px] text-[${INK.black}]">{"·"}</Text>`;
-  // no tracking on the Chinese words: letter spacing also follows a word's last glyph, which pushed each dot
-  // off-centre between its neighbours; their two characters sit close, and the gaps alone space the dots
-  const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[22px] text-[${INK.black}]">${jsx(w)}</Text>`;
-  const tag = `<View class="flex-col gap-[14px]"><Text class="font-bold text-[24px] text-[${INK.black}] animate-${track(7)}">{"FORM · FARBE · FUNKTION"}</Text><View class="flex-row items-center gap-[14px]">${zh("形式")}${dot}${zh("色彩")}${dot}${zh("功能")}</View></View>`;
-  const tx = gx(6) + 8;
-  const ty = gy(7) + 20;
-  if (STATIC) out.push(`<View class="absolute left-[${tx}px] top-[${ty}px]">${tag}</View>`);
-  else {
-    const el = new El(reg, { x: tx, y: ty, w: 480, h: 80 }, { cx: tx + 240 + M, op: 0 });
-    el.set(b(17.5) - 8, { op: 1 }).to(b(17.5) - 8, b(17.5), { cx: tx + 240 }, inOut);
-    out.push(el.node(tag));
+  const dot = `<Text class="font-bold text-[30px] text-[${S}]">{"·"}</Text>`;
+  const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[30px] text-[${S}]">${jsx(w)}</Text>`;
+  const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}] animate-${track(6)}">${jsx(w)}</Text>`;
+  const lines = [
+    `<View class="flex-row items-center gap-[16px]">${en("FORM")}${dot}${en("FARBE")}${dot}${en("FUNKTION")}</View>`,
+    `<View class="flex-row items-center gap-[16px]">${zh("形式")}${dot}${zh("色彩")}${dot}${zh("功能")}</View>`,
+  ];
+  if (STATIC) {
+    out.push(rule(""));
+    lines.forEach((l, i) => out.push(`<View class="absolute left-[${tx}px] top-[${ty + 24 + i * 56}px]">${l}</View>`));
+  } else {
+    out.push(rule(`animate-${reg.anim([reg.prop("scaleX", [[T_TAG - 8, "0"], [T_TAG, "1"]], "cubic-bezier(0.45,0,0.55,1)")])}`));
+    lines.forEach((l, i) => {
+      const t = T_TAG + 4 + 8 * i;
+      const el = new El(reg, { x: 0, y: 0, w: RW, h: 56 }, { cy: 28 + 56 });
+      el.to(t - 6, t, { cy: 28 }, outCubic);
+      out.push(`<View class="absolute left-[${tx}px] top-[${ty + 24 + i * 56}px] w-[${RW}px] h-[56px] overflow-hidden">${el.node(l)}</View>`);
+    });
   }
   return out.join("\n    ");
 }
 
-// ── furniture: a module ruler that draws with the grid, and the four operations below it ──
-
-/** The operations the film uses, and the spans in which each one acts: its legend entry is lit while it does. */
-const OPS: { en: string; zh: string; icon: string; spans: [number, number][] }[] = [
-  { en: "ROLL", zh: "滚", icon: "roll", spans: [[b(2) - 12, b(4)]] },
-  { en: "TURN", zh: "转", icon: "turn", spans: [[T_TURN - 16, T_TURN], [b(8) - 18, b(8) - 12], [b(9) + 2, b(9) + 8], ...WAVES.map((w) => [w.at, w.at + 29] as [number, number])] },
-  { en: "SLIDE", zh: "移", icon: "slide", spans: [[b(1) - 14, b(1)], [b(4.5) - 12, b(5.25)], [b(7) - 14, b(7)], [b(8) - 12, b(8)], [b(9) - 26, b(9)], [b(10) - 12, b(10)], [b(11) - 12, b(11.5)]] },
-  { en: "GROW", zh: "长", icon: "grow", spans: [[b(9) + 9, b(9.5) + 6]] },
-];
+// ── furniture: the title, inset a half module from the corner ─────────────
 
 function furniture(): string {
   const S = "#3A342C";
-  const out: string[] = [];
-  // the ruler: a tick and a module number on each column line, drawn as its line is
-  for (let c = 1; c < 16; c++) {
-    const a = STATIC ? "" : `animate-${reg.anim(reg.window(colAt(c) + 6))}`;
-    out.push(`<View class="absolute left-[${gx(c)}px] top-[${GY - 14}px] ${a}"><View class="w-[2px] h-[14px] bg-[${S}]" /></View>`);
-    out.push(`<View class="absolute left-[${gx(c) + 7}px] top-[${GY - 26}px] ${a}"><Text class="font-bold text-[11px] text-[${S}]">${jsx(String(c + 1).padStart(2, "0"))}</Text></View>`);
-  }
-  // the legend: four small pictograms, each dark while its operation acts and faint otherwise
-  const icon = (kind: string, col: string) => {
-    const sq = (x: number, y: number, w: number, extra = "") => `<View class="absolute left-[${x}px] top-[${y}px] w-[${w}px] h-[${w}px] ${extra}" />`;
-    if (kind === "roll") return `${sq(0, 4, 12, `bg-[${col}]`)}<View class="absolute left-[10px] top-[14px] w-[4px] h-[4px] bg-[${col}]" />${sq(14, 4, 12, `border-[${col}] border`)}`;
-    if (kind === "turn") return `${sq(6, 2, 14, `border-[${col}] border`)}${sq(8, 4, 10, `bg-[${col}] rotate-45 origin-center`)}`;
-    if (kind === "slide") return `${sq(0, 4, 12, `border-[${col}] border`)}<View class="absolute left-[13px] top-[9px] w-[8px] h-[2px] bg-[${col}]" />${sq(14, 4, 12, `bg-[${col}]`)}`;
-    return `${sq(2, 0, 20, `border-[${col}] border`)}${sq(7, 5, 10, `bg-[${col}]`)}`;
-  };
-  const x0 = CX - 230;
-  OPS.forEach((op, i) => {
-    const x = x0 + i * 120;
-    const item = (col: string) => `<View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]">${icon(op.icon, col)}</View><Text class="font-bold text-[12px] text-[${col}]">${jsx(op.en)}</Text><Text class="font-[cjk] font-bold text-[12px] text-[${col}]">${jsx(op.zh)}</Text></View>`;
-    // construction, not poster: the legend goes when the poster lands
-    const show = STATIC ? "" : `animate-${reg.anim(reg.window(24 + i * 6, T_POSTER))}`;
-    out.push(`<View class="absolute left-[${x}px] top-[1038px] ${show}">${item("#B9AE9C")}</View>`);
-    if (!STATIC) {
-      const ch: [number, string][] = [[0, "0"]];
-      for (const [a, z] of op.spans) ch.push([a, "1"], [z + 4, "0"]);
-      ch.sort((p, q) => p[0] - q[0]);
-      const clean: [number, string][] = [];
-      for (const c of ch) {
-        if (clean.length && clean[clean.length - 1]![0] >= c[0]) clean[clean.length - 1] = c;
-        else if (!clean.length || clean[clean.length - 1]![1] !== c[1]) clean.push(c);
-      }
-      out.push(`<View class="absolute left-[${x}px] top-[1038px] animate-${reg.anim(reg.step("opacity", clean))}">${item(S)}</View>`);
-    }
-  });
-  // the title, inset a half module from the corner
   const t = STATIC ? "" : `animate-${reg.anim(reg.window(40))}`;
-  out.push(`<View class="absolute left-[${M / 2}px] top-[1040px] flex-row items-center gap-[10px] ${t}"><Text class="font-bold text-[13px] text-[${S}]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[${S}]">{"模数构成"}</Text></View>`);
-  return out.join("\n    ");
-}
-
-/** The pivot of the turn: a cross on the frame centre, only while the row turns about it. */
-function pivot(): string {
-  if (STATIC) return "";
-  const a = `animate-${reg.anim(reg.window(T_TURN - 15, T_TURN + 6))}`;
-  return `<View class="absolute left-[${CX - 14}px] top-[${CY - 1}px] w-[28px] h-[3px] bg-[${INK.black}] ${a}" /><View class="absolute left-[${CX - 1}px] top-[${CY - 14}px] w-[3px] h-[28px] bg-[${INK.black}] ${a}" />`;
+  return `<View class="absolute left-[${M}px] top-[1034px] flex-row items-center gap-[12px] ${t}"><Text class="font-bold text-[18px] text-[${S}]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[17px] text-[${S}]">{"模数构成"}</Text><Text class="font-bold text-[18px] text-[${S}]">{"· 120 PX · 2026"}</Text></View>`;
 }
 
 /** The paper: a ground under the inks, at the spec colour, its mottle and a fine grain over all boiling at 10 fps. */
@@ -451,24 +417,26 @@ function paper(): { ground: string; grain: string } {
   const gr = png("grain", print.grain(1280, 720, 31));
   let a = "";
   if (!STATIC) {
-    const xs: [number, string][] = [];
-    const ys: [number, string][] = [];
+    // the paper boils every second frame, evenly, so a held poster still breathes: five offsets, four ticks each,
+    //   as one loop of twenty ticks (as a film-length track it would be 300 keys, past what a track holds)
     const r = [[0, 0], [-14, 6], [9, -11], [-5, -16], [16, 10]];
-    for (let t = 0, k = 0; t < TICKS; t += 6, k++) {
-      xs.push([t, `${r[k % 5]![0]}px`]);
-      ys.push([t, `${r[k % 5]![1]}px`]);
-    }
-    a = `animate-${reg.anim([reg.step("translateX", xs), reg.step("translateY", ys)])}`;
+    const stops: Stops = {};
+    r.forEach(([x, y], k) => {
+      const v = { translateX: `${x}px`, translateY: `${y}px` };
+      stops[`${(k * 20).toFixed(2)}%`] = v;
+      stops[k === r.length - 1 ? "100%" : `${(k * 20 + 19.9).toFixed(2)}%`] = v;
+    });
+    a = `animate-${reg.loop([reg.short(stops, 20)], 20)}`;
   }
   return {
     ground: `<Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] ${a}" src="${g}" />`,
-    grain: `<Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-14 ${a}" src="${gr}" />`,
+    grain: `<Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-20 ${a}" src="${gr}" />`,
   };
 }
 
 // ── assemble ───────────────────────────────────────────────────────────────
 
-const ink_ = [grid(), forms(), pivot(), cells(), type()].join("\n    ");
+const ink_ = [grid(), forms(), cells(), type()].join("\n    ");
 const sheet = paper();
 const body = `${sheet.ground}\n    ${ink_}\n    ${furniture()}\n    ${sheet.grain}`;
 await Promise.all(writes);

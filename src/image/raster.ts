@@ -299,8 +299,17 @@ export interface SarScene {
   readonly arms?: number;
   /** The transverse waves between the arms, as chevrons across the track. */
   readonly chevrons?: boolean;
-  /** Land beyond a coastline that runs across the chip: brighter, rougher return; `side` is the edge it hugs. */
-  readonly shore?: { readonly side: "top" | "left"; readonly depth: number };
+  /**
+   * Land beyond a coastline that runs across the chip: brighter, rougher return; `side` is the edge it hugs.
+   * `rough` draws the coastline as five octaves of wander with a crisp 1.5 px bright edge, instead of two sines
+   * and a soft band.
+   */
+  readonly shore?: { readonly side: "top" | "left"; readonly depth: number; readonly rough?: boolean };
+  /**
+   * The speckle's grain, in px: one independent sample every `grain` pixels, interpolated between. At 1 (the
+   * default) every pixel is its own sample, which at full size reads as dither rather than radar.
+   */
+  readonly grain?: number;
   /** Other vessels: small bright returns at chip fractions. */
   readonly others?: readonly [number, number][];
   /** A soft round edge: whole inside `r0`, gone by `r1`, as fractions of the chip's half-width. */
@@ -319,18 +328,39 @@ export function sar(size: number, seed: number, ship: boolean, hdg = 72, at: [nu
   const cy = size * at[1];
   const kelvin = (19.47 * Math.PI) / 180;
   const px = new Uint8Array(size * size * 4);
+  // a coarse speckle field, drawn from the same stream before any pixel, when the grain is wider than a pixel
+  const grain = Math.max(1, scene.grain ?? 1);
+  const fn = Math.ceil(size / grain) + 2;
+  const field = grain > 1 ? Float32Array.from({ length: fn * fn }, () => -Math.log(Math.max(1e-6, rnd()))) : null;
+  const sample = (x: number, y: number): number => {
+    if (!field) return -Math.log(Math.max(1e-6, rnd()));
+    const u = x / grain;
+    const w = y / grain;
+    const i = Math.floor(u);
+    const j = Math.floor(w);
+    const a = u - i;
+    const b = w - j;
+    const at = (ii: number, jj: number) => field[jj * fn + ii]!;
+    return (at(i, j) * (1 - a) + at(i + 1, j) * a) * (1 - b) + (at(i, j + 1) * (1 - a) + at(i + 1, j + 1) * a) * b;
+  };
+  // the rough coastline's octaves: their phases from a stream of their own
+  const phase = rng(seed ^ 0x2c1b3c6d);
+  const octaves = [0, 1, 2, 3, 4].map((o) => ({ f: 7 * 2 ** o, a: 0.045 / 1.9 ** o, p: phase() * 2 * Math.PI }));
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const speckle = -Math.log(Math.max(1e-6, rnd()));
+      const speckle = sample(x, y);
       const swell = 0.75 + 0.25 * Math.sin(((x * 0.8 + y * 0.35) * 0.09) / k) * Math.sin(((x * 0.2 - y * 0.6) * 0.05) / k);
       let v = 0.2 * swell * Math.sqrt(speckle) * (scene.clutter ?? 1);
       if (scene.shore) {
         // the coastline wanders a few percent of the chip; land returns brighter and rougher than sea
         const along = scene.shore.side === "top" ? x / size : y / size;
         const across = scene.shore.side === "top" ? y / size : x / size;
-        const edge = scene.shore.depth + 0.035 * Math.sin(along * 19 + 1.3) + 0.02 * Math.sin(along * 47 + 0.4);
-        if (across < edge) v = 0.42 * (0.75 + 0.25 * Math.sin(x * 0.031 + 2.1 * Math.sin(y * 0.023))) * Math.sqrt(speckle);
-        else if (across < edge + 0.006) v += 0.5;
+        const edge = scene.shore.rough
+          ? scene.shore.depth + octaves.reduce((acc, o) => acc + o.a * Math.sin(along * o.f + o.p), 0)
+          : scene.shore.depth + 0.035 * Math.sin(along * 19 + 1.3) + 0.02 * Math.sin(along * 47 + 0.4);
+        if (scene.shore.rough && Math.abs((across - edge) * size) < 0.75) v = 0.8;
+        else if (across < edge) v = 0.42 * (0.75 + 0.25 * Math.sin(x * 0.031 + 2.1 * Math.sin(y * 0.023))) * Math.sqrt(speckle);
+        else if (!scene.shore.rough && across < edge + 0.006) v += 0.5;
       }
       if (ship) {
         const dx = x + 0.5 - cx;

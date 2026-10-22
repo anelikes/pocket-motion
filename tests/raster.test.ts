@@ -17,7 +17,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { cell, form, type Placed } from "../src/image/print.ts";
+import { cell, compound, form, type Part, type Placed } from "../src/image/print.ts";
 import { polylines, sar, streaks, turnPlate, wedge, type Plate } from "../src/image/raster.ts";
 
 const alpha = (p: Plate, x: number, y: number) => p.rgba[(y * p.width + x) * 4 + 3]!;
@@ -81,6 +81,19 @@ describe("painters", () => {
     // and the ship is there
     expect(ship.rgba[(64 * 160 + 102) * 4]!).toBeGreaterThan(200);
   });
+
+  test("sar: a grain wider than a pixel makes speckle that holds across neighbouring pixels", () => {
+    // mean step between horizontal neighbours on open sea, top-left, away from the ship
+    const step = (p: Plate) => {
+      let sum = 0;
+      for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) sum += Math.abs(p.rgba[(y * 160 + x) * 4]! - p.rgba[(y * 160 + x + 1) * 4]!);
+      return sum / 1600;
+    };
+    const fine = sar(160, 7, false);
+    const coarse = sar(160, 7, false, 72, [0.64, 0.4], 1, 1, { grain: 3 });
+    // dither steps by about as much as the speckle varies; a 3 px grain by well under half of that
+    expect(step(coarse)).toBeLessThan(step(fine) * 0.45);
+  });
 });
 
 describe("print", () => {
@@ -113,9 +126,49 @@ describe("print", () => {
     expect(lowest).toBe(255);
   });
 
+  test("a bleed widens the cell into its neighbours with the same pixels", () => {
+    const whole = form("disc", 240, 240, red, 9, 2);
+    const bled = cell([disc], 120, 120, 120, 2, 2);
+    expect([bled.width, bled.height]).toEqual([248, 248]);
+    expect(sameInk(bled, 0, 0, whole, 236, 236, 244)).toBe(0);
+  });
+
   test("a form's own quarter turn is the turned picture, in a cell too", () => {
     const quarter: Placed = { kind: "quarter", x: 0, y: 0, w: 240, h: 240, rot: 1, rgb: [17, 17, 17], seed: 4 };
     const whole = form("quarter", 240, 240, [17, 17, 17], 4, 2, 1);
     expect(sameInk(cell([quarter], 120, 120, 120, 2), 0, 0, whole, 240, 240, 240)).toBe(0);
+  });
+
+  test("a compound prints its parts as one form: no seam where parts meet, none where cuts meet", () => {
+    const black: [number, number, number] = [17, 17, 17];
+    // two boxes side by side, and two counters cut side by side out of a third
+    const parts: Part[] = [
+      { kind: "box", x: 0, y: 0, w: 60, h: 120, rot: 0 },
+      { kind: "box", x: 60, y: 0, w: 60, h: 120, rot: 0 },
+      { kind: "box", x: 0, y: 140, w: 120, h: 100, rot: 0 },
+      { kind: "box", x: 20, y: 160, w: 40, h: 60, rot: 0, cut: true },
+      { kind: "box", x: 60, y: 160, w: 40, h: 60, rot: 0, cut: true },
+    ];
+    const one = compound(parts, black, 5, 0, 0, 120, 240, 2);
+    const at = (p: Plate, x: number, y: number) => p.rgba[(y * p.width + x) * 4 + 3]!;
+    // down the joint between the two boxes (plate x 119/120), clear of the outer edge: ink throughout
+    let joint = 255;
+    for (let y = 8; y < 232; y++) joint = Math.min(joint, at(one, 119, y), at(one, 120, y));
+    expect(joint).toBe(255);
+    // down the joint between the two cuts: paper throughout
+    let cutJoint = 0;
+    for (let y = 328; y < 432; y++) cutJoint = Math.max(cutJoint, at(one, 119, y), at(one, 120, y));
+    expect(cutJoint).toBe(0);
+    // the same two boxes printed as separate forms leave a hairline between them: the defect this exists for
+    const apart = cell(
+      parts.slice(0, 2).map((p, i) => ({ ...p, rgb: black, seed: 5 + i })),
+      0,
+      0,
+      120,
+      2,
+    );
+    let crack = 255;
+    for (let y = 8; y < 232; y++) crack = Math.min(crack, at(apart, 119, y), at(apart, 120, y));
+    expect(crack).toBeLessThan(255);
   });
 });
