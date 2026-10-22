@@ -22,13 +22,17 @@ What the patch adds, by file:
 - `tests/image-dims.test.ts`: a 300x170 entry encodes with its header and
   payload exact; 2048 encodes, 2049 is refused.
 
+2026-10-22, rebased onto 66caf4e5: `tests/image-dims.test.ts` is listed
+in `tools/test.ts`, which main's `tests/test-suite.test.ts` requires of
+every test file.
+
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index d099ba67..c8881535 100644
+index a7383857..3d79e006 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
-@@ -136,6 +136,7 @@ import {
+@@ -163,6 +163,7 @@ import {
    WIRE_SLOT_HEADER_SIZE,
    WIRE_VERSION,
    TEX_MAX_DIM,
@@ -36,7 +40,7 @@ index d099ba67..c8881535 100644
    TEX_SLOT_BITS,
    TEX_SLOT_MASK,
    TILESET_ABSENT,
-@@ -219,6 +220,8 @@ export function generateRust(): string {
+@@ -253,6 +254,8 @@ export function generateRust(): string {
    put("");
    put("/// Textures must be power-of-two and no larger than this per side.");
    put(`pub const TEX_MAX_DIM: u32 = ${TEX_MAX_DIM};`);
@@ -46,10 +50,10 @@ index d099ba67..c8881535 100644
    put("/// handle = (generation << TEX_SLOT_BITS) | slot; bit 31 stays 0.");
    put(`pub const TEX_SLOT_BITS: u32 = ${TEX_SLOT_BITS};`);
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index aede4e1b..4affc87b 100644
+index 3df7fdeb..7671efef 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -612,8 +612,14 @@ export const PSM = {
+@@ -688,8 +688,14 @@ export const PSM = {
    //              index bytes. 4x smaller than 8888 — the tile-canvas format.
  } as const;
  
@@ -66,10 +70,10 @@ index aede4e1b..4affc87b 100644
  // Texture handles are generation-tagged like node ids:
  //   handle = (generation << TEX_SLOT_BITS) | slot, bit 31 stays 0.
 diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
-index 339ff972..a4832bdc 100644
+index 43cd7499..2a34be70 100644
 --- a/engine/core/src/lib.rs
 +++ b/engine/core/src/lib.rs
-@@ -524,8 +524,9 @@ impl Ui {
+@@ -975,8 +975,9 @@ impl Ui {
  
      // ---- assets ----------------------------------------------------------
  
@@ -81,7 +85,7 @@ index 339ff972..a4832bdc 100644
      /// generation-tagged handle (the first upload into a fresh core is slot 0
      /// at gen 0 == handle 0 — goldens pin this) or -1.
      ///
-@@ -546,8 +547,8 @@ impl Ui {
+@@ -1004,8 +1005,8 @@ impl Ui {
              spec::psm::PSM_T8 => 1usize,
              _ => return -1,
          };
@@ -93,7 +97,7 @@ index 339ff972..a4832bdc 100644
          }
          // PSM_T8 leads with the raw CLUT; the pixel stream follows it.
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 52ef8e83..996f791e 100644
+index 47d97df0..a6138e49 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
 @@ -30,6 +30,8 @@ pub const SIZE_FULL: f32 = -1.0;
@@ -106,10 +110,10 @@ index 52ef8e83..996f791e 100644
  /// handle = (generation << TEX_SLOT_BITS) | slot; bit 31 stays 0.
  pub const TEX_SLOT_BITS: u32 = 20;
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 6861a932..a3339399 100644
+index a1760a98..4664afeb 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -5321,3 +5321,39 @@ fn a_legacy_two_stop_gradient_is_untouched() {
+@@ -6393,3 +6393,39 @@ fn a_legacy_two_stop_gradient_is_untouched() {
      assert_eq!(counts[spec::draw_op::GRAD_RECT as usize], 1);
      assert_eq!(counts[spec::draw_op::PAINT_PUSH as usize], 0);
  }
@@ -186,10 +190,10 @@ index be1490df..38ddf15f 100644
    if (rgba.length !== w * h * 4) throw new Error("pak image: rgba length mismatch");
    const bpp = psm === PSM.PSM_8888 ? 4 : 2;
 diff --git a/framework/src/host.ts b/framework/src/host.ts
-index 3ddb6936..776ce573 100644
+index 3ad6be23..518b2cf1 100644
 --- a/framework/src/host.ts
 +++ b/framework/src/host.ts
-@@ -60,7 +60,7 @@ export interface HostOps {
+@@ -62,7 +62,7 @@ export interface HostOps {
    setText(id: number, str: string): void;
    /** Solid universal calls this on reactive text updates. */
    replaceText(id: number, str: string): void;
@@ -224,3 +228,15 @@ index 00000000..d6788f30
 +    expect(() => encodeImageEntry(img(2049, 1))).toThrow("each side must be 1..2048 px");
 +  });
 +});
+diff --git a/tools/test.ts b/tools/test.ts
+index 153db980..1d0b318d 100644
+--- a/tools/test.ts
++++ b/tools/test.ts
+@@ -121,6 +121,7 @@ const SUITE: readonly Stage[] = [
+       "tests/class-diagnostics.test.ts",
+       "tests/vue-sfc.test.ts",
+       "tests/font-bake.test.ts",
++      "tests/image-dims.test.ts",
+       "tests/indexed-image.test.ts",
+       "tests/touch.test.ts",
+       "tests/desktop-pointer.test.ts",

@@ -113,6 +113,8 @@ export interface BootedWorld {
 export interface PendingWork {
   /** App callbacks registered via onFrame/onButtonPress — run every frame. */
   readonly frameHooks: number;
+  /** System-layer callbacks — run every frame, the app suspended or not. */
+  readonly systemFrameHooks: number;
   /** after() timers awaiting their deadline frame. */
   readonly timers: number;
   /** Effect commands awaiting a driver result. */
@@ -121,11 +123,77 @@ export interface PendingWork {
   readonly effectsQueued: number;
   /** Modules with async work outstanding. */
   readonly servicePumps: number;
+  /** Model tasks still live, each suspended on a wait a later frame resolves. */
+  readonly modelTasks: number;
+  /** Model results delivered and not yet consumed. */
+  readonly modelDeliveries: number;
+  /** Model host commands queued for the next drain. */
+  readonly modelCommands: number;
+  /** Native animations a model task is waiting to see complete. */
+  readonly modelAnimations: number;
+  /** Model regions written to and not yet reacted. */
+  readonly modelRegions: number;
+  /** Lifecycle hooks registered or destroyed and not yet flushed. */
+  readonly lifecycleHooks: number;
+  /**
+   * Registries the guest reported that this mirror does not name. A bundle
+   * whose framework counts a queue this file has not been taught still has
+   * that queue counted, and the key that did it is in the report.
+   */
+  readonly unrecognised: Readonly<Record<string, number>>;
+  /**
+   * Registries this mirror names and the guest did not report. Each counts
+   * as outstanding in `totalPendingWork`: a queue nothing examined is not a
+   * queue known to be empty.
+   */
+  readonly missing: readonly string[];
 }
+
+/** The registries this mirror names, in the guest's order. */
+export const PENDING_WORK_KEYS = [
+  "frameHooks",
+  "systemFrameHooks",
+  "timers",
+  "effectsPending",
+  "effectsQueued",
+  "servicePumps",
+  "modelTasks",
+  "modelDeliveries",
+  "modelCommands",
+  "modelAnimations",
+  "modelRegions",
+  "lifecycleHooks",
+] as const satisfies readonly Exclude<keyof PendingWork, "unrecognised" | "missing">[];
 
 /** Sum of every registry — zero means nothing is scheduled anywhere. */
 export function totalPendingWork(w: PendingWork): number {
-  return w.frameHooks + w.timers + w.effectsPending + w.effectsQueued + w.servicePumps;
+  let total = 0;
+  for (const key of PENDING_WORK_KEYS) total += w[key];
+  for (const n of Object.values(w.unrecognised)) total += n;
+  return total + w.missing.length;
+}
+
+/**
+ * Copy a guest-realm pending-work object into plain host numbers.
+ *
+ * Every own key is read, not only the ones named above: `check` reports
+ * "nothing scheduled" from this, and a registry the guest counts and the host
+ * dropped would be a claim about a queue nobody examined. A key this mirror
+ * names and the guest omits reads 0 and is listed in `missing`.
+ */
+export function copyPendingWork(w: Record<string, unknown>): PendingWork {
+  const named = {} as Record<(typeof PENDING_WORK_KEYS)[number], number>;
+  const missing: string[] = [];
+  for (const key of PENDING_WORK_KEYS) {
+    if (!(key in w)) missing.push(key);
+    named[key] = Number(w[key]) || 0;
+  }
+  const unrecognised: Record<string, number> = {};
+  for (const key of Object.keys(w)) {
+    if ((PENDING_WORK_KEYS as readonly string[]).includes(key)) continue;
+    unrecognised[key] = Number(w[key]) || 0;
+  }
+  return { ...named, unrecognised, missing };
 }
 
 const VALID_HZ = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60] as const;
@@ -262,16 +330,9 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
     pendingWork: () => {
       const read = sandbox.get<(() => PendingWork) | undefined>("__pocketPendingWork");
       if (typeof read !== "function") return undefined;
-      const w = read();
       // Copy the numbers out. The object itself is a guest-realm value and the
       // host has no business holding a reference to one.
-      return {
-        frameHooks: Number(w.frameHooks) || 0,
-        timers: Number(w.timers) || 0,
-        effectsPending: Number(w.effectsPending) || 0,
-        effectsQueued: Number(w.effectsQueued) || 0,
-        servicePumps: Number(w.servicePumps) || 0,
-      };
+      return copyPendingWork(read() as unknown as Record<string, unknown>);
     },
     getTree: () => {
       outbox.length = 0;

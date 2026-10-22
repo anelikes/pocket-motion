@@ -39,10 +39,10 @@ By file:
 
 `git apply` skips everything above the first `diff --git`.
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index 1ed657db..2945739f 100644
+index 2cbc4fa5..dab6982c 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
-@@ -2635,23 +2635,49 @@ pub struct LinearSample {
+@@ -2730,23 +2730,49 @@ pub struct LinearSample {
      pub fy: u32,
  }
  
@@ -103,7 +103,7 @@ index 1ed657db..2945739f 100644
      })
  }
  
-@@ -2660,18 +2686,28 @@ pub fn linear_sample_coordinates(width: u32, height: u32, u: f32, v: f32) -> Opt
+@@ -2755,18 +2781,28 @@ pub fn linear_sample_coordinates(width: u32, height: u32, u: f32, v: f32) -> Opt
  /// vertical — integer math only, so byte-exact on every host.
  #[inline]
  fn sample_linear(view: &TexView, u: f32, v: f32) -> Option<(u32, u32, u32, u32)> {
@@ -140,7 +140,7 @@ index 1ed657db..2945739f 100644
          )
      };
      Some((
-@@ -2803,22 +2839,37 @@ fn tex_quad<T: RenderTarget>(
+@@ -2898,22 +2934,37 @@ fn tex_quad<T: RenderTarget>(
      }
      let (mr, mg, mb, ma) = channels(modulate);
      let identity = modulate == 0xffff_ffff;
@@ -190,7 +190,7 @@ index 1ed657db..2945739f 100644
              };
              let Some((mut r, mut g, mut b, mut a)) = sample else {
                  return;
-@@ -2830,7 +2881,7 @@ fn tex_quad<T: RenderTarget>(
+@@ -2925,7 +2976,7 @@ fn tex_quad<T: RenderTarget>(
                  b = (b * mb + 127) / 255;
                  a = (a * ma + 127) / 255;
              }
@@ -199,7 +199,7 @@ index 1ed657db..2945739f 100644
          }
      }
  }
-@@ -3509,4 +3560,196 @@ mod tests {
+@@ -3662,4 +3713,196 @@ mod tests {
              }
          }
      }

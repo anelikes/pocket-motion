@@ -1775,7 +1775,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: true,
     defaultValue: null,
     constraint:
-      "an ANIMATABLE property, camelCase or kebab-case, or `transform` decomposed into translate/translateX/Y/Z, rotate/rotateX/Y and scale/scaleX/Y (perspective is ignored — it is static). Any other property or transform function is refused",
+      "an ANIMATABLE property, camelCase or kebab-case, or `transform` decomposed into translate/translateX/Y/Z, rotate/rotateX/Y, skewX and scale/scaleX/Y (perspective is ignored — it is static). Any other property or transform function is refused",
     source: "vendor/pocketjs/framework/compiler/animation.ts:216",
     verification: "probed",
     diagnostics: [],
@@ -1791,10 +1791,17 @@ export const SURFACE: readonly CapabilityRow[] = [
       },
       {
         what: "a transform function outside the decomposed set",
-        keyframes: { appear: { from: { transform: "skewX(10deg)" }, to: { transform: "skewX(0deg)" } } },
+        keyframes: { appear: { from: { transform: "skewY(10deg)" }, to: { transform: "skewY(0deg)" } } },
         animation: { bad: { value: "appear 1s" } },
         literals: ["animate-bad"],
         outcome: { refuses: "unsupported transform function" },
+      },
+      {
+        what: "skewX is in the decomposed set (upstream a2b923d3)",
+        keyframes: { appear: { from: { transform: "skewX(10deg)" }, to: { transform: "skewX(0deg)" } } },
+        animation: { lean: { value: "appear 1s" } },
+        literals: ["animate-lean"],
+        outcome: { bakes: true },
       },
       {
         what: "kebab-case, and a transform that mixes functions",
@@ -1908,10 +1915,10 @@ export const SURFACE: readonly CapabilityRow[] = [
     pinned: [],
     bakeProbes: [
       {
-        what: "font-[display] at 40px takes the first dynamic slot (19)",
+        what: "font-[display] at 40px takes the first dynamic slot (21, after upstream's 10 px pair at 19/20)",
         literals: ["text-[40px] font-[display]"],
         fromClassAttribute: true,
-        outcome: { declares: { prop: "fontSlot", value: 19 } },
+        outcome: { declares: { prop: "fontSlot", value: 21 } },
       },
       {
         what: "a face name with an upper-case letter is not a utility and drops the literal",
@@ -2084,7 +2091,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "legacy two-stop gradient",
     constraint:
-      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial (the farthest-corner ellipse about the centre; no other shape or centre). Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does; `via-<color>` alone sits at 50%. A literal with only `bg-gradient-to-* from-* to-*` keeps the two-stop path word for word. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
+      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial (the farthest-corner ellipse about the centre; no other shape or centre). Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does. A gradient upstream draws itself — `bg-gradient-to-*` with from, at most one via and to — compiles as upstream compiles it: `via-<color>` is `gradVia` at `gradViaPos` 0.5 (`via-N%` moves it), drawn on the legacy path as two GRAD_RECTs split at the stop (99af2166), and a literal with no via keeps the two-stop path word for word. Anything more takes the paint, where a via is `gradVia1`, at 50% unless positioned; no literal carries both. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -2092,14 +2099,32 @@ export const SURFACE: readonly CapabilityRow[] = [
     pinned: [],
     bakeProbes: [
       {
-        what: "a via turns a legacy direction into the paint path (GradKind.Linear)",
+        what: "a via under a legacy direction is upstream's middle stop (gradVia)",
         literals: ["bg-gradient-to-r from-red-500 via-white to-blue-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradVia", value: 4294967295 } },
+      },
+      {
+        what: "at upstream's 50% (gradViaPos)",
+        literals: ["bg-gradient-to-r from-red-500 via-white to-blue-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradViaPos", value: 1056964608 } },
+      },
+      {
+        what: "in a literal that needs the paint, the via is the stop table's (gradVia1)",
+        literals: ["bg-linear-to-r from-red-500 via-white to-blue-500"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradVia1", value: 4294967295 } },
+      },
+      {
+        what: "bg-clip-text takes a legacy direction into the paint (GradKind.Linear)",
+        literals: ["bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-white to-blue-500"],
         fromClassAttribute: true,
         outcome: { declares: { prop: "gradKind", value: 1 } },
       },
       {
         what: "and `to-r` becomes the angle 90",
-        literals: ["bg-gradient-to-r from-red-500 via-white to-blue-500"],
+        literals: ["bg-clip-text text-transparent bg-gradient-to-r from-red-500 via-white to-blue-500"],
         fromClassAttribute: true,
         outcome: { declares: { prop: "gradAngle", value: 1119092736 } },
       },

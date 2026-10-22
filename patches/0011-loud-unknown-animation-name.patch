@@ -1,8 +1,21 @@
+0011 — an `animate-<name>` naming nothing is a build error listing the
+declared names, instead of dropping the whole class literal silently.
+
+Rebased onto 66caf4e5 (2026-10-22). Main's `unknownUtilities` (#557) asks
+`parseAnimation` whether a token is a utility, and this patch's
+`parseAnimation` defers an unknown name instead of refusing it. Through
+main's accumulator, which has no deferral arrays, the deferral threw, the
+throw was caught as "a loud rule", and a misspelt animation was no longer
+reported in a class literal that failed on another token first.
+`unknownUtilities` now passes a whole accumulator and counts a deferred
+name or loop as unknown. Main's `animate-loop-[4x]` assertion is red
+without that; one more pins a misspelt name beside another bad token.
+
 diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
-index b69ce0c..0640886 100644
+index b00bf40b..d3a7792f 100644
 --- a/framework/compiler/animation.ts
 +++ b/framework/compiler/animation.ts
-@@ -574,6 +574,17 @@ export function loopToFrames(loop: string | number, where: string): number {
+@@ -594,6 +594,17 @@ export function loopToFrames(loop: string | number, where: string): number {
   * ANIM TABLE. Returns null when the name is not in the theme (the literal is
   * then not a class string — consistent with every other utility).
   */
@@ -21,10 +34,10 @@ index b69ce0c..0640886 100644
    const memo = resolved.get(name);
    if (memo !== undefined) return memo;
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index efbbb99..c5e1d79 100644
+index 1a7379bd..d8d8ce0e 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -33,7 +33,7 @@ import {
+@@ -35,7 +35,7 @@ import {
    type StyleRecord,
    type StyleTransition,
  } from "../../contracts/spec/spec.ts";
@@ -33,7 +46,7 @@ index efbbb99..c5e1d79 100644
  
  // ---------------------------------------------------------------------------
  // Font slots (build-assigned, pinned here — bake-font.ts uses the same table)
-@@ -565,13 +565,27 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+@@ -588,13 +588,27 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
  interface AnimAcc {
    ids: number[];
    loopFrames: number;
@@ -63,7 +76,7 @@ index efbbb99..c5e1d79 100644
   */
  function parseAnimation(tok: string, acc: AnimAcc): boolean {
    if (!tok.startsWith("animate-")) return false;
-@@ -582,12 +596,20 @@ function parseAnimation(tok: string, acc: AnimAcc): boolean {
+@@ -605,12 +619,20 @@ function parseAnimation(tok: string, acc: AnimAcc): boolean {
      return true;
    }
    const resolved = resolveAnimation(rest);
@@ -85,7 +98,31 @@ index efbbb99..c5e1d79 100644
  /** Parse a motion token into the transition accumulator (base variant only). */
  function parseMotion(tok: string, tr: TransitionAcc): boolean {
    switch (tok) {
-@@ -639,9 +661,12 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
+@@ -668,7 +690,10 @@ function splitVariant(tok: string): { variant: "base" | "focus" | "active"; body
+  * The tokens of `literal` that are not supported utilities, in source order.
+  * Empty for a literal every token of which parses. A token one of the loud
+  * rules rejects (`hover:`, a malformed `animate-loop-[..]`) is a known
+- * utility: `parseClassLiteral` reports it with its own message.
++ * utility: `parseClassLiteral` reports it with its own message. An
++ * `animate-<name>` naming nothing is unknown: `parseAnimation` defers it
++ * instead of refusing it, and a literal that fails on another token first
++ * never reaches the deferred error, so this is where it is reported.
+  */
+ export function unknownUtilities(literal: string): string[] {
+   const unknown: string[] = [];
+@@ -677,8 +702,10 @@ export function unknownUtilities(literal: string): string[] {
+     let known = false;
+     if (split !== null) {
+       try {
++        const anim: AnimAcc = { ids: [], loopFrames: 0, unknownName: [], badLoop: [] };
+         known =
+-          (split.variant === "base" && (parseMotion(split.body, {}) || parseAnimation(split.body, { ids: [], loopFrames: 0 }))) ||
++          (split.variant === "base" && (parseMotion(split.body, {}) ||
++            (parseAnimation(split.body, anim) && anim.unknownName.length + anim.badLoop.length === 0))) ||
+           parseUtility(split.body, { decls: [] });
+       } catch {
+         known = true;
+@@ -720,18 +747,22 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
      base: { decls: [] }, focus: { decls: [] }, active: { decls: [] },
    };
    const tr: TransitionAcc = {};
@@ -98,11 +135,10 @@ index efbbb99..c5e1d79 100644
 +  let utilityTokens = 0;
  
    for (const tok of tokens) {
-     let variant: "base" | "focus" | "active" = "base";
-@@ -660,9 +685,10 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
-       }
-     }
-     if (body.length === 0) return null;
+     const split = splitVariant(tok);
+     if (split === null) return null; // not a utility (arbitrary text with a colon)
+     const { variant, body } = split;
+     if (split.hover) sawHover = true; // decided after the rest of the literal parses
 -    if (variant === "base" && parseMotion(body, tr)) { sawMotion = true; continue; }
 +    if (variant === "base" && parseMotion(body, tr)) { sawMotion = true; utilityTokens++; continue; }
      if (variant === "base" && parseAnimation(body, anim)) continue;
@@ -111,7 +147,7 @@ index efbbb99..c5e1d79 100644
    }
  
    // Every token parsed => this IS a class literal; unsupported-by-design
-@@ -683,6 +709,33 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
+@@ -752,6 +783,33 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
        );
      }
    }
@@ -145,3 +181,17 @@ index efbbb99..c5e1d79 100644
  
    // resolve pseudo-utilities per variant (font slot / tracking / rounded-full)
    const base = acc.base;
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index 472be698..862f63e7 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -570,6 +570,9 @@ describe("literals that do not compile", () => {
+     expect(unknownUtilities("w-[52] hiden bg-[#ff5f9e] txt-lg")).toEqual(["hiden", "txt-lg"]);
+     expect(unknownUtilities("focus:bg-red-500 active:scale-95 sm:p-2")).toEqual(["sm:p-2"]);
+     expect(unknownUtilities("hiden")).toEqual(["hiden"]);
++    // A misspelt animation name is deferred by parseAnimation, so a literal
++    // that fails on another token first reports it here or nowhere.
++    expect(unknownUtilities("animate-spni txt-lg")).toEqual(["animate-spni", "txt-lg"]);
+   });
+ 
+   test("a literal that compiles has none, and a loud rule is not an unknown utility", () => {

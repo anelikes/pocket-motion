@@ -31,31 +31,38 @@ What the patch adds, by file:
   face, precedence over mono, the name rule, a face baked from its own file
   and the refusal of an undeclared one.
 
+2026-10-22, rebased onto 66caf4e5: a named face's slots take main's
+fallback faces like any other slot, and `bakeAtlases` reports each face
+file through `onRead`, which main's build uses to list its inputs.
+`MAX_FONT_SLOTS` is 128 beside main's pinned 10 px pair at 19/20, so the
+first dynamic slot is 21 (0001).
+
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index 61bbf689..918b1359 100644
+index 75923f7b..b21b4a50 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -861,10 +861,12 @@ export const WIRE_MARK_FLAG_ENDED = 1 << 0;
+@@ -937,10 +937,13 @@ export const WIRE_MARK_FLAG_ENDED = 1 << 0;
  
  // Slots 0..13 are the seven pinned sizes x two weights (framework/compiler/tailwind.ts);
- // 14/15 the 54 px display pair; 16..18 monospace regular (12/14/16 px — `font-mono`).
--// The rest are allocated per build for arbitrary `text-[Npx]` sizes. Raised from 24
+ // 14/15 the 54 px display pair; 16..18 monospace regular (12/14/16 px — `font-mono`);
+-// 19/20 the 10 px pair (`text-2xs`). The rest are allocated per build for arbitrary `text-[Npx]` sizes. Raised from 24
 -// so a composition is not limited to the pinned scale — each unused slot is one
 -// `Option<Atlas>` in the core, so the headroom is cheap.
 -export const MAX_FONT_SLOTS = 64;
-+// The rest are allocated per build for arbitrary `text-[Npx]` sizes and for named
-+// faces (`font-[name]`, pocket-motion). Raised from 24 to 64 so a composition is
-+// not limited to the pinned scale, and from 64 to 128 so several faces fit —
-+// each unused slot is one `Option<Atlas>` in the core, so the headroom is cheap,
-+// and a slot index still fits the u8 every atlas header and GLYPH_RUN carries.
++// 19/20 the 10 px pair (`text-2xs`). The rest are allocated per build for arbitrary
++// `text-[Npx]` sizes and for named faces (`font-[name]`, pocket-motion). Raised from
++// 24 to 64 so a composition is not limited to the pinned scale, and from 64 to 128 so
++// several faces fit — each unused slot is one `Option<Atlas>` in the core, so the
++// headroom is cheap, and a slot index still fits the u8 every atlas header and
++// GLYPH_RUN carries.
 +export const MAX_FONT_SLOTS = 128;
  
  // ---------------------------------------------------------------------------
  // STYLE TABLE binary format — styles.bin  (version 2)
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 483b2ae9..f3e2dfe9 100644
+index 6af8ed99..1efc3984 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
 @@ -35,7 +35,7 @@ pub const TEX_MAX_DIM: u32 = 512;
@@ -68,10 +75,10 @@ index 483b2ae9..f3e2dfe9 100644
  pub const TRANSITION_MASK_ALL: u32 = 0xffffffff;
  /// Core tick timestep: exactly 1/60 s (fixed — enables byte-exact goldens).
 diff --git a/framework/compiler/bake-font.ts b/framework/compiler/bake-font.ts
-index 4ff64cca..398d1a50 100644
+index ba8c723f..4f81d00a 100644
 --- a/framework/compiler/bake-font.ts
 +++ b/framework/compiler/bake-font.ts
-@@ -56,7 +56,8 @@ export interface BakedAtlas {
+@@ -63,7 +63,8 @@ export interface BakedAtlas {
    /** Non-zero pair adjustments that survived subsetting and rounding. */
    pairCount: number;
    /** FONT_FLAG_METRICS_ONLY is set: 1x1 empty cells, metrics real. */
@@ -81,10 +88,10 @@ index 4ff64cca..398d1a50 100644
  }
  
  export interface BakeOptions {
-@@ -76,6 +77,12 @@ export interface BakeOptions {
-   regularTtf?: string;
-   boldTtf?: string;
-   monoTtf?: string;
+@@ -91,6 +92,12 @@ export interface BakeOptions {
+    *  slot's px through its own unitsPerEm, so a double-width symbol stays
+    *  centred in its box. */
+   fallbackTtfs?: string[];
 +  /**
 +   * Named faces for `font-[name]` slots: name -> the regular and bold files.
 +   * A slot naming a face that is not here is refused rather than baked from
@@ -94,7 +101,7 @@ index 4ff64cca..398d1a50 100644
  }
  
  // ---------------------------------------------------------------------------
-@@ -609,7 +616,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+@@ -634,7 +641,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
    }
    const chars = [...cps].sort((a, b) => a - b);
  
@@ -103,7 +110,7 @@ index 4ff64cca..398d1a50 100644
      regular: null,
      bold: null,
      mono: null,
-@@ -619,7 +626,25 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+@@ -649,7 +656,27 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
      if (slot < 0 || slot >= MAX_FONT_SLOTS) {
        throw new Error(`PocketJS bake-font: slot ${slot} out of range (0..${MAX_FONT_SLOTS - 1})`);
      }
@@ -120,23 +127,25 @@ index 4ff64cca..398d1a50 100644
 +        );
 +      }
 +      const key = `face:${face}:${bold ? "bold" : "regular"}`;
-+      fonts[key] ??= await loadFont(bold ? files.bold : files.regular);
++      const facePath = bold ? files.bold : files.regular;
++      opts.onRead?.(facePath);
++      fonts[key] ??= await loadFont(facePath);
 +      results.push({
-+        ...bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity, opts.metricsOnly === true),
++        ...bakeSlot(fonts[key]!, slot, px, bold, chars, rasterDensity, fallbacks, opts.metricsOnly === true),
 +        face,
 +      });
 +      continue;
 +    }
      const key = mono ? "mono" : bold ? "bold" : "regular";
-     fonts[key] ??= await loadFont(
-       mono
+     const path = mono
+         ? (opts.monoTtf ?? DEFAULT_MONO)
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index 9c0916f2..0dbf4e62 100644
+index da62c3da..03ac0ea3 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -64,7 +64,15 @@ const TEXT_SIZE_PX: Record<string, number> = {
+@@ -71,7 +71,15 @@ const TEXT_SIZE_PX: Record<string, number> = {
   */
- const FIRST_DYNAMIC_SLOT = MONO_SLOT_BASE + MONO_FONT_PX.length;
+ const FIRST_DYNAMIC_SLOT = SMALL_FONT_BOLD_SLOT + 1;
  
 -interface DynamicSlot { px: number; bold: boolean; mono: boolean }
 +/**
@@ -151,7 +160,7 @@ index 9c0916f2..0dbf4e62 100644
  const dynamicSlots: DynamicSlot[] = [];
  const dynamicIndex = new Map<string, number>();
  
-@@ -75,8 +83,8 @@ export function resetFontSlotPlan(): void {
+@@ -82,8 +90,8 @@ export function resetFontSlotPlan(): void {
  }
  
  /** Every slot this build uses, pinned plus dynamic. bake-font consumes it. */
@@ -162,9 +171,9 @@ index 9c0916f2..0dbf4e62 100644
    for (let i = 0; i < FONT_PX.length; i++) {
      out.push({ slot: i, px: FONT_PX[i]!, bold: false, mono: false });
      out.push({ slot: FONT_PX.length + i, px: FONT_PX[i]!, bold: true, mono: false });
-@@ -87,13 +95,21 @@ export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold:
-     out.push({ slot: MONO_SLOT_BASE + i, px: MONO_FONT_PX[i]!, bold: false, mono: true });
-   }
+@@ -96,13 +104,21 @@ export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold:
+   out.push({ slot: SMALL_FONT_REGULAR_SLOT, px: SMALL_FONT_PX, bold: false, mono: false });
+   out.push({ slot: SMALL_FONT_BOLD_SLOT, px: SMALL_FONT_PX, bold: true, mono: false });
    dynamicSlots.forEach((d, i) =>
 -    out.push({ slot: FIRST_DYNAMIC_SLOT + i, px: d.px, bold: d.bold, mono: d.mono }),
 +    out.push({
@@ -187,7 +196,7 @@ index 9c0916f2..0dbf4e62 100644
    if (mono) {
      const i = (MONO_FONT_PX as readonly number[]).indexOf(px);
      if (i >= 0) return MONO_SLOT_BASE + i;
-@@ -108,8 +124,8 @@ export function fontSlotFor(px: number, bold: boolean, mono = false): number {
+@@ -120,8 +136,8 @@ export function fontSlotFor(px: number, bold: boolean, mono = false): number {
    return allocDynamic(px, bold, false);
  }
  
@@ -198,7 +207,7 @@ index 9c0916f2..0dbf4e62 100644
    const existing = dynamicIndex.get(key);
    if (existing !== undefined) return existing;
  
-@@ -117,23 +133,26 @@ function allocDynamic(px: number, bold: boolean, mono: boolean): number {
+@@ -129,23 +145,26 @@ function allocDynamic(px: number, bold: boolean, mono: boolean): number {
    if (slot >= MAX_FONT_SLOTS) {
      throw new Error(
        `PocketJS tailwind: font slot budget exhausted (${MAX_FONT_SLOTS}). ` +
@@ -229,9 +238,9 @@ index 9c0916f2..0dbf4e62 100644
 +      ? { px: d.px, bold: d.bold, mono: d.mono, face: d.face }
 +      : { px: d.px, bold: d.bold, mono: d.mono };
    }
-   if (slot >= MONO_SLOT_BASE) {
-     const px = MONO_FONT_PX[slot - MONO_SLOT_BASE];
-@@ -243,6 +262,8 @@ type Decl = readonly [number, number]; // [propId, u32 value]
+   if (slot === SMALL_FONT_REGULAR_SLOT) return { px: SMALL_FONT_PX, bold: false, mono: false };
+   if (slot === SMALL_FONT_BOLD_SLOT) return { px: SMALL_FONT_PX, bold: true, mono: false };
+@@ -257,6 +276,8 @@ type Decl = readonly [number, number]; // [propId, u32 value]
  /** Per-variant parse accumulator (pseudo-utilities resolved at literal level). */
  interface VariantAcc {
    mono?: boolean;
@@ -240,7 +249,7 @@ index 9c0916f2..0dbf4e62 100644
    decls: Decl[];
    sizePx?: number;
    bold?: boolean;
-@@ -367,6 +388,16 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+@@ -387,6 +408,16 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
      case "tracking-wide": acc.trackingWide = true; return true;
    }
    if (tok in SHADOWS) { D.push([PROP.shadow, int(SHADOWS[tok])]); return true; }
@@ -257,7 +266,7 @@ index 9c0916f2..0dbf4e62 100644
  
    // -- prefix-value utilities ---------------------------------------------------
    const dash = tok.indexOf("-");
-@@ -764,8 +795,9 @@ export function parseClassLiteral(
+@@ -838,8 +869,9 @@ export function parseClassLiteral(
      const effPx = v.sizePx ?? base.sizePx ?? 16;
      const effBold = v.bold ?? base.bold ?? false;
      const effMono = v.mono ?? base.mono ?? false;
@@ -269,7 +278,7 @@ index 9c0916f2..0dbf4e62 100644
      }
      if (v.trackingWide) {
        v.decls.push([PROP.tracking, px(0.025 * effPx)]); // Tailwind tracking-wide = 0.025em
-@@ -895,10 +927,10 @@ export function generateStylesModule(c: CompiledStyles): string {
+@@ -969,10 +1001,10 @@ export function generateStylesModule(c: CompiledStyles): string {
    L.push(`export const STYLE_COUNT = ${c.records.length};`);
    L.push("");
    L.push("/** Baked font-atlas slots shipped in the pak: slot -> metrics. */");
@@ -284,11 +293,11 @@ index 9c0916f2..0dbf4e62 100644
    L.push("};");
    L.push("");
 diff --git a/tests/font-bake.test.ts b/tests/font-bake.test.ts
-index fd7a3f9b..2049c954 100644
+index 8c618f4c..527594ee 100644
 --- a/tests/font-bake.test.ts
 +++ b/tests/font-bake.test.ts
-@@ -167,3 +167,30 @@ describe("monospace slots", () => {
-     expect(glyphAdvances(bakeSlot(font, 1, 14, false, chars, 1)).size).toBeGreaterThan(1);
+@@ -241,3 +241,30 @@ describe("fill rule", () => {
+     expect(topInk(h)).toBeLessThan(topInk(n));
    });
  });
 +
@@ -319,11 +328,11 @@ index fd7a3f9b..2049c954 100644
 +  });
 +});
 diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
-index 55387c69..b2b78edc 100644
+index 2930b4d1..0d85f97b 100644
 --- a/tests/tailwind.test.ts
 +++ b/tests/tailwind.test.ts
-@@ -568,3 +568,38 @@ describe("baked keyframe animations", () => {
-     registerAnimationTheme(undefined);
+@@ -634,3 +634,38 @@ describe("literals that do not compile", () => {
+     expect(suspectClassLiteral("flex wrong-one")).toBeNull();
    });
  });
 +
@@ -362,10 +371,10 @@ index 55387c69..b2b78edc 100644
 +  });
 +});
 diff --git a/tools/build.ts b/tools/build.ts
-index 05bad5c0..059854ec 100644
+index 80668bd7..125c56a6 100644
 --- a/tools/build.ts
 +++ b/tools/build.ts
-@@ -24,6 +24,11 @@
+@@ -28,6 +28,11 @@ import { BuildInputs } from "../framework/compiler/build-inputs.ts";
  //   --density=<integer>          low-level target sampling density (default 1)
  //   --font-regular=<path>        override the regular font source
  //   --font-bold=<path>           override the bold font source
@@ -377,7 +386,7 @@ index 05bad5c0..059854ec 100644
  //   --outdir=<path>              write <app>.js/.pak here instead of dist/
  //                                (external repos build their apps against a
  //                                vendored PocketJS and keep outputs local)
-@@ -84,6 +89,17 @@ let extraChars = "";
+@@ -93,6 +98,17 @@ let extraChars = "";
  let metricsOnly = false;
  let regularFontPath: string | undefined;
  let boldFontPath: string | undefined;
@@ -395,7 +404,7 @@ index 05bad5c0..059854ec 100644
  let appArg = "";
  let frameworkFlag: string | undefined;
  let configPath = join(ROOT, "pocket.config.ts");
-@@ -98,6 +114,8 @@ for (const a of args) {
+@@ -110,6 +126,8 @@ for (const a of args) {
    else if (a === "--metrics-only") metricsOnly = true;
    else if (a.startsWith("--font-regular=")) regularFontPath = resolvePath(a.slice("--font-regular=".length));
    else if (a.startsWith("--font-bold=")) boldFontPath = resolvePath(a.slice("--font-bold=".length));
@@ -404,10 +413,10 @@ index 05bad5c0..059854ec 100644
    else if (a.startsWith("--framework=")) frameworkFlag = a.slice("--framework=".length);
    else if (a.startsWith("--config=")) { configPath = resolvePath(ROOT, a.slice("--config=".length)); configFlagged = true; }
    else if (a === "--no-config") useConfig = false;
-@@ -319,6 +337,18 @@ console.log(
-     `${Object.keys(styles.ids).length} literal(s) -> framework/src/styles.generated.ts`,
- );
- 
+@@ -407,6 +425,17 @@ const fontConfig = readFontConfig(fontsManifestPath, path => buildInputs.add(pat
+ const { fallbackTtfs } = fontConfig;
+ if (fallbackTtfs.length || fontConfig.codepoints.length)
+   console.log(`  fonts: ${fallbackTtfs.length} fallback face(s), ${fontConfig.codepoints.length} declared characters`);
 +const faces: Record<string, { regular: string; bold: string }> = {};
 +for (const [name, f] of Object.entries(faceFlags)) {
 +  if (f.regular === undefined || f.bold === undefined) {
@@ -419,14 +428,13 @@ index 05bad5c0..059854ec 100644
 +  }
 +  faces[name] = { regular: f.regular, bold: f.bold };
 +}
-+
+ 
  const atlases = await bakeAtlases({
-   codepoints,
-   slots: styles.usedFontSlots,
-@@ -327,10 +357,11 @@ const atlases = await bakeAtlases({
-   metricsOnly,
-   regularTtf: regularFontPath,
+   codepoints: new Set([...codepoints, ...fontConfig.codepoints]),
+@@ -418,10 +447,11 @@ const atlases = await bakeAtlases({
    boldTtf: boldFontPath,
+   onRead: path => buildInputs.add(path),
+   fallbackTtfs,
 +  faces,
  });
  for (const a of atlases) {

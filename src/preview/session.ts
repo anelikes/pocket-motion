@@ -133,7 +133,7 @@ export class PreviewSession {
     options: PreviewSessionOptions = {},
   ): Promise<PreviewSession> {
     const { encodePNG } = (await import(
-      `${pocketjsRoot()}/tests/png.ts`
+      `${pocketjsRoot()}/tools/png.ts`
     )) as { encodePNG: EncodePng };
 
     const tree = await scratchTree(composition);

@@ -142,7 +142,7 @@ export async function run(options: SnapshotOptions): Promise<CommandResult> {
   let source: WasmFrameSource | undefined;
   let footage: Awaited<ReturnType<typeof openFootage>> = null;
   try {
-    const { encodePNG } = (await import(`${pocketjsRoot()}/tests/png.ts`)) as {
+    const { encodePNG } = (await import(`${pocketjsRoot()}/tools/png.ts`)) as {
       encodePNG: (rgba: Uint8Array, w: number, h: number) => Buffer;
     };
 

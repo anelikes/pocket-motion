@@ -1,116 +1,117 @@
+0012 — records which string literals are, on some execution, the WHOLE
+value of a `class=` attribute (`classAttrStrings`), so 0011 refuses a bad
+animation name in one of them whatever else the literal holds.
+
+Rebased onto 66caf4e5 (2026-10-22) and rebuilt on main's `markClass`
+(#557, which marks the literals a `class` attribute holds for
+`LiteralSite.inClass`) in place of a second walker. One edge differs and
+is kept: the left operand of `&&` is in main's `inClass` and never in
+`classAttrStrings`, because a non-empty string is truthy and the value is
+always the right. Main's walk is wider than the one this patch had by the
+parentheses and TS wrappers (`as`, `satisfies`, `!`), none of which changes
+a value.
+
 diff --git a/framework/compiler/jsx-plugin.ts b/framework/compiler/jsx-plugin.ts
+index edaa0715..9020d53c 100644
 --- a/framework/compiler/jsx-plugin.ts
 +++ b/framework/compiler/jsx-plugin.ts
-@@ -1,6 +1,7 @@ import { transformAsync, type PluginObj } from "@babel
- // Framework-aware pass-1 Babel transform + AST collection.
- 
- import { transformAsync, type PluginObj } from "@babel/core";
-+import type * as t from "@babel/types";
- import type { ParserOptions } from "@babel/parser";
- import solidPreset from "babel-preset-solid";
- import tsPreset from "@babel/preset-typescript"; // untyped - see framework/compiler/ambient.d.ts
-@@ -205,12 +206,23 @@ export interface TransformResult {
+@@ -230,6 +230,19 @@ export interface TransformResult {
    code: string;
    /** Candidate class strings (deduped, in AST order). */
    classStrings: string[];
 +  /**
-+   * The subset that was the value of a JSX `class=` attribute.
++   * The subset that is, on some execution, the WHOLE value of a JSX `class=`
++   * attribute (deduped, in AST order).
 +   *
 +   * `classStrings` is every string literal in the module, because a class
 +   * literal can be built anywhere — a lookup table, a helper's return. That
 +   * breadth is why an unresolvable `animate-*` cannot be reported on its own:
 +   * a lone `animate-imagination` in prose is indistinguishable from a class.
 +   * These ones are not a guess. They were written where only a class can go.
++   * Narrower than `LiteralSite.inClass` by one edge: the left operand of `&&`
++   * (see `markClass`).
 +   */
 +  classAttrStrings: string[];
    /** Every codepoint appearing in any collected literal. */
    textCodepoints: Set<number>;
- }
+   /**
+@@ -244,6 +257,7 @@ export interface TransformResult {
  
  interface Collected {
    classStrings: string[];
 +  classAttrStrings: string[];
    textCodepoints: Set<number>;
+   literalSites: LiteralSite[];
  }
- 
-@@ -253,6 +265,7 @@ function makeCollector(out: Collected, framework: Pock
- 
- function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
-   const seen = new Set<string>();
-+  const seenAttr = new Set<string>();
-   const add = (s: string) => {
-     if (!s) return;
-     for (const ch of s) out.textCodepoints.add(ch.codePointAt(0)!);
-@@ -261,6 +274,60 @@ function makeCollector(out: Collected, framework: Pock
-       out.classStrings.push(s);
+@@ -297,29 +311,46 @@ function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
+   };
+   // The literals a `class` attribute holds: its string value, or the string
+   // branches of the ternaries and `&&` / `||` / `??` chains in its expression.
++  //
++  // `wholeNodes` is the subset that IS, on some execution, the whole value of
++  // the attribute — what `classAttrStrings` reports. It differs from
++  // `classNodes` by the left operand of `&&`: a non-empty string is truthy,
++  // so the result is always the right, and the one string that could be the
++  // value is `""`, which parses to nothing anyway. `||` and `??` take both
++  // arms, because there the left one CAN be the value. An operand of `+` and
++  // an interpolated template are fragments in both sets — neither is ever the
++  // class a node gets.
+   const classNodes = new Set<object>();
+-  const markClass = (node: { type: string } | null | undefined): void => {
++  const wholeNodes = new Set<object>();
++  const markClass = (node: { type: string } | null | undefined, whole = true): void => {
+     if (!node) return;
+     const n = node as unknown as Record<string, { type: string }>;
+     switch (node.type) {
+       case "StringLiteral":
+       case "TemplateLiteral":
+         classNodes.add(node);
++        if (whole) wholeNodes.add(node);
+         return;
+       case "JSXExpressionContainer":
+       case "ParenthesizedExpression":
+       case "TSAsExpression":
+       case "TSSatisfiesExpression":
+       case "TSNonNullExpression":
+-        return markClass(n.expression);
++        return markClass(n.expression, whole);
+       case "ConditionalExpression":
+-        markClass(n.consequent);
+-        return markClass(n.alternate);
++        markClass(n.consequent, whole);
++        return markClass(n.alternate, whole);
+       case "LogicalExpression":
+-        markClass(n.left);
+-        return markClass(n.right);
++        markClass(n.left, whole && (node as unknown as { operator: string }).operator !== "&&");
++        return markClass(n.right, whole);
      }
    };
-+  /**
-+   * Every literal that IS, on some execution, the whole value of this
-+   * attribute. Direct (`class="a b"`), a backtick with nothing interpolated
-+   * into it, and the arms of a ternary or a short-circuit, which is the
-+   * supported way to switch classes (`class={on() ? "a" : "b"}`).
-+   *
-+   * The rule is "the whole value", not "reachable from here", and it decides
-+   * three edges that are not obvious:
-+   *
-+   *   - an operand of `+` is a FRAGMENT. `"animate-lid-"` in
-+   *     `class={"animate-lid-" + which()}` is never the class the node gets,
-+   *     and recording it would make the diagnostic downstream refuse a
-+   *     half-token the author never wrote, on a construct upstream compiles.
-+   *   - a template literal with no expressions IS the whole value. Upstream
-+   *     refuses only an INTERPOLATED one, so `class={`animate-x`}` compiles,
-+   *     and missing it meant one quote character decided whether a misspelt
-+   *     animation was loud or silent. One WITH expressions is a fragment for
-+   *     the same reason `+` is, and is still skipped — it can reach here
-+   *     inside a ternary arm, where upstream's refusal does not look.
-+   *   - the left operand of `&&` is never the value. A non-empty string is
-+   *     truthy, so the result is always the right; the one string that could
-+   *     be the value is `""`, which parses to nothing anyway. `||` and `??`
-+   *     take both arms, because there the left one CAN be the value.
-+   */
-+  const addAttr = (value: t.JSXAttribute["value"]): void => {
-+    const record = (s: string): void => {
-+      if (seenAttr.has(s)) return;
-+      seenAttr.add(s);
-+      out.classAttrStrings.push(s);
-+    };
-+    const take = (node: t.Node): void => {
-+      if (node.type === "StringLiteral") return record(node.value);
-+      if (node.type === "TemplateLiteral") {
-+        if (node.expressions.length > 0) return;
-+        const cooked = node.quasis[0]?.value.cooked;
-+        if (cooked !== undefined) record(cooked);
-+        return;
-+      }
-+      if (node.type === "JSXExpressionContainer") return take(node.expression);
-+      if (node.type === "ConditionalExpression") {
-+        take(node.consequent);
-+        take(node.alternate);
-+        return;
-+      }
-+      if (node.type === "LogicalExpression") {
-+        if (node.operator !== "&&") take(node.left);
-+        take(node.right);
-+      }
-+      // Anything else — a call, an identifier, an operand of `+` — is not a
-+      // whole value this pass can vouch for, and silence here only costs the
-+      // loud diagnostic.
-+    };
-+    if (value) take(value);
++  const seenWhole = new Set<string>();
++  const whole = (node: object, literal: string): void => {
++    if (!wholeNodes.has(node) || seenWhole.has(literal)) return;
++    seenWhole.add(literal);
++    out.classAttrStrings.push(literal);
 +  };
-   return {
-     name: "pocketjs-collect",
-     visitor: {
-@@ -303,6 +370,7 @@ function makeCollector(out: Collected, framework: Pock
-                       "Styles compile at build time - use ternaries of FULL literals.",
-                   );
-                 }
-+                addAttr(v);
+   const site = (node: object, literal: string, loc: { start: { line: number; column: number } } | null | undefined): void => {
+     const inClass = classNodes.has(node);
+     // Outside a class attribute one word says nothing: it compiles or it is ordinary text.
+@@ -342,12 +373,14 @@ function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
+             StringLiteral(path) {
+               add(path.node.value);
+               site(path.node, path.node.value, path.node.loc);
++              whole(path.node, path.node.value);
+             },
+             TemplateLiteral(path) {
+               for (const q of path.node.quasis) add(q.value.cooked ?? q.value.raw);
+               if (path.node.expressions.length === 0 && path.node.quasis.length === 1) {
+                 const quasi = path.node.quasis[0]!;
+                 site(path.node, quasi.value.cooked ?? quasi.value.raw, path.node.loc);
++                whole(path.node, quasi.value.cooked ?? quasi.value.raw);
                }
              },
-             ImportDeclaration(path) {
-@@ -372,9 +440,19 @@ async function hashKey(
+             JSXText(path) {
+@@ -457,9 +490,19 @@ async function hashKey(
    return h.digest("hex");
  }
  
@@ -128,75 +129,73 @@ diff --git a/framework/compiler/jsx-plugin.ts b/framework/compiler/jsx-plugin.ts
    classStrings: string[];
 +  classAttrStrings: string[];
    textCodepoints: number[];
+   literalSites: LiteralSite[];
  }
- 
-@@ -445,13 +523,18 @@ export async function transformFile(
+@@ -558,6 +601,7 @@ export async function transformFile(
      return {
        code: cached.code,
        classStrings: cached.classStrings,
 +      classAttrStrings: cached.classAttrStrings,
        textCodepoints: new Set(cached.textCodepoints),
+       literalSites: cached.literalSites ?? [],
      };
-   }
+@@ -565,7 +609,7 @@ export async function transformFile(
  
    if (isVueSfc) {
-     const result = compileVueSfc(src, path, { stripTypes: true });
--    const collected: Collected = { classStrings: [], textCodepoints: new Set() };
-+    const collected: Collected = {
-+      classStrings: [],
-+      classAttrStrings: [],
-+      textCodepoints: new Set(),
-+    };
+     const result = compileVueSfc(src, path, { stripTypes: true, checkedAot: true });
+-    const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], textCodepoints: new Set(), literalSites: [] };
++    const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [] };
      const transformed = await transformAsync(result.code, {
        filename: path,
        presets: [],
-@@ -470,17 +553,23 @@ export async function transformFile(
+@@ -584,6 +628,7 @@ export async function transformFile(
      const entry: CacheEntry = {
        code: transformed.code!,
        classStrings: collected.classStrings,
 +      classAttrStrings: collected.classAttrStrings,
        textCodepoints: [...collected.textCodepoints],
-     };
-     await Bun.write(cacheFile, JSON.stringify(entry));
+       // The collector read compiled SFC output: its positions are not the file's.
+       literalSites: [],
+@@ -592,12 +637,13 @@ export async function transformFile(
      return {
        code: entry.code,
        classStrings: entry.classStrings,
 +      classAttrStrings: entry.classAttrStrings,
        textCodepoints: new Set(entry.textCodepoints),
+       literalSites: [],
      };
    }
  
--  const collected: Collected = { classStrings: [], textCodepoints: new Set() };
-+  const collected: Collected = {
-+    classStrings: [],
-+    classAttrStrings: [],
-+    textCodepoints: new Set(),
-+  };
+-  const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], textCodepoints: new Set(), literalSites: [] };
++  const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [] };
    const opts = transformOptions(framework);
    const plugins = [
      ...(options.features === undefined ? [] : [makeFeatureFolder(options.features)]),
-@@ -555,10 +644,16 @@ export async function transformFile(
+@@ -672,11 +718,18 @@ export async function transformFile(
    const entry: CacheEntry = {
      code: res.code!,
      classStrings: collected.classStrings,
 +    classAttrStrings: collected.classAttrStrings,
      textCodepoints: [...collected.textCodepoints],
+     literalSites: positionsHold ? collected.literalSites : [],
    };
    await Bun.write(cacheFile, JSON.stringify(entry));
--  return { code: entry.code, classStrings: entry.classStrings, textCodepoints: collected.textCodepoints };
+-  return { code: entry.code, classStrings: entry.classStrings, textCodepoints: collected.textCodepoints, literalSites: entry.literalSites };
 +  return {
 +    code: entry.code,
 +    classStrings: entry.classStrings,
 +    classAttrStrings: entry.classAttrStrings,
 +    textCodepoints: collected.textCodepoints,
++    literalSites: entry.literalSites,
 +  };
  }
  
  export function jsxPlugin(
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index d8d8ce0e..8f02e16f 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -653,7 +653,24 @@ function dedupe(decls: Decl[]): StyleProp[] {
+@@ -739,7 +739,24 @@ export function suspectClassLiteral(literal: string): string[] | null {
   * (any unsupported token). Throws only for the `rounded-full` [R] rule (and
   * `hover:`, which DESIGN pins as a loud error) in otherwise-valid literals.
   */
@@ -222,7 +221,7 @@ diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
    const tokens = literal.trim().split(/\s+/).filter((t) => t.length > 0);
    if (tokens.length === 0) return null;
  
-@@ -715,12 +732,14 @@ export function parseClassLiteral(literal: string): St
+@@ -789,12 +806,14 @@ export function parseClassLiteral(literal: string): StyleRecord | null {
    // dropping it silently costs the node every one of those utilities, so a
    // one-letter typo reads as a layout bug rather than a naming one.
    //
@@ -243,7 +242,7 @@ diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
      if (anim.badLoop.length > 0) {
        throw new Error(
          `PocketJS tailwind: ${quoteTokens(anim.badLoop)} in "${literal}" is not a loop period — ` +
-@@ -811,7 +830,15 @@ export interface CompiledStyles {
+@@ -885,7 +904,15 @@ export interface CompiledStyles {
  }
  
  /** Compile candidate literals: keep the ones that parse, dedupe identical records. */
@@ -260,7 +259,7 @@ diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
    resetFontSlotPlan();
    const records: StyleRecord[] = [];
    const ids: Record<string, number> = {};
-@@ -820,7 +847,9 @@ export function compileClasses(literals: Iterable<stri
+@@ -894,7 +921,9 @@ export function compileClasses(literals: Iterable<string>): CompiledStyles {
  
    for (const lit of literals) {
      if (lit in ids) continue;
@@ -272,9 +271,10 @@ diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
      const canon = JSON.stringify(rec);
      let id = byCanon.get(canon);
 diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index 862f63e7..2930b4d1 100644
 --- a/tests/tailwind.test.ts
 +++ b/tests/tailwind.test.ts
-@@ -500,6 +500,41 @@ describe("baked keyframe animations", () => {
+@@ -530,6 +530,41 @@ describe("baked keyframe animations", () => {
      expect(parseClassLiteral("animate-imagination")).toBeNull();
    });
  
@@ -317,29 +317,30 @@ diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
      registerAnimationTheme({
        keyframes: { bad: { from: { transform: "translateX(-50%)" }, to: { transform: "translateX(0%)" } } },
 diff --git a/tools/build.ts b/tools/build.ts
+index 62ec3d00..42e4cb90 100644
 --- a/tools/build.ts
 +++ b/tools/build.ts
-@@ -254,6 +254,8 @@ const seenClass = new Set<string>();
- 
+@@ -288,6 +288,8 @@ function resolveImport(fromFile: string, spec: string): string | null {
  const classStrings: string[] = [];
+ const literalSites: Array<{ file: string; site: LiteralSite }> = [];
  const seenClass = new Set<string>();
 +/** Of those, the ones a JSX `class=` attribute held. See `ParseOptions`. */
 +const classAttrStrings = new Set<string>();
  const codepoints = new Set<number>();
  const visited = new Set<string>();
  
-@@ -275,6 +277,7 @@ async function walk(file: string): Promise<void> {
+@@ -310,6 +312,7 @@ async function walk(file: string): Promise<void> {
        classStrings.push(s);
      }
    }
 +  for (const s of res.classAttrStrings) classAttrStrings.add(s);
    for (const cp of res.textCodepoints) codepoints.add(cp);
-   for (const spec of importSpecifiers(src)) {
-     const dep = resolveImport(file, spec);
-@@ -283,7 +286,10 @@ await walk(entry);
+   // The framework's own modules are not the app author's to fix.
+   if (!file.startsWith(ROOT + "/framework/")) for (const site of res.literalSites) literalSites.push({ file, site });
+@@ -329,7 +332,10 @@ if (framework === "solid" && buildPlan?.features["system.agent"] === true) {
  }
- 
  await walk(entry);
+ for (const layer of systemLayers) await walk(layer);
 -console.log(`  pass 1: ${visited.size} module(s), ${classStrings.length} candidate literal(s), ${codepoints.size} codepoint(s)`);
 +console.log(
 +  `  pass 1: ${visited.size} module(s), ${classStrings.length} candidate literal(s) ` +
@@ -348,7 +349,7 @@ diff --git a/tools/build.ts b/tools/build.ts
  
  // ---------------------------------------------------------------------------
  // compile styles + fonts + images
-@@ -293,7 +299,7 @@ setAnimationTickRate(tickHz);
+@@ -339,7 +345,7 @@ registerAnimationTheme(config.theme);
  // Keyframe timelines are frame-baked; they must count frames at the same
  // rate the realm ticks (transition-* stays in ms and converts at runtime).
  setAnimationTickRate(tickHz);

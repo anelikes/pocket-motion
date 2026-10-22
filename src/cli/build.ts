@@ -36,9 +36,9 @@ import { buildSpawn, type ResolvedComposition } from "./resolve.ts";
 export async function runBuild(
   c: Pick<ResolvedComposition, "buildArgs" | "dir">,
 ): Promise<BuildRecord> {
-  const { argv, cwd } = buildSpawn(c);
+  const { argv, cwd, env } = buildSpawn(c);
   return withBuildLock(c.dir, async () => {
-    const proc = Bun.spawn(argv, { cwd, stdout: "pipe", stderr: "pipe" });
+    const proc = Bun.spawn(argv, { cwd, env, stdout: "pipe", stderr: "pipe" });
     const [stdout, stderr, code] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),

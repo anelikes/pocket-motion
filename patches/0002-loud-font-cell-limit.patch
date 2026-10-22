@@ -1,8 +1,8 @@
 diff --git a/framework/compiler/bake-font.ts b/framework/compiler/bake-font.ts
-index 55a43f4..bab47cd 100644
+index 5a61ac53..b4dea73d 100644
 --- a/framework/compiler/bake-font.ts
 +++ b/framework/compiler/bake-font.ts
-@@ -250,7 +250,21 @@ export function bakeSlot(
+@@ -298,7 +298,21 @@ export function bakeSlot(
    const ascent = font.ascender * scale;
    const descent = -font.descender * scale; // positive px below baseline
    const baseline = Math.round(ascent);

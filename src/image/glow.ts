@@ -215,7 +215,7 @@ export function rasterGlowPlate(box: GlowBox): GlowPlate {
 }
 
 export async function writePlatePng(path: string, plate: GlowPlate): Promise<GlowPlate> {
-  const { encodePNG } = (await import(`${pocketjsRoot()}/tests/png.ts`)) as {
+  const { encodePNG } = (await import(`${pocketjsRoot()}/tools/png.ts`)) as {
     encodePNG: (rgba: Uint8Array, w: number, h: number) => Buffer;
   };
   let png: Buffer;

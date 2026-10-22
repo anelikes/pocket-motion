@@ -10,7 +10,7 @@ What the patch adds, by file:
 
 - `contracts/spec/spec.ts`, `gen-rust.ts`, `engine/core/src/spec.rs`
   (regenerated): props `blur` (163), `dropShadowX/Y/Blur/Color/Gain`
-  (164-168), `blendMode` (169); the first six animatable (bits 40-45,
+  (164-168), `blendMode` (169); the first six animatable (bits 41-46,
   timeline-only); enum `BlendMode` {Normal, Multiply, Screen, Overlay,
   Add}; `DRAW_OP.layerPush = 67`, `layerPop = 68`; `LAYER_MAX_DEPTH = 4`;
   `BLUR_MAX = 128`.
@@ -49,13 +49,17 @@ What the patch adds, by file:
   render, glow around a stroked run, and a pooled buffer carrying nothing
   from the layer before (red with the clear removed).
 
+2026-10-22, rebased onto 66caf4e5: the animatable bits moved up one
+behind main's `skewX` (bit 38). The two draw-list walkers main added know
+LAYER_PUSH (8) and LAYER_POP (1).
+
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index bdfc17ca..3b94a65e 100644
+index 12cc5139..558a52f7 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
-@@ -72,6 +72,8 @@ import {
+@@ -99,6 +99,8 @@ import {
    DRAW_OP,
    MASK_MAX_VERTS,
    STROKE_MAX_WIDTH,
@@ -64,7 +68,7 @@ index bdfc17ca..3b94a65e 100644
    ENUMS,
    FIXED_DT,
    FONT_CMAP_ENTRY_SIZE,
-@@ -445,6 +447,8 @@ export function generateRust(): string {
+@@ -481,6 +483,8 @@ export function generateRust(): string {
    put("    /// Largest vertex count a MASK_PUSH may carry.");
    put(`    pub const MASK_MAX_VERTS: usize = ${MASK_MAX_VERTS};`);
    put(`    pub const STROKE_MAX_WIDTH: f32 = ${STROKE_MAX_WIDTH}.0;`);
@@ -74,10 +78,10 @@ index bdfc17ca..3b94a65e 100644
    put("");
  
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index 23604819..30ba3a08 100644
+index b61940ad..1140b8f8 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -363,6 +363,19 @@ export const PROP = {
+@@ -434,6 +434,19 @@ export const PROP = {
    //                      edge, painted OVER the fill. Needs textStrokeColor.
    textStrokeColor: 161, // color u32 ABGR (alpha 0 = no stroke)
    textStrokePos: 162, //   enum StrokePos
@@ -97,21 +101,21 @@ index 23604819..30ba3a08 100644
  } as const;
  
  export type PropName = keyof typeof PROP;
-@@ -423,6 +436,12 @@ export const ANIMATABLE: readonly PropName[] = [
-   "arcWidth", //    37
-   "textStrokeWidth", // 38
-   "textStrokeColor", // 39
-+  "blur", //            40
-+  "dropShadowX", //     41
-+  "dropShadowY", //     42
-+  "dropShadowBlur", //  43
-+  "dropShadowColor", // 44
-+  "dropShadowGain", //  45
+@@ -495,6 +508,12 @@ export const ANIMATABLE: readonly PropName[] = [
+   "skewX", //       38
+   "textStrokeWidth", // 39
+   "textStrokeColor", // 40
++  "blur", //            41
++  "dropShadowX", //     42
++  "dropShadowY", //     43
++  "dropShadowBlur", //  44
++  "dropShadowColor", // 45
++  "dropShadowGain", //  46
  ];
  
  /** Anim bit index for a prop, or -1 if not animatable. */
-@@ -498,6 +517,11 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
-   arcStart: VALUE_KIND.f32, arcSweep: VALUE_KIND.f32, arcWidth: VALUE_KIND.f32,
+@@ -572,6 +591,11 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   skewX: VALUE_KIND.f32,
    textStrokeWidth: VALUE_KIND.f32, textStrokeColor: VALUE_KIND.color,
    textStrokePos: VALUE_KIND.int,
 +  blur: VALUE_KIND.f32,
@@ -122,7 +126,7 @@ index 23604819..30ba3a08 100644
  };
  
  // ---------------------------------------------------------------------------
-@@ -517,6 +541,9 @@ export const ENUMS = {
+@@ -593,6 +617,9 @@ export const ENUMS = {
    GradDir: { ToTop: 0, ToBottom: 1, ToLeft: 2, ToRight: 3 },
    /** Text stroke position (`text-stroke-outside|center`, pocket-motion). */
    StrokePos: { Outside: 0, Center: 1 },
@@ -132,7 +136,7 @@ index 23604819..30ba3a08 100644
    /**
     * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
     * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
-@@ -1456,6 +1483,25 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+@@ -1533,6 +1560,25 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
  //                           edge offset (0.5 - coverage), so a width of 0 is
  //                           the glyph's own coverage. Width is clamped to
  //                           STROKE_MAX_WIDTH. Software rasteriser only.
@@ -158,7 +162,7 @@ index 23604819..30ba3a08 100644
  //   TEXT_RUN    (8 + ceil(n/4) words):
  //                           op,
  //                           word1: bits 0-7 fontSlot,
-@@ -1498,8 +1544,16 @@ export const DRAW_OP = {
+@@ -1586,8 +1632,16 @@ export const DRAW_OP = {
    maskPush: 64,
    maskPop: 65,
    glyphStroke: 66,
@@ -175,11 +179,24 @@ index 23604819..30ba3a08 100644
  /** Widest text stroke, in logical px; wider is drawn at this width. */
  export const STROKE_MAX_WIDTH = 64;
  
+diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
+index 5d280962..16b0f234 100644
+--- a/engine/core/src/compositor.rs
++++ b/engine/core/src/compositor.rs
+@@ -31,6 +31,8 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+         crate::spec::draw_op::MASK_PUSH => 2 + *words.get(at + 1)? as usize,
+         crate::spec::draw_op::MASK_POP => 1,
+         crate::spec::draw_op::GLYPH_STROKE => 5 + 2 * ((*words.get(at + 1)? >> 16) as usize),
++        crate::spec::draw_op::LAYER_PUSH => 8,
++        crate::spec::draw_op::LAYER_POP => 1,
+         _ => return None,
+     })
+ }
 diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
-index 29e3cc67..36015ae5 100644
+index be69cedb..4496e395 100644
 --- a/engine/core/src/damage.rs
 +++ b/engine/core/src/damage.rs
-@@ -390,6 +390,10 @@ struct DamageDecoder<'a> {
+@@ -396,6 +396,10 @@ struct DamageDecoder<'a> {
      clip: DamageRect,
      stack: [DamageRect; CLIP_DEPTH],
      depth: usize,
@@ -190,7 +207,7 @@ index 29e3cc67..36015ae5 100644
  }
  
  impl<'a> DamageDecoder<'a> {
-@@ -401,6 +405,7 @@ impl<'a> DamageDecoder<'a> {
+@@ -407,6 +411,7 @@ impl<'a> DamageDecoder<'a> {
              clip: screen,
              stack: [screen; CLIP_DEPTH],
              depth: 0,
@@ -198,7 +215,7 @@ index 29e3cc67..36015ae5 100644
          }
      }
  
-@@ -450,6 +455,8 @@ impl<'a> DamageDecoder<'a> {
+@@ -457,6 +462,8 @@ impl<'a> DamageDecoder<'a> {
                      .checked_add(count.checked_mul(2).ok_or(())?)
                      .ok_or(())?
              }
@@ -207,7 +224,7 @@ index 29e3cc67..36015ae5 100644
              _ => return Err(()),
          };
          let end = start.checked_add(len).ok_or(())?;
-@@ -489,6 +496,17 @@ impl<'a> DamageDecoder<'a> {
+@@ -496,6 +503,17 @@ impl<'a> DamageDecoder<'a> {
              // A stroke reaches past its cells by its width: the cell bounds
              // grown by that width (rounded out, plus the anti-aliased pixel).
              spec::draw_op::GLYPH_STROKE => glyph_stroke_bounds(ui, words, self.clip),
@@ -225,7 +242,7 @@ index 29e3cc67..36015ae5 100644
              // Native-text runs carry no glyph geometry the tracker can
              // measure; the core keeps every partially-clipped run inside a
              // scissor, so the current clip is a sound (conservative) bound.
-@@ -503,7 +521,7 @@ impl<'a> DamageDecoder<'a> {
+@@ -511,7 +529,7 @@ impl<'a> DamageDecoder<'a> {
      }
  
      fn is_balanced(&self) -> bool {
@@ -234,7 +251,7 @@ index 29e3cc67..36015ae5 100644
      }
  }
  
-@@ -527,6 +545,11 @@ fn draw_list_damage<const MAX_REGIONS: usize>(
+@@ -535,6 +553,11 @@ fn draw_list_damage<const MAX_REGIONS: usize>(
              (None, None) => break,
              (Some(old_op), Some(new_op)) if old_op.code == new_op.code => {
                  if old_op.words != new_op.words {
@@ -247,11 +264,11 @@ index 29e3cc67..36015ae5 100644
                      damage.add(new_op.bounds, screen);
                  }
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 24cf4817..fc26a4b9 100644
+index 0b23a158..375c8395 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
-@@ -819,6 +819,8 @@ struct Walker<'a> {
-     inspect_hit: Option<Clip>,
+@@ -1050,6 +1050,8 @@ struct Walker<'a> {
+     capturing: bool,
      /// Draw-time skip: this slot and its subtree emit nothing (u32::MAX = none).
      hide_slot: u32,
 +    /// Open LAYER_PUSHes on the walk (pocket-motion filter layers).
@@ -259,15 +276,15 @@ index 24cf4817..fc26a4b9 100644
  }
  
  /// Build the full DrawList for the current (laid-out) tree. `frame` is the
-@@ -873,6 +875,7 @@ pub fn build(
+@@ -1150,6 +1152,7 @@ pub fn build_root(
          hide_slot,
          in_3d: false,
          provider_stale: false,
 +        layer_depth: 0,
      };
-     let root_slot = crate::tree::split_id(spec::ROOT_ID).1;
-     w.paint(root_slot, Affine::IDENTITY, 1.0, Clip::viewport(screen), false, dl);
-@@ -964,6 +967,50 @@ impl<'a> Walker<'a> {
+     let Some(root_slot) = tree.resolve(root_id) else {
+         return (None, None, false);
+@@ -1277,6 +1280,50 @@ impl<'a> Walker<'a> {
              return;
          }
  
@@ -318,11 +335,24 @@ index 24cf4817..fc26a4b9 100644
          // -- background + shadow --------------------------------------------
          let has_grad = r.grad_dir != NO_GRADIENT && r.grad_dir <= spec::GradDir::ToRight as u32;
          let bg_color = scale_alpha(r.bg_color, op);
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 17bd0a86..e9be894c 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -1286,6 +1286,8 @@ impl Ui {
+                     let Some(meta) = words.get(i + 1) else { break };
+                     5 + 2 * ((*meta >> 16) as usize)
+                 }
++                x if x == spec::draw_op::LAYER_PUSH => 8,
++                x if x == spec::draw_op::LAYER_POP => 1,
+                 _ => break,
+             };
+             let Some(end) = i.checked_add(len) else { break };
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index bc00850b..4deb56d7 100644
+index 0e5adb01..17b6feab 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
-@@ -154,6 +154,14 @@ trait RenderTarget {
+@@ -163,6 +163,14 @@ trait RenderTarget {
      fn push_mask(&mut self, _level: MaskLevel) {}
      fn pop_mask(&mut self) {}
  
@@ -337,7 +367,7 @@ index bc00850b..4deb56d7 100644
      /// The colour a frame starts from over `len` pixels: opaque black for a
      /// target with no alpha channel, transparent black where there is one
      /// (pocket-motion patch 0014, overridden by `RgbaTarget`).
-@@ -234,6 +242,18 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
+@@ -243,6 +251,18 @@ impl<const ARGB: bool> RenderTarget for RgbaTarget<'_, ARGB> {
          let byte_start = start * 4;
          self.bytes[byte_start..byte_start + len * 4].fill(0);
      }
@@ -355,8 +385,8 @@ index bc00850b..4deb56d7 100644
 +    }
  }
  
- struct Rgb565Target<'a> {
-@@ -734,7 +754,8 @@ fn render_scaled_clipped<T: RenderTarget>(
+ /// RGBA8 target that keeps coverage. The colour bytes are premultiplied: they
+@@ -821,7 +841,8 @@ fn render_scaled_clipped<T: RenderTarget>(
      scale: i32,
      screen: Clip,
  ) {
@@ -366,15 +396,15 @@ index bc00850b..4deb56d7 100644
  }
  
  /// The op loop. Returns how many words it consumed: all of them, or up to
-@@ -744,6 +765,7 @@ fn render_scaled_clipped<T: RenderTarget>(
+@@ -831,6 +852,7 @@ fn render_scaled_clipped<T: RenderTarget>(
  /// resumes after the pop the inner call stopped at. A `Masked` target takes
  /// further pushes onto its own stack instead, so the recursion is one level
  /// deep whatever the nesting.
 +#[allow(clippy::too_many_arguments)]
  fn render_ops<T: RenderTarget>(
-     ui: &Ui,
+     ui: &impl RenderResources,
      words: &[u32],
-@@ -752,11 +774,16 @@ fn render_ops<T: RenderTarget>(
+@@ -839,11 +861,16 @@ fn render_ops<T: RenderTarget>(
      scale: i32,
      screen: Clip,
      clip0: Clip,
@@ -391,7 +421,7 @@ index bc00850b..4deb56d7 100644
  
      let mut i = 0usize;
      while i < words.len() {
-@@ -907,7 +934,7 @@ fn render_ops<T: RenderTarget>(
+@@ -1002,7 +1029,7 @@ fn render_ops<T: RenderTarget>(
                  } else {
                      let mut masked = Masked { inner: target, stride: width, levels: Vec::new() };
                      masked.push_mask(level);
@@ -400,7 +430,7 @@ index bc00850b..4deb56d7 100644
                  }
              }
              draw_op::GLYPH_STROKE => {
-@@ -934,6 +961,35 @@ fn render_ops<T: RenderTarget>(
+@@ -1029,6 +1056,35 @@ fn render_ops<T: RenderTarget>(
                  );
                  i += 5 + 2 * n;
              }
@@ -436,7 +466,7 @@ index bc00850b..4deb56d7 100644
              draw_op::MASK_POP => {
                  if mask_depth > 0 {
                      target.pop_mask();
-@@ -1465,6 +1521,11 @@ impl RenderTarget for Masked<'_> {
+@@ -1560,6 +1616,11 @@ impl RenderTarget for Masked<'_> {
      fn pop_mask(&mut self) {
          self.levels.pop();
      }
@@ -448,7 +478,7 @@ index bc00850b..4deb56d7 100644
  }
  
  // ---- GLYPH_RUN: coverage atlas cells -----------------------------------------------
-@@ -1539,6 +1600,558 @@ fn glyph_run<T: RenderTarget>(
+@@ -1634,6 +1695,558 @@ fn glyph_run<T: RenderTarget>(
      }
  }
  
@@ -1008,10 +1038,10 @@ index bc00850b..4deb56d7 100644
  
  /// Largest region, in physical pixels, one GLYPH_STROKE rasterises. A run
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index e9248b1b..7b1b7500 100644
+index 0b04b0e6..6e92859f 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
-@@ -168,6 +168,13 @@ pub mod prop {
+@@ -187,6 +187,13 @@ pub mod prop {
      pub const TEXT_STROKE_WIDTH: u8 = 160;
      pub const TEXT_STROKE_COLOR: u8 = 161;
      pub const TEXT_STROKE_POS: u8 = 162;
@@ -1025,34 +1055,34 @@ index e9248b1b..7b1b7500 100644
  }
  
  /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
-@@ -189,7 +196,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+@@ -208,7 +215,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 -    0x00, 0x01, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 +    0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-@@ -210,7 +217,7 @@ pub const ANIM_BIT: [u8; 256] = [
+@@ -229,7 +236,7 @@ pub const ANIM_BIT: [u8; 256] = [
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-     0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0xff, 0xff, 0x20, 0x21, 0x22, 0xff, 0x23, 0x24, 0x25, 0xff,
+     0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0xff, 0xff, 0x20, 0x21, 0x22, 0xff, 0x23, 0x24, 0x25, 0x26,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
--    0x26, 0x27, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-+    0x26, 0x27, 0xff, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0x27, 0x28, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-@@ -219,7 +226,7 @@ pub const ANIM_BIT: [u8; 256] = [
+@@ -238,7 +245,7 @@ pub const ANIM_BIT: [u8; 256] = [
  ];
  
  /// Bitset over prop ids: animatable props (tween/spring/transition targets).
--pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000000030000773f, 0x0000000000000000];
-+pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000001fb0000773f, 0x0000000000000000];
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000000030000f73f, 0x0000000000000000];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x000001fb0000f73f, 0x0000000000000000];
  /// Bitset over prop ids: props whose change invalidates layout.
- pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000007fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
  
-@@ -311,6 +318,17 @@ pub enum StrokePos {
+@@ -339,6 +346,17 @@ pub enum StrokePos {
      Center = 1,
  }
  
@@ -1070,7 +1100,7 @@ index e9248b1b..7b1b7500 100644
  /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
  #[repr(u8)]
  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-@@ -450,9 +468,13 @@ pub mod draw_op {
+@@ -480,9 +498,13 @@ pub mod draw_op {
      pub const MASK_PUSH: u32 = 64;
      pub const MASK_POP: u32 = 65;
      pub const GLYPH_STROKE: u32 = 66;
@@ -1085,10 +1115,10 @@ index e9248b1b..7b1b7500 100644
  
  /// .pak container constants (byte-compatible with dreamcart's format;
 diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
-index c528ce8a..b3735554 100644
+index 9b4ba0b7..53f0f75d 100644
 --- a/engine/core/src/style.rs
 +++ b/engine/core/src/style.rs
-@@ -307,6 +307,15 @@ pub struct Resolved {
+@@ -315,6 +315,15 @@ pub struct Resolved {
      pub text_stroke_color: u32,
      /// spec::StrokePos ordinal.
      pub text_stroke_pos: u8,
@@ -1104,7 +1134,7 @@ index c528ce8a..b3735554 100644
  }
  
  impl Default for Resolved {
-@@ -371,6 +380,13 @@ impl Default for Resolved {
+@@ -383,6 +392,13 @@ impl Default for Resolved {
              text_stroke_width: 0.0,
              text_stroke_color: 0,
              text_stroke_pos: spec::StrokePos::Outside as u8,
@@ -1118,7 +1148,7 @@ index c528ce8a..b3735554 100644
          }
      }
  }
-@@ -464,6 +480,13 @@ impl Resolved {
+@@ -481,6 +497,13 @@ impl Resolved {
              p::TEXT_STROKE_WIDTH => self.text_stroke_width = f,
              p::TEXT_STROKE_COLOR => self.text_stroke_color = bits,
              p::TEXT_STROKE_POS => self.text_stroke_pos = bits as u8,
@@ -1132,7 +1162,7 @@ index c528ce8a..b3735554 100644
              _ => {}
          }
      }
-@@ -541,6 +564,13 @@ impl Resolved {
+@@ -562,6 +585,13 @@ impl Resolved {
              p::TEXT_STROKE_WIDTH => self.text_stroke_width.to_bits(),
              p::TEXT_STROKE_COLOR => self.text_stroke_color,
              p::TEXT_STROKE_POS => self.text_stroke_pos as u32,
@@ -1147,10 +1177,10 @@ index c528ce8a..b3735554 100644
          }
      }
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 946f9546..9ebb13fa 100644
+index adc89210..6f5a6363 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -254,6 +254,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -262,6 +262,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
      let mut counts = [0u32; 72];
      let mut depth = 0i32;
      let mut mask_depth = 0i32;
@@ -1158,7 +1188,7 @@ index 946f9546..9ebb13fa 100644
      let mut i = 0usize;
      while i < words.len() {
          let op = words[i];
-@@ -349,6 +350,22 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -365,6 +366,22 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
                  }
                  i += 5 + 2 * n;
              }
@@ -1181,7 +1211,7 @@ index 946f9546..9ebb13fa 100644
              spec::draw_op::TEXT_RUN => {
                  // Native-text op: origin is f32 (exempt from the i16 clip
                  // guarantee), box width is finite and non-negative, and the
-@@ -367,6 +384,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -383,6 +400,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
      }
      assert_eq!(depth, 0, "unbalanced SCISSOR/SCISSOR_POP");
      assert_eq!(mask_depth, 0, "unbalanced MASK_PUSH/MASK_POP");
@@ -1189,7 +1219,7 @@ index 946f9546..9ebb13fa 100644
      counts
  }
  
-@@ -4846,3 +4864,261 @@ fn a_moving_stroke_redraws_incrementally_to_the_full_render() {
+@@ -5875,3 +5893,261 @@ fn a_moving_stroke_redraws_incrementally_to_the_full_render() {
      render_scaled(&ui, &second, &mut full, 1);
      assert!(fb == full, "incremental redraw of a moved stroke differs from the full render");
  }
@@ -1451,11 +1481,37 @@ index 946f9546..9ebb13fa 100644
 +        assert_eq!(sample_rgba(&one, x, 90), sample_rgba(&two, x, 90), "column {x} of the first node");
 +    }
 +}
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index 3bc08dbe..aea967f8 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -81,6 +81,13 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("textStrokeWidth", 160, "f32"),
+     ("textStrokeColor", 161, "u32"),
+     ("textStrokePos", 162, "i32"),
++    ("blur", 163, "f32"),
++    ("dropShadowX", 164, "f32"),
++    ("dropShadowY", 165, "f32"),
++    ("dropShadowBlur", 166, "f32"),
++    ("dropShadowColor", 167, "u32"),
++    ("dropShadowGain", 168, "f32"),
++    ("blendMode", 169, "i32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+@@ -197,6 +204,7 @@ pub const STYLE_UNITS: &[(&str, &str)] = &[
+     ("arcWidth", "Px"),
+     ("skewX", "Deg"),
+     ("textStrokeColor", "Color"),
++    ("dropShadowColor", "Color"),
+ ];
+ pub const INPUT_ELEMENTS: &[(&str, &[&str], &[&str])] = &[
+     ("ActionHandler", &["button", "active", "latched"], &["press"]),
 diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
-index 725e0117..8cd6c5fb 100644
+index ec444956..28172942 100644
 --- a/framework/compiler/animation.ts
 +++ b/framework/compiler/animation.ts
-@@ -249,8 +249,56 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+@@ -267,8 +267,56 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
    textStrokeColor: [[PROP.textStrokeColor], colorBits],
    WebkitTextStrokeWidth: [[PROP.textStrokeWidth], pxBits],
    WebkitTextStrokeColor: [[PROP.textStrokeColor], colorBits],
@@ -1512,7 +1568,7 @@ index 725e0117..8cd6c5fb 100644
  /** kebab-case -> camelCase (accepts `background-color` next to `backgroundColor`). */
  function camel(name: string): string {
    return name.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
-@@ -471,6 +519,10 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+@@ -491,6 +539,10 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
            transformPcts.push([pct, decomposed]);
            continue;
          }
@@ -1524,10 +1580,10 @@ index 725e0117..8cd6c5fb 100644
          if (!spec) err(`${where}: unsupported property \`${rawKey}\`.`);
          const [propIds, encode] = spec;
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index 84baf937..a1fffc84 100644
+index ccb52c48..56fc9c80 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -22,6 +22,7 @@ import {
+@@ -24,6 +24,7 @@ import {
    PROP,
    SIZE_FULL,
    STROKE_MAX_WIDTH,
@@ -1535,7 +1591,7 @@ index 84baf937..a1fffc84 100644
    TRANSITION_MASK_ALL,
    abgr,
    animBit,
-@@ -389,6 +390,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+@@ -409,6 +410,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
      case "tracking-wide": acc.trackingWide = true; return true;
    }
    if (tok in SHADOWS) { D.push([PROP.shadow, int(SHADOWS[tok])]); return true; }
@@ -1543,7 +1599,7 @@ index 84baf937..a1fffc84 100644
    {
      // `font-[display]`: a named face. The build refuses a name no
      // `--font-face-*` flag declared (bake-font.ts), so a typo is loud there.
-@@ -632,6 +634,102 @@ function parseTextStroke(rest: string, D: Decl[]): boolean {
+@@ -655,6 +657,102 @@ function parseTextStroke(rest: string, D: Decl[]): boolean {
    return true;
  }
  
@@ -1646,11 +1702,29 @@ index 84baf937..a1fffc84 100644
  /** Literal-level animation accumulator (`animate-*` binds to the base style). */
  interface AnimAcc {
    ids: number[];
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index 4e6a75aa..89735501 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -76,6 +76,13 @@ export interface MicroTsStyleProps {
+   textStrokeWidth?: MicroTsFloatInput;
+   textStrokeColor?: Color;
+   textStrokePos?: i32;
++  blur?: MicroTsFloatInput;
++  dropShadowX?: MicroTsFloatInput;
++  dropShadowY?: MicroTsFloatInput;
++  dropShadowBlur?: MicroTsFloatInput;
++  dropShadowColor?: Color;
++  dropShadowGain?: MicroTsFloatInput;
++  blendMode?: i32;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
 diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
-index 2a01139d..ab8727ab 100644
+index b4535aaf..f8a37ffe 100644
 --- a/tests/tailwind.test.ts
 +++ b/tests/tailwind.test.ts
-@@ -632,3 +632,49 @@ describe("text stroke (pocket-motion)", () => {
+@@ -698,3 +698,49 @@ describe("text stroke (pocket-motion)", () => {
      expect(tl.tracks.map((t) => t.prop).sort()).toEqual([PROP.textStrokeWidth, PROP.textStrokeColor].sort());
    });
  });
