@@ -644,9 +644,21 @@ function kelvinOverlay(): string {
 function hullTop(): string {
   const core = "#ffe2c2";
   const on = reg.anim(reg.window(T_LAND));
-  const lobes = `${rect(CX - 230, CY, 460, 1, core, "opacity-20")}${rect(CX, CY - 150, 1, 300, core, "opacity-15")}`;
-  const hull = `<View class="absolute left-[${CX - 68}px] top-[${CY - 6}px] w-[136px] h-[12px] rounded-[6px] bg-[${core}] origin-center rotate-342" />`;
-  return `<View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}"><View class="absolute inset-0 animate-${on}">${lobes}<View class="absolute inset-0 glow-[8px] glow-[#ff9a40] glow-gain-[1.2]">${hull}</View></View></View>`;
+  // the hull as radar sees it: separate hot scatterers along a 3 px core on the 072 degree heading, not a smooth
+  //   shape; a 136 x 12 px rounded bar read as a pill. The cross of sidelobes runs through the brightest one only
+  const ux = Math.cos((-18 * Math.PI) / 180);
+  const uy = Math.sin((-18 * Math.PI) / 180);
+  const pts: [number, number][] = [[-58, 55], [-36, 80], [-12, 65], [12, 100], [34, 75], [56, 90]];
+  const dots = pts
+    .map(([p, a]) => {
+      const sz = Math.round(4 + (3 * a) / 100);
+      return rect(Math.round(CX + ux * p - sz / 2), Math.round(CY + uy * p - sz / 2), sz, sz, core, `opacity-${a}`);
+    })
+    .join("");
+  const [bx, by] = [Math.round(CX + ux * 12), Math.round(CY + uy * 12)];
+  const lobes = `${rect(bx - 75, by, 150, 1, core, "opacity-20")}${rect(bx, by - 75, 1, 150, core, "opacity-15")}`;
+  const coreLine = `<View class="absolute left-[${CX - 62}px] top-[${CY - 1}px] w-[124px] h-[3px] bg-[${core}] opacity-60 origin-center rotate-342" />`;
+  return `<View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}"><View class="absolute inset-0 animate-${on}">${lobes}<View class="absolute inset-0 glow-[6px] glow-[#ff9a40] glow-gain-[1.2]">${coreLine}${dots}</View></View></View>`;
 }
 
 /**
@@ -762,24 +774,27 @@ function tracking(): string {
  * so their strokes keep their weight at every size.
  */
 const T_RAMP = T_LOCK + 6;
-const T_SNAP_IN = T_FLIP - 8;
-const T_HELD = T_FLIP - 18; // f186: the brackets are square at 1.4 and hold for the snap
-const LOCK_D = 70; // half the box the brackets close on: 140 px around the contact
-const VESSEL_D = 130; // half the box they open to as the push lands on the vessel
+const T_HELD = T_FLIP - 16; // f187: the brackets come square at 1.4 and go straight into the snap
+const T_SNAP_IN = T_HELD; // the snap starts as the spin comes square
+// half the box the brackets close on: 200 px around the contact. At 140 the snap from 1.4 moved each corner 28 px,
+//   and both judges read it as a small event apart from the flip
+const LOCK_D = 100;
+// the box they hold on the vessel: the same box, bitten again where the push lands, rather than opened and closed
+//   again (two contractions read as two locks)
+const VESSEL_D = LOCK_D;
 const LOCK_S = 2 * VESSEL_D;
 const lockD = (t: number): number => {
   if (t < T_RAMP) return 1.8 * LOCK_D;
   if (t < T_HELD) return lerp(1.8 * LOCK_D, 1.4 * LOCK_D, inOut((t - T_RAMP) / (T_HELD - T_RAMP)));
-  if (t < T_SNAP_IN) return 1.4 * LOCK_D;
-  if (t <= T_FLIP) return lerp(1.4 * LOCK_D, LOCK_D, ((t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN)) ** 2);
+  // no hold at 1.4: the spin hands straight into eight frames of fast-out slow-in that land on the flip
+  if (t <= T_FLIP) return lerp(1.4 * LOCK_D, LOCK_D, snapEase(Math.min(1, Math.max(0, (t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN)))));
   if (t <= T_FLIP + 2) return lerp(LOCK_D, 0.97 * LOCK_D, (t - T_FLIP) / 2);
   if (t <= T_FLIP + 4) return lerp(0.97 * LOCK_D, LOCK_D, (t - T_FLIP - 2) / 2);
   // the lock holds its box through the dive (opening with the zoom read as letting go), then locks again on the vessel
   //   the push lands on: open at 1.4 of the vessel's box, four frames in at speed, a one-frame bite
-  if (t <= T_LAND - 8) return LOCK_D;
-  if (t <= T_LAND) return lerp(1.4 * VESSEL_D, VESSEL_D, ((t - (T_LAND - 8)) / 8) ** 2);
-  if (t <= T_LAND + 2) return lerp(VESSEL_D, 0.97 * VESSEL_D, (t - T_LAND) / 2);
-  if (t <= T_LAND + 4) return lerp(0.97 * VESSEL_D, VESSEL_D, (t - T_LAND - 2) / 2);
+  if (t <= T_LAND) return LOCK_D;
+  if (t <= T_LAND + 2) return lerp(VESSEL_D, 0.94 * VESSEL_D, (t - T_LAND) / 2);
+  if (t <= T_LAND + 6) return lerp(0.94 * VESSEL_D, VESSEL_D, (t - T_LAND - 2) / 4);
   return VESSEL_D;
 };
 const lockRot = (t: number): number => (t < T_RAMP ? 45 : t < T_HELD ? lerp(45, 0, inOut((t - T_RAMP) / (T_HELD - T_RAMP))) : 0);
