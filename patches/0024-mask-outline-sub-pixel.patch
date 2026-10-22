@@ -1,0 +1,782 @@
+pocket-motion-only: MASK_PUSH is this repository's op (0013) and only the software rasteriser reads it — no upstream backend is taught it, and a stream carrying it stops there. The POLY half of the change is a unit change inside the row walk the two ops share, and leaves every POLY byte-identical.
+
+0024 — an `overflow-mask` outline at sub-pixel precision.
+
+The defect. `mask_outline` rounded every vertex of a window's outline to a
+whole pixel before MASK_PUSH carried it, which moves each edge by up to
+half a pixel on each axis. Along a long edge that is a band of pixels the
+mask covers and the node does not — at full coverage wherever the rounded
+edge sits outside the true one. And a square-cornered window at 0 degrees
+emitted no mask wherever it stood: the scissor is its AABB rounded OUTWARD,
+so at a fractional position, where per-tick translate keyframes leave every
+moving window, a column of content outside the node.
+
+The measurement is `a_mask_turned_about_its_corner_leaves_no_ink_outside_its_outline`:
+a 120 px window turned about its bottom-left corner from -90 to +90 degrees
+in quarter degrees, at four sub-pixel positions, holding a full-frame white
+box. A pixel may be inked only when at least one of its 16 samples lies
+inside the window's corners (to a sixteenth of a pixel). Before: 21,193
+pixels inked with every sample outside, at 659 of 721 angles. After: none,
+and every pixel whose samples are all inside is full.
+
+The film it was found in (`mg-bauhaus`, frame 195, the 1 px sliver along a
+rolling tile's edge): the sliver is the film's own declared geometry —
+`MISREG.yellow = [1, 1]` in its `poster.ts` puts the yellow plate one pixel
+into the next grid cell, and that cell carries the pixel when it rolls away.
+With the outline rounded, the band crossed the window's edge; unrounded, it
+lies wholly inside the window, where the film declares it. A content edge
+drawn as POLY or TEX_TRI is still rounded to whole pixels — those are
+upstream's op formats, and this patch does not change them.
+
+What changes, by file:
+
+- `contracts/spec/spec.ts`, `gen-rust.ts`, `engine/core/src/spec.rs`
+  (regenerated): MASK_PUSH is 2 + 2N words, N `(x, y)` f32 pairs in logical
+  pixels.
+- `engine/core/src/draw.rs`: `mask_outline` clamps to the viewport and does
+  not round; each corner quarter's two ends are taken on the axes exactly
+  (Taylor `sinf`/`cosf` are a few ulp off at multiples of pi/2, and at
+  `rounded-full` one corner's last vertex and the next one's first are one
+  point only an exact pair deduplicates — a circle stays 48 vertices); the
+  AABB shortcut needs all four AABB coordinates on whole pixels.
+- `engine/core/src/raster.rs`: `PolyScan` works in sixteenths of a physical
+  pixel (`POLY_SUB`), samples at +-2 and +-6 of them from a pixel centre.
+  POLY's whole-pixel vertices enter multiplied by 16, which scales every
+  edge function, row bound and step by the same positive constant and
+  changes no sample's sign: POLY is byte-identical by construction.
+  MASK_PUSH's f32 vertices enter rounded to the nearest sixteenth.
+- `engine/core/src/damage.rs`, `lib.rs`, `compositor.rs`: the three
+  draw-list walkers step 2 + 2N; damage bounds a mask by its f32 vertices,
+  floor to ceil.
+- `engine/core/src/tests.rs`, `damage.rs` tests: the sweep above;
+  `mask_coverage_is_poly_coverage_for_the_same_vertices` replaces
+  `mask_of_a_rotated_window_equals_poly_of_the_same_box` — a window's outline
+  is no longer the rotated box's rounded POLY, so the claim the old test made
+  is now made at the rasteriser: POLY, and a full-screen RECT under a
+  MASK_PUSH of that POLY's own vertices, are the same bytes over the same 54
+  cases (red with the level builder made binary, as before).
+
+Ledgers, against the same tree without this patch: `compositions/masked`
+moves — all 90 frames, and only pixels on its four windows' outlines (frame
+45: 5,073 pixels, none by more than 113 of 255) — because every one of its
+windows is rounded or turned. No other digest moves, POLY included, and
+every `visibility` row is unchanged.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 3d79e006..07ddf4cd 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -479,7 +479,7 @@ export function generateRust(): string {
+   put("/// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,");
+   put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,");
+   put("/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N,");
+-  put("/// MASK_PUSH 2+N, MASK_POP 1 (64 and up: software-rasteriser-only ops).");
++  put("/// MASK_PUSH 2+2N (f32 x, y pairs), MASK_POP 1 (64 and up: software-rasteriser-only ops).");
+   put("pub mod draw_op {");
+   for (const [name, v] of Object.entries(DRAW_OP)) {
+     put(`    pub const ${screaming(name)}: u32 = ${v};`);
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 7671efef..c961bd52 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -1569,7 +1569,8 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+ //                           polygon (interior run + boundary pixels) so a
+ //                           box's shared diagonal is not an interior edge.
+ //                           N > 8 falls back to a TRI fan.
+-//   MASK_PUSH   (2 + N):    op, N (3..=MASK_MAX_VERTS), then N x xy — one
++//   MASK_PUSH   (2 + 2N):   op, N (3..=MASK_MAX_VERTS), then N x (x, y),
++//                           each an f32 in LOGICAL px, unrounded — one
+ //                           screen-space convex polygon clipped to the
+ //                           VIEWPORT (not to the scissor, so that nesting
+ //                           multiplies exactly): the outline of an
+@@ -1578,8 +1579,13 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+ //                           SCISSOR and before its own ground.
+ //                           Until the matching MASK_POP every op blends at
+ //                           `a * hits / 16`, hits being the pixel's 4×4
+-//                           sample count inside the polygon — exactly the
+-//                           coverage a POLY of the same vertices would get.
++//                           sample count inside the polygon with its
++//                           vertices taken to 1/16 of a physical pixel —
++//                           exactly the coverage a POLY gets, POLY's
++//                           whole-pixel vertices being a case of it. A
++//                           vertex rounded to a whole pixel moved its edges
++//                           by up to half a pixel per axis, a band of
++//                           content outside the node along any long edge.
+ //                           Nested masks multiply (hits_outer * hits_inner
+ //                           / 16). Drawn by the software rasteriser only;
+ //                           no other backend knows the op, and a stream
+diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
+index 8428bbeb..2b58e156 100644
+--- a/engine/core/src/compositor.rs
++++ b/engine/core/src/compositor.rs
+@@ -28,7 +28,7 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+         crate::spec::draw_op::TEXT_RUN => 8 + (*words.get(at + 7)? as usize).div_ceil(4),
+         crate::spec::draw_op::SURFACE_QUAD => 9,
+         crate::spec::draw_op::POLY => 3 + *words.get(at + 1)? as usize,
+-        crate::spec::draw_op::MASK_PUSH => 2 + *words.get(at + 1)? as usize,
++        crate::spec::draw_op::MASK_PUSH => 2 + 2 * *words.get(at + 1)? as usize,
+         crate::spec::draw_op::MASK_POP => 1,
+         crate::spec::draw_op::GLYPH_STROKE => 5 + 2 * ((*words.get(at + 1)? >> 16) as usize),
+         crate::spec::draw_op::LAYER_PUSH => 8,
+diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
+index 2e15a2eb..596dcae8 100644
+--- a/engine/core/src/damage.rs
++++ b/engine/core/src/damage.rs
+@@ -453,7 +453,7 @@ impl<'a> DamageDecoder<'a> {
+                 if !(3..=spec::draw_op::MASK_MAX_VERTS).contains(&n) {
+                     return Err(());
+                 }
+-                2usize.checked_add(n).ok_or(())?
++                2usize.checked_add(2 * n).ok_or(())?
+             }
+             spec::draw_op::MASK_POP => 1,
+             spec::draw_op::GLYPH_STROKE => {
+@@ -506,7 +506,7 @@ impl<'a> DamageDecoder<'a> {
+             spec::draw_op::POLY => polygon_bounds(&words[3..], self.clip),
+             // A mask draws nothing itself; its bbox is a sound bound for the
+             // span it shapes, and the ops inside carry their own.
+-            spec::draw_op::MASK_PUSH => polygon_bounds(&words[2..], self.clip),
++            spec::draw_op::MASK_PUSH => sub_pixel_polygon_bounds(&words[2..], self.clip),
+             spec::draw_op::MASK_POP => DamageRect::empty(),
+             // A stroke reaches past its cells by its width: the cell bounds
+             // grown by that width (rounded out, plus the anti-aliased pixel).
+@@ -698,6 +698,29 @@ fn polygon_bounds(vertices: &[u32], clip: DamageRect) -> DamageRect {
+     DamageRect::new(min_x, min_y, max_x, max_y).intersect(clip)
+ }
+ 
++/// MASK_PUSH's vertices are `(x, y)` f32 pairs (pocket-motion patch 0023):
++/// the pixels they touch, floor of the low edge to ceil of the high one.
++fn sub_pixel_polygon_bounds(pairs: &[u32], clip: DamageRect) -> DamageRect {
++    if pairs.len() < 2 {
++        return DamageRect::empty();
++    }
++    let (mut min_x, mut min_y) = (f32::INFINITY, f32::INFINITY);
++    let (mut max_x, mut max_y) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
++    for v in pairs.chunks_exact(2) {
++        let (x, y) = (f32::from_bits(v[0]), f32::from_bits(v[1]));
++        if !x.is_finite() || !y.is_finite() {
++            return clip;
++        }
++        min_x = min_x.min(x);
++        min_y = min_y.min(y);
++        max_x = max_x.max(x);
++        max_y = max_y.max(y);
++    }
++    let lo = |v: f32| crate::layout::floorf(v.clamp(-32768.0, 32767.0)) as i32;
++    let hi = |v: f32| -(crate::layout::floorf(-v.clamp(-32768.0, 32767.0)) as i32);
++    DamageRect::new(lo(min_x), lo(min_y), hi(max_x), hi(max_y)).intersect(clip)
++}
++
+ #[inline]
+ fn xy(word: u32) -> (i32, i32) {
+     (
+@@ -775,7 +798,8 @@ mod tests {
+     }
+ 
+     /// A frame with a MASK_PUSH/MASK_POP around one rect (pocket-motion
+-    /// patch 0013). `n` is the vertex count the push claims.
++    /// patch 0013; its vertices f32 pairs since 0023). `n` is the vertex
++    /// count the push claims.
+     fn masked_frame(n: u32, color: u32) -> Vec<u32> {
+         let mut words = vec![
+             spec::draw_op::SCISSOR,
+@@ -784,8 +808,9 @@ mod tests {
+             spec::draw_op::MASK_PUSH,
+             n,
+         ];
+-        for &(x, y) in &[(2i16, 2i16), (30, 2), (30, 14), (2, 14)] {
+-            words.push(xy_word(x, y));
++        for &(x, y) in &[(2.5f32, 2.0f32), (30.0, 2.25), (30.0, 14.0), (2.0, 14.0)] {
++            words.push(x.to_bits());
++            words.push(y.to_bits());
+         }
+         words.extend_from_slice(&[
+             spec::draw_op::RECT,
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 76c62506..d4eb74da 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -1379,7 +1379,8 @@ impl<'a> Walker<'a> {
+                     dl.words.push(spec::draw_op::MASK_PUSH);
+                     dl.words.push(verts.len() as u32);
+                     for &(x, y) in &verts {
+-                        dl.words.push(xy_word(x, y));
++                        dl.words.push(x.to_bits());
++                        dl.words.push(y.to_bits());
+                     }
+                     masked = true;
+                 }
+@@ -3639,7 +3640,7 @@ enum MaskOutline {
+     Aabb,
+     /// Nothing of the outline survives the clip; the subtree is invisible.
+     Empty,
+-    /// The clipped outline, rounded to pixels, ready for MASK_PUSH.
++    /// The clipped outline in logical pixels, unrounded, ready for MASK_PUSH.
+     Poly(Vec<(f32, f32)>),
+ }
+ 
+@@ -3663,9 +3664,20 @@ fn mask_chords(screen_r: f32) -> usize {
+ /// The node's rounded rectangle (`radius` clamped to half the shorter side,
+ /// as the box painter clamps it) flattened to a convex polygon in local
+ /// space, taken through `world`, clipped to `clip` (the viewport — see the
+-/// caller for why not the scissor), rounded to pixels and deduplicated. The corner arcs go through the same Taylor `sinf` every
+-/// rotation goes through, so a circle's vertices come from the arithmetic a
+-/// rotated box's corners already come from.
++/// caller for why not the scissor) and deduplicated. The corner arcs go
++/// through the same Taylor `sinf` every rotation goes through, so a circle's
++/// vertices come from the arithmetic a rotated box's corners already come
++/// from.
++///
++/// The vertices are NOT rounded to pixels (pocket-motion patch 0023): MASK_PUSH
++/// carries them as f32 and the rasteriser takes them to a sixteenth of a
++/// pixel. Rounded to whole pixels, each edge moved by up to half a pixel per
++/// axis, and a window whose content has an edge on the window's own edge —
++/// a poster seen through a tile of itself — showed that edge as a band of
++/// full-coverage pixels outside the window, as long as the window's side.
++/// For the same reason a square-cornered axis-aligned window is its AABB
++/// only when the AABB lands on whole pixels: the scissor rounds outward, and
++/// at a fractional position that is a column of content outside the node.
+ fn mask_outline(
+     world: &Affine,
+     w: f32,
+@@ -3676,7 +3688,11 @@ fn mask_outline(
+ ) -> MaskOutline {
+     let r = clampf(radius, 0.0, (w.min(h) * 0.5).max(0.0));
+     if r <= 0.0 && world.is_axis_aligned() {
+-        return MaskOutline::Aabb;
++        let (x0, y0) = world.apply(0.0, 0.0);
++        let (x1, y1) = world.apply(w, h);
++        if [x0, y0, x1, y1].iter().all(|&v| roundf(v) == v) {
++            return MaskOutline::Aabb;
++        }
+     }
+     let mut local: Vec<(f32, f32)> = Vec::new();
+     if r <= 0.0 {
+@@ -3695,10 +3711,22 @@ fn mask_outline(
+             ((w - r, h - r), 0.0),
+             ((r, h - r), 0.5 * PI),
+         ];
+-        for &((cx, cy), a0) in corners.iter() {
++        // Each quarter's two ends are taken on the axes exactly: Taylor
++        // `sinf`/`cosf` are a few ulp off at multiples of pi/2, and at
++        // `rounded-full` one corner's last vertex and the next corner's first
++        // are the same point, which only an exact pair deduplicates.
++        let axis = [(-1.0f32, 0.0f32), (0.0, -1.0), (1.0, 0.0), (0.0, 1.0)];
++        for (q, &((cx, cy), a0)) in corners.iter().enumerate() {
+             for k in 0..=chords {
+-                let t = a0 + (0.5 * PI) * (k as f32 / chords as f32);
+-                local.push((cx + r * cosf(t), cy + r * sinf(t)));
++                let (c, s) = if k == 0 {
++                    axis[q]
++                } else if k == chords {
++                    axis[(q + 1) % 4]
++                } else {
++                    let t = a0 + (0.5 * PI) * (k as f32 / chords as f32);
++                    (cosf(t), sinf(t))
++                };
++                local.push((cx + r * c, cy + r * s));
+             }
+         }
+     }
+@@ -3714,8 +3742,8 @@ fn mask_outline(
+     let mut out: Vec<(f32, f32)> = Vec::with_capacity(clipped.len());
+     for v in &clipped {
+         let p = (
+-            clampf(roundf(clampf(v.x, clip.x0, clip.x1)), 0.0, screen.0),
+-            clampf(roundf(clampf(v.y, clip.y0, clip.y1)), 0.0, screen.1),
++            clampf(clampf(v.x, clip.x0, clip.x1), 0.0, screen.0),
++            clampf(clampf(v.y, clip.y0, clip.y1), 0.0, screen.1),
+         );
+         if out.last() != Some(&p) {
+             out.push(p);
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 2a34be70..21af81d4 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -1280,7 +1280,7 @@ impl Ui {
+                 }
+                 x if x == spec::draw_op::MASK_PUSH => {
+                     let Some(n) = words.get(i + 1) else { break };
+-                    2 + *n as usize
++                    2 + 2 * *n as usize
+                 }
+                 x if x == spec::draw_op::MASK_POP => 1,
+                 x if x == spec::draw_op::GLYPH_STROKE => {
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index dab6982c..a11f992d 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -1018,11 +1018,11 @@ fn render_ops<T: RenderTarget>(
+                     return i;
+                 }
+                 let n = words[i + 1] as usize;
+-                if n < 3 || n > draw_op::MASK_MAX_VERTS || i + 2 + n > words.len() {
++                if n < 3 || n > draw_op::MASK_MAX_VERTS || i + 2 + 2 * n > words.len() {
+                     return i;
+                 }
+-                let level = mask_level(scale, clip, &words[i + 2..i + 2 + n]);
+-                i += 2 + n;
++                let level = mask_level(scale, clip, &words[i + 2..i + 2 + 2 * n]);
++                i += 2 + 2 * n;
+                 if target.accepts_mask() {
+                     target.push_mask(level);
+                     mask_depth += 1;
+@@ -1266,8 +1266,26 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p:
+ /// Sutherland-Hodgman clipping a quad against a rect yields at most 8 vertices.
+ const POLY_MAX_VERTS: usize = 8;
+ 
+-/// 4×4 sample offsets in 4·F units: ±1, ±3 so quarter-pixel positions stay integral.
+-const POLY_SAMPLE_OFF: [i64; 4] = [-3, -1, 1, 3];
++/// 4×4 sample offsets from a pixel centre, in sixteenths of a physical pixel:
++/// ±1/8 and ±3/8 of a pixel.
++const POLY_SAMPLE_OFF: [i64; 4] = [-6, -2, 2, 6];
++
++/// Sub-pixel units per physical pixel that `PolyScan` works in. POLY's
++/// integer vertices enter multiplied by it, which scales every edge function
++/// by a positive constant and changes no sample's sign; MASK_PUSH's f32
++/// vertices enter rounded to it (pocket-motion patch 0023).
++const POLY_SUB: i64 = 16;
++
++/// A MASK_PUSH coordinate (f32 bits, logical px) in sixteenths of a
++/// physical pixel, nearest. A non-finite or absurd word is pinned rather
++/// than allowed to overflow; the core only emits coordinates clipped to the
++/// viewport.
++#[inline]
++fn sub_px(word: u32, scale: i32) -> i64 {
++    let v = f32::from_bits(word) * (POLY_SUB as i32 * scale) as f32;
++    let v = if v.is_nan() { 0.0 } else { v.clamp(-1.0e7, 1.0e7) };
++    crate::layout::floorf(v + 0.5) as i64
++}
+ 
+ #[inline]
+ fn poly_hits(n: usize, f0: &[i64], step: &[i64], dx: &[i64], dy: &[i64], px: i32) -> u32 {
+@@ -1317,42 +1335,67 @@ struct PolyRow {
+ }
+ 
+ impl PolyScan {
+-    /// None when the polygon is degenerate or wholly outside `clip`.
+-    fn new(scale: i32, clip: Clip, verts: &[u32]) -> Option<PolyScan> {
++    /// POLY's vertices: integer physical pixels.
++    fn from_pixels(scale: i32, clip: Clip, verts: &[u32]) -> Option<PolyScan> {
+         let n = verts.len();
+         if n < 3 || n > draw_op::MASK_MAX_VERTS {
+             return None;
+         }
+-        let mut xs = [0i32; draw_op::MASK_MAX_VERTS];
+-        let mut ys = [0i32; draw_op::MASK_MAX_VERTS];
+-        let mut min_x = i32::MAX;
+-        let mut max_x = i32::MIN;
+-        let mut min_y = i32::MAX;
+-        let mut max_y = i32::MIN;
++        let mut vx = [0i64; draw_op::MASK_MAX_VERTS];
++        let mut vy = [0i64; draw_op::MASK_MAX_VERTS];
+         for i in 0..n {
+             let (x, y) = xy(verts[i], scale);
+-            xs[i] = x;
+-            ys[i] = y;
+-            min_x = min_x.min(x);
+-            max_x = max_x.max(x);
+-            min_y = min_y.min(y);
+-            max_y = max_y.max(y);
+-        }
+-        min_x = min_x.max(clip.x0);
+-        max_x = max_x.min(clip.x1);
+-        min_y = min_y.max(clip.y0);
+-        max_y = max_y.min(clip.y1);
+-        if min_x >= max_x || min_y >= max_y {
+-            return None;
++            vx[i] = x as i64 * POLY_SUB;
++            vy[i] = y as i64 * POLY_SUB;
+         }
++        PolyScan::new(clip, &vx[..n], &vy[..n])
++    }
+ 
+-        // Doubled screen coords. F(px,py) = c + dx·px + dy·py, wound so inside is F >= 0.
++    /// MASK_PUSH's vertices: `(x, y)` f32 pairs in logical pixels, taken to
++    /// the sixteenth of a physical pixel rather than to the pixel — an outline
++    /// rounded to whole pixels moves each edge by up to half a pixel on each
++    /// axis, and along a long, nearly axis-aligned edge that is a band of
++    /// full-coverage pixels outside the node (pocket-motion patch 0023).
++    fn from_sub_pixels(scale: i32, clip: Clip, pairs: &[u32]) -> Option<PolyScan> {
++        let n = pairs.len() / 2;
++        if n < 3 || n > draw_op::MASK_MAX_VERTS || pairs.len() != 2 * n {
++            return None;
++        }
+         let mut vx = [0i64; draw_op::MASK_MAX_VERTS];
+         let mut vy = [0i64; draw_op::MASK_MAX_VERTS];
+         for i in 0..n {
+-            vx[i] = 2 * xs[i] as i64;
+-            vy[i] = 2 * ys[i] as i64;
++            vx[i] = sub_px(pairs[2 * i], scale);
++            vy[i] = sub_px(pairs[2 * i + 1], scale);
+         }
++        PolyScan::new(clip, &vx[..n], &vy[..n])
++    }
++
++    /// `vx`/`vy` in `POLY_SUB`ths of a physical pixel. None when the polygon
++    /// is degenerate or wholly outside `clip`.
++    fn new(clip: Clip, vx: &[i64], vy: &[i64]) -> Option<PolyScan> {
++        let n = vx.len();
++        let (mut lo_x, mut hi_x, mut lo_y, mut hi_y) = (i64::MAX, i64::MIN, i64::MAX, i64::MIN);
++        for i in 0..n {
++            lo_x = lo_x.min(vx[i]);
++            hi_x = hi_x.max(vx[i]);
++            lo_y = lo_y.min(vy[i]);
++            hi_y = hi_y.max(vy[i]);
++        }
++        // The pixels the polygon's bbox touches: floor of the low edge, ceil
++        // of the high one (both exact for POLY's whole-pixel vertices).
++        let pix = |v: i64, up: bool| -> i32 {
++            let q = if up { (v + POLY_SUB - 1).div_euclid(POLY_SUB) } else { v.div_euclid(POLY_SUB) };
++            q.clamp(i32::MIN as i64, i32::MAX as i64) as i32
++        };
++        let min_x = pix(lo_x, false).max(clip.x0);
++        let max_x = pix(hi_x, true).min(clip.x1);
++        let min_y = pix(lo_y, false).max(clip.y0);
++        let max_y = pix(hi_y, true).min(clip.y1);
++        if min_x >= max_x || min_y >= max_y {
++            return None;
++        }
++
++        // F(X,Y) = c + dx·X + dy·Y over sub-pixel coords, wound so inside is F >= 0.
+         let mut area = 0i64;
+         for i in 0..n {
+             let j = if i + 1 == n { 0 } else { i + 1 };
+@@ -1380,12 +1423,13 @@ impl PolyScan {
+             e_dy[i] = dy;
+         }
+ 
+-        // Work in 4·F so the ±1/±3 sample offsets stay integral.
++        // A sample sits at most 6 sub-pixel units from its pixel centre on
++        // each axis, and one column moves F by POLY_SUB·dx.
+         let mut bound = [0i64; draw_op::MASK_MAX_VERTS];
+         let mut step = [0i64; draw_op::MASK_MAX_VERTS];
+         for i in 0..n {
+-            bound[i] = 3 * (e_dx[i].abs() + e_dy[i].abs());
+-            step[i] = 8 * e_dx[i];
++            bound[i] = 6 * (e_dx[i].abs() + e_dy[i].abs());
++            step[i] = POLY_SUB * e_dx[i];
+         }
+         Some(PolyScan { n, min_x, max_x, min_y, max_y, e_c, e_dx, e_dy, bound, step })
+     }
+@@ -1394,10 +1438,10 @@ impl PolyScan {
+     fn row(&self, row: i32) -> Option<PolyRow> {
+         let n = self.n;
+         let mut f0 = [0i64; draw_op::MASK_MAX_VERTS];
+-        let sy = 2 * row as i64 + 1;
+-        let sx = 2 * self.min_x as i64 + 1;
++        let sy = POLY_SUB * row as i64 + POLY_SUB / 2;
++        let sx = POLY_SUB * self.min_x as i64 + POLY_SUB / 2;
+         for i in 0..n {
+-            f0[i] = 4 * (self.e_c[i] + self.e_dx[i] * sx + self.e_dy[i] * sy);
++            f0[i] = self.e_c[i] + self.e_dx[i] * sx + self.e_dy[i] * sy;
+         }
+         let span = self.max_x - self.min_x;
+         let solve = |e: usize, thr: i64| -> (i32, i32) {
+@@ -1451,7 +1495,7 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
+     if a == 0 {
+         return;
+     }
+-    let Some(scan) = PolyScan::new(scale, clip, verts) else {
++    let Some(scan) = PolyScan::from_pixels(scale, clip, verts) else {
+         return;
+     };
+     let min_x = scan.min_x;
+@@ -1521,9 +1565,10 @@ impl MaskLevel {
+ }
+ 
+ /// Sample the polygon's coverage once into a level — the same rows and the
+-/// same 16 samples POLY would use to draw it.
+-fn mask_level(scale: i32, clip: Clip, verts: &[u32]) -> MaskLevel {
+-    let Some(scan) = PolyScan::new(scale, clip, verts) else {
++/// same 16 samples POLY would use to draw it. `pairs` is MASK_PUSH's
++/// vertex list, `(x, y)` f32 words.
++fn mask_level(scale: i32, clip: Clip, pairs: &[u32]) -> MaskLevel {
++    let Some(scan) = PolyScan::from_sub_pixels(scale, clip, pairs) else {
+         return MaskLevel::empty();
+     };
+     let w = scan.max_x - scan.min_x;
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index a6138e49..6e4e047e 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -514,7 +514,7 @@ pub mod font_atlas {
+ /// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,
+ /// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,
+ /// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N,
+-/// MASK_PUSH 2+N, MASK_POP 1 (64 and up: software-rasteriser-only ops).
++/// MASK_PUSH 2+2N (f32 x, y pairs), MASK_POP 1 (64 and up: software-rasteriser-only ops).
+ pub mod draw_op {
+     pub const RECT: u32 = 1;
+     pub const GRAD_RECT: u32 = 2;
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 4664afeb..bf609dbf 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -344,13 +344,19 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+                     (3..=spec::draw_op::MASK_MAX_VERTS).contains(&n),
+                     "MASK_PUSH vertex count {n} not in 3..=MASK_MAX_VERTS"
+                 );
+-                assert!(i + 2 + n <= words.len(), "truncated MASK_PUSH");
++                assert!(i + 2 + 2 * n <= words.len(), "truncated MASK_PUSH");
+                 assert!(depth > 0, "MASK_PUSH outside any SCISSOR");
++                // (x, y) f32 pairs, unrounded, inside the viewport (0023).
+                 for k in 0..n {
+-                    xy_ok(words[i + 2 + k]);
++                    let x = f32::from_bits(words[i + 2 + 2 * k]);
++                    let y = f32::from_bits(words[i + 3 + 2 * k]);
++                    assert!(
++                        (0.0..=sw as f32).contains(&x) && (0.0..=sh as f32).contains(&y),
++                        "mask vertex out of range: ({x},{y})"
++                    );
+                 }
+                 mask_depth += 1;
+-                i += 2 + n;
++                i += 2 + 2 * n;
+             }
+             spec::draw_op::MASK_POP => {
+                 mask_depth -= 1;
+@@ -5263,7 +5269,7 @@ fn op_sequence(words: &[u32]) -> Vec<u32> {
+             spec::draw_op::TRI => 7,
+             spec::draw_op::TEX_TRI => 12,
+             spec::draw_op::POLY => 3 + words[i + 1] as usize,
+-            spec::draw_op::MASK_PUSH => 2 + words[i + 1] as usize,
++            spec::draw_op::MASK_PUSH => 2 + 2 * words[i + 1] as usize,
+             spec::draw_op::MASK_POP => 1,
+             other => panic!("unknown op {other}"),
+         };
+@@ -5271,12 +5277,15 @@ fn op_sequence(words: &[u32]) -> Vec<u32> {
+     ops
+ }
+ 
+-fn first_mask_verts(words: &[u32]) -> Vec<(i32, i32)> {
++fn first_mask_verts(words: &[u32]) -> Vec<(f32, f32)> {
+     let mut i = 0usize;
+     while i < words.len() {
+         if words[i] == spec::draw_op::MASK_PUSH {
+             let n = words[i + 1] as usize;
+-            return words[i + 2..i + 2 + n].iter().map(|&w| decode_xy(w)).collect();
++            return words[i + 2..i + 2 + 2 * n]
++                .chunks_exact(2)
++                .map(|v| (f32::from_bits(v[0]), f32::from_bits(v[1])))
++                .collect();
+         }
+         i += match words[i] {
+             spec::draw_op::RECT => 4,
+@@ -5479,28 +5488,47 @@ fn fb_differs(a: &[u8], b: &[u8]) -> usize {
+ }
+ 
+ #[test]
+-fn mask_of_a_rotated_window_equals_poly_of_the_same_box() {
+-    // The mask's coverage is POLY's coverage: a white full-bleed child under
+-    // a rotated square-cornered window must rasterise to the same bytes as a
+-    // white rotated box of the window's geometry. Sizes and angles from the
+-    // POLY sweep, including the ones that straddle sample offsets.
++fn mask_coverage_is_poly_coverage_for_the_same_vertices() {
++    // One PolyScan draws POLY and samples MASK_PUSH: POLY's whole-pixel
++    // vertices enter it multiplied to sixteenths, the mask's f32 vertices
++    // rounded to them (patch 0023). So a white rotated box's POLY, and a
++    // full-screen white RECT under a MASK_PUSH of that POLY's own vertices,
++    // rasterise to the same bytes. Sizes and angles from the POLY sweep,
++    // including the ones that straddle sample offsets. Since 0023 a rotated
++    // window's own outline is NOT that POLY — its vertices are unrounded —
++    // which `a_mask_turned_about_its_corner_leaves_no_ink_outside_its_outline`
++    // holds.
+     let sizes: [(f64, f64); 6] = [(2.0, 3.0), (9.0, 4.0), (31.0, 17.0), (120.0, 56.0), (200.0, 100.0), (400.0, 260.0)];
+     let angles: [f64; 9] = [0.5, 7.0, 20.0, 33.3, 45.0, 89.0, 91.0, 150.0, 359.5];
++    let (sw, sh) = (spec::SCREEN_W as i16, spec::SCREEN_H as i16);
+     let mut checked = 0usize;
+     for &(w, h) in sizes.iter() {
+         for &a in angles.iter() {
+-            let mut masked = Ui::new();
+-            let win = window(&mut masked, spec::Overflow::Mask, w, h, a, 0.0);
+-            full_bleed_white_under(&mut masked, win, w, h);
+-            masked.tick();
+             let mut plain = Ui::new();
+             let boxed = window(&mut plain, spec::Overflow::Visible, w, h, a, 0.0);
+             plain.set_prop(boxed, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
+             plain.tick();
+-            let mw = masked.draw().words.clone();
+-            assert_eq!(validate_drawlist(&mw)[spec::draw_op::MASK_PUSH as usize], 1, "{w}x{h} rot {a}");
+-            let fa = raster_fb(&mut masked);
++            let words = plain.draw().words.clone();
++            assert_eq!(words[0], spec::draw_op::POLY, "{w}x{h} rot {a}: a rotated box is one POLY");
++            let n = words[1] as usize;
++            let full = (sw as u16 as u32) | ((sh as u16 as u32) << 16);
++            let mut masked = alloc::vec![spec::draw_op::SCISSOR, 0, full, spec::draw_op::MASK_PUSH, n as u32];
++            for &v in &words[3..3 + n] {
++                let (x, y) = decode_xy(v);
++                masked.push((x as f32).to_bits());
++                masked.push((y as f32).to_bits());
++            }
++            masked.extend_from_slice(&[
++                spec::draw_op::RECT,
++                0,
++                full,
++                abgr(255, 255, 255, 255),
++                spec::draw_op::MASK_POP,
++                spec::draw_op::SCISSOR_POP,
++            ]);
+             let fb = raster_fb(&mut plain);
++            let mut fa = alloc::vec![0u8; fb.len()];
++            crate::raster::render(&plain, &masked, &mut fa);
+             assert_eq!(fb_differs(&fa, &fb), 0, "{w}x{h} rot {a}: mask and POLY disagree");
+             checked += 1;
+         }
+@@ -5508,6 +5536,149 @@ fn mask_of_a_rotated_window_equals_poly_of_the_same_box() {
+     assert_eq!(checked, 54);
+ }
+ 
++/// A 120 square `overflow-mask` window turned about its bottom-left corner,
++/// holding a full-frame white box offset back to the screen origin — a
++/// poster seen through a tile of itself, the shape a film rolls across its
++/// grid with per-tick translate and rotate keyframes — over black. `(tx, ty)`
++/// is placed by layout at whole pixels plus a fractional translate, because
++/// layout rounds a position and a translate is not rounded. Returns the frame
++/// and the window's four corners in f64.
++fn corner_turned_window(a: f64, tx: f64, ty: f64) -> (alloc::vec::Vec<u8>, [(f64, f64); 4]) {
++    let mut ui = Ui::new();
++    ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
++    let (ix, iy) = (tx.floor(), ty.floor());
++    let wrap = place_box(&mut ui, 120.0, 120.0, ix, iy);
++    ui.set_prop(wrap, spec::prop::TRANSLATE_X, tx - ix);
++    ui.set_prop(wrap, spec::prop::TRANSLATE_Y, ty - iy);
++    ui.set_prop(wrap, spec::prop::ORIGIN_X, -0.5);
++    ui.set_prop(wrap, spec::prop::ORIGIN_Y, 0.5);
++    if a != 0.0 {
++        ui.set_prop(wrap, spec::prop::ROTATE, a);
++    }
++    let win = ui.create_node(0);
++    ui.set_prop(win, spec::prop::WIDTH, 120.0);
++    ui.set_prop(win, spec::prop::HEIGHT, 120.0);
++    ui.set_prop(win, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(win, spec::prop::OVERFLOW, spec::Overflow::Mask as u32 as f64);
++    ui.insert_before(wrap, win, 0);
++    let c = ui.create_node(0);
++    ui.set_prop(c, spec::prop::WIDTH, spec::SCREEN_W as f64);
++    ui.set_prop(c, spec::prop::HEIGHT, spec::SCREEN_H as f64);
++    ui.set_prop(c, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(c, spec::prop::INSET_L, -ix);
++    ui.set_prop(c, spec::prop::INSET_T, -iy);
++    ui.set_prop(c, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.insert_before(win, c, 0);
++    ui.tick();
++    let fb = raster_fb(&mut ui);
++    // The corners in f64 from the same rotation the core applies: about
++    // local (0, 120), the wrapper's bottom-left corner.
++    let rad = a.to_radians();
++    let (s, co) = (rad.sin(), rad.cos());
++    let corner = |lx: f64, ly: f64| {
++        let (dx, dy) = (lx, ly - 120.0);
++        (tx + co * dx - s * dy, ty + 120.0 + s * dx + co * dy)
++    };
++    (fb, [corner(0.0, 0.0), corner(120.0, 0.0), corner(120.0, 120.0), corner(0.0, 120.0)])
++}
++
++/// Signed distance of a point inside a convex quad (positive inside), the
++/// quad wound clockwise on a y-down screen.
++fn quad_depth(q: &[(f64, f64); 4], px: f64, py: f64) -> f64 {
++    let mut depth = f64::INFINITY;
++    for i in 0..4 {
++        let (ax, ay) = q[i];
++        let (bx, by) = q[(i + 1) % 4];
++        let (ex, ey) = (bx - ax, by - ay);
++        let d = (ex * (py - ay) - ey * (px - ax)) / (ex * ex + ey * ey).sqrt();
++        depth = depth.min(d);
++    }
++    depth
++}
++
++#[test]
++fn a_mask_turned_about_its_corner_leaves_no_ink_outside_its_outline() {
++    // The pixels a mask may ink are the ones with at least one of their 16
++    // samples inside the node's outline; the outline is the window's own
++    // corners, not those corners rounded to whole pixels. Rounded, every
++    // edge moved by up to half a pixel per axis, and where the content has
++    // an edge on the window's edge (the frame above, at every angle) that
++    // was a band of full-coverage pixels outside the window as long as its
++    // side. TOL is the sixteenth-pixel quantum MASK_PUSH is sampled at, with
++    // the f32 transform's own error inside it.
++    const TOL: f64 = 1.0 / 16.0;
++    const OFF: [f64; 4] = [-0.375, -0.125, 0.125, 0.375];
++    let mut checked = 0usize;
++    let mut outside = alloc::vec::Vec::new();
++    let mut short = alloc::vec::Vec::new();
++    let mut k = -360i32;
++    while k <= 360 {
++        let a = k as f64 * 0.25;
++        // Sub-pixel positions, as per-tick translate keyframes leave them;
++        // 0 degrees at a fractional position is the AABB case.
++        let fr = [0.0, 0.3, 0.55, 0.9][(k.rem_euclid(4)) as usize];
++        let (tx, ty) = (180.0 + fr, 76.0 + (1.0 - fr) * 0.5);
++        let (fb, q) = corner_turned_window(a, tx, ty);
++        // Only the window's bbox and a margin can hold a sample inside it;
++        // everything else must be the black root.
++        let lo_x = q.iter().map(|p| p.0).fold(f64::INFINITY, f64::min).floor() as i64 - 2;
++        let hi_x = q.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max).ceil() as i64 + 2;
++        let lo_y = q.iter().map(|p| p.1).fold(f64::INFINITY, f64::min).floor() as i64 - 2;
++        let hi_y = q.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max).ceil() as i64 + 2;
++        for y in 0..spec::SCREEN_H as usize {
++            for x in 0..spec::SCREEN_W as usize {
++                let near = (lo_x..hi_x).contains(&(x as i64)) && (lo_y..hi_y).contains(&(y as i64));
++                if !near {
++                    let v = sample_rgba(&fb, x, y)[0];
++                    if v > 0 {
++                        outside.push((a, x, y, v, f64::NEG_INFINITY));
++                    }
++                    continue;
++                }
++                let (cx, cy) = (x as f64 + 0.5, y as f64 + 0.5);
++                // A sample is within 0.375 * sqrt(2) < 0.54 of the centre, so
++                // only a pixel whose centre is within that of an edge needs
++                // its 16 samples read.
++                let centre = quad_depth(&q, cx, cy);
++                let (mut deepest, mut shallowest) = (centre + 0.54, centre - 0.54);
++                if centre.abs() < 0.54 + TOL {
++                    deepest = f64::NEG_INFINITY;
++                    shallowest = f64::INFINITY;
++                    for oy in OFF {
++                        for ox in OFF {
++                            let d = quad_depth(&q, cx + ox, cy + oy);
++                            deepest = deepest.max(d);
++                            shallowest = shallowest.min(d);
++                        }
++                    }
++                }
++                let v = sample_rgba(&fb, x, y)[0];
++                if v > 0 && deepest < -TOL {
++                    outside.push((a, x, y, v, deepest));
++                }
++                if shallowest > TOL && v != 255 {
++                    short.push((a, x, y, v));
++                }
++            }
++        }
++        checked += 1;
++        k += 1;
++    }
++    assert_eq!(checked, 721);
++    assert!(
++        outside.is_empty(),
++        "{} pixels inked with every sample outside the window, at {} angles; first {:?}",
++        outside.len(),
++        {
++            let mut angles: alloc::vec::Vec<i64> = outside.iter().map(|o| (o.0 * 4.0) as i64).collect();
++            angles.dedup();
++            angles.len()
++        },
++        &outside[..outside.len().min(4)]
++    );
++    assert!(short.is_empty(), "pixels wholly inside the window not full: first {:?}", &short[..short.len().min(4)]);
++}
++
+ #[test]
+ fn rounded_full_mask_is_a_circle_with_coverage_on_its_edge() {
+     let mut ui = Ui::new();
+@@ -6429,3 +6600,4 @@ fn an_image_of_any_size_up_to_img_max_dim_uploads_and_samples_by_its_own_size()
+         }
+     }
+ }
++

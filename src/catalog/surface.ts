@@ -1532,7 +1532,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "clips the node's children AND its own ground to the node's outline — its rounded rectangle under its transform — where `overflow-hidden` clips to the axis-aligned bounding box. Lays out and hit-tests as `overflow-hidden`. A square-cornered, unrotated window emits no mask and is `overflow-hidden` word for word. Drawn by this repository's software rasteriser only (patches/0013, class motion): no upstream backend knows the op",
+      "clips the node's children AND its own ground to the node's outline — its rounded rectangle under its transform — where `overflow-hidden` clips to the axis-aligned bounding box. Lays out and hit-tests as `overflow-hidden`. The outline is exact to a sixteenth of a pixel (patches/0024): no pixel is inked whose every sample lies outside it. A square-cornered, unrotated window whose box lands on whole pixels emits no mask and is `overflow-hidden` word for word; at a fractional position (a translate keyframe) it is masked to its edge. Drawn by this repository's software rasteriser only (patches/0013, class motion): no upstream backend knows the op",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],

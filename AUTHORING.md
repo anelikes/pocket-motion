@@ -351,8 +351,13 @@ animated window), while a px radius is clamped to half the box at draw time;
 there is no spelling for a negative angle, and `rotate-340` is −20; and to
 keep a scene still inside a rotated window, rotate it back about the SAME
 point (`origin-left` on both, with the two origins placed on one pixel). A
-square-cornered, unrotated `overflow-mask` window is `overflow-hidden` word
-for word. The op is this repository's own (`patches/0013`, the design beside
+square-cornered, unrotated `overflow-mask` window whose box lands on whole
+pixels is `overflow-hidden` word for word; anywhere else the outline is exact
+to a sixteenth of a pixel (`patches/0024`), so content whose edge lies on the
+window's edge — a poster seen through a tile of itself — stops at that edge
+however the window turns. Content drawn inside it is still placed on whole
+pixels (POLY and TEX_TRI are upstream's formats), so a plate offset by a pixel
+on purpose rolls away with its tile, a pixel wide. The op is this repository's own (`patches/0013`, the design beside
 it): no upstream backend draws it, so a composition that must stay portable to
 one keeps to `overflow-hidden`.
 
