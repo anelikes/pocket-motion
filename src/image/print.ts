@@ -53,8 +53,9 @@ export const PAPER: [number, number, number] = [241, 233, 218];
 function ink(rgb: [number, number, number], seed: number, x: number, y: number): [number, number, number] {
   // dark ink varies a third as much: on black every step reads
   const amp = rgb[0] + rgb[1] + rgb[2] < 120 ? 0.35 : 1;
-  const thin = amp * (0.06 - 0.04 * noise(x * 0.06, y * 0.06, seed + 13) - 0.02 * noise(x * 0.7, y * 0.7, seed + 29));
-  const t = Math.max(0, Math.min(0.12, thin));
+  // a fine tooth, not clouds: a few pixels of fibre and a per-half-pixel grain, about ±3 % in all
+  const thin = amp * (0.035 - 0.018 * noise(x * 0.45, y * 0.45, seed + 13) - 0.017 * (hash(Math.floor(x * 2), Math.floor(y * 2), seed + 29) * 2 - 1));
+  const t = Math.max(0, Math.min(0.08, thin));
   return [rgb[0] + (PAPER[0] - rgb[0]) * t, rgb[1] + (PAPER[1] - rgb[1]) * t, rgb[2] + (PAPER[2] - rgb[2]) * t];
 }
 
@@ -185,7 +186,12 @@ export interface Placed {
  * edges of anything, so a row of cells tiles back into the poster without a
  * seam.
  */
-export function cell(forms: Placed[], x0: number, y0: number, size: number, scale = 2): Plate {
+export function cell(forms: Placed[], x0: number, y0: number, size: number, scale = 2, bleed = 0): Plate {
+  // a bleed widens the cell on every side, so a tile drawn `bleed` beyond its box covers its neighbours' first
+  // pixels: turned tiles then meet without the hairline a texture's transparent edge leaves under sampling
+  x0 -= bleed;
+  y0 -= bleed;
+  size += 2 * bleed;
   const n = Math.round(size * scale);
   const px = new Uint8Array(n * n * 4);
   for (let j = 0; j < n; j++) {

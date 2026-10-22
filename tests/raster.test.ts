@@ -113,6 +113,13 @@ describe("print", () => {
     expect(lowest).toBe(255);
   });
 
+  test("a bleed widens the cell into its neighbours with the same pixels", () => {
+    const whole = form("disc", 240, 240, red, 9, 2);
+    const bled = cell([disc], 120, 120, 120, 2, 2);
+    expect([bled.width, bled.height]).toEqual([248, 248]);
+    expect(sameInk(bled, 0, 0, whole, 236, 236, 244)).toBe(0);
+  });
+
   test("a form's own quarter turn is the turned picture, in a cell too", () => {
     const quarter: Placed = { kind: "quarter", x: 0, y: 0, w: 240, h: 240, rot: 1, rgb: [17, 17, 17], seed: 4 };
     const whole = form("quarter", 240, 240, [17, 17, 17], 4, 2, 1);
