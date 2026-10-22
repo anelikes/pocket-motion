@@ -8,7 +8,7 @@
   "f-quarter-blue-244x244-101-q2.png": {
     "linear": true
   },
-  "f-disc-black-244x244-102.png": {
+  "f-disc-yellow-244x244-102.png": {
     "linear": true
   },
   "f-quarter-yellow-244x244-103-q3.png": {
@@ -35,115 +35,16 @@
   "pivot.png": {
     "linear": true
   },
-  "field-red-q0.png": {
+  "f-box-blue-240x240-500.png": {
     "linear": true
   },
-  "field-red-q1.png": {
+  "f-box-red-240x240-501.png": {
     "linear": true
   },
-  "field-red-q2.png": {
+  "f-box-black-240x240-502.png": {
     "linear": true
   },
-  "field-red-q3.png": {
-    "linear": true
-  },
-  "field-yellow-q0.png": {
-    "linear": true
-  },
-  "field-yellow-q1.png": {
-    "linear": true
-  },
-  "field-yellow-q2.png": {
-    "linear": true
-  },
-  "field-yellow-q3.png": {
-    "linear": true
-  },
-  "cell-720-60-q0.png": {
-    "linear": true
-  },
-  "cell-720-60-q1.png": {
-    "linear": true
-  },
-  "cell-720-60-q2.png": {
-    "linear": true
-  },
-  "cell-720-60-q3.png": {
-    "linear": true
-  },
-  "cell-960-60-q0.png": {
-    "linear": true
-  },
-  "field-black-q0.png": {
-    "linear": true
-  },
-  "field-black-q1.png": {
-    "linear": true
-  },
-  "field-black-q2.png": {
-    "linear": true
-  },
-  "field-black-q3.png": {
-    "linear": true
-  },
-  "cell-480-300-q0.png": {
-    "linear": true
-  },
-  "cell-480-300-q1.png": {
-    "linear": true
-  },
-  "cell-480-300-q2.png": {
-    "linear": true
-  },
-  "cell-480-300-q3.png": {
-    "linear": true
-  },
-  "cell-720-300-q0.png": {
-    "linear": true
-  },
-  "cell-720-300-q1.png": {
-    "linear": true
-  },
-  "cell-720-300-q2.png": {
-    "linear": true
-  },
-  "cell-720-300-q3.png": {
-    "linear": true
-  },
-  "cell-960-300-q0.png": {
-    "linear": true
-  },
-  "cell-960-300-q1.png": {
-    "linear": true
-  },
-  "cell-960-300-q2.png": {
-    "linear": true
-  },
-  "cell-960-300-q3.png": {
-    "linear": true
-  },
-  "cell-1200-300-q0.png": {
-    "linear": true
-  },
-  "cell-1200-300-q1.png": {
-    "linear": true
-  },
-  "cell-1200-300-q2.png": {
-    "linear": true
-  },
-  "cell-1200-300-q3.png": {
-    "linear": true
-  },
-  "cell-1440-300-q0.png": {
-    "linear": true
-  },
-  "cell-1440-300-q1.png": {
-    "linear": true
-  },
-  "cell-1440-300-q2.png": {
-    "linear": true
-  },
-  "cell-1440-300-q3.png": {
+  "f-box-yellow-240x240-503.png": {
     "linear": true
   },
   "field-blue-q0.png": {
@@ -158,40 +59,70 @@
   "field-blue-q3.png": {
     "linear": true
   },
+  "cell-720-60-q0.png": {
+    "linear": true
+  },
+  "cell-960-60-q0.png": {
+    "linear": true
+  },
+  "cell-480-300-q0.png": {
+    "linear": true
+  },
+  "cell-720-300-q0.png": {
+    "linear": true
+  },
+  "cell-960-300-q0.png": {
+    "linear": true
+  },
+  "cell-1200-300-q0.png": {
+    "linear": true
+  },
+  "cell-1440-300-q0.png": {
+    "linear": true
+  },
+  "field-red-q0.png": {
+    "linear": true
+  },
+  "field-red-q1.png": {
+    "linear": true
+  },
+  "field-red-q2.png": {
+    "linear": true
+  },
+  "field-red-q3.png": {
+    "linear": true
+  },
+  "field-black-q0.png": {
+    "linear": true
+  },
+  "field-black-q1.png": {
+    "linear": true
+  },
+  "field-black-q2.png": {
+    "linear": true
+  },
+  "field-black-q3.png": {
+    "linear": true
+  },
   "cell-960-540-q0.png": {
-    "linear": true
-  },
-  "cell-960-540-q1.png": {
-    "linear": true
-  },
-  "cell-960-540-q2.png": {
-    "linear": true
-  },
-  "cell-960-540-q3.png": {
     "linear": true
   },
   "cell-1200-540-q0.png": {
     "linear": true
   },
-  "cell-1200-540-q1.png": {
-    "linear": true
-  },
-  "cell-1200-540-q2.png": {
-    "linear": true
-  },
-  "cell-1200-540-q3.png": {
-    "linear": true
-  },
   "cell-1440-540-q0.png": {
     "linear": true
   },
-  "cell-1440-540-q1.png": {
+  "field-yellow-q0.png": {
     "linear": true
   },
-  "cell-1440-540-q2.png": {
+  "field-yellow-q1.png": {
     "linear": true
   },
-  "cell-1440-540-q3.png": {
+  "field-yellow-q2.png": {
+    "linear": true
+  },
+  "field-yellow-q3.png": {
     "linear": true
   },
   "letter-0.png": {

@@ -14,6 +14,10 @@
       "cjk": {
         "regular": "assets/fonts/NotoSansSC-Regular.otf",
         "bold": "assets/fonts/NotoSansSC-Bold.otf"
+      },
+      "geo": {
+        "regular": "compositions/mg-bauhaus/fonts/Poppins-Black.ttf",
+        "bold": "compositions/mg-bauhaus/fonts/Poppins-Black.ttf"
       }
     }
   }
