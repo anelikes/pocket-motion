@@ -167,6 +167,13 @@ const ENTRIES = [
   // and a 3x5 image drawn 40 px per texel. A stride or sampling that assumed
   // a power of two moves this digest.
   "compositions/images",
+  // shutter-blur. patches/0031: the one composition here that declares a
+  // shutter, so its digest is of exposures — 180°, 8 samples a frame. A spin
+  // through its wraps, an eased sweep, a zero-length jump and a one-tick
+  // flick the samples must not cross, opacity gates the shutter must hold,
+  // and one label under `shutter-hold`. A change to where a sample sits, to
+  // the jump rule or to the integer average moves this digest and no other.
+  "compositions/shutter-blur",
 ] as const;
 
 /**
