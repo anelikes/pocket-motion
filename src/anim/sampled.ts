@@ -124,6 +124,11 @@ export class Reg {
    * holds before the first key and the last after the last.
    */
   prop(prop: string, keys: [number, string][], easing = "linear"): string {
+    // a key past the film's end clamps onto 100 %, where a later key overwrites it: the track then ramps from its
+    // first value to the last over the whole film. A typed line whose last glyphs fell after the final tick was
+    // faintly on screen from the first second as a stray "108".
+    const late = keys.find(([t]) => t > this.ticks);
+    if (late) throw new Error(`Reg.prop(${prop}): a key at tick ${late[0]}, past the film's ${this.ticks}; it would ramp the whole film toward its value`);
     const sorted = [...keys].sort((a, b) => a[0] - b[0]);
     if (sorted.length > MAX_KEYS) throw new Error(`Reg.prop(${prop}): ${sorted.length} keys; a track holds at most 255 segments — sample more coarsely`);
     const stops: Stops = {};

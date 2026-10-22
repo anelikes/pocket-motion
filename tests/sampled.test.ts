@@ -79,6 +79,11 @@ describe("Reg", () => {
     expect(opacityAt(r, entry, 480)).toBe("0");
   });
 
+  test("refuses a key past the film's end, which would ramp the whole film toward it", () => {
+    expect(() => reg().window(602)).toThrow(/past the film/);
+    expect(() => reg().prop("opacity", [[0, "0"], [600, "1"]])).not.toThrow();
+  });
+
   test("step refuses changes that do not strictly increase", () => {
     expect(() => reg().step("opacity", [[0, "0"], [10, "1"], [10, "0"]])).toThrow(/does not follow/);
     expect(() => reg().step("opacity", [[0, "0"], [10, "1"], [9, "0"]])).toThrow(/does not follow/);
