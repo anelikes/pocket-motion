@@ -117,7 +117,7 @@ function grid(): string {
         : reg.prop(v ? "scaleY" : "scaleX", [[0, u0.toFixed(3)], [Math.max(0, t0), u0.toFixed(3)], [t0 + 10, "1"]], "cubic-bezier(0.45,0,0.55,1)");
     const settle = reg.prop("backgroundColor", [[0, INK.black], [Math.max(1, t0 + 40), INK.black], [t0 + 70, "#DACDB5"]]);
     // the finished print: the construction fades to a third
-    const recede = reg.prop("opacity", [[0, "1"], [T_POSTER, "1"], [T_POSTER + 20, "0.35"]]);
+    const recede = reg.prop("opacity", [[0, "1"], [T_POSTER, "1"], [T_POSTER + 30, "0.2"]]);
     const cls = v ? `left-[${at - 1}px] top-[0px] w-[2px] h-[${H}px]` : `left-[0px] top-[${at - 1}px] w-[${W}px] h-[2px]`;
     out.push(`<View class="absolute ${cls} origin-center animate-${reg.anim(STATIC ? [recede] : [draw, settle, recede])}" />`);
   };
@@ -184,8 +184,11 @@ function forms(): string {
     if (!f0) return [];
     const f = printed(f0);
     const el = new El(reg, f, { op: 0 });
-    const stays = ACTS[k] === "S" || ACTS[k] === "F";
-    el.set(stays ? actEnd(k + 1) - ROLL : actEnd(k) - ROLL, { op: 1 });
+    if (ACTS[k] === "F") {
+      // seen through the fold, from the moment the module is a sliver on its diagonal, hidden while it lies on it again
+      //   (left showing, its plate's offset peeked out under the module's edge), and uncovered by the next move
+      el.set(actEnd(k) - ROLL / 2, { op: 1 }).set(actEnd(k) + 1, { op: 0 }).set(actEnd(k + 1) - ROLL, { op: 1 });
+    } else el.set(ACTS[k] === "S" ? actEnd(k + 1) - ROLL : actEnd(k) - ROLL, { op: 1 });
     return [{ el, f }];
   });
   // the drop hands the poster to the cells; the finished poster takes it back on b16, with the circle the drop left
@@ -323,6 +326,12 @@ function cells(): string {
     const dir = g.px === g.py ? 1 : -1;
     const starts = WAVES.map((w) => w.at + w.delay(cx, cy, g.j));
     const here = placed.filter((f) => f.cell[0] === g.x && f.cell[1] === g.y);
+    if (here.length && here.some((f) => f.id === "module")) {
+      // the module stays still through the drop: turning its cell the instant it landed read as a bounce
+      const slice = print.cell(here, g.x, g.y, MOD, 2, BLEED);
+      out.push(`<View class="absolute ${box(g.x, g.y)} animate-${reg.anim(reg.window(T_DROP, T_POSTER))}">${pic(png(`cell-${g.x}-${g.y}-q0`, slice))}</View>`);
+      continue;
+    }
     if (here.length) {
       const slice = print.cell(here, g.x, g.y, MOD, 2, BLEED);
       const files = [0, 1, 2, 3].map((q) => png(`cell-${g.x}-${g.y}-q${q}`, turnPlate(slice, q)));
@@ -409,8 +418,8 @@ function type(): string {
   const dot = `<Text class="font-bold text-[30px] text-[${S}]">{"·"}</Text>`;
   const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[30px] text-[${S}]">${jsx(w)}</Text>`;
   const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}]">${jsx(w)}</Text>`;
-  const col = (w: string, z: string, last = false) => `<View class="flex-col gap-[6px] w-[${last ? 200 : 150}px]">${en(w)}${zh(z)}</View>`;
-  const lines = [`<View class="flex-row items-start">${col("FORM", "形式")}${col("FARBE", "色彩")}${col("FUNKTION", "功能", true)}</View>`];
+  const col = (w: string, z: string) => `<View class="flex-col gap-[6px] w-[${MOD}px]">${en(w)}${zh(z)}</View>`;
+  const lines = [`<View class="flex-row items-start">${col("FORM", "形式")}${col("FARBE", "色彩")}${col("FUNKTION", "功能")}</View>`];
   if (STATIC) {
     out.push(rule(""));
     lines.forEach((l) => out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22}px]">${l}</View>`));
