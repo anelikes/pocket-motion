@@ -62,7 +62,7 @@ const W = 1920;
 const H = 1080;
 const CX = 960;
 const CY = 540;
-const G = { hot: "#ffffff", mid: "#a6a6a6", low: "#7d7d7d", faint: "#3a3a3a", bg: "#1e1e1e", plate: "#0b0b0b" };
+const G = { hot: "#ffffff", mid: "#a6a6a6", low: "#7d7d7d", faint: "#3a3a3a", bg: "#0c0c0c", plate: "#0b0b0b" };
 const CYAN = "#00e5ff";
 const ORANGE = "#ff6a00";
 
@@ -555,7 +555,7 @@ function coast(): string {
           if (Math.floor((prev - brg) / 360) !== Math.floor((cur - brg) / 360)) ch.push([t - 1, "0.25"], [t, "1"], [t + 20, "0.25"]);
           prev = cur;
         }
-        return `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.anim(reg.prop("opacity", ch))}" /><View class="absolute left-[${fx * S + 14}px] top-[${fy * S - 8}px]">${mono(`C-0${5 + OTHERS.findIndex((o) => o[0] === fx)} AIS`, 11, G.mid)}</View>`;
+        return `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.anim(reg.prop("opacity", ch))}" /><View class="absolute left-[${fx > 0.5 ? fx * S - 92 : fx * S + 30}px] top-[${fy * S - 8}px]">${mono(`C-0${5 + OTHERS.findIndex((o) => o[0] === fx)} AIS`, 11, G.mid)}</View>`;
       }).join("")}
     </View></View>`;
   // range rings: one a beat out from the hull once the push has landed, the alarm's own pulse
@@ -644,20 +644,15 @@ function kelvinOverlay(): string {
 function hullTop(): string {
   const core = "#ffe2c2";
   const on = reg.anim(reg.window(T_LAND));
-  // the hull as radar sees it: separate hot scatterers along a 3 px core on the 072 degree heading, not a smooth
-  //   shape; a 136 x 12 px rounded bar read as a pill. The cross of sidelobes runs through the brightest one only
+  // the hull as radar sees it: a thin hot return along the 072 degree heading and one hard point target where it is
+  //   brightest, with the cross of sidelobes a point target throws along the image's range and azimuth axes. A row of
+  //   white squares read as a debug overlay, and a rounded bar as a pill
   const ux = Math.cos((-18 * Math.PI) / 180);
   const uy = Math.sin((-18 * Math.PI) / 180);
-  const pts: [number, number][] = [[-58, 55], [-36, 80], [-12, 65], [12, 100], [34, 75], [56, 90]];
-  const dots = pts
-    .map(([p, a]) => {
-      const sz = Math.round(4 + (3 * a) / 100);
-      return rect(Math.round(CX + ux * p - sz / 2), Math.round(CY + uy * p - sz / 2), sz, sz, core, `opacity-${a}`);
-    })
-    .join("");
-  const [bx, by] = [Math.round(CX + ux * 12), Math.round(CY + uy * 12)];
-  const lobes = `${rect(bx - 75, by, 150, 1, core, "opacity-20")}${rect(bx, by - 75, 1, 150, core, "opacity-15")}`;
-  const coreLine = `<View class="absolute left-[${CX - 62}px] top-[${CY - 1}px] w-[124px] h-[3px] bg-[${core}] opacity-60 origin-center rotate-342" />`;
+  const [bx, by] = [Math.round(CX + ux * 18), Math.round(CY + uy * 18)];
+  const lobes = `${rect(bx - 64, by, 128, 1, core, "opacity-30")}${rect(bx, by - 64, 1, 128, core, "opacity-25")}`;
+  const coreLine = `<View class="absolute left-[${CX - 62}px] top-[${CY - 1}px] w-[124px] h-[2px] bg-[${core}] opacity-70 origin-center rotate-342" />`;
+  const dots = `<View class="absolute left-[${bx - 3}px] top-[${by - 3}px] w-[6px] h-[6px] rounded-[3px] bg-[#ffffff]" />`;
   return `<View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}"><View class="absolute inset-0 animate-${on}">${lobes}<View class="absolute inset-0 glow-[6px] glow-[#ff9a40] glow-gain-[1.2]">${coreLine}${dots}</View></View></View>`;
 }
 
@@ -710,7 +705,8 @@ function interceptVector(color: string): string {
   const ux = Math.sin(brg);
   const uy = -Math.cos(brg);
   const r0 = 440;
-  const r1 = LOCK_S / 2 + 30;
+  // the vector stops 250 px out: on bearing 248 it ran through the 19.47 degree tag (at 252, 170 px out) from 91 to 187
+  const r1 = 250;
   const out: string[] = [];
   const n = 16;
   // dotted on over twenty-four frames from the cutter's bearing, a dash every three ticks
@@ -1388,7 +1384,7 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 mount(() => (
   <View class="w-full h-full bg-[#000000]">
     <View class="absolute inset-0 bg-[${G.bg}]" />
-    <View class="absolute inset-0 bg-[radial-gradient(#2a2a2a,#1e1e1e_45%,#0c0c0c)]" />
+    <View class="absolute inset-0 bg-[radial-gradient(#161616,#0c0c0c_45%,#040404)]" />
     <View class="absolute inset-0 bg-[#000000] animate-${groundDown}" />
     <View class="absolute inset-0 origin-center animate-${punch}">
 ${hud}
@@ -1396,7 +1392,7 @@ ${hud}
     <View class="absolute left-[0px] top-[${CY - W / 2}px] w-[${W}px] h-[${W}px] bg-[radial-gradient(${ORANGE},${ORANGE}_0%,${CYAN}_3%,${CYAN})] mix-blend-multiply animate-${tint}" />
     <View class="absolute inset-0 mix-blend-screen animate-${caX(1)}">${reticle("#ff1f3d", "#7a0f1d", true)}</View>
     <View class="absolute inset-0 mix-blend-screen animate-${caX(-1)}">${reticle("#1f6bff", "#0f2f7a", true)}</View>
-    <View class="absolute inset-0 bg-[radial-gradient(#ff2a0000,#ff2a0030)] mix-blend-screen animate-${reg.anim([reg.window(T_FLIP)])}"><View class="absolute inset-0 animate-${reg.loop([reg.short(wash, B, "ease-out", 0)], B)}" /></View>
+    <View class="absolute inset-0 bg-[radial-gradient(#ff2a0000,#ff2a000c)] mix-blend-screen animate-${reg.anim([reg.window(T_FLIP)])}"><View class="absolute inset-0 animate-${reg.loop([reg.short(wash, B, "ease-out", 0)], B)}" /></View>
     <View class="absolute left-[0px] top-[${CY - W / 2}px] w-[${W}px] h-[${W}px] bg-[radial-gradient(#ffe2c0,#ffe2c000_38%)] mix-blend-screen animate-${reg.anim(reg.prop("opacity", [[0, "0"], [T_FLIP - 1, "0"], [T_FLIP, "0.85"], [T_FLIP + 4, "0"]]))}" />
     <View class="absolute inset-0 bg-[radial-gradient(#ff6a0000,#ff6a0000_55%,#ff6a00b0)] mix-blend-screen animate-${alarm}" />
     <View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[#ffd6a8] border-[7px] animate-${alarmEdge}" />
