@@ -1,0 +1,133 @@
+0025 — an arc with no sweep draws nothing.
+
+`arc-width` makes a node an arc and `arc-sweep` says how much of it. The
+painter's test was `arc_width > 0 && arc_sweep != 0`, so a sweep of 0 fell
+through to the box painter: the node's whole ground — a full disc on a
+`rounded-full` node — on the frame a drawn-on stroke starts from, then the
+arc. Films worked around it by starting every draw-on at half a degree. Now
+any arc width makes the node an arc, and the arc is drawn only when its
+sweep is not 0; under a sweep of 0 neither arc nor box is painted.
+
+Class `upstream`: what an arc node paints is the declaration layer, and
+every backend draws an arc from the core's RECT runs, so no backend changes.
+`contracts/spec/spec.ts` states it beside `arcWidth`.
+
+Guard: `an_arc_with_no_sweep_draws_nothing` (`engine/core/src/tests.rs`): a
+`rounded-full` node with arc width 5 and sweep 0 emits no paint op; the same
+node at +90 and -90 degrees, and with no arc width, still paints. Red before
+the change (the sweep-0 node painted its rounded ground), green after.
+
+Ledgers, against the same tree without this patch: no digest and no
+`visibility` row moves — no composition in the ledger shows an arc at a sweep
+of 0 (the films that hit it start their draw-ons at 0.5 degrees).
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index c961bd52..3d3a99a0 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -415,11 +415,12 @@ export const PROP = {
+   // -- arc (paint-only annular sector; the "stroke arc" primitive) ------------
+   arcStart: 140, //     f32 degrees, 0 = 12 o'clock, clockwise positive
+   arcSweep: 141, //     f32 degrees of arc extent (negative = counterclockwise)
+-  arcWidth: 142, //     f32 px stroke thickness; > 0 (with sweep != 0) draws an
+-  //                    annular sector with ROUND CAPS instead of the bg box:
+-  //                    center = node center, outer radius = min(w,h)/2, color
+-  //                    = bgColor. Axis-aligned worlds only (rotation belongs
+-  //                    in arcStart).
++  arcWidth: 142, //     f32 px stroke thickness; > 0 draws an annular sector
++  //                    with ROUND CAPS instead of the bg box: center = node
++  //                    center, outer radius = min(w,h)/2, color = bgColor. A
++  //                    sweep of 0 draws nothing (neither arc nor box: the
++  //                    first frame of a drawn-on stroke). Axis-aligned worlds
++  //                    only (rotation belongs in arcStart).
+   skewX: 143, //        f32 degrees of horizontal shear about the transform
+   //                    origin, composed between rotate and scale (CSS
+   //                    `rotate() skewX() scale()`): with it, rotate + skewX +
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index d4eb74da..b82797f0 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -1391,11 +1391,14 @@ impl<'a> Walker<'a> {
+         // edge a second time.
+         let ground_radius = if masked { 0.0 } else { r.radius };
+ 
+-        let is_arc = r.arc_width > 0.0 && r.arc_sweep != 0.0;
++        // An arc width makes the node an arc whatever its sweep: a sweep of 0
++        // is the first frame of a drawn-on stroke and draws nothing, rather
++        // than the box the node would paint without an arc.
++        let is_arc = r.arc_width > 0.0;
+         if is_arc {
+             // Arc primitive: the bg color strokes an annular sector instead
+             // of filling the box (spec.ts PROP.arcStart/arcSweep/arcWidth).
+-            if alpha(bg_color) > 0 {
++            if alpha(bg_color) > 0 && r.arc_sweep != 0.0 {
+                 self.emit_arc(dl, &world, l.w, l.h, &r, bg_color, &clip);
+             }
+         } else if rounded_ring {
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index bf609dbf..78dde753 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -2762,6 +2762,60 @@ fn arc_primitive_emits_coverage_rects() {
+     assert!(rects > 20, "expected arc coverage runs, got {rects}");
+ }
+ 
++/// Every op in `words` that puts pixels down, as (op, word index).
++fn paint_ops(words: &[u32]) -> Vec<(u32, usize)> {
++    let mut out = Vec::new();
++    let mut i = 0usize;
++    for op in op_sequence(words) {
++        if ![spec::draw_op::SCISSOR, spec::draw_op::SCISSOR_POP, spec::draw_op::MASK_PUSH, spec::draw_op::MASK_POP]
++            .contains(&op)
++        {
++            out.push((op, i));
++        }
++        i += match op {
++            spec::draw_op::RECT => 4,
++            spec::draw_op::GRAD_RECT => 6,
++            spec::draw_op::GLYPH_RUN => 3 + 2 * ((words[i + 1] >> 16) as usize),
++            spec::draw_op::TEX_QUAD => 9,
++            spec::draw_op::SCISSOR => 3,
++            spec::draw_op::SCISSOR_POP => 1,
++            spec::draw_op::TRI => 7,
++            spec::draw_op::TEX_TRI => 12,
++            spec::draw_op::POLY => 3 + words[i + 1] as usize,
++            spec::draw_op::MASK_PUSH => 2 + 2 * words[i + 1] as usize,
++            _ => 1,
++        };
++    }
++    out
++}
++
++#[test]
++fn an_arc_with_no_sweep_draws_nothing() {
++    // `arc-width` makes the node an arc; the sweep says how much of it. A
++    // sweep of 0 is the first frame of every drawn-on stroke, and it used to
++    // fall through to the box painter: the node's whole ground, a full disc
++    // on a `rounded-full` node, for one frame before the arc started. Under
++    // a sweep of 0 there is no arc and no box. The same node with any other
++    // sweep, and with no arc width at all, still paints.
++    let scene = |sweep: f32, width: f32| {
++        let mut ui = Ui::new();
++        let n = place_box(&mut ui, 40.0, 40.0, 10.0, 10.0);
++        ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++        ui.set_prop(n, spec::prop::RADIUS, 20.0);
++        ui.set_prop(n, spec::prop::ARC_START, 30.0);
++        ui.set_prop(n, spec::prop::ARC_SWEEP, sweep as f64);
++        ui.set_prop(n, spec::prop::ARC_WIDTH, width as f64);
++        ui.tick();
++        let words = ui.draw().words.clone();
++        validate_drawlist(&words);
++        paint_ops(&words).len()
++    };
++    assert_eq!(scene(0.0, 5.0), 0, "an arc with no sweep paints nothing");
++    assert!(scene(90.0, 5.0) > 0, "a quarter arc paints");
++    assert!(scene(-90.0, 5.0) > 0, "a counter-clockwise quarter arc paints");
++    assert!(scene(0.0, 0.0) > 0, "no arc width: the node is a box and paints its ground");
++}
++
+ // ---- POLY: convex coverage over a clipped rotated box ----------------------------
+ 
+ fn place_box(ui: &mut Ui, w: f64, h: f64, x: f64, y: f64) -> i32 {

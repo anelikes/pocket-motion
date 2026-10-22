@@ -2178,6 +2178,36 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
 
+  {
+    id: "paint.arc",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "arc-start-[deg] | arc-sweep-[deg] | arc-width-[px]",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "`arc-width` turns the node's ground into an annular sector centred in its box: outer radius half the shorter side, the band `arc-width` wide, from `arc-start` (0 = 12 o'clock, clockwise) for `arc-sweep` degrees (negative runs counter-clockwise), in the `bg-*` colour, with a round cap on each end. A sweep of 0 draws nothing — neither arc nor the box (patches/0025, class upstream; before it, the node's whole ground). All three animate as `arcStart`, `arcSweep`, `arcWidth`",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "arc-width-[5] compiles to arcWidth 5.0",
+        literals: ["w-[80px] h-[80px] bg-white arc-start-[45] arc-sweep-[0] arc-width-[5]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "arcWidth", value: 1084227584 } },
+      },
+      {
+        what: "a sweep of 0 is declared, not dropped",
+        literals: ["w-[80px] h-[80px] bg-white arc-start-[45] arc-sweep-[0] arc-width-[5]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "arcSweep", value: 0 } },
+      },
+    ],
+  },
+
   // -------------------------------------------------------------------------
   // Declaring footage (generator side)
   //

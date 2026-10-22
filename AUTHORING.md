@@ -361,6 +361,12 @@ on purpose rolls away with its tile, a pixel wide. The op is this repository's o
 it): no upstream backend draws it, so a composition that must stay portable to
 one keeps to `overflow-hidden`.
 
+**An arc is a stroke.** `arc-width-[px]` turns a node's ground into an
+annular sector centred in its box — outer radius half the shorter side,
+`arc-start-[deg]` from 12 o'clock clockwise, `arc-sweep-[deg]` long, in the
+`bg-*` colour. A sweep of 0 draws nothing, neither arc nor box, so a drawn-on
+stroke animates `arcSweep` from 0 (`patches/0025`).
+
 **Text can carry an outline.** `text-stroke-[6px] text-stroke-[#7c2d12]`
 draws a 6 px outline around a Text node's glyphs; `text-stroke-outside` (the
 default) grows it outward under the fill, `text-stroke-center` straddles the
