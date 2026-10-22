@@ -145,10 +145,11 @@ export class El {
     this.s = z;
     return this;
   }
-  /** Follow an arbitrary per-tick path. */
   /** Follow an arbitrary path, keyed every `every` ticks (and at both ends). */
   path(t0: number, t1: number, f: (t: number) => Partial<State>, every = 1) {
-    if (t0 > 0) this.key(t0 - 1); // hold until the path starts
+    // hold until the path starts — unless a key already sits there: set(t0, …) has just written the state
+    // BEFORE its change at t0 - 1, and re-keying it with the current state would ramp the change in from tick 0
+    if (t0 > 0 && !this.keys.has(t0 - 1)) this.key(t0 - 1);
     for (let t = t0; t <= t1; t++) {
       if ((t - t0) % every !== 0 && t !== t1) continue;
       Object.assign(this.s, f(t));

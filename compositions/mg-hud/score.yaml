@@ -4,7 +4,8 @@
 #   2.0–5.5 s 底层让开（能量压低），雷达扫到 C-01/02/03 各一声，视距每拍滚动一次各一声轻 chirp
 #   4.0 s 扫描第一圈扫过 C-04：双响 + ding
 #   5.5–6.5 s 锁定读数 0→100%：锁定音每个十六分音符升一级，6.0 s 起音乐被压出一个洞
-#   6.5 s 括号落定 = 全画面翻橙：冲击 + 双音警报；6.57 s 俯冲 whoosh；8.5 s 着陆，城市标签逐个 pop
+#   6.5 s 括号落定 = 全画面翻橙：冲击 + 双音警报；6.75 s 雷达成像片出来；6.9 s 俯冲 whoosh；8.5 s 着陆
+#   9.0 / 9.25 / 9.5 s 底部「目标锁定」告警闪三下，各一声
 title: Vega-7
 meta:
   bpm: 120
@@ -13,9 +14,9 @@ meta:
   seed: 0
 
 sections:
-  - { name: boot,   bars: 1, energy: 0.42 }                      # 0:00–0:02
-  - { name: search, bars: 1, energy: 0.35, at: "0:02" }           # 0:02–0:04 底层让开，提示音在前
-  - { name: track,  bars: 1, energy: "0.4->0.8", at: "0:04" }     # 0:04–0:06 向锁定蓄力
+  - { name: boot,   bars: 1, energy: 0.3 }                       # 0:00–0:02
+  - { name: search, bars: 1, energy: 0.28, at: "0:02" }           # 0:02–0:04 底层让开，提示音在前
+  - { name: track,  bars: 1, energy: "0.3->0.65", at: "0:04" }    # 0:04–0:06 向锁定蓄力，给锁定那一下留出余量
   - { name: alert,  bars: 2, energy: "1.0->0.75", at: "0:06" }    # 0:06–0:10
 
 harmony:
@@ -57,7 +58,8 @@ tracks:
       search: "r/16 r/16 r/16 A6/16' r/16 r/16 r/16 F6/16' r/16 r/16 r/16 A6/16' r/16 r/16 r/16 D7/16'"
       # the lock tone: one step up every 16th from the brackets opening (5.5 s) to the snap landing (6.5 s)
       track:  "D7/16' r/16 D7/16' r/16 r/4 r/4 D6/16' F6/16' A6/16' D7/16'"
-      alert:  "E7/16' F7/16' A7/16' A7/16' r/4 r/2 | r/1"
+      # …and the banner's three alarm blinks at 9.0 / 9.25 / 9.5 s
+      alert:  "E7/16' F7/16' A7/16' A7/16' r/4 r/2 | r/2 A6/16' r/16 A6/16' r/16 A6/16' r/16 r/8"
 
   # the distance readout rolls on every beat of the search: a short high chirp each time it settles
   chirp:
@@ -117,11 +119,8 @@ sfx:
   - { type: riser, at: "0:06.5", length: 2, level: 0.6 }
   # a near-silent pop whose only job is its duck: the bed drops out for the beat before the hit
   - { type: pop, at: "0:06.02", level: 0.02, duck: 18 }
-  - { type: impact, at: "0:06.5", duck: 4, level: 0.85 }
+  - { type: impact, at: "0:06.5", duck: 6, level: 1.0 }
+  # the SAR chip resolving out of the noise
+  - { type: ding, at: "0:06.75", level: 0.3 }
   - { type: whoosh, at: "0:06.9", level: 0.5 }
   - { type: downlifter, at: "0:08.5", level: 0.35 }
-  # city tags land one by one
-  - { type: pop, at: "0:08.07", level: 0.22 }
-  - { type: pop, at: "0:08.17", level: 0.2 }
-  - { type: pop, at: "0:08.27", level: 0.18 }
-  - { type: pop, at: "0:08.37", level: 0.16 }

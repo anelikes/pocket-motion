@@ -240,3 +240,112 @@ export function wedge(size: number, r: number, span: number, maxAlpha: number, s
     return maxAlpha * (1 - behind / span) ** 1.5 * cov(r * scale, d);
   });
 }
+
+/**
+ * A synthetic SAR chip, grey on opaque: sea clutter as fully developed
+ * speckle (an exponential intensity under a long swell), and, when `ship` is
+ * set, a vessel heading `hdg` degrees (clockwise from up) up and right of
+ * the chip's centre — a bright return with its range/azimuth sidelobe cross, the dark
+ * turbulent wake straight behind it, and the two bright Kelvin arms at
+ * ±19.47° to the track. The same `seed` gives the same speckle with or
+ * without the ship, so one can dissolve into the other.
+ */
+export function sar(size: number, seed: number, ship: boolean, hdg = 72): Buffer {
+  let s = seed | 0;
+  const rnd = () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const th = (hdg * Math.PI) / 180;
+  const fx = Math.sin(th); // heading, screen x
+  const fy = -Math.cos(th); // heading, screen y (up is negative)
+  // the ship sits up and right of centre, so the wake it trails stays inside the chip
+  const cx = size * 0.64;
+  const cy = size * 0.4;
+  const kelvin = (19.47 * Math.PI) / 180;
+  const px = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const speckle = -Math.log(Math.max(1e-6, rnd()));
+      const swell = 0.75 + 0.25 * Math.sin((x * 0.8 + y * 0.35) * 0.09) * Math.sin((x * 0.2 - y * 0.6) * 0.05);
+      let v = 0.2 * swell * Math.sqrt(speckle);
+      if (ship) {
+        const dx = x + 0.5 - cx;
+        const dy = y + 0.5 - cy;
+        const along = dx * fx + dy * fy; // + ahead of the ship
+        const across = -dx * fy + dy * fx;
+        // the hull: a bright ellipse 36 px long, 7 wide, and its sidelobe cross
+        const hull = Math.exp(-((along / 18) ** 2) - (across / 3.5) ** 2);
+        const lobe = 0.35 * (Math.exp(-((dy / 1.2) ** 2)) * Math.exp(-((dx / 60) ** 2)) + Math.exp(-((dx / 1.2) ** 2)) * Math.exp(-((dy / 60) ** 2)));
+        const r = Math.hypot(dx, dy);
+        if (along < -10) {
+          const back = -along;
+          const fade = Math.exp(-back / 160);
+          // the turbulent wake: a dark band straight behind
+          v *= 1 - 0.75 * fade * Math.exp(-((across / 5) ** 2));
+          // the Kelvin arms: bright lines at ±19.47° to the track
+          for (const sign of [-1, 1]) {
+            const arm = Math.abs(across - sign * back * Math.tan(kelvin));
+            v += 0.55 * fade * Math.exp(-((arm / 1.6) ** 2)) * (0.6 + 0.4 * rnd());
+          }
+        }
+        v += 1.4 * hull + lobe * Math.exp(-r / 90);
+      }
+      const g = Math.round(Math.max(0, Math.min(1, v)) * 255);
+      const k = (y * size + x) * 4;
+      px[k] = g;
+      px[k + 1] = g;
+      px[k + 2] = g;
+      px[k + 3] = 255;
+    }
+  }
+  return encodePNG(px, size, size);
+}
+
+/**
+ * A vessel's track: a filled dot on each AIS ping joined by a thin solid
+ * line, then the silent leg after the last ping as a dashed line.
+ */
+export function track(w: number, h: number, pings: [number, number][], silent: [number, number][]): Buffer {
+  const solid = polylineCoverage(w, h, [pings], (d) => cov(0.8, d));
+  const dashed = polylineCoverage(w, h, [silent], (d, along) => (along % 14 < 8 ? cov(1, d) : 0));
+  const px = new Uint8Array(w * h * 4);
+  for (let k = 0; k < w * h; k++) {
+    let a = Math.max(solid[k]!, dashed[k]!);
+    const x = (k % w) + 0.5;
+    const y = Math.floor(k / w) + 0.5;
+    for (const [cx, cy] of pings) a = Math.max(a, cov(4, Math.hypot(x - cx, y - cy)));
+    px[k * 4] = 255;
+    px[k * 4 + 1] = 255;
+    px[k * 4 + 2] = 255;
+    px[k * 4 + 3] = Math.round(Math.min(1, a) * 255);
+  }
+  return encodePNG(px, w, h);
+}
+
+/** Per-pixel coverage of polylines under `f(distance, distanceAlongLine)`, visiting only pixels near each segment. */
+function polylineCoverage(w: number, h: number, lines: [number, number][][], f: (d: number, along: number) => number, reach = 4): Float32Array {
+  const alpha = new Float32Array(w * h);
+  for (const l of lines) {
+    let run = 0;
+    for (let i = 0; i + 1 < l.length; i++) {
+      const [x0, y0] = l[i]!;
+      const [x1, y1] = l[i + 1]!;
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      const len2 = dx * dx + dy * dy || 1;
+      for (let y = Math.max(0, Math.floor(Math.min(y0, y1) - reach)); y <= Math.min(h - 1, Math.ceil(Math.max(y0, y1) + reach)); y++) {
+        for (let x = Math.max(0, Math.floor(Math.min(x0, x1) - reach)); x <= Math.min(w - 1, Math.ceil(Math.max(x0, x1) + reach)); x++) {
+          const u = Math.max(0, Math.min(1, ((x + 0.5 - x0) * dx + (y + 0.5 - y0) * dy) / len2));
+          const d = Math.hypot(x + 0.5 - (x0 + u * dx), y + 0.5 - (y0 + u * dy));
+          const a = f(d, run + u * Math.sqrt(len2));
+          if (a > alpha[y * w + x]!) alpha[y * w + x] = a;
+        }
+      }
+      run += Math.sqrt(len2);
+    }
+  }
+  return alpha;
+}
