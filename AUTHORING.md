@@ -617,6 +617,53 @@ the pak: a 2048×2048 picture is 16 MiB there and 16 MiB again in the core.
 SVG is rasterised at the composition's density. `compositions/images` draws a
 900×506 picture and a 3×5 one.
 
+**An SVG is drawn by the build's own baker, and it draws a subset of SVG**
+(`framework/compiler/bake-svg.ts`, `patches/0040`). Its `width` and `height`
+are the picture's size in pixels before density, and the `viewBox` is
+stretched onto them on each axis independently — `preserveAspectRatio="none"`;
+any other value is refused rather than reinterpreted.
+
+| | what is drawn |
+|---|---|
+| shapes | `<path>` (`M L H V C S Q T A Z`, absolute and relative), `<circle>`, `<ellipse>`, `<rect>` with `rx`/`ry`, `<line>`, `<polyline>`, `<polygon>` |
+| paint | `fill` and `stroke`, each `#rgb`, `#rrggbb`, `#rrggbbaa`, `white`, `black`, `none`, or `hole`, which erases what is under it; `fill-opacity`, `stroke-opacity`, `opacity`; `fill-rule` `nonzero` or `evenodd` |
+| stroke | `stroke-width`; `stroke-linejoin` `miter`, `round`, `bevel`; `stroke-linecap` `butt`, `round`, `square`; `stroke-miterlimit` |
+| structure | `<g>` passes fill and stroke properties to its children; `transform` (`matrix`, `translate`, `scale`, `rotate`, `skewX`, `skewY`) on a shape or a `<g>`, applied in SVG order — the rightmost function first, then each enclosing `<g>` outward; `opacity` on a `<g>`, or on a shape with both a fill and a stroke, composites them as one layer; `style="…"` declarations; `display="none"`; `visibility` |
+
+**What would paint and is not in that table stops the build** with a message
+naming it: `<text>`, `<image>`, `<use>`, a `<style>` sheet, `clip-path`,
+`mask`, `filter`, `stroke-dasharray`, markers, a gradient `fill="url(#…)"`.
+`<defs>`, gradients themselves, `<title>`, comments and editor metadata are
+skipped. Two differences from a browser are kept because the icons the engine
+ships were drawn against them: a `<path>`, `<polyline>` or `<polygon>` with no
+`fill` on it or above it is not filled (a browser fills it black), and a
+circle's radius under a non-uniform viewBox takes the smaller of the two
+scales.
+
+**Coverage is 16 samples per pixel, and the count is exact.** Each sample row
+is crossed once per edge, with the crossing arithmetic of the per-sample
+point-in-polygon test the baker used before, so every pixel gets the integer
+it always got. `tests/svg-bake.test.ts` holds that against the old baker,
+kept verbatim in the vendored tree as `tests/fixtures/bake-svg-reference.ts`:
+every SVG the engine and this repository ship that the old baker accepted
+bakes to its old bytes at densities 1 to 3 — except two benchmark charts in
+the engine's `docs/bench`, whose `<text>` the old baker dropped and this one
+refuses — and 1,500 random fills, and 500 whose edges pass exactly through
+sample positions, get the same counts. The cost is the edges crossing each
+row plus the pixels in each shape's box, not their product: one path of
+11,424 edges over 1400×1000 (a 952-cell hex grid) bakes in 63 ms, where
+the per-sample test took 23 minutes of CPU.
+
+**A stroke is flattened into fill contours** — a quad per segment, a join on
+the outer side of each corner, a cap at each end of an open subpath — and
+filled under nonzero, so its edges get the same coverage as a fill. `A` arcs,
+circles, ellipses, rounded corners and round joins and caps are subdivided
+until each chord is within 1/32 px of the curve. **A cubic or quadratic
+segment is always 16 straight steps**, as it was before, and that is coarse
+for a large curve: a quarter circle written as one cubic is off the circle by
+up to 0.32 px at a 250 px radius and 1.27 px at 1000 px. Draw a large circle
+or arc as `<circle>`, `<ellipse>` or `A`, which are not.
+
 **A file that is not found does not stop the BUILD.** It prints
 
 ```
