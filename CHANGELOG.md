@@ -3,6 +3,41 @@
 Tags are cut from `main`. Each entry says what a composition can now
 declare, what it costs, and whether any recorded digest moved.
 
+## v0.6.0 — unreleased
+
+Usable from another project, and reproducible with one command. Nothing new
+to declare; every digest recorded before this reproduces unchanged.
+
+### Added
+
+- **`src/api.ts`**: `build`, `trace`, `render`, `verify` and `doctor` as
+  functions, each returning the object its command prints with `--json` —
+  the same dispatch, the same redaction, the same `runId`.
+  `tests/api.test.ts` holds each equal to the CLI run as a process.
+- **An npm package**, `pocket-motion`, Bun-only, staged by
+  `scripts/pack.ts` and not yet published: the CLI as the `pocket-motion`
+  bin, the API as the package's export, and the patched compiler,
+  framework and wasm rasteriser prebuilt inside it, so a consumer needs
+  neither Rust nor git. 10.7 MiB packed. An empty project that installs it
+  traces `smoke` to its ledger digest.
+- **A Dockerfile** that builds the repository from nothing on linux/amd64
+  with CI's pins and runs the digest ledger. Under emulation on an M4, all
+  36 digests reproduced with the image's own wasm, in 593 s.
+- `bun scripts/assets.ts --kind fonts,synthetic` fetches and verifies only
+  the named manifests.
+
+### Changed
+
+- `render --json` carries `identity`, the value `trace` reports, beside
+  `digest`. A `--spec` job carries none.
+- `build.json` records a composition's paths relative to the composition's
+  own repository as well as this one, so a project that installed the
+  package writes a record that does not say where it sits. Every record in
+  this repository is byte-identical to before.
+- `doctor` in an installed package checks the prebuilt tree against
+  `vendor/prebuilt.json` and loads the compiler; `rustup` and `assets` say
+  they do not apply there.
+
 ## v0.5.0 — 2026-09-26
 
 The same pictures, rendered with less memory and less work. Nothing new

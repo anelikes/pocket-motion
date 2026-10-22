@@ -236,6 +236,12 @@ browser.
   for a person reading a terminal, where a real path is what you paste back.
 - `MOTION_RUN_ID` in the environment is echoed back as `runId` on every
   envelope, so one agent turn's `lint`, `check`, `trace` and `verify` join up.
+- The same objects come back from code: `import { build, trace, render,
+  verify, doctor } from "pocket-motion"` (`src/api.ts`) runs the command
+  through the CLI's own dispatch and returns what `--json` would have
+  printed, redaction and `runId` included. `tests/api.test.ts` holds each
+  function equal to the CLI. `render`'s object carries `trace`'s `digest`
+  and `identity`, except for a `--spec` job, which has no identity.
 - A command states what it EXAMINED. `check` names the frame window it used;
   `visibility` and `assert` name the sampled frames; `layout` is one frame.
   None of them claims anything about the frames it did not look at, and

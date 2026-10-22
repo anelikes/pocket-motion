@@ -8,6 +8,69 @@ Deterministic video rendering for [PocketJS](https://pocketjs.dev) compositions 
 > rebuilding every composition in the tree on Linux/x86-64 against digests
 > recorded on macOS/ARM.
 
+## Reproduce a digest yourself
+
+```bash
+docker run --rm $(docker build -q https://github.com/anelikes/pocket-motion.git)
+```
+
+That builds this repository from nothing — upstream fetched at the pin,
+`patches/` applied, the wasm core compiled with Rust 1.97.1, the pinned faces
+fetched and checked by SHA-256 — on Linux/x86-64 with Bun 1.3.11 and the
+same ffmpeg build CI uses, then runs `bun scripts/digests.ts`: every
+composition in the ledger rebuilt and traced, its frame digest compared with
+[`baselines/digests.json`](./baselines/digests.json), which was recorded on
+macOS/ARM. Exit 0 means every one reproduced; a mismatch is named. On an
+Apple M4, where Docker runs the x86-64 image under emulation and warns that
+the platform differs, all 36 reproduced in 593 s once the image was built.
+The [`Dockerfile`](./Dockerfile) says what each pin is and why;
+`tests/docker.test.ts` holds those pins equal to the CI workflow's.
+
+## Use it from another project
+
+The package is Bun-only and not published yet. `bun scripts/pack.ts` writes
+it to `dist/pack/`, and another project installs that file:
+
+```bash
+bun add /path/to/pocket-motion/dist/pack/pocket-motion-*.tgz
+bunx pocket-motion doctor
+bunx pocket-motion build compositions/card
+bunx pocket-motion render compositions/card --out card.mov --format mov --alpha
+```
+
+```ts
+import { build, render, trace, verify } from "pocket-motion";
+
+await build("compositions/card");
+const report = await verify("compositions/card");
+const { outputPath, digest, identity } = await render("compositions/card", {
+  out: "card.mov",
+  format: "mov",
+  alpha: true,
+});
+```
+
+Each function returns the object the same command prints with `--json`:
+[`src/api.ts`](./src/api.ts) builds the argv, runs it through the CLI's own
+dispatch and returns what `--json` would have written, absolute paths
+redacted included. `tests/api.test.ts` holds every function equal to the
+CLI run as a separate process. None of them throws for a failed check or a
+wrong argument; each resolves with the object the CLI would have printed,
+where `ok: false` (for `trace`, an `error` field) says which.
+
+What the project needs: compositions under `compositions/` (the build writes
+`dist/` beside it, and a sidecar's font paths are relative to the project),
+Bun 1.3.11 or later — the ledger was recorded on 1.3.11, and a bundle is
+refused by any Bun other than the one that built it — and `ffmpeg` and
+`ffprobe` to encode. It does not need Rust: the compiler, the framework and
+the wasm rasteriser ship prebuilt, with every file's SHA-256 in
+`vendor/prebuilt.json`, which `doctor` checks. The compiler's one native
+binding is an optional dependency per platform, and `doctor` says whether it
+loaded. `init` does not work from the package yet — its fixtures are this
+repository's compositions — so a first composition is written by hand,
+[`AUTHORING.md`](./AUTHORING.md) being the reference. [`NOTICE`](./NOTICE)
+lists what the package carries and under which terms.
+
 ## What this is
 
 A PocketJS composition renders to MP4 through the same `no_std` Rust core that
@@ -112,11 +175,13 @@ no new API.
 ## Layout
 
 ```
-src/          the host: harness, frame source, render, lint, introspection
+src/          the host: harness, frame source, render, lint, introspection; api.ts
 compositions/ the compositions, including the introduction reel
 baselines/    measured baselines — competitors and this project's own
-scripts/      vendor.ts rebuilds vendor/, assets.ts fetches the fonts and audio
+scripts/      vendor.ts rebuilds vendor/, assets.ts fetches the fonts and audio,
+              pack.ts stages and packs the npm package
 assets/       fonts, audio (fetched — see below) and the synthetic clips and tones
+Dockerfile    the digest ledger as an image
 ```
 
 Two things are deliberately not versioned, on one rule: **an ignored dependency

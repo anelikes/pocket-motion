@@ -4,7 +4,7 @@
 #
 #   docker run --rm $(docker build -q https://github.com/anelikes/pocket-motion.git)
 #
-# builds this repository from nothing — upstream cloned at the pin, patches/
+# builds this repository from nothing — upstream fetched at the pin, patches/
 # applied, the wasm core compiled, the pinned faces fetched by sha256 — and
 # runs `bun scripts/digests.ts`, which rebuilds every composition in the ledger
 # and compares its frame digest with baselines/digests.json. Exit 0 is every
