@@ -4,8 +4,8 @@
   "fps": 30,
   "supersample": 1,
   "shutter": {
-    "angle": 180,
-    "samples": 4
+    "angle": 120,
+    "samples": 6
   },
   "fonts": {
     "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
