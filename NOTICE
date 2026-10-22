@@ -81,3 +81,46 @@ A command does rebuild them. `assets/synthetic/manifest.json` records the
 exact invocation and the first line of `ffmpeg -version` from the run that
 produced the committed bytes, beside the SHA-256 `scripts/assets.ts` verifies.
 See `assets/synthetic/README.md`.
+
+
+## The npm package
+
+`scripts/pack.ts` assembles the package from an explicit list, and it
+carries less than this repository and more than its tracked source. What it
+carries, and under which terms:
+
+  The source in `src/` and the patches in `patches/` — MIT, this file's
+  LICENSE.
+
+  Part of the vendored PocketJS tree, prebuilt, at `vendor/pocketjs`: the
+  compiler, the framework source, the wasm rasteriser compiled from upstream
+  plus `patches/`, and the PNG encoder. MIT, Copyright (c) 2026 Yifeng
+  "Evan" Wang; the licence travels as `vendor/pocketjs/LICENSE`.
+
+  Upstream's default faces, at `vendor/pocketjs/assets/fonts`: Inter and
+  JetBrains Mono, each under the SIL Open Font License, Version 1.1, with
+  its text beside it (`LICENSE.txt`, `LICENSE-JetBrainsMono.txt`). They are
+  what a composition that declares no `fonts` bakes. Upstream's sample
+  images are at `vendor/pocketjs/assets/images`, under its MIT licence.
+
+  The npm packages the compiler imports, at `vendor/pocketjs/node_modules`,
+  copied unmodified as `bun install --frozen-lockfile` installed them against
+  `vendor/pocketjs/bun.lock`. Each keeps its own licence, and
+  `vendor/third-party.json` lists every one with the licence its
+  package.json declares and the licence file it ships. The licences among
+  them are MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0 (one package,
+  baseline-browser-mapping) and CC-BY-4.0 (one package, caniuse-lite, whose
+  data is attributed in its own LICENSE). Three MIT packages publish no
+  licence file of their own — @vue-jsx-vapor/compiler-rs, is-reference and
+  ts-macro — and travel as npm distributes them.
+
+  The compiler's native binding, @vue-jsx-vapor/compiler-rs-<platform>, is
+  not in the package. It is an optional dependency, installed by the
+  consumer's package manager from the npm registry under its own MIT licence.
+
+What the package does NOT carry: the HarmonyOS Sans faces, the Noto Sans SC
+pair, the Mixkit audio and the synthetic clips and tones — nothing under
+this repository's `assets/` — and this repository's compositions, tests,
+scripts and ledgers. Nothing in `src/` reads any of them for a composition
+outside this repository; a composition's faces and sound are files in its
+own project, under whatever terms that project has them.
