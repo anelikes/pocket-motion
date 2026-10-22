@@ -1,0 +1,24 @@
+{
+  "motion": 1,
+  "durationFrames": 300,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf",
+    "faces": {
+      "cjk": {
+        "regular": "assets/fonts/NotoSansSC-Regular.otf",
+        "bold": "assets/fonts/NotoSansSC-Bold.otf"
+      },
+      "code": {
+        "regular": "vendor/pocketjs/assets/fonts/JetBrainsMono-Regular.ttf",
+        "bold": "vendor/pocketjs/assets/fonts/JetBrainsMono-Regular.ttf"
+      },
+      "ui": {
+        "regular": "compositions/mg-hud/fonts/Rajdhani-SemiBold.ttf",
+        "bold": "compositions/mg-hud/fonts/Rajdhani-Bold.ttf"
+      }
+    }
+  }
+}

@@ -646,6 +646,41 @@ the fixture, and it traces green on purpose.
 8888 is not wanted, and a sprite manifest in the same directory bakes an image
 as an animated sprite atlas instead of a still.
 
+### Pictures and motion a generator computes
+
+A composition with a `gen.ts` can compute its pictures and its motion
+instead of declaring them by hand. Four modules hold what
+`compositions/mg-hud` and `compositions/mg-bauhaus` needed, each with a test
+whose cases are the defects that reached a film first:
+
+- **`src/anim/sampled.ts`** samples an element's centre, angle, scale and
+  opacity on the 60 Hz tick with the easing applied there, and writes linear
+  keyframes, so a turn about any pivot is an exact arc and a landing is where
+  it was computed to be. `Reg` collects keyframe sets and named animations
+  for `pocket.config.ts`; `El` is one element over the film. It refuses what
+  would otherwise surface later or not at all: more than 250 keys in a track
+  (the baker holds 255 segments), a `step` whose changes do not strictly
+  increase (its `t − 1` and `t` keys cross and bake as a ramp from tick 0),
+  and an empty `window`. `El.path` after `set` on the same tick keeps the
+  state before the change. `tests/sampled.test.ts`.
+- **`src/image/raster.ts`** paints line art and imagery analytically into
+  plates — rings, discs, wedges, hex grids, traces, polylines with a soft
+  edge, speed lines, a synthetic SAR chip — at a cost of the pixel count,
+  where the build's SVG baker tests every subsample against every contour.
+  `encodePlate` writes the PNG through upstream's encoder; `turnPlate` turns a
+  plate by quarter turns as an exact permutation. **A turn a picture keeps
+  belongs in its pixels:** the core draws a turned textured quad as two
+  triangles whose shared diagonal shows as a faint line. `tests/raster.test.ts`.
+- **`src/image/print.ts`** rasterises printed forms — box, disc, quarter,
+  half, triangle — from signed distances with a press's wandering edge and
+  uneven ink, and cuts a poster made of them into cells from the same fields,
+  so cells placed side by side are the poster again with no seam.
+  `tests/raster.test.ts`.
+- **`src/text/outline.ts`** sets a word in a face's own outlines, scaled so
+  its ink fills an exact box, reading across or up, and cuts it between
+  glyphs into one plate per letter. Glyph positions come from the same
+  kerning `getPath` applies, GPOS included. `tests/outline.test.ts`.
+
 ## Sound
 
 Sound is a sidecar declaration, not something a shot file names. The four

@@ -1,0 +1,50 @@
+{
+  "hex.png": {
+    "linear": true
+  },
+  "dot.png": {
+    "linear": true
+  },
+  "ring.png": {
+    "linear": true
+  },
+  "disc.png": {
+    "linear": true
+  },
+  "rim.png": {
+    "linear": true
+  },
+  "band.png": {
+    "linear": true
+  },
+  "coast-wide.png": {
+    "linear": true
+  },
+  "sar-lens.png": {
+    "linear": false
+  },
+  "wedge.png": {
+    "linear": true
+  },
+  "streaks.png": {
+    "linear": true
+  },
+  "burst.png": {
+    "linear": true
+  },
+  "shock.png": {
+    "linear": true
+  },
+  "spark-snr.png": {
+    "linear": true
+  },
+  "spark-coh.png": {
+    "linear": true
+  },
+  "scan.png": {
+    "linear": false
+  },
+  "grain.png": {
+    "linear": true
+  }
+}

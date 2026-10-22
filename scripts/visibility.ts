@@ -69,6 +69,12 @@ const LEDGER = join(ROOT, "baselines/visibility.json");
  * lives.
  */
 const EXEMPT: Readonly<Record<string, string>> = {
+  "compositions/same-frame":
+    "The calling-card film 《同一帧》, under review and recut every round; its end card carries the digest of its own first 3000 frames (digest.json), re-derived each cut. It enters ENTRIES when the cut is frozen.",
+  "compositions/mg-bauhaus":
+    "A showcase film written against mg-styles-15's Bauhaus prompt and recut after every jury round; a digest recorded now would be retired by the next cut. It enters ENTRIES when the cut is frozen.",
+  "compositions/mg-hud":
+    "A showcase film written against mg-styles-15's HUD prompt and recut after every jury round; a digest recorded now would be retired by the next cut. It enters ENTRIES when the cut is frozen.",
   "compositions/malicious":
     "The determinism rejection fixture: it does not boot. `hardenedBootWorld` raises " +
     "a DeterminismViolation by design, so there is no tree to sweep and a sweep " +
