@@ -51,6 +51,16 @@ describe("El", () => {
     expect(s.rot).toBe(90);
   });
 
+  test("refuses a key written behind a later one, which would leave the later key's stale state baked", () => {
+    const el = new El(reg(), { x: 0, y: 0, w: 10, h: 10 }, { op: 1 });
+    el.to(100, 110, { rot: 90 }).set(111, { rot: 0 });
+    expect(() => el.set(110, { op: 0 })).toThrow(/time order/);
+    // the same tick as the last key is an overwrite, which set() does as it hands over from a move
+    const ok = new El(reg(), { x: 0, y: 0, w: 10, h: 10 });
+    ok.to(10, 20, { cx: 50 });
+    expect(() => ok.set(21, { op: 0 })).not.toThrow();
+  });
+
   test("entry refuses a track the baker cannot hold", () => {
     const el = new El(reg(), { x: 0, y: 0, w: 10, h: 10 });
     el.to(0, 599, { cx: 1000 }, (u) => u * u);

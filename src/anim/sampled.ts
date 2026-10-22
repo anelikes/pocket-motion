@@ -192,6 +192,8 @@ export interface State {
 export class El {
   readonly keys = new Map<number, State>();
   s: State;
+  /** The latest tick a key has been written at: keys are written in time order. */
+  private last = 0;
   constructor(
     readonly reg: Reg,
     readonly home: { x: number; y: number; w: number; h: number },
@@ -201,7 +203,16 @@ export class El {
     this.keys.set(0, { ...this.s });
   }
 
+  /**
+   * Keys are written in time order. A key written behind a later one is not an
+   * edit of the past: the later key still carries the state it was written
+   * with, and the core interpolates between them. An opacity set to 0 on the
+   * drop, written after the tick-after-the-roll key that still held 1, faded a
+   * module from 1 to 0 across two seconds as a translucent ghost.
+   */
   private key(t: number) {
+    if (t < this.last) throw new Error(`El: a key at tick ${t} written after one at tick ${this.last}; write an element's keys in time order`);
+    this.last = t;
     this.keys.set(t, { ...this.s });
   }
 
