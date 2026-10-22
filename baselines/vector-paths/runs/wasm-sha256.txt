@@ -1,0 +1,1 @@
+92d03c94352e8e987584664cbb796cfb2ece9427cc75d943e37fa138369b05bc  target/wasm32-unknown-unknown/release/pathwasm.wasm

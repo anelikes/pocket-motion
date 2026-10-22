@@ -1,0 +1,24 @@
+# Apple M4, load averages: 12.76 14.17 12.85
+digest  0 d03a0c3226e20ff9 2b13ba2c0869791d
+digest  1 00bb3a9823157fa0 feba9c5429f168f1
+digest  2 77bc3337ec94df9b d831a592ad4e4e0d
+digest  3 274a11eaed142578 9865aa5da5da96f9
+digest  4 52604bf90d7b694e c9702e8bf9178b4d
+digest  5 329c490bf21551a0 2f1eedf8b975f2f2
+digest  6 2bbe1a1ffab7be43 d323c06082d52f09
+digest  7 f60ffa5d0fab5c45 536d786522c3af2f
+digest  8 7443890eb10b693f f2d0282db4b78595
+digest  9 40b41642889c6ad9 2cca2c314654cb32
+digest 10 552d4f0333178c57 bb5836a02e7cc858
+digest 11 ff569918a3ff7c02 496ee364eac1c599
+digest 12 0a439fe13bc1addc 6fa8f71daddca5b5
+digest 13 6f61516deb6573e1 ca638f349590b4af
+digest 14 cb3ec3d685960abe b8682e1558ad2bc1
+digest 15 5c988ac343fd07db 4b3ef5c12af3e9ea
+Spiky static: min (median) ms: emit 12.00 (14.45) | raster x1 70.94 (87.65) | raster x2 127.30 (141.02) | draw hash 8.19 (8.30) | words 1946008 | flattened points 268787 | contour vertices 1032728
+Spiky animated: min (median) ms: emit 7.39 (7.62) | raster x1 41.71 (43.39) | raster x2 81.86 (95.52) | draw hash 4.71 (4.75) | words 1158310 | flattened points 250832 | contour vertices 612788
+Smooth static: min (median) ms: emit 4.39 (4.64) | raster x1 21.46 (22.99) | raster x2 41.47 (43.06) | draw hash 2.79 (2.94) | words 686776 | flattened points 94616 | contour vertices 352366
+Smooth animated: min (median) ms: emit 3.16 (3.30) | raster x1 14.60 (16.89) | raster x2 32.24 (41.50) | draw hash 1.72 (1.78) | words 421066 | flattened points 90419 | contour vertices 215305
+LineArt static: min (median) ms: emit 5.34 (5.70) | raster x1 26.62 (31.39) | raster x2 53.83 (62.19) | draw hash 2.00 (2.14) | words 493912 | flattened points 136582 | contour vertices 323386
+LineArt animated: min (median) ms: emit 3.40 (3.71) | raster x1 12.78 (13.79) | raster x2 26.84 (29.00) | draw hash 1.06 (1.08) | words 264226 | flattened points 128984 | contour vertices 157708
+bun 1.3.11 darwin/arm64
