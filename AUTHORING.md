@@ -365,7 +365,11 @@ one keeps to `overflow-hidden`.
 annular sector centred in its box — outer radius half the shorter side,
 `arc-start-[deg]` from 12 o'clock clockwise, `arc-sweep-[deg]` long, in the
 `bg-*` colour. A sweep of 0 draws nothing, neither arc nor box, so a drawn-on
-stroke animates `arcSweep` from 0 (`patches/0025`).
+stroke animates `arcSweep` from 0 (`patches/0025`). The arc is drawn in its
+node's frame and follows the world transform like any other paint
+(`patches/0026`): a ring of arcs on a rotating wrapper turns with it, a
+mirror reverses the sweep, and a scale that differs per axis stretches ring,
+stroke and caps into an elliptical band.
 
 **Text can carry an outline.** `text-stroke-[6px] text-stroke-[#7c2d12]`
 draws a 6 px outline around a Text node's glyphs; `text-stroke-outside` (the

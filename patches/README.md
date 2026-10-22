@@ -99,6 +99,7 @@ patch's own header carries the full note.
 | 0023 | upstream | the build's style table, which upstream #591 serves from memory, stays in the file namespace, so a bundle names it `vendor/pocketjs/framework/src/styles.generated.ts` rather than `pocketjs-generated-styles:/<the checkout>/…`; and a `styles.generated.ts` reaching the loader at any other path fails the build naming both paths, where main bundles it from disk (a red class drawn blue, exit 0) | unsubmitted; #591 itself merged 2026-10-19 (`586428b2`) | new at this pin: the two departures the old pin's #591 backport made, against main's form; `tests/style-table.test.ts` was red on main's form in both |
 | 0024 | motion | `overflow-mask` outlines at sub-pixel precision: MASK_PUSH carries `(x, y)` f32 pairs and the rasteriser takes them to a sixteenth of a pixel, where `0013` rounded each vertex to a whole pixel — a band of content up to a pixel wide outside a turned window along any long edge; a square-cornered axis-aligned window is its AABB only on whole pixels. `PolyScan` works in sixteenths, which leaves every POLY byte-identical | never; the header says why | new at this pin |
 | 0025 | upstream | an arc with no sweep draws nothing: any `arc-width` makes the node an arc, where a sweep of 0 fell through to the box painter — a full disc on a `rounded-full` node for the frame a drawn-on stroke starts from | unsubmitted | new at this pin |
+| 0026 | upstream | an arc follows its world transform: under a rotation, mirror, skew or per-axis scale every sample is tested in the node's own frame, where the arc returned unpainted under any world that was not axis-aligned; a per-axis scale stretches the ring into an elliptical band. Axis-aligned uniform scale keeps the screen-space path | unsubmitted | new at this pin |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
 #591 since 586428b2, so the pin needs no backport. The two places the
@@ -119,8 +120,8 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Sixteen patches are class `upstream` and eight `motion`. Of the sixteen,
-fourteen are unsubmitted declaration- or build-layer changes; `0008` is #301,
+Seventeen patches are class `upstream` and eight `motion`. Of the seventeen,
+fifteen are unsubmitted declaration- or build-layer changes; `0008` is #301,
 and `0021` is a rasteriser change with no target-side cost.
 
 ## Known gaps the rebase left
