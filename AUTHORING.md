@@ -151,7 +151,8 @@ Worked examples, roughly in reading order:
   for the zoom, one `translateX` with 29 stops for the strip, a `scale` per
   card for the pop — timed against each other by arithmetic alone. The
   captions are two `Text` nodes at two sizes outside the scaled body, because
-  a scale moves glyphs and never resizes them. Its `NOTES.md` records every
+  when it was made a scale moved glyphs without resizing them; a resampled
+  caption would now grow, softer than a baked one. Its `NOTES.md` records every
   number tracked off a recording: the ruler ticks for cadence and zoom, one
   card followed through its whole pass for the pop.
 - `compositions/captions/*` — five caption styles ported from the HyperFrames
@@ -433,12 +434,17 @@ Two constraints, both absolute:
 2. **Every font size is baked at build time.** Any `text-[Npx]` works, but
    only sizes that appear in class literals get an atlas.
 
-A third edge worth knowing before you animate: **`scale` transforms move
-glyphs but never resize them** — glyph bitmaps come from the baked atlas at
-one size, so a `scale`-in on a node containing text draws full-size glyphs
-bunched toward the origin mid-animation. Scale-pop geometry only; fade text
-in after the geometry lands — `compositions/reel` does that everywhere it
-scales a card that carries copy.
+A third edge worth knowing before you animate: **an axis-aligned `scale`
+resizes glyphs by resampling the size that was baked.** The run is drawn as
+cells sampled bilinearly out of the atlas (upstream 119297b3, on the pin
+since 66caf4e5), so a scale above 1 magnifies a bitmap and softens it: for
+text that is shown large, bake the large size. `compositions/probe` is the
+measurement — at `scale-150` a 64 px bold run's ink goes from 48 to 72 px
+tall. Two runs still move without resizing, their cells kept at the baked
+size: a rotated or skewed one, and one with a text stroke (`patches/0017`
+draws its outline from unscaled cells, so its fill stays unscaled too).
+Before the pin moved every scaled run behaved like those two, which is why
+`compositions/reel` fades its copy in after a card's scale lands.
 
 So multi-line or fitted text is decided *before* `app.tsx` exists, by
 measuring with the renderer's own advance tables. That is what

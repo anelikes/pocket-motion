@@ -116,8 +116,9 @@ card carries a soft shadow, not reproduced.
 
 ## Two things the vocabulary decided
 
-**Every caption lives outside the scaled node.** A `scale` moves glyphs and
-never resizes them (AUTHORING.md, "Text"), so the caption that grows with the
+**Every caption lives outside the scaled node.** When this was made a `scale`
+moved glyphs and never resized them (since the pin moved to 66caf4e5 it
+resamples them; AUTHORING.md, "Text"), so the caption that grows with the
 card cannot be the caption that was small: they are two `Text` nodes at two
 sizes, one placed at the unscaled body's edges and one where the scaled body's
 edges land, crossfaded over 500ms on the pop's own clock. The crossfade is the

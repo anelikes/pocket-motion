@@ -77,7 +77,9 @@ and text wider than its box draws past it or is clipped by an
 `app.tsx` exists, by measuring with the renderer's own advance tables
 (`src/text/measure.ts`, `src/text/fit.ts`); `compositions/copy/gen.ts` is the
 worked example. Every font size is baked, so only sizes that appear in class
-literals get an atlas. `scale` transforms move glyphs but never resize them.
+literals get an atlas. An axis-aligned `scale` resizes glyphs by resampling
+the baked size, softer when magnified, so bake the size text is shown at; a
+rotated run, or one with a text stroke, moves without resizing.
 
 **Paint beyond boxes and text**: `overflow-mask` (a window shaped by its
 outline), named font faces (`font-[name]` over the sidecar's `fonts.faces`),
