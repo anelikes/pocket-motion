@@ -2186,7 +2186,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "`arc-width` turns the node's ground into an annular sector centred in its box: outer radius half the shorter side, the band `arc-width` wide, from `arc-start` (0 = 12 o'clock, clockwise) for `arc-sweep` degrees (negative runs counter-clockwise), in the `bg-*` colour, with a round cap on each end. A sweep of 0 draws nothing — neither arc nor the box (patches/0025, class upstream; before it, the node's whole ground). The arc is drawn in the node's frame and follows its world transform: a rotation turns it, a mirror reverses the sweep, a scale that differs per axis stretches ring, stroke and caps into an elliptical band (patches/0026, class upstream; before it, an arc under any world that was not axis-aligned drew nothing). All three animate as `arcStart`, `arcSweep`, `arcWidth`",
+      "`arc-width` turns the node's ground into an annular sector centred in its box: outer radius half the shorter side, the band `arc-width` wide, from `arc-start` (0 = 12 o'clock, clockwise) for `arc-sweep` degrees (negative runs counter-clockwise), in the `bg-*` colour, with a round cap on each end unless `arc-cap-butt` says otherwise. A sweep of 0 draws nothing — neither arc nor the box (patches/0025, class upstream; before it, the node's whole ground). The arc is drawn in the node's frame and follows its world transform: a rotation turns it, a mirror reverses the sweep, a scale that differs per axis stretches ring, stroke and caps into an elliptical band (patches/0026, class upstream; before it, an arc under any world that was not axis-aligned drew nothing). All three animate as `arcStart`, `arcSweep`, `arcWidth`",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -2204,6 +2204,42 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["w-[80px] h-[80px] bg-white arc-start-[45] arc-sweep-[0] arc-width-[5]"],
         fromClassAttribute: true,
         outcome: { declares: { prop: "arcSweep", value: 0 } },
+      },
+    ],
+  },
+
+  {
+    id: "paint.arc-cap",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "arc-cap-round | arc-cap-butt",
+    required: false,
+    defaultValue: "round",
+    constraint:
+      "how an arc's ends finish. `arc-cap-round` puts a half-disc of the stroke's width on each end; `arc-cap-butt` ends the band on the radii through `arc-start` and `arc-start + arc-sweep`, so an arc as wide as its radius is a pie sector — a radar wedge, a pie chart. Any other cap word drops the literal. Not animatable (an enum, PROP `arcCap` 183). patches/0027, class upstream",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "arc-cap-butt compiles to ArcCap.Butt (1)",
+        literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-butt"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "arcCap", value: 1 } },
+      },
+      {
+        what: "arc-cap-round compiles to ArcCap.Round (0)",
+        literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-round"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "arcCap", value: 0 } },
+      },
+      {
+        what: "a cap the core does not draw drops the literal",
+        literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-square"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
       },
     ],
   },
