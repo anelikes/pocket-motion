@@ -35,51 +35,6 @@
   "pivot.png": {
     "linear": true
   },
-  "f-box-blue-240x240-500.png": {
-    "linear": true
-  },
-  "f-box-red-240x240-501.png": {
-    "linear": true
-  },
-  "f-box-black-240x240-502.png": {
-    "linear": true
-  },
-  "f-box-yellow-240x240-503.png": {
-    "linear": true
-  },
-  "field-blue-q0.png": {
-    "linear": true
-  },
-  "field-blue-q1.png": {
-    "linear": true
-  },
-  "field-blue-q2.png": {
-    "linear": true
-  },
-  "field-blue-q3.png": {
-    "linear": true
-  },
-  "cell-720-60-q0.png": {
-    "linear": true
-  },
-  "cell-960-60-q0.png": {
-    "linear": true
-  },
-  "cell-480-300-q0.png": {
-    "linear": true
-  },
-  "cell-720-300-q0.png": {
-    "linear": true
-  },
-  "cell-960-300-q0.png": {
-    "linear": true
-  },
-  "cell-1200-300-q0.png": {
-    "linear": true
-  },
-  "cell-1440-300-q0.png": {
-    "linear": true
-  },
   "field-red-q0.png": {
     "linear": true
   },
@@ -90,6 +45,21 @@
     "linear": true
   },
   "field-red-q3.png": {
+    "linear": true
+  },
+  "cell-720-60-q0.png": {
+    "linear": true
+  },
+  "cell-720-60-q1.png": {
+    "linear": true
+  },
+  "cell-720-60-q2.png": {
+    "linear": true
+  },
+  "cell-720-60-q3.png": {
+    "linear": true
+  },
+  "cell-960-60-q0.png": {
     "linear": true
   },
   "field-black-q0.png": {
@@ -104,13 +74,112 @@
   "field-black-q3.png": {
     "linear": true
   },
+  "cell-480-300-q0.png": {
+    "linear": true
+  },
+  "cell-480-300-q1.png": {
+    "linear": true
+  },
+  "cell-480-300-q2.png": {
+    "linear": true
+  },
+  "cell-480-300-q3.png": {
+    "linear": true
+  },
+  "cell-720-300-q0.png": {
+    "linear": true
+  },
+  "cell-720-300-q1.png": {
+    "linear": true
+  },
+  "cell-720-300-q2.png": {
+    "linear": true
+  },
+  "cell-720-300-q3.png": {
+    "linear": true
+  },
+  "cell-960-300-q0.png": {
+    "linear": true
+  },
+  "cell-960-300-q1.png": {
+    "linear": true
+  },
+  "cell-960-300-q2.png": {
+    "linear": true
+  },
+  "cell-960-300-q3.png": {
+    "linear": true
+  },
+  "cell-1200-300-q0.png": {
+    "linear": true
+  },
+  "cell-1200-300-q1.png": {
+    "linear": true
+  },
+  "cell-1200-300-q2.png": {
+    "linear": true
+  },
+  "cell-1200-300-q3.png": {
+    "linear": true
+  },
+  "cell-1440-300-q0.png": {
+    "linear": true
+  },
+  "cell-1440-300-q1.png": {
+    "linear": true
+  },
+  "cell-1440-300-q2.png": {
+    "linear": true
+  },
+  "cell-1440-300-q3.png": {
+    "linear": true
+  },
+  "field-blue-q0.png": {
+    "linear": true
+  },
+  "field-blue-q1.png": {
+    "linear": true
+  },
+  "field-blue-q2.png": {
+    "linear": true
+  },
+  "field-blue-q3.png": {
+    "linear": true
+  },
   "cell-960-540-q0.png": {
+    "linear": true
+  },
+  "cell-960-540-q1.png": {
+    "linear": true
+  },
+  "cell-960-540-q2.png": {
+    "linear": true
+  },
+  "cell-960-540-q3.png": {
     "linear": true
   },
   "cell-1200-540-q0.png": {
     "linear": true
   },
+  "cell-1200-540-q1.png": {
+    "linear": true
+  },
+  "cell-1200-540-q2.png": {
+    "linear": true
+  },
+  "cell-1200-540-q3.png": {
+    "linear": true
+  },
   "cell-1440-540-q0.png": {
+    "linear": true
+  },
+  "cell-1440-540-q1.png": {
+    "linear": true
+  },
+  "cell-1440-540-q2.png": {
+    "linear": true
+  },
+  "cell-1440-540-q3.png": {
     "linear": true
   },
   "field-yellow-q0.png": {
