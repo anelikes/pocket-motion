@@ -345,3 +345,17 @@ sessions' builds): no shutter 0.98 ms, 180° × 4 21.0 ms, × 8 39.2 ms, × 16
 reference; these say the patch is in the same range as the prototype under
 roughly fifteen times the contention, not what it costs on an idle machine.
 `visibility` over the fixture's 24-frame grid took 6.4 s, before `known` was added.
+
+### Rebased onto `claude/overnight` (`04dc055`)
+
+`0031` regenerated on top of `0024`–`0030`, the rasteriser-defect fixes:
+the spec tables and the end of the core's tests had grown there, so the
+hunks moved; the code is the same and the prop stays 198, past `arcCap`
+183 and `gradShape` 184. Vendored, the tree is `66caf4e5` plus 31 patches.
+
+The fixture's ledger digest moved, `9327b2b1…` to `cb2a8c7e…`, and the move
+is the core's, not the shutter's. The same bundle traced through a core of
+`0001`–`0023` plus `0031` gives `9327b2b1…` exactly, and with the `shutter`
+key removed the two cores still disagree on all 90 unblurred frames: the
+ring's forms are rounded boxes under a rotation, which `0028` now draws with
+their corners.
