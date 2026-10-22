@@ -17,11 +17,20 @@
   "band.png": {
     "linear": true
   },
+  "limb.png": {
+    "linear": true
+  },
   "coast-wide.png": {
     "linear": true
   },
   "sar-lens.png": {
     "linear": false
+  },
+  "pulse.png": {
+    "linear": true
+  },
+  "hull.png": {
+    "linear": true
   },
   "wedge.png": {
     "linear": true
@@ -30,9 +39,6 @@
     "linear": true
   },
   "burst.png": {
-    "linear": true
-  },
-  "shock.png": {
     "linear": true
   },
   "spark-snr.png": {
@@ -45,6 +51,9 @@
     "linear": false
   },
   "grain.png": {
+    "linear": true
+  },
+  "front.png": {
     "linear": true
   }
 }
