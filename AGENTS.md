@@ -338,15 +338,19 @@ mechanisms with the file or test beside them.
   the burial, both dissolves and the reveal side by side.
 - **What that gate actually reaches is narrower than "a named node", and a
   total hides it.** `baselines/visibility.json` carries the count per
-  composition — 67 names over the tree as it stands — and reading it by
-  composition is the point: 13 of them are `footage:<track>/tile:<col>:<row>`,
-  which `src/cli/footage.ts` REFUSES a bound track without, so they are a
-  protocol rather than a declaration; the rest are the fixtures and the four
-  labels `footage-tracks` draws. `reel`, the one composition here at film
-  length, records **0 named of 631 nodes** and so cannot fail this gate at all.
-  A buried tile is a real finding and is the layer the occlusion defect came
-  from, but that defect's caption was not a tile, and nothing at film length
-  names its captions.
+  composition — 137 names over the tree as it stands — and reading it by
+  composition is the point: 19 of them are `footage:<track>/tile:<col>:<row>`
+  (15 of bound tracks, which `src/cli/footage.ts` REFUSES a track without, and
+  4 that `kenburns` and `shimmer` push into), so they are a protocol rather
+  than a declaration; 22 are the words the two captions samples name; the rest
+  are the fixtures and the four labels `footage-tracks` draws. `reel`, the one
+  composition here at film length, records **0 named of 631 nodes** and so
+  cannot fail this gate at all. A buried tile is a real finding and is the
+  layer the occlusion defect came from, but that defect's caption was not a
+  tile. Nothing written by hand at film length names its captions; the
+  captions template is the one generator that names every word it draws, so a
+  caption job is the one place this gate reaches every caption whatever the
+  length.
 - `scripts/visibility.ts` is what keeps those numbers from being a memory. It
   sweeps every composition — swept by default, `EXEMPT` costs a written reason,
   the same coverage gate `scripts/digests.ts` uses and the same discovery rule
@@ -564,6 +568,34 @@ mechanisms with the file or test beside them.
   patch on the sample. `trace` does not accept `--spec`, so a job never enters
   the identity ledger. `tests/spec.test.ts` drives the path and
   `tests/lower-third.test.ts` drives the template with the most inputs.
+- **A caption job asserts every word against the picture.** `template:
+  "captions"` (`src/captions/`) turns a WhisperX, OpenAI or own-schema
+  transcript into a composition in which every word is a node named `w<i>`
+  and the sidecar carries one `inPicture` per word over its window: its
+  frames, clipped to its page. The first frame is the hard one and was
+  measured rather than assumed — one-tick gates at known delays, read back
+  through `layout --at` at 15, 30 and 60 fps, show that frame `f` samples
+  every timeline at clock `(f + 1) · 60 / fps − 1`, and a timeline is still
+  at its first keyframe on the tick its delay names. So every entrance
+  starts one tick before the clock its word's first frame samples
+  (`gateInTick`, `src/captions/clock.ts`) rather than at the word's ms,
+  which bakes to that tick or later — later for 25.6% of start times at 30
+  fps and 99.8% at 60, counted over 0–10 s in 0.1 ms steps. Moved onto the
+  sampled clock, all nine words of `compositions/captions/burn-zh` fail
+  `assert --samples 101` at exactly their first frame, and all five styles
+  fail the every-frame sweep in `tests/captions.test.ts`, which runs at 30
+  and 60 fps. One reading the first draft rested on was measured and
+  dropped: a clip window closed to zero width emits no geometry, so
+  `visibility` reads it as invisible by declaration and never as covered,
+  and the gate that draft put on every closing window changed nothing at any
+  of `burn-zh`'s 101 frames. And a page that ends on the film's last frame
+  writes no exit: the exit would start on the first tick past the clock,
+  which `keyframes` fails as motion no frame can show — `verify` on
+  `burn-zh` found it, and the sweep now holds `keyframes` to exit 0 for
+  every style. The layout's refusals are the other half: a spaced-language
+  word too wide at `minSize`, and words starting on one frame that cannot
+  share a page, both stop the job instead of drawing past the line
+  (`tests/captions-layout.test.ts`).
 - `assertBakedTickRate` (`src/runtime/boot.ts`) refuses a bundle whose baked
   tick rate is not the 60 Hz this realm steps. `--hz=N` compiles into the
   bundle and the keyframe baker stores every delay and segment endpoint as a
@@ -921,32 +953,33 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   records beside a hero size is not transferable** — swapping the face changes
   the ceiling, and a size that baked yesterday is refused today with no edit
   to the size itself.
-- **A full ledger run's disk cost is set by the footage in the tree, and only
-  the ledger can measure it.** Ingest decodes each footage track to raw RGBA
-  next to the bundle and leaves it there. Measured 2026-10-22 by clearing
-  `dist/**/*.rgba` and running the whole ledger serially: 6 `.rgba` files
-  totalling 1,381,017,600 bytes — 1.3 GiB — from 1.5 MB of tracked clips.
-  659,865,600 of those bytes are one 44 KB clip, the one
+- **A full ledger run's disk cost is set by the footage in the tree, and
+  only the ledger can measure it.** Ingest decodes each footage track to raw
+  RGBA next to the bundle and leaves it there. Measured 2026-10-22 by
+  clearing `dist/**/*.rgba` and running the whole ledger serially: 6 `.rgba`
+  files totalling 1,381,017,600 bytes — 1.3 GiB — from 1.5 MB of tracked
+  clips. 659,865,600 of those bytes are one 44 KB clip, the one
   `compositions/captions/burn-zh` burns its captions into: ingest decodes a
-  source whole at the drawn size, here 179 frames at 720×1280, whatever window
-  the track uses. A tree carrying recorded material at film length reached 92
-  files and 120 GB and filled a 1.8 TiB volume, and the ingest that hit the
-  wall reported `No space left on device` from ffmpeg rather than anything
-  about capacity. That measurement is `FULL_RUN_RGBA_BYTES` (`src/cli/disk.ts`), in bytes
-  because bytes are what was read, and both readers derive from it: `doctor`
-  FAILS below it and passes calling the headroom thin below `HEADROOM_MULTIPLE`
-  times it, and `scripts/digests.ts` prints the same two numbers before it
-  starts. It used to be a HIGH-WATER MARK from a tree that no longer exists —
-  52 files and 64 GiB, measured 2026-08-20 — and gating on that made `doctor`
-  red on every hosted runner, 11.6 GiB free against a 64 GiB threshold, which
-  took the `AUTHORING.md` and `SKILL.md` command gates down with it because
-  both run `doctor` out of a documented fence. Three failures, one stale
-  number. `tests/doctor.test.ts` pins the verdict at each end of the band, and
-  is red at 11.6 GiB the moment the constant goes back to 64. A composition
+  source whole at the drawn size, here 179 frames at 720×1280, whatever
+  window the track uses. A tree carrying recorded material at film length
+  reached 92 files and 120 GB and filled a 1.8 TiB volume, and the ingest
+  that hit the wall reported `No space left on device` from ffmpeg rather
+  than anything about capacity. That measurement is `FULL_RUN_RGBA_BYTES`
+  (`src/cli/disk.ts`), in bytes because bytes are what was read, and both
+  readers derive from it: `doctor` FAILS below it and passes calling the
+  headroom thin below `HEADROOM_MULTIPLE` times it, and `scripts/digests.ts`
+  prints the same two numbers before it starts. It used to be a HIGH-WATER
+  MARK from a tree that no longer exists — 52 files and 64 GiB, measured
+  2026-08-20 — and gating on that made `doctor` red on every hosted runner,
+  11.6 GiB free against a 64 GiB threshold, which took the `AUTHORING.md`
+  and `SKILL.md` command gates down with it because both run `doctor` out of
+  a documented fence. Three failures, one stale number.
+  `tests/doctor.test.ts` pins the verdict at each end of the band, and is
+  red at 11.6 GiB the moment the constant goes back to 64. A composition
   added tomorrow moves the need and nothing else would notice, so a full run
-  re-reads `dist/` at the end and reports when what it left disagrees with the
-  constant by a file or by more than 5%. The bytes are re-derivable and safe
-  to delete.
+  re-reads `dist/` at the end and reports when what it left disagrees with
+  the constant by a file or by more than 5%. The bytes are re-derivable and
+  safe to delete.
 - **Nothing reads `baselines/ingest-bytes.json`.** It is a hand-recorded file
   no command, test or workflow opens, and `.github/workflows/determinism.yml`
   says so in the comment that pins ffmpeg. So when a footage composition's
@@ -987,6 +1020,24 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   to order the writers and never the readers; `scripts/digests.ts`'s
   mtime/size check is what makes a moved artefact impossible to pass silently,
   and it covers a ledger run and nothing outside one.
+- **A caption job's own assertions are never evaluated.** `render --spec`
+  stages the job's composition — sidecar `assertions[]` included — renders it
+  and deletes it, and nothing evaluates the assertions of the job in between.
+  What holds the word-window claim is the generator: `tests/captions.test.ts`
+  sweeps all five styles at every frame, and the two samples are in both
+  ledgers. A transcript shaped unlike anything those cover is a picture
+  nothing has checked. Run on a sample, `assert` with its default 24 samples
+  passes only because every window in those two transcripts is at least as
+  wide as the stride; an assertion whose window holds no sample fails, so a
+  job of real length needs `--samples <durationFrames>`.
+- **The five caption styles exist twice.** `compositions/captions/highlight`
+  and its four siblings are still the ports of the HyperFrames catalog, with
+  their own generators and hand-picked phrasing; `src/captions/styles.ts`
+  re-expresses the same five treatments for any transcript, with the one-tick
+  lead and the nested entrance and exit wrappers the ports do not have. A
+  change to one does not reach the other. Pointing the ports at the template
+  would move their digests and their visibility counts, so it is a recorded
+  change to five deliveries rather than a refactor.
 
 ## Working rules
 

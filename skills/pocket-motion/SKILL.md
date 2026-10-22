@@ -196,6 +196,33 @@ bun scripts/digests.ts     # not run: minutes, and CI runs it — every composit
 bun scripts/visibility.ts  # not run: the other ledger — every composition swept for buried nodes
 ```
 
+## Captions
+
+**A caption track is a job, not a composition you write.** A word-level
+transcript — WhisperX's aligned `segments[].words[]`, OpenAI's `verbose_json`
+with word timestamps, or `{ "words": [{ "text", "start", "end" }] }` — and one
+of five style names (`highlight`, `pill-karaoke`, `clip-wipe`,
+`matrix-decode`, `kinetic-slam`) are a `render --spec` job with
+`"template": "captions"`. The template measures every word against the faces
+the build bakes, decides which words share a screen and where each line
+breaks (a CJK word wider than a line breaks between its characters, keeping
+禁則; a Latin word too wide at `minSize` is refused, never broken), names each
+word `w<i>`, and writes an `inPicture` assertion per word over its own window.
+No `footage` in the job is an alpha track; a `footage` block burns the
+captions into that clip. `transcript.format` and `transcript.language` are
+declared, never guessed.
+
+```bash
+bun src/cli/main.ts render compositions/captions/alpha-en --spec compositions/captions/alpha-en/spec.default.json --out out.mov --format mov --alpha
+```
+
+`compositions/captions/alpha-en` and `compositions/captions/burn-zh` are the
+two samples; either takes any captions job. `assert --samples <durationFrames>`
+checks every word at every frame — the default 24 samples can miss a short
+word's window, and an assertion with no sample in its window fails rather
+than passing. `AUTHORING.md`, "Captions from a transcript", has the rules, and
+`CAPABILITIES.md`, "Captions job", every key with its default and refusal.
+
 ## The commands
 
 Every one takes a composition directory and supports `--json`. None needs a
