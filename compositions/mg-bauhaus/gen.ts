@@ -412,7 +412,7 @@ function type(): string {
   const S = INK.black;
   const tx = cellX(2) + M;
   const ty = gy(6);
-  const RW = cellX(5) - tx; // the rule ends on the last module edge of the forms, x 1680
+  const RW = 3 * MOD; // three 240 px columns, the rule ending on the grid's line at x 1800 (to 1680 it clipped FUNKTION)
   const rule = (a: string) => `<View class="absolute left-[${tx}px] top-[${ty}px] w-[${RW}px] h-[3px] bg-[${S}] origin-left ${a}" />`;
   const track = (px: number) => reg.anim(reg.prop("letterSpacing", [[0, `${px}px`], [TICKS, `${px}px`]]));
   const dot = `<Text class="font-bold text-[30px] text-[${S}]">{"·"}</Text>`;
