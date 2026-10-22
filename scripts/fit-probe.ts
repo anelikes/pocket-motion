@@ -43,6 +43,7 @@ import { bands, VIEW, type Block, type Spec } from "../compositions/fit/gen.ts";
 import { readAtlases } from "../src/text/atlas.ts";
 import { cachedWidth, fitToBox, glyphCount, segments, wrapLines } from "../src/text/fit.ts";
 import { hardenedBootWorld, type BootedWorld } from "../src/runtime/boot.ts";
+import { buildEnv } from "../src/vendor/cache.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const VENDOR = join(ROOT, "vendor/pocketjs");
@@ -95,7 +96,7 @@ const LADDER = [64, 56, 48, 42, 38, 34, 30, 26, 22] as const;
 // ---------------------------------------------------------------------------
 
 async function run(cmd: string[]): Promise<void> {
-  const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", cwd: ROOT });
+  const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", cwd: ROOT, env: buildEnv() });
   const [out, err] = await Promise.all([
     new Response(p.stdout).text(),
     new Response(p.stderr).text(),

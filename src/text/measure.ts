@@ -45,6 +45,7 @@ import { join } from "node:path";
 import { readAtlases, type AtlasHeader } from "./atlas.ts";
 import type { Measure } from "./fit.ts";
 import { hardenedBootWorld, pocketjsRoot } from "../runtime/boot.ts";
+import { buildEnv } from "../vendor/cache.ts";
 import { fileURLToPath } from "node:url";
 
 export interface FaceFiles {
@@ -460,7 +461,10 @@ async function buildMeasurement(
       ...(density > 1 ? [`--density=${density}`] : []),
       ...o.extraArgs,
     ],
-    { stdout: "pipe", stderr: "pipe", cwd: root },
+    // `env` names the transform cache, as every build this repository
+    // spawns does (`src/vendor/cache.ts`); without it a read-only HOME fails
+    // the measurement, and with it every generator that fits text.
+    { stdout: "pipe", stderr: "pipe", cwd: root, env: buildEnv() },
   );
   const [out, err] = await Promise.all([
     new Response(build.stdout).text(),
