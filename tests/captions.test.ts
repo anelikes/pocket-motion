@@ -12,9 +12,13 @@
  * before it.
  *
  * The red case was run before this was trusted: with `gateInTick` returning
- * the word's own clock instead of the tick before it, all five styles fail
- * here at 30 fps, and `assert --samples 101` on `burn-zh` fails all 9 words,
- * each at exactly the first frame of its window.
+ * the clock a word's first frame samples instead of the tick before it, all
+ * five styles fail here at 30 fps, and `assert --samples 101` on `burn-zh`
+ * fails all 9 words, each at exactly the first frame of its window. The sweep
+ * also holds `keyframes` to exit 0: with the registry writing an exit the film
+ * ends before (a page that ends on the last frame), `pill-karaoke` and
+ * `clip-wipe` fail it, because their exits are one-tick gates on the first
+ * tick no frame samples. `verify` on `burn-zh` is what found that.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -23,6 +27,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { sweepNamedNodes } from "../src/cli/commands/assert.ts";
+import { runFromArgv as keyframesFromArgv } from "../src/cli/commands/keyframes.ts";
 import { runFromArgv as renderFromArgv } from "../src/cli/commands/render.ts";
 import { runBuild } from "../src/cli/build.ts";
 import { resolveComposition } from "../src/cli/resolve.ts";
@@ -183,7 +188,7 @@ describe("the generated composition", () => {
 });
 
 describe("every word in the picture at every frame of its window — all five styles", () => {
-  async function sweep(name: StyleName, fps: number): Promise<{ failing: string[]; nodes: number }> {
+  async function sweep(name: StyleName, fps: number): Promise<{ failing: string[]; nodes: number; keyframes: number }> {
     return withJobDir(async (dir) => {
       const s = parsed(spec({ style: { name }, fps }));
       await generateCaptions(s, dir, "test");
@@ -193,7 +198,15 @@ describe("every word in the picture at every frame of its window — all five st
       const frames = Array.from({ length: s.durationFrames }, (_, f) => f);
       const nodes = await sweepNamedNodes(resolved.value, frames);
       const verdicts = evaluateAssertions({ assertions: resolved.value.sidecar.assertions, nodes, frames });
-      return { failing: verdicts.filter((v) => !v.ok).map((v) => `${v.node}: ${v.detail}`), nodes: verdicts.length };
+      // The last page ends on the film's last frame here (the duration is
+      // derived), so an exit scheduled for that frame would start on a tick
+      // no frame samples, which `keyframes` fails.
+      const keyframes = (await keyframesFromArgv([dir, "--json"])).exitCode;
+      return {
+        failing: verdicts.filter((v) => !v.ok).map((v) => `${v.node}: ${v.detail}`),
+        nodes: verdicts.length,
+        keyframes,
+      };
     });
   }
 
@@ -205,6 +218,7 @@ describe("every word in the picture at every frame of its window — all five st
         const r = await sweep(name, fps);
         expect(r.nodes).toBe(WORDS.length);
         expect(r.failing).toEqual([]);
+        expect(r.keyframes).toBe(EXIT_OK);
       }, 120_000);
     }
   }

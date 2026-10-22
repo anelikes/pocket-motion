@@ -9,10 +9,11 @@
  * window** (`WordWindow`), and the sidecar the template writes asserts it,
  * one `inPicture` per word. What each treatment had to do to keep that:
  *
- * - every entrance starts one tick before the frame it is due on
- *   (`gateInTick`), so the frame a word is spoken on already shows it part-way
- *   in rather than at its first keyframe — a fade at zero, a clip window at
- *   zero width;
+ * - every entrance starts one tick before the clock the word's first frame
+ *   samples (`gateInTick`), so that frame shows it part-way in rather than at
+ *   its first keyframe — a fade at zero, a clip window at zero width. The
+ *   word's ms would not do: it bakes to `round(start · 60)`, which is a tick
+ *   too late for 25.6% of start times at 30 fps and 99.8% at 60;
  * - every exit reaches zero exactly on the frame the page gives way
  *   (`fadeOutTo`), never earlier, so the last word of a page is still drawn on
  *   the last frame of its window;
@@ -117,6 +118,8 @@ export interface RenderInput {
   readonly layout: TrackLayout;
   readonly params: StyleParams;
   readonly fps: number;
+  /** The film's length: nothing is scheduled to start after it. */
+  readonly durationFrames: number;
   readonly width: number;
   readonly height: number;
   /** The characters a scramble may draw from: the transcript's own, for a spaceless language. */
@@ -148,7 +151,33 @@ export function textLiteral(s: string): string {
   return m ? `{${JSON.stringify(m[1])} + ${JSON.stringify(m[2])}}` : `{${JSON.stringify(s)}}`;
 }
 
-/** Keyframes and animations, deduplicated by content and named in first-use order. */
+/** One entry of a comma list, in ticks; written out in ms by `Registry.anim`. */
+interface Entry {
+  readonly frames: string;
+  readonly ticks: number;
+  readonly ease: string;
+  readonly delay: number;
+  readonly fill: "both" | "forwards";
+}
+
+const entry = (frames: string, ticks: number, ease: string, delay: number, fill: Entry["fill"]): Entry => ({
+  frames,
+  ticks,
+  ease,
+  delay,
+  fill,
+});
+
+/**
+ * Keyframes and animations, deduplicated by content and named in first-use
+ * order.
+ *
+ * An entry whose delay is at or past the end of the film's clock is DROPPED
+ * rather than written. The last page of a film ends on the film's last frame,
+ * and its exit would start on a tick no frame samples — a timeline `keyframes`
+ * fails, correctly, as declared motion nothing can show. Dropped, the page
+ * simply stays up to the end, which is what every frame showed anyway.
+ */
 class Registry {
   readonly keyframes: Record<string, Record<string, Record<string, string>>> = {
     gin: { from: { opacity: "0" }, to: { opacity: "1" } },
@@ -157,6 +186,9 @@ class Registry {
   readonly animation: Record<string, string> = {};
   private readonly byKeyframe = new Map<string, string>();
   private readonly byValue = new Map<string, string>();
+
+  /** `clockEnd`: the first tick past the film's last sampled one. */
+  constructor(private readonly clockEnd: number) {}
 
   /** A keyframe block, by content; `stem` prefixes the name. */
   frames(stem: string, frames: Record<string, Record<string, string>>): string {
@@ -170,9 +202,12 @@ class Registry {
     return name;
   }
 
-  /** A comma list, by content. Empty list: no animation at all. */
-  anim(entries: readonly (string | null)[]): string {
-    const value = entries.filter((e): e is string => e !== null).join(", ");
+  /** A comma list, by content. Nothing left to write: no animation at all. */
+  anim(entries: readonly (Entry | null)[]): string {
+    const value = entries
+      .filter((e): e is Entry => e !== null && e.delay < this.clockEnd)
+      .map((e) => `${e.frames} ${ms(e.ticks)} ${e.ease} ${ms(e.delay)} ${e.fill}`)
+      .join(", ");
     if (value === "") return "";
     let name = this.byValue.get(value);
     if (name === undefined) {
@@ -187,21 +222,21 @@ class Registry {
 const ms = (ticks: number): string => `${msOfTicks(ticks)}ms`;
 
 /** A one-tick gate in, at a delay from `gateInTick`; `null` is visible from the start. */
-const ginAt = (delay: number | null): string | null => (delay === null ? null : `gin ${ms(1)} linear ${ms(delay)} both`);
+const ginAt = (delay: number | null): Entry | null => (delay === null ? null : entry("gin", 1, "linear", delay, "both"));
 /** A one-tick gate: visible from clock `from`, hidden from clock `until`. */
-const gin = (from: number): string | null => ginAt(from <= 0 ? null : from - 1);
-const gout = (until: number): string => `gout ${ms(1)} linear ${ms(until - 1)} forwards`;
+const gin = (from: number): Entry | null => ginAt(from <= 0 ? null : from - 1);
+const gout = (until: number): Entry => entry("gout", 1, "linear", until - 1, "forwards");
 
-/** A page's entrance: a fade starting one tick before its first frame. */
-function fadeIn(page: Page, fps: number, durMs: number, ease: string): string | null {
+/** A page's entrance: a fade starting one tick before the clock its first frame samples. */
+function fadeIn(page: Page, fps: number, durMs: number, ease: string): Entry | null {
   const d = gateInTick(page.startFrame, fps);
-  return d === null ? null : `gin ${ms(ticksOfMs(durMs))} ${ease} ${ms(d)} both`;
+  return d === null ? null : entry("gin", ticksOfMs(durMs), ease, d, "both");
 }
 
 /** A page's exit: a fade reaching zero exactly when the page gives way. */
-function fadeOut(page: Page, fps: number, durMs: number, ease: string): string {
+function fadeOut(page: Page, fps: number, durMs: number, ease: string): Entry {
   const f = fadeOutTo(page.endFrame, fps, ticksOfMs(durMs));
-  return `gout ${ms(f.ticks)} ${ease} ${ms(f.delay)} forwards`;
+  return entry("gout", f.ticks, ease, f.delay, "forwards");
 }
 
 const nodeName = (u: PlacedUnit): string => (u.parts > 1 ? `w${u.word}.${u.part}` : `w${u.word}`);
@@ -233,7 +268,9 @@ export function scrambles(u: PlacedUnit, from: string): [string, string] {
 
 export function renderStyle(input: RenderInput): Rendered {
   const { layout, params, fps } = input;
-  const reg = new Registry();
+  // The clock runs `durationFrames · 60 / fps` ticks; the last frame samples
+  // the one before that, and `keyframes` fails a timeline starting at or past it.
+  const reg = new Registry(clockAt(input.durationFrames - 1, fps) + 1);
   const named: Array<{ node: string; window: WordWindow }> = [];
   const windowOf = new Map(layout.windows.map((w) => [w.word, w]));
   const W = input.width;
@@ -260,8 +297,8 @@ export function renderStyle(input: RenderInput): Rendered {
     const lead = (u: PlacedUnit): number | null => gateInTick(windowOf.get(u.word)!.from, fps);
     const endFrame = (u: PlacedUnit): number => windowOf.get(u.word)!.to + 1;
 
-    let enter: string | null;
-    let leave: string;
+    let enter: Entry | null;
+    let leave: Entry;
     switch (params.name) {
       case "highlight": {
         enter = fadeIn(page, fps, 120, EASE.power2out);
@@ -270,9 +307,9 @@ export function renderStyle(input: RenderInput): Rendered {
           const open = reg.frames("hw", { from: { width: "0px" }, to: { width: px(u.boxW) } });
           const d = lead(u);
           const box = reg.anim([
-            d === null ? null : `${open} ${ms(ticksOfMs(150))} ${EASE.power2out} ${ms(d)} both`,
-            d === null ? null : `gin ${ms(ticksOfMs(150))} ${EASE.power2out} ${ms(d)} both`,
-            `gout ${ms(ticksOfMs(100))} ${EASE.power2in} ${ms(gateOutTick(endFrame(u), fps))} forwards`,
+            d === null ? null : entry(open, ticksOfMs(150), EASE.power2out, d, "both"),
+            d === null ? null : entry("gin", ticksOfMs(150), EASE.power2out, d, "both"),
+            entry("gout", ticksOfMs(100), EASE.power2in, gateOutTick(endFrame(u), fps), "forwards"),
           ]);
           inner.push(
             `<View debugName="${name(u)}" class="absolute left-[${u.x}px] top-[${u.y}px] w-[${px(u.boxW)}] h-[${u.boxH}px]">`,
@@ -296,7 +333,7 @@ export function renderStyle(input: RenderInput): Rendered {
           // 50 ms early, as the catalog does it, but never before the page is up.
           const at = Math.max(pageIn, (lead(u) ?? 0) - ticksOfMs(50));
           const already = windowOf.get(u.word)!.from === page.startFrame;
-          const cls = already ? textCls(c.active!) : textCls(c.inactive!) + reg.anim([`${lit} ${ms(ticksOfMs(100))} linear ${ms(at)} both`]);
+          const cls = already ? textCls(c.active!) : textCls(c.inactive!) + reg.anim([entry(lit, ticksOfMs(100), "linear", at, "both")]);
           inner.push(
             `<View debugName="${name(u)}" class="absolute left-[${u.x}px] top-[${u.y}px]"><Text class="${cls}">${textLiteral(u.text)}</Text></View>`,
           );
@@ -326,14 +363,17 @@ export function renderStyle(input: RenderInput): Rendered {
           const closeDur = Math.max(1, Math.min(ticksOfMs(250), closeEnd - (openAt ?? -1) - 1));
           const closeAt = closeEnd - closeDur;
           const win = reg.anim([
-            openAt === null ? null : `${open} ${ms(ticksOfMs(300))} ${EASE.power2out} ${ms(openAt)} both`,
-            `${closeWin} ${ms(closeDur)} ${EASE.power2in} ${ms(closeAt)} forwards`,
+            openAt === null ? null : entry(open, ticksOfMs(300), EASE.power2out, openAt, "both"),
+            entry(closeWin, closeDur, EASE.power2in, closeAt, "forwards"),
           ]);
           const spoken = clockAt(endFrame(u), fps) - 1;
           const colour = isKeyword(u)
-            ? [`${gold} ${ms(ticksOfMs(50))} linear ${ms((openAt ?? 0) + ticksOfMs(100))} both`, `${goldDim} ${ms(ticksOfMs(200))} linear ${ms(spoken)} forwards`]
-            : [`${dim} ${ms(ticksOfMs(200))} linear ${ms(spoken)} forwards`];
-          const txt = reg.anim([...colour, `${closeText} ${ms(closeDur)} ${EASE.power2in} ${ms(closeAt)} forwards`]);
+            ? [
+                entry(gold, ticksOfMs(50), "linear", (openAt ?? 0) + ticksOfMs(100), "both"),
+                entry(goldDim, ticksOfMs(200), "linear", spoken, "forwards"),
+              ]
+            : [entry(dim, ticksOfMs(200), "linear", spoken, "forwards")];
+          const txt = reg.anim([...colour, entry(closeText, closeDur, EASE.power2in, closeAt, "forwards")]);
           inner.push(
             `<View debugName="${name(u)}" class="absolute left-[${u.x}px] top-[${u.y}px] w-[${openAt === null ? px(w) : "0px"}] h-[${u.boxH}px] overflow-hidden${win}">`,
             `  <View class="absolute left-0 top-0"><Text class="${textCls(c.ink!)}${txt}">${textLiteral(u.text)}</Text></View>`,
@@ -354,7 +394,7 @@ export function renderStyle(input: RenderInput): Rendered {
           const q = Math.min(ticksOfMs(100), Math.floor(span / 3));
           const [s0, s1] = scrambles(u, input.scrambleFrom);
           const lines = [`<View debugName="${name(u)}" class="absolute left-[${u.x}px] top-[${u.y}px] w-[${px(u.boxW)}] h-[${u.boxH}px]">`];
-          const step = (text: string, enter: string | null, until: number | null): void => {
+          const step = (text: string, enter: Entry | null, until: number | null): void => {
             const a = reg.anim([enter, until === null ? null : gout(until)]);
             lines.push(`  <View class="absolute left-0 top-0${a}"><Text class="${textCls(c.ink!)}">${textLiteral(text)}</Text></View>`);
           };
@@ -384,7 +424,7 @@ export function renderStyle(input: RenderInput): Rendered {
         ] as const;
         const e = ENTRANCES[page.index % 4]!;
         const d = gateInTick(page.startFrame, fps);
-        enter = d === null ? null : `${reg.frames("slam", e.frames)} ${ms(ticksOfMs(e.ms))} ${e.ease} ${ms(d)} both`;
+        enter = d === null ? null : entry(reg.frames("slam", e.frames), ticksOfMs(e.ms), e.ease, d, "both");
         leave = fadeOut(page, fps, 100, EASE.power2in);
         for (const u of units) {
           inner.push(

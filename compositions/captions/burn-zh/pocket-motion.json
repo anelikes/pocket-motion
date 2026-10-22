@@ -21,6 +21,38 @@
       "endFrame": 101
     }
   ],
+  "layoutAllow": [
+    {
+      "node": "footage:plate/tile:0:0",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:1:0",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:0:1",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:1:1",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:0:2",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:1:2",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    }
+  ],
   "assertions": [
     { "node": "w0", "inPicture": [0, 9] },
     { "node": "w1", "inPicture": [10, 15] },
