@@ -8,7 +8,8 @@
  * was recorded on, and the ffmpeg build whose decoder writes the frozen
  * footage artifacts. A pin bumped in one file and not the other would make the
  * image reproduce a different claim from the one the badge reports, and both
- * would stay green.
+ * would stay green. The upstream commit the image fetches is held to
+ * `UPSTREAM.commit` for the same reason.
  *
  * Nothing here builds the image; that is minutes and a daemon. What it holds
  * is the text that decides what the image is. Red, measured: changing one hex
@@ -17,6 +18,8 @@
 
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
+
+import { UPSTREAM } from "../src/vendor/upstream.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const dockerfile = await Bun.file(join(ROOT, "Dockerfile")).text();
@@ -49,6 +52,15 @@ describe("the image is the workflow's run", () => {
     expect(arg("FFMPEG_SHA256")).toMatch(/^[0-9a-f]{64}$/);
     expect(arg("FFMPEG_SHA256")).toBe(env("FFMPEG_SHA256")!);
     expect(dockerfile).toContain('sha256sum -c -');
+  });
+
+  test("upstream: the image fetches the commit the repository pins, from the same repository", () => {
+    // The Dockerfile fetches by full sha (a server will not serve a short
+    // one), so the pin is written twice; `scripts/vendor.ts` checks out the
+    // short one afterwards and would fail on a tree that does not hold it.
+    expect(arg("POCKETJS_COMMIT")).toMatch(/^[0-9a-f]{40}$/);
+    expect(arg("POCKETJS_COMMIT")!.startsWith(UPSTREAM.commit)).toBe(true);
+    expect(arg("POCKETJS_REPO")).toBe(UPSTREAM.repo);
   });
 
   test("x86-64, as the runner is, so a green run is the same cross-architecture reproduction", () => {

@@ -48,7 +48,8 @@ RUN apt-get update \
 
 ARG FFMPEG_URL=https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-09-30-13-19/ffmpeg-n8.0-16-gd8605a6b55-linux64-gpl-8.0.tar.xz
 ARG FFMPEG_SHA256=cea7c0845fb8ac78b06f94cdd7282d3e7ddb960e20d91d5c07cd9b43f3a04504
-RUN curl -fsSL --retry 3 -o /tmp/ffmpeg.tar.xz "$FFMPEG_URL" \
+RUN curl -fsSL --retry 5 --retry-all-errors --connect-timeout 30 --speed-limit 50000 --speed-time 60 \
+      -o /tmp/ffmpeg.tar.xz "$FFMPEG_URL" \
  && echo "$FFMPEG_SHA256  /tmp/ffmpeg.tar.xz" | sha256sum -c - \
  && mkdir -p /opt/ffmpeg \
  && tar -xJf /tmp/ffmpeg.tar.xz -C /opt/ffmpeg --strip-components=1 \
@@ -57,11 +58,37 @@ RUN curl -fsSL --retry 3 -o /tmp/ffmpeg.tar.xz "$FFMPEG_URL" \
 ENV PATH=/opt/ffmpeg/bin:$PATH
 
 ARG RUST_TOOLCHAIN=1.97.1
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
+RUN curl --proto '=https' --tlsv1.2 -sSf --retry 5 --connect-timeout 30 --speed-limit 50000 --speed-time 60 https://sh.rustup.rs \
   | sh -s -- -y --profile minimal --default-toolchain "$RUST_TOOLCHAIN" --target wasm32-unknown-unknown
 ENV PATH=/root/.cargo/bin:$PATH
 
 WORKDIR /pocket-motion
+
+# The network-bound layers come before the source, so editing a file does not
+# re-download any of them.
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile
+
+# Upstream at the pin, fetched shallow: the one commit `scripts/vendor.ts`
+# would check out, rather than the repository's whole history. The script
+# reuses a tree that is already there, checks the pin out itself, applies
+# patches/ and builds the wasm, so what it produces is the same; this only
+# makes the transfer one tree instead of every commit. Measured on a slow
+# link: the full clone over HTTP/2 failed at 707 s with `curl 92 ... stream
+# was not closed cleanly`, so the fetch is HTTP/1.1 and retried.
+# tests/docker.test.ts holds POCKETJS_COMMIT to `UPSTREAM.commit`.
+ARG POCKETJS_REPO=https://github.com/pocket-stack/pocketjs.git
+ARG POCKETJS_COMMIT=e0b37e20dbfaeb10a4fa2aac6564c75023afe53e
+RUN git config --global http.version HTTP/1.1 \
+ && for attempt in 1 2 3 4 5; do \
+      rm -rf vendor/pocketjs && git init -q vendor/pocketjs \
+      && git -C vendor/pocketjs fetch -q --depth 1 "$POCKETJS_REPO" "$POCKETJS_COMMIT" \
+      && git -C vendor/pocketjs checkout -q FETCH_HEAD && break; \
+      echo "fetch attempt $attempt failed"; sleep 15; \
+    done \
+ && test "$(git -C vendor/pocketjs rev-parse HEAD)" = "$POCKETJS_COMMIT" \
+ && cd vendor/pocketjs && bun install --frozen-lockfile
+
 COPY . .
 
 # Composition discovery asks git (`src/cli/discover.ts`: tracked and untracked
@@ -69,8 +96,7 @@ COPY . .
 # repository is enough for `ls-files --others --exclude-standard`.
 RUN git init -q
 
-RUN bun install --frozen-lockfile \
- && bun run vendor \
- && bun scripts/assets.ts --kind fonts,synthetic
+RUN bun run vendor
+RUN bun scripts/assets.ts --kind fonts,synthetic
 
 CMD ["bun", "scripts/digests.ts"]
