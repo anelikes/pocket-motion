@@ -1,0 +1,44 @@
+{
+  "hex.png": {
+    "linear": true
+  },
+  "dot.png": {
+    "linear": true
+  },
+  "ring.png": {
+    "linear": true
+  },
+  "disc.png": {
+    "linear": true
+  },
+  "rim.png": {
+    "linear": true
+  },
+  "band.png": {
+    "linear": true
+  },
+  "coast.png": {
+    "linear": true
+  },
+  "wedge.png": {
+    "linear": true
+  },
+  "orbit.png": {
+    "linear": true
+  },
+  "wedge-mini.png": {
+    "linear": true
+  },
+  "trace-ref.png": {
+    "linear": true
+  },
+  "trace-live.png": {
+    "linear": true
+  },
+  "scan.png": {
+    "linear": false
+  },
+  "grain.png": {
+    "linear": true
+  }
+}

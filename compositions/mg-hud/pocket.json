@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-mg-hud",
+  "name": "pocketjs-motion-mg-hud",
+  "title": "PocketJS Motion: VEGA-7 TARGET LOCKED — a cyberpunk HUD",
+  "version": "0.1.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/mg-hud/main.tsx",
+    "output": "motion-mg-hud",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1920, 1080], "presentation": "native" } }
+  }
+}

@@ -1,0 +1,103 @@
+# VEGA-7 · 织女-7 —— darksynth 脉冲 + HUD 提示音。120 BPM，一个十六分音符 = 0.125 s = 画面 3.75 帧。
+# 和 gen.ts 的时间点对齐：
+#   0.375–1.375 s 启动日志五行，每行一声 beep（奇数十六分音符）
+#   2.375 / 2.875 / 3.875 s 雷达小屏上三个目标点亮 · 4.0 s 发现信号（双响）
+#   5.5 s 锁定框收拢，锁定音上行 · 6.5 s 翻成橙色：冲击 + 双音警报
+title: Vega-7
+meta:
+  bpm: 120
+  key: D minor
+  loop: false
+  seed: 0
+
+sections:
+  - { name: boot,   bars: 1, energy: 0.42 }                      # 0:00–0:02
+  - { name: search, bars: 1, energy: 0.55, at: "0:02" }           # 0:02–0:04
+  - { name: track,  bars: 1, energy: 0.75, at: "0:04" }           # 0:04–0:06
+  - { name: alert,  bars: 2, energy: "1.0->0.75", at: "0:06" }    # 0:06–0:10
+
+harmony:
+  boot:   "Dm"
+  search: "Bb"
+  track:  "Gm"
+  alert:  "Dm Bb | Gm A"
+
+tracks:
+  pad:
+    sound: synth-pad
+    texture: pad
+    in: all
+
+  sub:
+    sound: sub-bass
+    texture: bass-sustain
+    in: [boot]
+
+  pulse:
+    sound: synth-bass
+    texture: bassline
+    in: [search, track, alert]
+    articulation: staccato
+    rhythm: "1111 1111 1111 1111"
+    by_section:
+      search: {rhythm: "1.1. 1.1. 1.1. 1.1."}
+      # the bar before the lock flash drops out for a beat, so the hit lands in a hole
+      alert: {rhythm: ".... 1111 1111 1111 | 1111 1111 1111 1111"}
+
+  beep:
+    sound: chip-pulse
+    texture: line
+    gain: 7
+    in: [boot, search, track]
+    notes:
+      boot:   "r/16 r/16 r/16 D6/16' r/16 D6/16' r/16 D6/16' r/16 D6/16' r/16 A6/16' r/16 r/16 r/16 r/16"
+      search: "r/16 r/16 r/16 A6/16' r/16 r/16 r/16 F6/16' r/16 r/16 r/16 r/16 r/16 r/16 r/16 D7/16'"
+      track:  "D7/16' r/16 D7/16' r/16 r/4 r/4 D6/16' F6/16' A6/16' D7/16'"
+
+  # the alarm sounds twice at full voice, then sits ten dB down under the hold
+  siren:
+    sound: synth-lead
+    texture: melody
+    in: [alert]
+    notes:
+      alert: "r/4 A5/8 F5/8 A5/8 F5/8 r/4 | r/1"
+  siren_low:
+    sound: synth-lead
+    texture: line
+    gain: -10
+    in: [alert]
+    notes:
+      alert: "r/2 r/4 A5/8 F5/8 | A5/8 F5/8 A5/8 F5/8 A5/8 F5/8 A5/4"
+
+  drums:
+    sound: drums-synth
+    texture: groove
+    in: [search, track, alert]
+    pattern:
+      kick:  "x... x... x... x..."
+      snare: ".... x... .... x..."
+      hat:   "xgxg xgxg xgxg xgxg"
+    by_section:
+      search:
+        pattern:
+          kick: "x... x... x... x..."
+          hat:  "g.g. g.g. g.g. g.g."
+      track:
+        pattern:
+          kick:  "x... x... x... x..."
+          snare: ".... x... .... x..."
+          hat:   "xgxg xgxg xgxg xgxg"
+      alert:
+        pattern:
+          kick:  ".... X... x... x... | x... x... x... x..."
+          snare: ".... .... .... x... | .... x... .... x..."
+          hat:   ".... xgxg xgxg xgxg | xgxg xgxg xgxg xgxg"
+          crash: ".... X... .... .... | .... .... .... ...."
+
+sfx:
+  - { type: impact, at: boot, level: 0.55 }
+  - { type: whoosh, at: "0:02.0", level: 0.4 }
+  - { type: riser, at: "0:06.5", length: 4, level: 0.55 }
+  - { type: impact, at: "0:06.5", duck: 4, level: 0.85 }
+  - { type: ding, at: "0:04.0", level: 0.45 }
+  - { type: downlifter, at: "0:08.6", level: 0.35 }
