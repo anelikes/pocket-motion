@@ -6,6 +6,10 @@
       "frames": 2,
       "digest": "627bcc51ad8963e8e832881fbc9c2a69e82adb8ac13103ceb9e85f918e104119"
     },
+    "compositions/bloom": {
+      "frames": 2,
+      "digest": "6e3f2d48b0d7b23ba9b8e6956e765f1eba4a27e6ac5079ec9b9f6a1f9da375c8"
+    },
     "compositions/captions/clip-wipe": {
       "frames": 240,
       "digest": "9aa91339233aa1ed105de49526427778638958b23afd13bfb6026205248e3d33"

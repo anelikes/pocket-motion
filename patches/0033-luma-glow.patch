@@ -1,0 +1,535 @@
+pocket-motion-only: a bloom is a filter-layer composite (0018), drawn by this rasteriser only; no upstream target draws filter layers.
+
+0033 — `glow-mode-luma`: a glow made from the bright pixels (a bloom).
+
+A `glow-*` is CSS's drop shadow at offset 0: made from the layer's ALPHA,
+tinted and blurred, under the content. That is right for a drop shadow and
+wrong for light. An 85 % dark plate (#0b0b0b) in a white glow layer has a
+white halo under its whole area, 15 % of it shows through, and the plate
+reads LIGHTER than the ground — where a neon or HUD film wants light
+emitted by its bright pixels only.
+
+`glow-mode-luma` makes the same glow from the layer's own premultiplied
+colour, weighted per pixel by how far its brightest channel is above
+`glow-threshold-[t]` (0..1, default 0.5): 0 at the threshold, 1 at full.
+That emission is offset, blurred with the same passes, multiplied by the
+gain, tinted by the glow colour (white keeps each pixel's own colour), and
+ADDED over the composited content — the `plus-lighter` blend, which never
+darkens. A pixel at or below the threshold emits nothing, so the dark
+plate comes out exactly as with no glow, while a white rule on it glows
+white and a cyan bar glows cyan. `glow-mode-alpha` is the default and says
+so.
+
+Encoding: no new op and no new word. LAYER_PUSH's blend word carries the
+blend mode in bits 0-7, GlowMode in 8-15 and, for Luma, the threshold x 255
+in 16-23; an alpha glow leaves the upper bits 0, so every existing draw
+list is word for word what it was. PROP `glowMode` = 185 (enum `GlowMode {
+Alpha: 0, Luma: 1 }`) and `glowThreshold` = 186 (f32), neither animatable;
+the radius, colour and gain are the glow's own `dropShadow*` props, which
+still animate.
+
+Guard: `a_luma_glow_lights_the_bright_pixels_and_leaves_a_dark_plate_dark`
+(`engine/core/src/tests.rs`): over a mid-grey ground, the 85 % plate in an
+alpha glow is lighter than with no glow (the case); in a luma glow it is
+byte-identical to no glow; a white 2 px rule on it gains a halo on the
+plate and past its edge, and no pixel anywhere is darker. Red with the
+luma flag ignored (the plate in a luma glow came out lighter), green with
+it. `validate_drawlist` holds the blend word's fields. `tests/tailwind.test.ts`
+pins the compiler; `compositions/bloom` is the fixture, an alpha glow and a
+luma glow side by side on the same plate.
+
+Ledgers, against the same tree without this patch: no existing digest and
+no existing `visibility` row moves — an alpha glow's words and pixels are
+what they were. `compositions/bloom` is new in both: 2 frames, 6 named
+nodes, all shown.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 06c78cfe..4f66be0f 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -348,6 +348,7 @@ export function generateRust(): string {
+     TextAlign: "text alignment within the node box.",
+     GradDir: "gradient direction (`bg-gradient-to-t|b|l|r`).",
+     GradShape: "a radial gradient's ending shape about the box centre (`bg-radial-circle`, `radial-gradient(circle closest-side, …)`).",
++    GlowMode: "what a glow is made from (`glow-mode-alpha|luma`): Alpha is CSS drop-shadow, Luma a bloom of the bright pixels.",
+     ArcCap: "how an arc's ends finish (`arc-cap-round|butt`): Round adds a half-disc per end; Butt ends on the radius.",
+     Easing:
+       "animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.",
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 410bc608..f6fed66d 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -476,6 +476,15 @@ export const PROP = {
+   //                    ellipse (default), the farthest-corner circle, the
+   //                    closest-side ellipse, the closest- or farthest-side
+   //                    circle (pocket-motion).
++  glowMode: 185, //       enum GlowMode — what a glow (and any drop shadow) is
++  //                    made from: Alpha (the default, CSS drop-shadow: the
++  //                    layer's alpha, tinted, under the content) or Luma (a
++  //                    bloom: the layer's own premultiplied colour where its
++  //                    brightest channel is above glowThreshold, tinted,
++  //                    blurred, ADDED over the content). pocket-motion.
++  glowThreshold: 186, //  f32 0..1, Luma only: the brightest-channel level at
++  //                    which a pixel starts to emit, ramping to full at 1
++  //                    (default 0.5).
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -645,6 +654,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   bgClip: VALUE_KIND.int,
+   arcCap: VALUE_KIND.int,
+   gradShape: VALUE_KIND.int,
++  glowMode: VALUE_KIND.int, glowThreshold: VALUE_KIND.f32,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -678,6 +688,8 @@ export const ENUMS = {
+    *  centre the closest and farthest corner are one point, and an ellipse's
+    *  closest and farthest side are one size. */
+   GradShape: { Ellipse: 0, Circle: 1, EllipseClosestSide: 2, CircleClosestSide: 3, CircleFarthestSide: 4 },
++  /** What a glow is made from (`glow-mode-alpha|luma`, pocket-motion). */
++  GlowMode: { Alpha: 0, Luma: 1 },
+   /** How an arc's ends finish (`arc-cap-round|butt`). */
+   ArcCap: { Round: 0, Butt: 1 },
+   /**
+@@ -1632,7 +1644,10 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+ //                           edge offset (0.5 - coverage), so a width of 0 is
+ //                           the glyph's own coverage. Width is clamped to
+ //                           STROKE_MAX_WIDTH. Software rasteriser only.
+-//   LAYER_PUSH  (8 words):  op, blendMode (BlendMode u32), blur (f32 bits,
++//   LAYER_PUSH  (8 words):  op, blendMode (BlendMode in bits 0-7; GlowMode
++//                           in bits 8-15 and, for Luma, glowThreshold x 255
++//                           rounded in bits 16-23 — all 0 for an alpha glow,
++//                           so its word is the blend mode alone), blur (f32 bits,
+ //                           LOGICAL px standard deviation), shadowX,
+ //                           shadowY (f32 bits, LOGICAL px), shadowBlur (f32
+ //                           bits, LOGICAL px radius), shadowColor, shadowGain
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 37588e76..c1a559b2 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -1290,7 +1290,16 @@ impl<'a> Walker<'a> {
+             && (self.layer_depth as usize) < spec::draw_op::LAYER_MAX_DEPTH;
+         if layered {
+             dl.words.push(spec::draw_op::LAYER_PUSH);
+-            dl.words.push(r.blend_mode as u32);
++            // A luma glow (pocket-motion patch 0033) rides in the blend
++            // word's upper bytes; an alpha glow leaves them 0, so its word
++            // is the blend mode alone, as before.
++            let glow = if r.glow_mode == spec::GlowMode::Luma as u8 {
++                let t = (clampf(r.glow_threshold, 0.0, 1.0) * 255.0 + 0.5) as u32;
++                (spec::GlowMode::Luma as u32) << 8 | t << 16
++            } else {
++                0
++            };
++            dl.words.push(r.blend_mode as u32 | glow);
+             dl.words.push(r.blur.max(0.0).min(spec::draw_op::BLUR_MAX).to_bits());
+             dl.words.push(r.drop_shadow_x.to_bits());
+             dl.words.push(r.drop_shadow_y.to_bits());
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index b75dea83..4572ea87 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -1926,13 +1926,20 @@ struct LayerFx {
+     shadow_blur: f32,
+     shadow_color: u32,
+     shadow_gain: f32,
++    /// Luma glow (pocket-motion patch 0033): the shadow is made from the
++    /// layer's bright pixels' own colour and added over the content.
++    luma: bool,
++    /// Luma only: brightest-channel level, 0..=255, where emission starts.
++    threshold: u32,
+ }
+ 
+ impl LayerFx {
+     fn decode(w: &[u32]) -> LayerFx {
+         let finite = |x: f32| if x.is_finite() { x } else { 0.0 };
+         LayerFx {
+-            blend: w[0],
++            blend: w[0] & 0xff,
++            luma: (w[0] >> 8) & 0xff == spec::GlowMode::Luma as u32,
++            threshold: (w[0] >> 16) & 0xff,
+             blur: finite(f32::from_bits(w[1])).max(0.0).min(spec::draw_op::BLUR_MAX),
+             shadow_x: finite(f32::from_bits(w[2])),
+             shadow_y: finite(f32::from_bits(w[3])),
+@@ -2374,7 +2381,8 @@ fn composite_layer<T: RenderTarget>(
+     let (sr, sg, sb, sa) = channels(fx.shadow_color);
+     let mut shadow: Vec<u32> = Vec::new();
+     let mut srect = Clip { x0: 0, y0: 0, x1: 0, y1: 0 };
+-    if sa > 0 && fx.shadow_gain > 0.0 {
++    // A luma glow is made after the content is composited, below.
++    if sa > 0 && fx.shadow_gain > 0.0 && !fx.luma {
+         let round = |v: f32| -> i32 { if v >= 0.0 { (v + 0.5) as i32 } else { -((-v + 0.5) as i32) } };
+         let dx = round(fx.shadow_x * scale as f32);
+         let dy = round(fx.shadow_y * scale as f32);
+@@ -2465,9 +2473,116 @@ fn composite_layer<T: RenderTarget>(
+             blend_with(target, off, r, g, b, a, fx.blend);
+         }
+     }
++    if fx.luma && sa > 0 && fx.shadow_gain > 0.0 {
++        luma_glow(target, layer, fx, content, clip, stride, scale, &mut scratch);
++    }
+     written
+ }
+ 
++/// A luma glow — a bloom (pocket-motion patch 0033). An alpha glow is CSS's
++/// drop shadow at offset 0: the layer's ALPHA, blurred and tinted, under the
++/// content, so a dark translucent plate in a glow layer gets a halo under
++/// its whole area and reads lighter than the ground around it. A luma glow is
++/// light from the bright pixels only: each pixel's own premultiplied colour,
++/// weighted by how far its brightest channel is above `threshold` (0 there,
++/// 1 at 255), offset like a shadow, blurred with the same passes, times gain,
++/// tinted by the glow colour, and ADDED over what the composite left — the
++/// `plus-lighter` blend, which never darkens. A pixel at or below the
++/// threshold emits nothing, so a dark plate comes out as it would with no
++/// glow at all.
++#[allow(clippy::too_many_arguments)]
++fn luma_glow<T: RenderTarget>(
++    target: &mut T,
++    layer: &LayerTarget,
++    fx: &LayerFx,
++    content: Clip,
++    clip: Clip,
++    stride: i32,
++    scale: i32,
++    scratch: &mut Vec<u32>,
++) {
++    let w = stride as usize;
++    let (tr, tg, tb, ta) = channels(fx.shadow_color);
++    let round = |v: f32| -> i32 { if v >= 0.0 { (v + 0.5) as i32 } else { -((-v + 0.5) as i32) } };
++    let dx = round(fx.shadow_x * scale as f32);
++    let dy = round(fx.shadow_y * scale as f32);
++    let sigma = fx.shadow_blur * 0.5 * scale as f32;
++    let pad = blur_pad(sigma);
++    let rect = Clip {
++        x0: content.x0 + dx - pad,
++        y0: content.y0 + dy - pad,
++        x1: content.x1 + dx + pad,
++        y1: content.y1 + dy + pad,
++    }
++    .intersect(clip);
++    if rect.x0 >= rect.x1 || rect.y0 >= rect.y1 {
++        return;
++    }
++    let (rw, rh) = ((rect.x1 - rect.x0) as usize, (rect.y1 - rect.y0) as usize);
++    // Emission per channel, premultiplied, in 1/256ths so the blur keeps
++    // precision: c * a / 255 * key, key = (v - t) / (255 - t) for the
++    // brightest channel v above the threshold t.
++    let t = fx.threshold.min(255);
++    let mut img: Vec<u32> = alloc::vec![0u32; rw * rh * 3];
++    let mut any = false;
++    for y in 0..rh {
++        let ly = rect.y0 + y as i32 - dy;
++        if ly < content.y0 || ly >= content.y1 {
++            continue;
++        }
++        for x in 0..rw {
++            let lx = rect.x0 + x as i32 - dx;
++            if lx < content.x0 || lx >= content.x1 {
++                continue;
++            }
++            let o = (ly as usize * w + lx as usize) * 4;
++            let (r, g, b, a) = (
++                layer.bytes[o] as u64,
++                layer.bytes[o + 1] as u64,
++                layer.bytes[o + 2] as u64,
++                layer.bytes[o + 3] as u64,
++            );
++            let v = r.max(g).max(b) as u32;
++            if a == 0 || v <= t {
++                continue;
++            }
++            let (kn, kd) = if t >= 255 { (1u64, 1u64) } else { ((v - t) as u64, (255 - t) as u64) };
++            let den = 255 * kd;
++            let i = (y * rw + x) * 3;
++            img[i] = ((r * a * kn * 256 + den / 2) / den) as u32;
++            img[i + 1] = ((g * a * kn * 256 + den / 2) / den) as u32;
++            img[i + 2] = ((b * a * kn * 256 + den / 2) / den) as u32;
++            any = true;
++        }
++    }
++    if !any {
++        return;
++    }
++    blur_image(&mut img, rw, rh, 3, sigma, scratch);
++    let gain = (fx.shadow_gain * 256.0 + 0.5) as u64;
++    for y in 0..rh {
++        for x in 0..rw {
++            let i = (y * rw + x) * 3;
++            // 0..255 per channel, times gain, tinted by the glow colour and
++            // its alpha.
++            let ch = |v: u32, tint: u32| -> u32 {
++                let e = ((v as u64 * gain / 256 + 128) / 256).min(255);
++                ((e * tint as u64 * ta as u64 + 255 * 255 / 2) / (255 * 255)) as u32
++            };
++            let (hr, hg, hb) = (ch(img[i], tr), ch(img[i + 1], tg), ch(img[i + 2], tb));
++            let ha = hr.max(hg).max(hb);
++            if ha == 0 {
++                continue;
++            }
++            // Straight colour of a source whose premultiplied colour is the
++            // emission, at the alpha of its brightest channel; added.
++            let un = |p: u32| (p * 255 + ha / 2) / ha;
++            let off = (rect.y0 as usize + y) * w + rect.x0 as usize + x;
++            blend_with(target, off, un(hr), un(hg), un(hb), ha, spec::BlendMode::Add as u32);
++        }
++    }
++}
++
+ // ---- GLYPH_STROKE: text outline by distance to the ink (pocket-motion) ----------------
+ 
+ /// Largest region, in physical pixels, one GLYPH_STROKE rasterises. A run
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index c9472a25..fd835129 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -211,6 +211,8 @@ pub mod prop {
+     pub const BG_CLIP: u8 = 182;
+     pub const ARC_CAP: u8 = 183;
+     pub const GRAD_SHAPE: u8 = 184;
++    pub const GLOW_MODE: u8 = 185;
++    pub const GLOW_THRESHOLD: u8 = 186;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -233,7 +235,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+-    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -402,6 +404,14 @@ pub enum GradShape {
+     CircleFarthestSide = 4,
+ }
+ 
++/// what a glow is made from (`glow-mode-alpha|luma`): Alpha is CSS drop-shadow, Luma a bloom of the bright pixels.
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum GlowMode {
++    Alpha = 0,
++    Luma = 1,
++}
++
+ /// how an arc's ends finish (`arc-cap-round|butt`): Round adds a half-disc per end; Butt ends on the radius.
+ #[repr(u8)]
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index cc20b3dc..ae3f37b5 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -326,6 +326,10 @@ pub struct Resolved {
+     pub drop_shadow_gain: f32,
+     /// spec::BlendMode ordinal.
+     pub blend_mode: u8,
++    /// spec::GlowMode ordinal: what the glow/shadow is made from.
++    pub glow_mode: u8,
++    /// Luma glow: the brightest-channel level (0..1) where emission starts.
++    pub glow_threshold: f32,
+     /// Gradient paint (pocket-motion; spec.ts PROP.gradKind..bgClip).
+     /// spec::GradKind ordinal; Legacy keeps the gradDir path.
+     pub grad_kind: u8,
+@@ -414,6 +418,8 @@ impl Default for Resolved {
+             drop_shadow_color: 0,
+             drop_shadow_gain: 1.0,
+             blend_mode: spec::BlendMode::Normal as u8,
++            glow_mode: spec::GlowMode::Alpha as u8,
++            glow_threshold: 0.5,
+             grad_kind: spec::GradKind::Legacy as u8,
+             grad_angle: 180.0,
+             grad_from_pos: 0.0,
+@@ -527,6 +533,8 @@ impl Resolved {
+             p::DROP_SHADOW_COLOR => self.drop_shadow_color = bits,
+             p::DROP_SHADOW_GAIN => self.drop_shadow_gain = f,
+             p::BLEND_MODE => self.blend_mode = bits as u8,
++            p::GLOW_MODE => self.glow_mode = bits as u8,
++            p::GLOW_THRESHOLD => self.glow_threshold = f,
+             p::GRAD_KIND => self.grad_kind = bits as u8,
+             p::GRAD_ANGLE => self.grad_angle = f,
+             p::GRAD_FROM_POS => self.grad_from_pos = f,
+@@ -630,6 +638,8 @@ impl Resolved {
+             p::DROP_SHADOW_COLOR => self.drop_shadow_color,
+             p::DROP_SHADOW_GAIN => self.drop_shadow_gain.to_bits(),
+             p::BLEND_MODE => self.blend_mode as u32,
++            p::GLOW_MODE => self.glow_mode as u32,
++            p::GLOW_THRESHOLD => self.glow_threshold.to_bits(),
+             p::GRAD_KIND => self.grad_kind as u32,
+             p::GRAD_ANGLE => self.grad_angle.to_bits(),
+             p::GRAD_FROM_POS => self.grad_from_pos.to_bits(),
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 923237d9..cd833faa 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -375,7 +375,14 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+             }
+             spec::draw_op::LAYER_PUSH => {
+                 assert!(i + 8 <= words.len(), "truncated LAYER_PUSH");
+-                assert!(words[i + 1] <= 4, "bad BlendMode");
++                // Blend mode in the low byte; GlowMode and its threshold
++                // above it (patch 0033), and nothing above those.
++                assert!(words[i + 1] & 0xff <= 4, "bad BlendMode");
++                assert!((words[i + 1] >> 8) & 0xff <= 1, "bad GlowMode");
++                assert!(words[i + 1] >> 24 == 0, "LAYER_PUSH blend word past its fields");
++                if (words[i + 1] >> 8) & 0xff == 0 {
++                    assert_eq!(words[i + 1] >> 16, 0, "an alpha glow carries no threshold");
++                }
+                 for k in 2..=5 {
+                     let f = f32::from_bits(words[i + k]);
+                     assert!(f.is_finite(), "LAYER_PUSH parameter not finite: {f}");
+@@ -6379,6 +6386,74 @@ fn translucent_whites_overlapping_in_a_glow_never_darken() {
+     }
+ }
+ 
++/// A 200 x 120 glow node at (140, 76) over a mid-grey ground holding a dark
++/// plate (#0b0b0b at 85 %) and, when `line`, a white 2 px line across its
++/// full width.
++/// `glow`: None for no glow at all, Some(mode) for a 24 px white glow.
++fn bloom_scene(glow: Option<spec::GlowMode>, line: bool) -> alloc::vec::Vec<u8> {
++    let mut ui = Ui::new();
++    ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(64, 64, 64, 255) as f64);
++    let g = place_box(&mut ui, 200.0, 120.0, 140.0, 76.0);
++    if let Some(mode) = glow {
++        ui.set_prop(g, spec::prop::DROP_SHADOW_BLUR, 24.0);
++        ui.set_prop(g, spec::prop::DROP_SHADOW_COLOR, abgr(255, 255, 255, 255) as f64);
++        ui.set_prop(g, spec::prop::DROP_SHADOW_GAIN, 1.0);
++        ui.set_prop(g, spec::prop::GLOW_MODE, mode as u32 as f64);
++    }
++    let plate = ui.create_node(0);
++    ui.set_prop(plate, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(plate, spec::prop::WIDTH, 200.0);
++    ui.set_prop(plate, spec::prop::HEIGHT, 120.0);
++    ui.set_prop(plate, spec::prop::BG_COLOR, abgr(11, 11, 11, 217) as f64);
++    ui.insert_before(g, plate, 0);
++    if line {
++        let l = ui.create_node(0);
++        ui.set_prop(l, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++        ui.set_prop(l, spec::prop::INSET_L, 0.0);
++        ui.set_prop(l, spec::prop::INSET_T, 59.0);
++        ui.set_prop(l, spec::prop::WIDTH, 200.0);
++        ui.set_prop(l, spec::prop::HEIGHT, 2.0);
++        ui.set_prop(l, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++        ui.insert_before(g, l, 0);
++    }
++    ui.tick();
++    let words = ui.draw().words.clone();
++    validate_drawlist(&words);
++    raster_fb(&mut ui)
++}
++
++#[test]
++fn a_luma_glow_lights_the_bright_pixels_and_leaves_a_dark_plate_dark() {
++    // An alpha glow is CSS's drop shadow at offset 0: made from the layer's
++    // alpha, so an 85 % dark plate in a white glow has a white halo under
++    // its whole area, 15 % of it shows through, and the plate reads lighter
++    // than it does with no glow. A luma glow is made from the bright pixels'
++    // own colour and added over the content: the plate emits nothing and
++    // comes out exactly as with no glow, while a white 2 px line on it gains
++    // a halo, on the plate and past its edge.
++    let plain = bloom_scene(None, false);
++    let alpha = bloom_scene(Some(spec::GlowMode::Alpha), false);
++    let luma = bloom_scene(Some(spec::GlowMode::Luma), false);
++    let at = |fb: &[u8], x: usize, y: usize| sample_rgba(fb, x, y)[0];
++    assert!(at(&alpha, 240, 100) > at(&plain, 240, 100) + 10, "the alpha glow lightens the plate (the case a bloom is for)");
++    assert_eq!(luma, plain, "a dark plate in a luma glow is the plate with no glow, byte for byte");
++    let lined = bloom_scene(None, true);
++    let glowing = bloom_scene(Some(spec::GlowMode::Luma), true);
++    // 8 px above the line, on the plate; and 8 px past the plate's left
++    // edge, level with the line, on the grey ground — fainter there, a 2 px
++    // line's light spread over a 12 px deviation.
++    for &(x, y, by) in &[(240usize, 128usize, 4u8), (132, 136, 1)] {
++        assert!(at(&glowing, x, y) >= at(&lined, x, y) + by, "({x},{y}): no halo: {} against {}", at(&glowing, x, y), at(&lined, x, y));
++    }
++    // The line itself stays white, and nothing anywhere is darker.
++    assert_eq!(sample_rgba(&glowing, 240, 136)[..3], [255, 255, 255]);
++    for y in 0..spec::SCREEN_H as usize {
++        for x in 0..spec::SCREEN_W as usize {
++            assert!(at(&glowing, x, y) >= at(&lined, x, y), "({x},{y}) darker under a luma glow");
++        }
++    }
++}
++
+ // ---- GLYPH_STROKE (pocket-motion) ---------------------------------------------
+ 
+ /// A v4 atlas of two glyphs in `cell`-px square cells: gid 0 (tofu) empty,
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index ea542b7a..a5a994a6 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -103,6 +103,8 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("bgClip", 182, "i32"),
+     ("arcCap", 183, "i32"),
+     ("gradShape", 184, "i32"),
++    ("glowMode", 185, "i32"),
++    ("glowThreshold", 186, "f32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index 73e3f752..1bc6f788 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -718,6 +718,9 @@ function arbPx(part: string): number | null {
+  *   text-shadow-[...] / text-shadow-<color>   the same props, CSS's name for
+  *                                             them on text
+  *   glow-[B]  (a shadow at offset 0), glow-<color>, glow-gain-[N]
++ *   glow-mode-alpha|luma, glow-threshold-[0..1]
++ *                     luma: a bloom from the bright pixels' own colour,
++ *                     added over the content (pocket-motion patch 0033)
+  *   mix-blend-normal|multiply|screen|overlay|plus-lighter|add
+  *
+  * A shadow draws only with a colour; B is the CSS blur radius (deviation =
+@@ -739,6 +742,16 @@ function parseFilterUtility(tok: string, D: Decl[]): boolean {
+   }
+   if (tok.startsWith("glow-")) {
+     const rest = tok.slice(5);
++    if (rest === "mode-alpha" || rest === "mode-luma") {
++      D.push([PROP.glowMode, int(rest === "mode-luma" ? ENUMS.GlowMode.Luma : ENUMS.GlowMode.Alpha)]);
++      return true;
++    }
++    if (rest.startsWith("threshold-")) {
++      const v = arbPx(rest.slice("threshold-".length));
++      if (v === null || v < 0 || v > 1) return false;
++      D.push([PROP.glowThreshold, px(v)]);
++      return true;
++    }
+     if (rest.startsWith("gain-")) {
+       const v = arbPx(rest.slice(5)) ?? plainNum(rest.slice(5));
+       if (v === null || v < 0 || v > 16) return false;
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index 3bec6b21..17740a36 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -98,6 +98,8 @@ export interface MicroTsStyleProps {
+   bgClip?: i32;
+   arcCap?: i32;
+   gradShape?: i32;
++  glowMode?: i32;
++  glowThreshold?: MicroTsFloatInput;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index b9534a58..8b50bc71 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -727,6 +727,16 @@ describe("filter layers (pocket-motion)", () => {
+     expect(g.get(PROP.dropShadowColor)).toBe(paletteColor("amber-400")!);
+     expect(parseClassLiteral("drop-shadow-[4px]")).toBeNull();
+   });
++  test("glow-mode-luma and glow-threshold-[N]: a bloom from the bright pixels", () => {
++    const m = props(parseClassLiteral("glow-[24px] glow-white glow-mode-luma glow-threshold-[0.6]"));
++    expect(m.get(PROP.glowMode)).toBe(ENUMS.GlowMode.Luma);
++    expect(f32Of(m, PROP.glowThreshold)).toBeCloseTo(0.6, 6);
++    expect(props(parseClassLiteral("glow-[24px] glow-white glow-mode-alpha")).get(PROP.glowMode)).toBe(ENUMS.GlowMode.Alpha);
++    // An alpha glow that names no mode declares none: its record is unchanged.
++    expect(props(parseClassLiteral("glow-[24px] glow-white")).has(PROP.glowMode)).toBe(false);
++    expect(parseClassLiteral("glow-[24px] glow-white glow-threshold-[1.5]")).toBeNull();
++    expect(parseClassLiteral("glow-[24px] glow-white glow-mode-screen")).toBeNull();
++  });
+   test("mix-blend modes", () => {
+     expect(props(parseClassLiteral("mix-blend-multiply")).get(PROP.blendMode)).toBe(ENUMS.BlendMode.Multiply);
+     expect(props(parseClassLiteral("mix-blend-plus-lighter")).get(PROP.blendMode)).toBe(ENUMS.BlendMode.Add);

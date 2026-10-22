@@ -105,6 +105,7 @@ patch's own header carries the full note.
 | 0029 | motion | a radial gradient takes the ending shape it names (PROP `gradShape` 184): `bg-radial-circle`, `bg-radial-[<shape>_<size>]`, `radial-gradient(<shape> <size>, …)` — the circle or ellipse to the farthest corner or the sides — where 0019 drew the farthest-corner ellipse only. The radii are chosen in `emit_paint_push`; PAINT_PUSH and the rasteriser are unchanged | never; the header says why | new at this pin |
 | 0030 | upstream | TRI and TEX_TRI draw a pixel centre lying exactly on an edge two triangles share once, by an edge-ownership rule, where both drew it: under a translucent texture every perspective image's cell diagonal was a line blended twice | unsubmitted | new at this pin |
 | 0032 | motion | straight-alpha src-over onto a partly transparent destination (0014) and a filter layer's content over its shadow (0018) divide by the exact new alpha, where they divided by the stored, rounded one: the colour was inflated, and white over white wrapped to black — speckle where translucent whites overlap in a glow layer | never; the header says why | new at this pin |
+| 0033 | motion | `glow-mode-luma` (PROP `glowMode` 185, `glowThreshold` 186): a glow made from the layer's bright pixels' own colour above a brightness threshold and added over the content — a bloom — where `glow-*` is CSS's drop shadow, made from alpha and drawn under, which lightens a dark translucent plate. Carried in LAYER_PUSH's blend word; an alpha glow's words are unchanged | never; the header says why | new at this pin |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
 #591 since 586428b2, so the pin needs no backport. The two places the
@@ -125,7 +126,7 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Nineteen patches are class `upstream` and eleven `motion`. Of the nineteen,
+Nineteen patches are class `upstream` and twelve `motion`. Of the nineteen,
 sixteen are unsubmitted declaration- or build-layer changes; `0008` is #301,
 and `0021` and `0030` are rasteriser changes with no target-side cost.
 

@@ -2048,6 +2048,41 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
   {
+    id: "paint.glow-mode",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "glow-mode-alpha | glow-mode-luma | glow-threshold-[N]",
+    required: false,
+    defaultValue: "alpha; threshold 0.5",
+    constraint:
+      "what a glow (or any drop shadow) is made from. `glow-mode-alpha` is CSS's drop shadow: the layer's alpha, tinted, under the content — a dark translucent plate in a glow reads lighter than the ground. `glow-mode-luma` is a bloom: each pixel's own premultiplied colour, weighted by how far its brightest channel is above `glow-threshold-[t]` (0..1), offset, blurred and multiplied by gain like the shadow, tinted by the glow colour, and ADDED over the content, so it never darkens and a pixel at or below the threshold emits nothing. Neither animates (an enum and a level); the glow's radius, colour and gain still do. patches/0033, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "glow-mode-luma compiles to GlowMode.Luma (1)",
+        literals: ["glow-[24px] glow-white glow-mode-luma"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "glowMode", value: 1 } },
+      },
+      {
+        what: "glow-threshold-[0.75] compiles to glowThreshold 0.75",
+        literals: ["glow-[24px] glow-white glow-mode-luma glow-threshold-[0.75]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "glowThreshold", value: 1061158912 } },
+      },
+      {
+        what: "a threshold above 1 drops the literal",
+        literals: ["glow-[24px] glow-white glow-mode-luma glow-threshold-[2]"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+  {
     id: "paint.blend",
     group: "paint",
     declaredIn: "class literal",

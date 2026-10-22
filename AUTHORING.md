@@ -139,6 +139,8 @@ Worked examples, roughly in reading order:
   glow, a hard shadow, a rack focus keyframed as a CSS `filter`, and the five
   blend modes over a split ground; multi-stop, angled, radial and clipped-to-
   text gradients with a turning angle and a sweeping stop.
+- `compositions/bloom` — an alpha glow and a luma glow (`glow-mode-luma`)
+  side by side on the same dark translucent plate.
 - `compositions/rename-card` — shutter's opening carried six seconds further:
   a dialog, a name typed into it with the caret at each prefix's *measured*
   width (`openMeasurer` again, one `Text` per prefix), and a close built from
@@ -400,7 +402,15 @@ composited by blend mode when the node is done — CSS's `filter` and
 third length is the blur RADIUS, as in CSS, and a shadow draws only with a
 colour. `text-shadow-*` is the same shadow under the name CSS uses for text;
 `glow-[B]` is a shadow at offset 0, and `glow-gain-[N]` multiplies its
-alpha, which is how a thin line of text gets a glow that reads. Everything
+alpha, which is how a thin line of text gets a glow that reads. A shadow is
+made from alpha, so a dark translucent plate inside a glow gets a halo under
+its whole area and reads lighter than the ground; for light emitted by the
+bright pixels only — a bloom — add `glow-mode-luma`: the glow is then made
+from each pixel's own colour where its brightest channel is above
+`glow-threshold-[t]` (0..1, default 0.5) and added over the content, so the
+plate stays dark and a white rule or a cyan bar on it glows in its own
+colour (`glow-white` keeps it; another colour tints it; `patches/0033`,
+`compositions/bloom`). Everything
 but the blend mode animates: write `filter: "blur(16px) drop-shadow(0px 0px
 4px #38bdf8)"` in a keyframe, or `blur` / `dropShadowBlur` / `dropShadowGain`
 and friends one at a time — `compositions/filters` does both. Like a stroke,
