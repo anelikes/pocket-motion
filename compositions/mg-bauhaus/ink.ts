@@ -72,7 +72,9 @@ export function form(kind: Kind, w: number, h: number, rgb: [number, number, num
       // the edge wanders ±0.8 px over a few px of run; ink density varies ±3 %
       const d = sdf(kind, w, h, x, y) + 0.55 * noise(x * 0.22, y * 0.22, seed) + 0.25 * noise(x * 0.9, y * 0.9, seed + 7);
       const a = Math.max(0, Math.min(1, 0.5 - d * scale));
-      const dens = 0.975 + 0.025 * noise(x * 0.06, y * 0.06, seed + 13) + 0.012 * noise(x * 0.7, y * 0.7, seed + 29);
+      // dark ink shows its density variation as paper coming through, so it varies a third as much
+      const amp = rgb[0] + rgb[1] + rgb[2] < 120 ? 0.35 : 1;
+      const dens = 1 - amp * (0.025 - 0.025 * noise(x * 0.06, y * 0.06, seed + 13) - 0.012 * noise(x * 0.7, y * 0.7, seed + 29));
       const k = (j * W + i) * 4;
       px[k] = rgb[0];
       px[k + 1] = rgb[1];
@@ -95,6 +97,39 @@ export function paper(w: number, h: number, seed: number): Buffer {
       px[k] = 255 - dark;
       px[k + 1] = 255 - dark * 1.04;
       px[k + 2] = 255 - dark * 1.18;
+      px[k + 3] = 255;
+    }
+  }
+  return encodePNG(px, w, h);
+}
+
+/** Paper as a ground: the paper colour itself, mottled a few levels either way, drawn UNDER the inks so they print at spec. */
+export function ground(w: number, h: number, rgb: [number, number, number], seed: number): Buffer {
+  const px = new Uint8Array(w * h * 4);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const mott = noise(i / 60, j / 60, seed) * 0.6 + noise(i / 14, j / 14, seed + 3) * 0.4;
+      const d = mott * 3.2;
+      const k = (j * w + i) * 4;
+      px[k] = Math.max(0, Math.min(255, Math.round(rgb[0] + d)));
+      px[k + 1] = Math.max(0, Math.min(255, Math.round(rgb[1] + d)));
+      px[k + 2] = Math.max(0, Math.min(255, Math.round(rgb[2] + d * 1.1)));
+      px[k + 3] = 255;
+    }
+  }
+  return encodePNG(px, w, h);
+}
+
+/** A fine print grain around mid-grey, for an overlay pass over paper and ink alike. */
+export function grain(w: number, h: number, seed: number): Buffer {
+  const px = new Uint8Array(w * h * 4);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const v = 128 + (hash(i, j, seed) - 0.5) * 60 + noise(i / 3, j / 3, seed + 5) * 10;
+      const k = (j * w + i) * 4;
+      px[k] = v;
+      px[k + 1] = v;
+      px[k + 2] = v;
       px[k + 3] = 255;
     }
   }

@@ -1,29 +1,56 @@
 {
-  "f-disc-red-720x720-100.png": {
-    "linear": true
-  },
-  "f-box-black-1200x120-101.png": {
-    "linear": true
-  },
-  "f-tri-yellow-480x480-102.png": {
-    "linear": true
-  },
-  "f-box-blue-240x240-103.png": {
-    "linear": true
-  },
-  "f-half-blue-240x120-104.png": {
+  "f-box-red-120x120-106.png": {
     "linear": true
   },
   "f-quarter-black-240x240-105.png": {
     "linear": true
   },
-  "f-box-red-120x120-106.png": {
+  "f-half-blue-240x120-104.png": {
     "linear": true
   },
-  "word.png": {
+  "f-tri-yellow-480x480-102.png": {
+    "linear": true
+  },
+  "f-half-red-720x360-100.png": {
+    "linear": true
+  },
+  "f-box-black-1200x120-101.png": {
+    "linear": true
+  },
+  "f-box-blue-240x240-103.png": {
+    "linear": true
+  },
+  "f-disc-red-720x720-100.png": {
+    "linear": true
+  },
+  "f-box-red-104x104-77.png": {
+    "linear": true
+  },
+  "word-0-B.png": {
+    "linear": true
+  },
+  "word-1-A.png": {
+    "linear": true
+  },
+  "word-2-U.png": {
+    "linear": true
+  },
+  "word-3-H.png": {
+    "linear": true
+  },
+  "word-4-A.png": {
+    "linear": true
+  },
+  "word-5-U.png": {
+    "linear": true
+  },
+  "word-6-S.png": {
     "linear": true
   },
   "paper.png": {
+    "linear": true
+  },
+  "grain.png": {
     "linear": true
   }
 }
