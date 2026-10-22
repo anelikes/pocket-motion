@@ -1,17 +1,65 @@
 /**
- * Line art rasterised here, analytically, into white-on-transparent PNGs.
+ * Line art and imagery rasterised by a generator, analytically, into plates.
  *
- * The build's SVG baker tests every subsample against every contour, which is
- * fine for an icon and hopeless for a hex grid of a thousand cells or a ring
- * the width of the frame. Everything here is a distance to a curve, so its
- * cost is the pixel count: coverage is clamp(halfWidth - distance + 0.5, 0, 1).
+ * The build's SVG baker tests every subsample against every contour, which
+ * is fine for an icon and hopeless for a hex grid of a thousand cells or a
+ * ring the width of the frame. Everything here is a distance to a curve or a
+ * closed-form field, so its cost is the pixel count: line coverage is
+ * clamp(halfWidth − distance + 0.5, 0, 1). A painter returns straight RGBA;
+ * `encodePlate` turns it into the PNG an `<Image>` names, through upstream's
+ * encoder the way `glow.ts` reaches it, and `turnPlate` turns one by whole
+ * quarter turns as an exact permutation of its pixels.
+ *
+ * A turn that a picture keeps belongs in its pixels, not on its node: the
+ * core draws a turned textured quad as two triangles and their shared
+ * diagonal shows as a faint line (compositions/mg-bauhaus, the red module at
+ * rotate 540°).
  */
 
-import { encodePNG } from "../../vendor/pocketjs/tests/png.ts";
+import { rng } from "../anim/sampled.ts";
+import { pocketjsRoot } from "../runtime/boot.ts";
+
+/** Straight (not premultiplied) RGBA, row-major. */
+export interface Plate {
+  readonly width: number;
+  readonly height: number;
+  readonly rgba: Uint8Array;
+}
+
+/** The PNG bytes of a plate. */
+export async function encodePlate(plate: Plate): Promise<Uint8Array> {
+  const { encodePNG } = (await import(`${pocketjsRoot()}/tests/png.ts`)) as {
+    encodePNG: (rgba: Uint8Array, w: number, h: number) => Uint8Array;
+  };
+  return encodePNG(plate.rgba, plate.width, plate.height);
+}
+
+/** A plate turned `quarters` clockwise (y down): an exact permutation of its pixels, no resampling. */
+export function turnPlate(plate: Plate, quarters: number): Plate {
+  const q = ((quarters % 4) + 4) % 4;
+  if (q === 0) return plate;
+  const { width: W, height: H, rgba } = plate;
+  const w = q === 2 ? W : H;
+  const h = q === 2 ? H : W;
+  const out = new Uint8Array(rgba.length);
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      // destination (i, j) reads the source pixel the inverse turn lands on
+      const [si, sj] = q === 1 ? [j, H - 1 - i] : q === 2 ? [W - 1 - i, H - 1 - j] : [W - 1 - j, i];
+      const d = (j * w + i) * 4;
+      const s = (sj * W + si) * 4;
+      out[d] = rgba[s]!;
+      out[d + 1] = rgba[s + 1]!;
+      out[d + 2] = rgba[s + 2]!;
+      out[d + 3] = rgba[s + 3]!;
+    }
+  }
+  return { width: w, height: h, rgba: out };
+}
 
 const cov = (half: number, d: number) => Math.max(0, Math.min(1, half - d + 0.5));
 
-function png(w: number, h: number, alpha: (x: number, y: number) => number, rgb: [number, number, number] = [255, 255, 255]): Buffer {
+function paint(w: number, h: number, alpha: (x: number, y: number) => number, rgb: [number, number, number] = [255, 255, 255]): Plate {
   const px = new Uint8Array(w * h * 4);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -23,30 +71,30 @@ function png(w: number, h: number, alpha: (x: number, y: number) => number, rgb:
       px[i + 3] = Math.round(Math.max(0, Math.min(1, a)) * 255);
     }
   }
-  return encodePNG(px, w, h);
+  return { width: w, height: h, rgba: px };
 }
 
 /** A ring of radius r and line width lw, in a size×size image, at `scale` pixels per unit. */
-export function ring(size: number, r: number, lw: number, scale = 2): Buffer {
+export function ring(size: number, r: number, lw: number, scale = 2): Plate {
   const n = Math.round(size * scale);
   const c = n / 2;
-  return png(n, n, (x, y) => cov((lw * scale) / 2, Math.abs(Math.hypot(x - c, y - c) - r * scale)));
+  return paint(n, n, (x, y) => cov((lw * scale) / 2, Math.abs(Math.hypot(x - c, y - c) - r * scale)));
 }
 
 /** A filled disc of radius r with the given alpha. */
-export function disc(size: number, r: number, alpha: number, scale = 2, rgb: [number, number, number] = [255, 255, 255]): Buffer {
+export function disc(size: number, r: number, alpha: number, scale = 2, rgb: [number, number, number] = [255, 255, 255]): Plate {
   const n = Math.round(size * scale);
   const c = n / 2;
-  return png(n, n, (x, y) => alpha * cov(r * scale, Math.hypot(x - c, y - c)), rgb);
+  return paint(n, n, (x, y) => alpha * cov(r * scale, Math.hypot(x - c, y - c)), rgb);
 }
 
 /**
  * A pointy-top hex grid of cell radius s, line width lw, visible in the
  * annulus [rIn, rOut] about the image centre with soft edges.
  */
-export function hexGrid(w: number, h: number, s: number, lw: number, rIn: number, rOut: number): Buffer {
+export function hexGrid(w: number, h: number, s: number, lw: number, rIn: number, rOut: number): Plate {
   const sq3 = Math.sqrt(3);
-  return png(w, h, (x, y) => {
+  return paint(w, h, (x, y) => {
     const dx = x - w / 2;
     const dy = y - h / 2;
     const rr = Math.hypot(dx, dy);
@@ -81,8 +129,8 @@ export function hexGrid(w: number, h: number, s: number, lw: number, rIn: number
 }
 
 /** A line graph through `ys` (one value per `step` px), drawn `lw` thick. */
-export function trace(w: number, h: number, ys: number[], step: number, lw: number): Buffer {
-  return png(w, h, (x, y) => {
+export function trace(w: number, h: number, ys: number[], step: number, lw: number): Plate {
+  return paint(w, h, (x, y) => {
     const k = x / step;
     const i = Math.min(ys.length - 2, Math.max(0, Math.floor(k)));
     const u = k - i;
@@ -94,10 +142,10 @@ export function trace(w: number, h: number, ys: number[], step: number, lw: numb
 }
 
 /** An ellipse outline with semi-axes a, b, centred in a w×h image. */
-export function ellipse(w: number, h: number, a: number, b: number, lw: number, scale = 2): Buffer {
+export function ellipse(w: number, h: number, a: number, b: number, lw: number, scale = 2): Plate {
   const W = Math.round(w * scale);
   const H = Math.round(h * scale);
-  return png(W, H, (x, y) => {
+  return paint(W, H, (x, y) => {
     const dx = x / scale - w / 2;
     const dy = y / scale - h / 2;
     const q = Math.hypot(dx / a, dy / b);
@@ -120,7 +168,7 @@ export function polylines(
   guides: [number, number][][] = [],
   fade?: { r0: number; r1: number },
   guideAlpha = 0.28,
-): Buffer {
+): Plate {
   const alpha = new Float32Array(w * h);
   const seg = (x0: number, y0: number, x1: number, y1: number, f: (d: number, along: number) => number, reach: number) => {
     const minx = Math.max(0, Math.floor(Math.min(x0, x1) - reach));
@@ -178,7 +226,7 @@ export function polylines(
     px[k * 4 + 2] = 255;
     px[k * 4 + 3] = Math.round(Math.min(1, alpha[k]!) * f * 255);
   }
-  return encodePNG(px, w, h);
+  return { width: w, height: h, rgba: px };
 }
 
 /**
@@ -186,14 +234,8 @@ export function polylines(
  * the image centre, each brightest two thirds of the way out and gone at both
  * ends. Angles and lengths come from `seed`.
  */
-export function streaks(w: number, h: number, n: number, r0: number, r1: number, seed: number): Buffer {
-  let s = seed | 0;
-  const rnd = () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+export function streaks(w: number, h: number, n: number, r0: number, r1: number, seed: number): Plate {
+  const rnd = rng(seed);
   const lines: { th: number; a: number; b: number; lw: number; peak: number }[] = [];
   for (let i = 0; i < n; i++) {
     const a = r0 + rnd() * (r1 - r0) * 0.5;
@@ -201,7 +243,7 @@ export function streaks(w: number, h: number, n: number, r0: number, r1: number,
   }
   const cx = w / 2;
   const cy = h / 2;
-  return png(w, h, (x, y) => {
+  return paint(w, h, (x, y) => {
     const dx = x - cx;
     const dy = y - cy;
     const r = Math.hypot(dx, dy);
@@ -226,10 +268,10 @@ export function streaks(w: number, h: number, n: number, r0: number, r1: number,
  * A radar wedge: alpha fades over `span` degrees counter-clockwise behind a
  * leading edge pointing up, inside radius r. Turned by its parent.
  */
-export function wedge(size: number, r: number, span: number, maxAlpha: number, scale = 1): Buffer {
+export function wedge(size: number, r: number, span: number, maxAlpha: number, scale = 1): Plate {
   const n = Math.round(size * scale);
   const c = n / 2;
-  return png(n, n, (x, y) => {
+  return paint(n, n, (x, y) => {
     const dx = x - c;
     const dy = y - c;
     const d = Math.hypot(dx, dy);
@@ -250,26 +292,22 @@ export function wedge(size: number, r: number, span: number, maxAlpha: number, s
  * ±19.47° to the track. The same `seed` gives the same speckle with or
  * without the ship, so one can dissolve into the other.
  */
-export function sar(size: number, seed: number, ship: boolean, hdg = 72): Buffer {
-  let s = seed | 0;
-  const rnd = () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+export function sar(size: number, seed: number, ship: boolean, hdg = 72, at: [number, number] = [0.64, 0.4], k = 1, gain = 1): Plate {
+  const rnd = rng(seed);
+  // the arms' jitter draws from a stream of its own, so the speckle is the same pixel for pixel with or without a ship
+  const jitter = rng(seed ^ 0x5a5a5a5a);
   const th = (hdg * Math.PI) / 180;
   const fx = Math.sin(th); // heading, screen x
   const fy = -Math.cos(th); // heading, screen y (up is negative)
-  // the ship sits up and right of centre, so the wake it trails stays inside the chip
-  const cx = size * 0.64;
-  const cy = size * 0.4;
+  // where the ship sits, as fractions of the chip; `k` scales the hull, the wake and the speckle's grain together
+  const cx = size * at[0];
+  const cy = size * at[1];
   const kelvin = (19.47 * Math.PI) / 180;
   const px = new Uint8Array(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const speckle = -Math.log(Math.max(1e-6, rnd()));
-      const swell = 0.75 + 0.25 * Math.sin((x * 0.8 + y * 0.35) * 0.09) * Math.sin((x * 0.2 - y * 0.6) * 0.05);
+      const swell = 0.75 + 0.25 * Math.sin(((x * 0.8 + y * 0.35) * 0.09) / k) * Math.sin(((x * 0.2 - y * 0.6) * 0.05) / k);
       let v = 0.2 * swell * Math.sqrt(speckle);
       if (ship) {
         const dx = x + 0.5 - cx;
@@ -277,38 +315,38 @@ export function sar(size: number, seed: number, ship: boolean, hdg = 72): Buffer
         const along = dx * fx + dy * fy; // + ahead of the ship
         const across = -dx * fy + dy * fx;
         // the hull: a bright ellipse 36 px long, 7 wide, and its sidelobe cross
-        const hull = Math.exp(-((along / 18) ** 2) - (across / 3.5) ** 2);
-        const lobe = 0.35 * (Math.exp(-((dy / 1.2) ** 2)) * Math.exp(-((dx / 60) ** 2)) + Math.exp(-((dx / 1.2) ** 2)) * Math.exp(-((dy / 60) ** 2)));
+        const hull = Math.exp(-((along / (18 * k)) ** 2) - (across / (3.5 * k)) ** 2);
+        const lobe = 0.35 * (Math.exp(-((dy / 1.2) ** 2)) * Math.exp(-((dx / (60 * k)) ** 2)) + Math.exp(-((dx / 1.2) ** 2)) * Math.exp(-((dy / (60 * k)) ** 2)));
         const r = Math.hypot(dx, dy);
-        if (along < -10) {
+        if (along < -10 * k) {
           const back = -along;
-          const fade = Math.exp(-back / 160);
+          const fade = Math.exp(-back / (160 * k));
           // the turbulent wake: a dark band straight behind
-          v *= 1 - 0.75 * fade * Math.exp(-((across / 5) ** 2));
+          v *= 1 - 0.75 * fade * Math.exp(-((across / (5 * k)) ** 2));
           // the Kelvin arms: bright lines at ±19.47° to the track
           for (const sign of [-1, 1]) {
             const arm = Math.abs(across - sign * back * Math.tan(kelvin));
-            v += 0.55 * fade * Math.exp(-((arm / 1.6) ** 2)) * (0.6 + 0.4 * rnd());
+            v += 0.55 * fade * Math.exp(-((arm / (1.6 * k)) ** 2)) * (0.6 + 0.4 * jitter());
           }
         }
-        v += 1.4 * hull + lobe * Math.exp(-r / 90);
+        v += 1.4 * hull + lobe * Math.exp(-r / (90 * k));
       }
-      const g = Math.round(Math.max(0, Math.min(1, v)) * 255);
-      const k = (y * size + x) * 4;
-      px[k] = g;
-      px[k + 1] = g;
-      px[k + 2] = g;
-      px[k + 3] = 255;
+      const g = Math.round(Math.max(0, Math.min(1, v * gain)) * 255);
+      const o = (y * size + x) * 4;
+      px[o] = g;
+      px[o + 1] = g;
+      px[o + 2] = g;
+      px[o + 3] = 255;
     }
   }
-  return encodePNG(px, size, size);
+  return { width: size, height: size, rgba: px };
 }
 
 /**
  * A vessel's track: a filled dot on each AIS ping joined by a thin solid
  * line, then the silent leg after the last ping as a dashed line.
  */
-export function track(w: number, h: number, pings: [number, number][], silent: [number, number][]): Buffer {
+export function track(w: number, h: number, pings: [number, number][], silent: [number, number][]): Plate {
   const solid = polylineCoverage(w, h, [pings], (d) => cov(0.8, d));
   const dashed = polylineCoverage(w, h, [silent], (d, along) => (along % 14 < 8 ? cov(1, d) : 0));
   const px = new Uint8Array(w * h * 4);
@@ -322,7 +360,7 @@ export function track(w: number, h: number, pings: [number, number][], silent: [
     px[k * 4 + 2] = 255;
     px[k * 4 + 3] = Math.round(Math.min(1, a) * 255);
   }
-  return encodePNG(px, w, h);
+  return { width: w, height: h, rgba: px };
 }
 
 /** Per-pixel coverage of polylines under `f(distance, distanceAlongLine)`, visiting only pixels near each segment. */
