@@ -8,6 +8,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/bloom": {
+      "failures": [],
+      "nodes": 6,
+      "named": 6,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/captions/clip-wipe": {
       "failures": [],
       "nodes": 28,
