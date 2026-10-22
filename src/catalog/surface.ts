@@ -2087,11 +2087,11 @@ export const SURFACE: readonly CapabilityRow[] = [
     id: "paint.gradient",
     group: "paint",
     declaredIn: "class literal",
-    key: "via-<color> | from-N% via-N% to-N% | bg-linear-N | bg-linear-[Ndeg] | bg-linear-to-t|r|b|l | bg-radial | bg-[linear-gradient(…)] | bg-[radial-gradient(…)]",
+    key: "via-<color> | from-N% via-N% to-N% | bg-linear-N | bg-linear-[Ndeg] | bg-linear-to-t|r|b|l | bg-radial | bg-radial-circle | bg-radial-[<shape>_<size>] | bg-[linear-gradient(…)] | bg-[radial-gradient(…)]",
     required: false,
     defaultValue: "legacy two-stop gradient",
     constraint:
-      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial (the farthest-corner ellipse about the centre; no other shape or centre). Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does. A gradient upstream draws itself — `bg-gradient-to-*` with from, at most one via and to — compiles as upstream compiles it: `via-<color>` is `gradVia` at `gradViaPos` 0.5 (`via-N%` moves it), drawn on the legacy path as two GRAD_RECTs split at the stop (99af2166), and a literal with no via keeps the two-stop path word for word. Anything more takes the paint, where a via is `gradVia1`, at 50% unless positioned; no literal carries both. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
+      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial about the box centre: the farthest-corner ellipse by default, `bg-radial-circle` the farthest-corner circle, and `bg-radial-[<shape>_<size>]` or `radial-gradient(<shape> <size>, …)` any of CSS's `circle`/`ellipse` with `closest-side`/`farthest-side`/`closest-corner`/`farthest-corner` (patches/0029; about the centre that is five shapes). A length, a percentage or `at <position>` drops the literal: there is no other centre. Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does. A gradient upstream draws itself — `bg-gradient-to-*` with from, at most one via and to — compiles as upstream compiles it: `via-<color>` is `gradVia` at `gradViaPos` 0.5 (`via-N%` moves it), drawn on the legacy path as two GRAD_RECTs split at the stop (99af2166), and a literal with no via keeps the two-stop path word for word. Anything more takes the paint, where a via is `gradVia1`, at 50% unless positioned; no literal carries both. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -2133,6 +2133,24 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["bg-radial from-white to-black"],
         fromClassAttribute: true,
         outcome: { declares: { prop: "gradKind", value: 2 } },
+      },
+      {
+        what: "bg-radial-circle compiles to GradShape.Circle (1)",
+        literals: ["bg-radial-circle from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradShape", value: 1 } },
+      },
+      {
+        what: "radial-gradient(circle closest-side, …) compiles to GradShape.CircleClosestSide (3)",
+        literals: ["bg-[radial-gradient(circle_closest-side,#ffffff,#000000)]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradShape", value: 3 } },
+      },
+      {
+        what: "a radial centre the paint cannot place drops the literal",
+        literals: ["bg-radial-[circle_at_top] from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { dropsLiteral: true },
       },
       {
         what: "an arbitrary gradient's unpositioned middle stop is spread by CSS's rule",
