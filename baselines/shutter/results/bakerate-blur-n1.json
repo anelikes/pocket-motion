@@ -1,0 +1,15 @@
+{
+  "rates": [
+    60,
+    240
+  ],
+  "n": 1,
+  "offsets": [
+    0
+  ],
+  "frames": 90,
+  "framesDiffering": 0,
+  "differ": [],
+  "digestA": "015b265357fe689cc97085c63027de2afe408dd749a5943f104e972462134725",
+  "digestB": "015b265357fe689cc97085c63027de2afe408dd749a5943f104e972462134725"
+}
