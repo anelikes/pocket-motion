@@ -60,13 +60,19 @@ export const ROWS = 4;
 /** R, U, D, L roll about a corner; S spins about the module's own centre; F folds it over its diagonal; C swings it a quarter about the frame centre. */
 export type Act = "R" | "U" | "D" | "L" | "S" | "F" | "C";
 /** Where the module lands on b1, and its moves, one per beat, b2 to b12. */
-export const START: [number, number] = [0, 0];
-export const ACTS: Act[] = ["R", "R", "D", "S", "C", "R", "R", "U", "F", "U", "L"];
+export const START: [number, number] = [0, 1];
+/**
+ * The swing is from cell (1, 0): a cell whose own corners are all clear of the
+ * frame centre, so the move is a 380 px arc about the centre and cannot be
+ * read as a roll about a corner (from (2, 1) it could, the centre being that
+ * cell's own bottom-left corner).
+ */
+export const ACTS: Act[] = ["R", "U", "S", "C", "R", "D", "F", "L", "L", "U", "U"];
 /**
  * What each move leaves, in its ink; null where the cell already holds what a spin or a fold left. The inks are
  * chosen so that nothing the module passes, and nothing in the finished poster, sits beside its own ink.
  */
-const LEAVES: (Ink | null)[] = ["black", "blue", "yellow", "red", null, "black", "yellow", "red", "yellow", null, "blue"];
+const LEAVES: (Ink | null)[] = ["black", "blue", "black", null, "yellow", "blue", "yellow", null, "red", "yellow", "black"];
 /** The corner each roll turns about, as a fraction of the cell, and which way. */
 export type Roll = Exclude<Act, "S" | "F" | "C">;
 export const PIVOT: Record<Roll, [number, number]> = { R: [1, 1], U: [1, 0], D: [0, 1], L: [0, 1] };

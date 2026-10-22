@@ -91,8 +91,8 @@ const actEnd = (k: number) => b(2 + k);
 const T_DROP = b(12); // the last roll lands on the drop
 const T_POSTER = b(16); // 8.0 s: the finished poster
 const T_TYPE = b(16);
-const T_TAG = b(18);
-const T_LAST = b(19); // the module turns once more, about its own centre, on the last accent
+const T_TAG = b(17.5);
+const T_LAST = b(18); // the module turns once more, about its own centre; from 9.0 s the poster holds
 
 /** A roll tips slowly and lands hard: power-in, arriving at speed on the beat. */
 const tip = (u: number) => u ** 2.2;
@@ -132,12 +132,18 @@ function misreg(f: Form): Form {
   const [dx, dy] = MISREG[f.ink];
   return { ...f, x: f.x + dx, y: f.y + dy };
 }
+/** A poster form as printed: misregistered, and two pixels larger on every side, so two plates' offsets never open a hairline of paper between neighbours. */
+const OVER = 2;
+function printed(f: Form): Form {
+  const m = misreg(f);
+  return { ...m, x: m.x - OVER, y: m.y - OVER, w: m.w + 2 * OVER, h: m.h + 2 * OVER };
+}
 const seedOf = (id: string) => 100 + POSTER.findIndex((f) => f.id === id);
 
 /** The poster drawn statically. */
 function posterNodes(): string {
   return POSTER.map((f0) => {
-    const f = misreg(f0);
+    const f = printed(f0);
     return `<View class="absolute left-[${f.x}px] top-[${f.y}px] w-[${f.w}px] h-[${f.h}px]">${formInner(f, seedOf(f.id))}</View>`;
   }).join("");
 }
@@ -172,18 +178,21 @@ function forms(): string {
 
   // what each move leaves is under the module as it starts to move: a roll's trailing edge uncovers its quarter,
   // and a spin's disc is uncovered by the move after it
+  // a roll's form is under the module as it starts to move, so its trailing edge uncovers it; a spin's or a fold's is
+  //   uncovered by the move after it, so it appears only then (shown earlier, it peeked out under the module's edge)
   const left = LEFT.flatMap((f0, k) => {
     if (!f0) return [];
-    const f = misreg(f0);
+    const f = printed(f0);
     const el = new El(reg, f, { op: 0 });
-    el.set(actEnd(k) - ROLL, { op: 1 });
+    const stays = ACTS[k] === "S" || ACTS[k] === "F";
+    el.set(stays ? actEnd(k + 1) - ROLL : actEnd(k) - ROLL, { op: 1 });
     return [{ el, f }];
   });
   // the drop hands the poster to the cells; the finished poster takes it back on b16, with the circle the drop left
   //   (the module's own hand-over is its last landing, above: an element's keys are written in time order)
   for (const l of left) l.el.set(T_DROP, { op: 0 }).set(T_POSTER, { op: 1 });
   mod.set(T_POSTER, { op: 1 });
-  const circle = misreg(CIRCLE);
+  const circle = printed(CIRCLE);
   const circleEl = new El(reg, circle, { op: 0 });
   circleEl.set(T_POSTER, { op: 1 });
   // b19 · the module turns once more about its own centre, the last accent
@@ -201,8 +210,8 @@ function forms(): string {
 function swingPivot(): string {
   const k = ACTS.indexOf("C");
   if (k < 0 || STATIC) return "";
-  const a = `animate-${reg.anim(reg.window(actEnd(k) - ROLL - 4, actEnd(k) + 4))}`;
-  return `<View class="absolute left-[${CX - 16}px] top-[${CY - 2}px] w-[32px] h-[4px] bg-[${INK.black}] ${a}" /><View class="absolute left-[${CX - 2}px] top-[${CY - 16}px] w-[4px] h-[32px] bg-[${INK.black}] ${a}" />`;
+  const a = `animate-${reg.anim(reg.window(actEnd(k) - ROLL - 8, actEnd(k) + 6))}`;
+  return `<View class="absolute left-[${CX - 12}px] top-[${CY - 12}px] ${a}">${img(png("pivot", print.form("disc", 24, 24, rgb(INK.black), 12, 2)), 24, 24)}</View><View class="absolute left-[${CX - 22}px] top-[${CY - 22}px] w-[44px] h-[44px] border-[${INK.black}] border-2 rounded-[22px] ${a}" />`;
 }
 
 /**
@@ -268,9 +277,9 @@ const BLOCK_INK: Record<string, Ink> = { "-1,0": "red", "0,0": "yellow", "1,0": 
 const BLEED = 1;
 function cells(): string {
   if (STATIC) return "";
-  const placed: (Form & print.Placed)[] = [...TRAIL, MODULE].map((f0) => {
-    const f = misreg(f0);
-    return { ...f, rot: f.rot ?? 0, rgb: rgb(INK[f.ink]), seed: seedOf(f.id) };
+  const placed: (Form & print.Placed & { cell: [number, number] })[] = [...TRAIL, MODULE].map((f0) => {
+    const f = printed(f0);
+    return { ...f, rot: f.rot ?? 0, rgb: rgb(INK[f.ink]), seed: seedOf(f.id), cell: [f0.x, f0.y] };
   });
   // the field's quarter in each ink, sliced out of a whole disc so its bleed is ink where the disc continues
   const fieldFiles = new Map<Ink, string[]>();
@@ -306,15 +315,14 @@ function cells(): string {
       rot.push([t, `${dir * 90 * k}deg`], [t + TURN, `${dir * 90 * (k + 1)}deg`]);
       vis.push([t, "1"], [t + TURN, "0"]);
     }
-    // clipped to its own cell (a scissor, axis-aligned): a turning square is wider than its cell, and two
-    //   neighbours turning opposite ways fused into hourglass blobs
-    return `<View class="absolute left-[${g.x}px] top-[${g.y}px] w-[${MOD}px] h-[${MOD}px] overflow-hidden"><View class="absolute left-[${-BLEED}px] top-[${-BLEED}px] w-[${MOD + 2 * BLEED}px] h-[${MOD + 2 * BLEED}px] origin-center animate-${reg.anim([reg.prop("rotate", rot, ease), reg.step("opacity", vis)])}">${pic(file)}</View></View>`;
+    // unclipped: clipped to its cell, a quarter mid-turn read as a hexagon or a bow-tie, which looks like a fault
+    return view(g.x, g.y, file, [reg.prop("rotate", rot, ease), reg.step("opacity", vis)]);
   };
   for (const g of grid) {
     const [cx, cy] = centreOf(g.x, g.y);
     const dir = g.px === g.py ? 1 : -1;
     const starts = WAVES.map((w) => w.at + w.delay(cx, cy, g.j));
-    const here = placed.filter((f) => f.x - MISREG[f.ink][0] === g.x && f.y - MISREG[f.ink][1] === g.y);
+    const here = placed.filter((f) => f.cell[0] === g.x && f.cell[1] === g.y);
     if (here.length) {
       const slice = print.cell(here, g.x, g.y, MOD, 2, BLEED);
       const files = [0, 1, 2, 3].map((q) => png(`cell-${g.x}-${g.y}-q${q}`, turnPlate(slice, q)));
@@ -340,16 +348,16 @@ function cells(): string {
     //   the far ones follow a frame a step
     const tin = T_DROP - FLIP + 2 * Math.max(0, steps - 4);
     const [s1, s2] = [starts[1]!, starts[2]!];
-    out.push(view(g.x, g.y, turned(0), [reg.window(tin + 1, s1), reg.prop("scaleX", [[tin, "0"], [tin + FLIP, "1"]], "cubic-bezier(0.55,0,1,0.45)")]));
+    out.push(view(g.x, g.y, turned(0), [reg.window(tin, s1), reg.prop("scaleX", [[tin, "0.12"], [tin + FLIP, "1"]], "cubic-bezier(0.55,0,1,0.45)")]));
     out.push(view(g.x, g.y, turned(1), [reg.window(s1 + TURN, s2)]));
     if (g.circle) {
       const n = (g.py === 0 ? (g.px === 0 ? 0 : 1) : g.px === 1 ? 2 : 3);
       const ft = circleFlip(n);
-      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, ft + FLIP / 2), reg.prop("scaleX", [[ft, "1"], [ft + FLIP / 2, "0"]], ease)]));
-      out.push(view(g.x, g.y, fieldOf("blue")[(((q0 + 2 * dir) % 4) + 4) % 4]!, [reg.window(ft + FLIP / 2, T_POSTER), reg.prop("scaleX", [[ft + FLIP / 2, "0"], [ft + FLIP, "1"]], ease)]));
+      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, ft + FLIP / 2), reg.prop("scaleX", [[ft, "1"], [ft + FLIP / 2, "0.12"]], ease)]));
+      out.push(view(g.x, g.y, fieldOf("blue")[(((q0 + 2 * dir) % 4) + 4) % 4]!, [reg.window(ft + FLIP / 2, T_POSTER), reg.prop("scaleX", [[ft + FLIP / 2, "0.12"], [ft + FLIP, "1"]], ease)]));
     } else {
       const fo = T_OUT + 2 * (7 - steps);
-      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, fo + FLIP), reg.prop("scaleX", [[fo, "1"], [fo + FLIP, "0"]], ease)]));
+      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, fo + FLIP), reg.prop("scaleX", [[fo, "1"], [fo + FLIP, "0.12"]], ease)]));
     }
     out.push(turning(g, files[q0]!, dir, [[s1, 0], [s2, 1]]));
   }
@@ -383,7 +391,10 @@ function type(): string {
     // upright in the gutter: the letter turned a quarter clockwise about the corner it will tip over
     const px = WORD_X + MOD;
     const el = new El(reg, home, { cx: px + M, cy: foot - M, rot: 90, op: 0 });
-    el.set(t - 8, { op: 1 }).orbit(t - 6, t, px, foot, -90, tip);
+    el.set(t - 6, { op: 0 }).orbit(t - 6, t, px, foot, -90, tip);
+    // first seen two ticks into the tip, already turning, and from then on to the end
+    for (const [k, v] of el.keys) if (k >= t - 4) el.keys.set(k, { ...v, op: 1 });
+    el.s.op = 1;
     el.set(t + 1, { rot: 0 });
     out.push(el.node(img(file, MOD, MOD)));
   });
@@ -392,26 +403,24 @@ function type(): string {
   const S = INK.black;
   const tx = cellX(2) + M;
   const ty = gy(6);
-  const RW = 3 * MOD; // the rule runs from column 9 to the grid's last line but one, x 1800
+  const RW = cellX(5) - tx; // the rule ends on the last module edge of the forms, x 1680
   const rule = (a: string) => `<View class="absolute left-[${tx}px] top-[${ty}px] w-[${RW}px] h-[3px] bg-[${S}] origin-left ${a}" />`;
   const track = (px: number) => reg.anim(reg.prop("letterSpacing", [[0, `${px}px`], [TICKS, `${px}px`]]));
   const dot = `<Text class="font-bold text-[30px] text-[${S}]">{"·"}</Text>`;
   const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[30px] text-[${S}]">${jsx(w)}</Text>`;
   const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}]">${jsx(w)}</Text>`;
-  const lines = [
-    `<View class="flex-row items-center gap-[16px]">${en("FORM")}${dot}${en("FARBE")}${dot}${en("FUNKTION")}</View>`,
-    `<View class="flex-row items-center gap-[16px]">${zh("形式")}${dot}${zh("色彩")}${dot}${zh("功能")}</View>`,
-  ];
+  const col = (w: string, z: string, last = false) => `<View class="flex-col gap-[6px] w-[${last ? 200 : 150}px]">${en(w)}${zh(z)}</View>`;
+  const lines = [`<View class="flex-row items-start">${col("FORM", "形式")}${col("FARBE", "色彩")}${col("FUNKTION", "功能", true)}</View>`];
   if (STATIC) {
     out.push(rule(""));
-    lines.forEach((l, i) => out.push(`<View class="absolute left-[${tx}px] top-[${ty + 24 + i * 56}px]">${l}</View>`));
+    lines.forEach((l) => out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22}px]">${l}</View>`));
   } else {
     out.push(rule(`animate-${reg.anim([reg.prop("scaleX", [[T_TAG - 8, "0"], [T_TAG, "1"]], "cubic-bezier(0.45,0,0.55,1)")])}`));
     lines.forEach((l, i) => {
       const t = T_TAG + 4 + 8 * i;
-      const el = new El(reg, { x: 0, y: 0, w: RW, h: 56 }, { cy: 28 + 56 });
-      el.to(t - 6, t, { cy: 28 }, outCubic);
-      out.push(`<View class="absolute left-[${tx}px] top-[${ty + 24 + i * 56}px] w-[${RW}px] h-[56px] overflow-hidden">${el.node(l)}</View>`);
+      const el = new El(reg, { x: 0, y: 0, w: RW, h: 90 }, { cy: 45 + 90 });
+      el.to(t - 6, t, { cy: 45 }, outCubic);
+      out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22 + i * 90}px] w-[${RW}px] h-[90px] overflow-hidden">${el.node(l)}</View>`);
     });
   }
   return out.join("\n    ");
