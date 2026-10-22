@@ -292,7 +292,22 @@ export function wedge(size: number, r: number, span: number, maxAlpha: number, s
  * ±19.47° to the track. The same `seed` gives the same speckle with or
  * without the ship, so one can dissolve into the other.
  */
-export function sar(size: number, seed: number, ship: boolean, hdg = 72, at: [number, number] = [0.64, 0.4], k = 1, gain = 1): Plate {
+export interface SarScene {
+  /** Gain on the sea clutter alone (1 = fully developed speckle at the base level). */
+  readonly clutter?: number;
+  /** Brightness of the two Kelvin arms (0.55 by default). */
+  readonly arms?: number;
+  /** The transverse waves between the arms, as chevrons across the track. */
+  readonly chevrons?: boolean;
+  /** Land beyond a coastline that runs across the chip: brighter, rougher return; `side` is the edge it hugs. */
+  readonly shore?: { readonly side: "top" | "left"; readonly depth: number };
+  /** Other vessels: small bright returns at chip fractions. */
+  readonly others?: readonly [number, number][];
+  /** A soft round edge: whole inside `r0`, gone by `r1`, as fractions of the chip's half-width. */
+  readonly vignette?: { readonly r0: number; readonly r1: number };
+}
+
+export function sar(size: number, seed: number, ship: boolean, hdg = 72, at: [number, number] = [0.64, 0.4], k = 1, gain = 1, scene: SarScene = {}): Plate {
   const rnd = rng(seed);
   // the arms' jitter draws from a stream of its own, so the speckle is the same pixel for pixel with or without a ship
   const jitter = rng(seed ^ 0x5a5a5a5a);
@@ -308,7 +323,15 @@ export function sar(size: number, seed: number, ship: boolean, hdg = 72, at: [nu
     for (let x = 0; x < size; x++) {
       const speckle = -Math.log(Math.max(1e-6, rnd()));
       const swell = 0.75 + 0.25 * Math.sin(((x * 0.8 + y * 0.35) * 0.09) / k) * Math.sin(((x * 0.2 - y * 0.6) * 0.05) / k);
-      let v = 0.2 * swell * Math.sqrt(speckle);
+      let v = 0.2 * swell * Math.sqrt(speckle) * (scene.clutter ?? 1);
+      if (scene.shore) {
+        // the coastline wanders a few percent of the chip; land returns brighter and rougher than sea
+        const along = scene.shore.side === "top" ? x / size : y / size;
+        const across = scene.shore.side === "top" ? y / size : x / size;
+        const edge = scene.shore.depth + 0.035 * Math.sin(along * 19 + 1.3) + 0.02 * Math.sin(along * 47 + 0.4);
+        if (across < edge) v = 0.42 * (0.75 + 0.25 * Math.sin(x * 0.031 + 2.1 * Math.sin(y * 0.023))) * Math.sqrt(speckle);
+        else if (across < edge + 0.006) v += 0.5;
+      }
       if (ship) {
         const dx = x + 0.5 - cx;
         const dy = y + 0.5 - cy;
@@ -326,17 +349,33 @@ export function sar(size: number, seed: number, ship: boolean, hdg = 72, at: [nu
           // the Kelvin arms: bright lines at ±19.47° to the track
           for (const sign of [-1, 1]) {
             const arm = Math.abs(across - sign * back * Math.tan(kelvin));
-            v += 0.55 * fade * Math.exp(-((arm / (1.6 * k)) ** 2)) * (0.6 + 0.4 * jitter());
+            v += (scene.arms ?? 0.55) * fade * Math.exp(-((arm / (1.6 * k)) ** 2)) * (0.6 + 0.4 * jitter());
+          }
+          // the transverse waves: crests across the track between the arms, a wavelength apart
+          if (scene.chevrons && Math.abs(across) < back * Math.tan(kelvin)) {
+            const crest = Math.cos((2 * Math.PI * (back + 0.35 * Math.abs(across))) / (14 * k));
+            v += 0.22 * fade * Math.max(0, crest) ** 6;
           }
         }
         v += 1.4 * hull + lobe * Math.exp(-r / (90 * k));
+      }
+      // other vessels: small hulls with no wake, along their own random headings
+      for (const [ox, oy] of scene.others ?? []) {
+        const d = Math.hypot(x + 0.5 - ox * size, y + 0.5 - oy * size);
+        v += 1.1 * Math.exp(-((d / (4 * k)) ** 2));
       }
       const g = Math.round(Math.max(0, Math.min(1, v * gain)) * 255);
       const o = (y * size + x) * 4;
       px[o] = g;
       px[o + 1] = g;
       px[o + 2] = g;
-      px[o + 3] = 255;
+      let alpha = 1;
+      if (scene.vignette) {
+        const d = Math.hypot(x + 0.5 - size / 2, y + 0.5 - size / 2) / (size / 2);
+        const u = Math.max(0, Math.min(1, (scene.vignette.r1 - d) / (scene.vignette.r1 - scene.vignette.r0)));
+        alpha = u * u * (3 - 2 * u);
+      }
+      px[o + 3] = Math.round(alpha * 255);
     }
   }
   return { width: size, height: size, rgba: px };
