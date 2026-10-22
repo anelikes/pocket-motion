@@ -14,6 +14,7 @@ import {
   type OutputFormat,
 } from "../../render/encode.ts";
 import type { SidecarShutter } from "../../manifest/sidecar.ts";
+import type { InputIdentity } from "../../render/identity.ts";
 import { describeShutter, pocketjsRoot } from "../../runtime/boot.ts";
 import { framesToMs, mixGraph, soundDeclared } from "../../sound/mix.ts";
 import { muxSound } from "../../sound/mux.ts";
@@ -39,6 +40,31 @@ import {
   type CommandResult,
   type GlobalFlags,
 } from "../types.ts";
+import { compositionIdentity } from "./trace.ts";
+
+/** What `render --json` prints for one finished render. */
+export interface RenderJson {
+  ok: true;
+  outputPath: string;
+  format: OutputFormat;
+  alpha: boolean;
+  alphaFloor?: number;
+  frames: number;
+  /** The frame-sequence digest — the same value `trace` reports. */
+  digest: string;
+  /** `trace`'s input identity. Absent for a `--spec` job (see `run`). */
+  identity?: InputIdentity;
+  elapsedMs: number;
+  msPerFrame: number;
+  shutter?: SidecarShutter;
+  soundSkipped?: string;
+  sound?: {
+    sha256: string;
+    bytes: number;
+    ffmpeg: string;
+    manifestPath: string;
+  };
+}
 
 export interface RenderOptions {
   readonly dir: string;
@@ -233,25 +259,16 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       onFrameBoundary: (frame) => bound.footage?.present(frame),
     });
 
-    const payload: {
-      ok: true;
-      outputPath: string;
-      format: OutputFormat;
-      alpha: boolean;
-      alphaFloor?: number;
-      frames: number;
-      digest: string;
-      elapsedMs: number;
-      msPerFrame: number;
-      shutter?: SidecarShutter;
-      soundSkipped?: string;
-      sound?: {
-        sha256: string;
-        bytes: number;
-        ffmpeg: string;
-        manifestPath: string;
-      };
-    } = {
+    // The identity `trace` would report, from the same function, so a delivery
+    // carries the pair a reader on another machine compares against. Not for
+    // a job: `--spec` builds in a staged directory whose name is random and
+    // lands in `build.json`'s argv, so two renders of one job would report two
+    // identities — the reason `trace` does not accept `--spec` either.
+    const identity = staged
+      ? undefined
+      : await compositionIdentity(c, bound.footage?.hashes);
+
+    const payload: RenderJson = {
       ok: true,
       outputPath: result.outputPath ?? outputPath,
       format,
@@ -259,6 +276,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       ...(result.alphaFloor !== undefined ? { alphaFloor: result.alphaFloor } : {}),
       frames: result.frames,
       digest: result.digest,
+      ...(identity ? { identity } : {}),
       elapsedMs: result.elapsedMs,
       msPerFrame: result.msPerFrame,
       ...(c.shutter ? { shutter: c.shutter } : {}),
@@ -267,6 +285,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
     const stdoutLines = [
       `render ok — ${result.frames} frames → ${payload.outputPath} (${format})`,
       `digest ${result.digest}`,
+      ...(identity ? [`identity ${identity.digest}`] : []),
       `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
       ...(c.shutter
         ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure of ${c.shutter.samples} renders`]
