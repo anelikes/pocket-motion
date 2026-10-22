@@ -74,6 +74,12 @@ export type Stops = Record<string, Record<string, string>>;
 
 /** The largest key count a single track is given; the baker's limit is 255 segments. */
 export const MAX_KEYS = 250;
+/**
+ * Ticks between the keys of a move. Two: a one-tick segment is how a cut is
+ * written (`set`), and a declared shutter (patches/0034) never blurs across
+ * one, so a move keyed every tick would stay sharp under it.
+ */
+export const MOVE_STEP = 2;
 
 export class Reg {
   readonly keyframes: Record<string, Stops> = {};
@@ -124,6 +130,11 @@ export class Reg {
    * holds before the first key and the last after the last.
    */
   prop(prop: string, keys: [number, string][], easing = "linear"): string {
+    // a key past the film's end clamps onto 100 %, where a later key overwrites it: the track then ramps from its
+    // first value to the last over the whole film. A typed line whose last glyphs fell after the final tick was
+    // faintly on screen from the first second as a stray "108".
+    const late = keys.find(([t]) => t > this.ticks);
+    if (late) throw new Error(`Reg.prop(${prop}): a key at tick ${late[0]}, past the film's ${this.ticks}; it would ramp the whole film toward its value`);
     const sorted = [...keys].sort((a, b) => a[0] - b[0]);
     if (sorted.length > MAX_KEYS) throw new Error(`Reg.prop(${prop}): ${sorted.length} keys; a track holds at most 255 segments — sample more coarsely`);
     const stops: Stops = {};
@@ -224,11 +235,17 @@ export class El {
     return this;
   }
 
-  /** A move to `p` over [t0, t1], keyed every tick through `ease`. */
+  /**
+   * A move to `p` over [t0, t1], keyed every second tick through `ease` (and on
+   * t1). A declared shutter (patches/0034) never blurs across a one-tick
+   * segment — that is how a cut is written — so a move keyed every tick would
+   * read to it as a run of cuts and stay sharp.
+   */
   to(t0: number, t1: number, p: Partial<State>, ease = inOut) {
     const a = { ...this.s };
     const z = { ...a, ...p };
     for (let t = t0; t <= t1; t++) {
+      if ((t - t0) % MOVE_STEP !== 0 && t !== t1) continue;
       const u = ease((t - t0) / Math.max(1, t1 - t0));
       this.s = { cx: lerp(a.cx, z.cx, u), cy: lerp(a.cy, z.cy, u), rot: lerp(a.rot, z.rot, u), sx: lerp(a.sx, z.sx, u), sy: lerp(a.sy, z.sy, u), op: lerp(a.op, z.op, u) };
       this.key(t);
@@ -237,8 +254,8 @@ export class El {
     return this;
   }
 
-  /** Follow an arbitrary path, keyed every `every` ticks and at both ends. */
-  path(t0: number, t1: number, f: (t: number) => Partial<State>, every = 1) {
+  /** Follow an arbitrary path, keyed every `every` ticks (every second, so a shutter can blur it) and at both ends. */
+  path(t0: number, t1: number, f: (t: number) => Partial<State>, every = MOVE_STEP) {
     // hold until the path starts — unless a key already sits there: set(t0, …) has just written the state
     // BEFORE its change at t0 - 1, and re-keying it with the current state would ramp the change in from tick 0
     if (t0 > 0 && !this.keys.has(t0 - 1)) this.key(t0 - 1);
@@ -256,6 +273,7 @@ export class El {
     const dx = a.cx - px;
     const dy = a.cy - py;
     for (let t = t0; t <= t1; t++) {
+      if ((t - t0) % MOVE_STEP !== 0 && t !== t1) continue;
       const u = ease((t - t0) / Math.max(1, t1 - t0));
       const th = (deg * u * Math.PI) / 180;
       this.s = { ...a, cx: px + dx * Math.cos(th) - dy * Math.sin(th), cy: py + dx * Math.sin(th) + dy * Math.cos(th), rot: a.rot + deg * u };

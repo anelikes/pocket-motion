@@ -57,29 +57,41 @@ export const cellY = (j: number) => gy(2 * j);
 export const COLS = 6;
 export const ROWS = 4;
 
-/** R, U, D, L roll about a corner; S spins about the module's own centre; F folds it over its diagonal. */
-export type Act = "R" | "U" | "D" | "L" | "S" | "F";
+/** R, U, D, L roll about a corner; S spins about the module's own centre; F folds it over its diagonal; C swings it a quarter about the frame centre. */
+export type Act = "R" | "U" | "D" | "L" | "S" | "F" | "C";
 /** Where the module lands on b1, and its moves, one per beat, b2 to b12. */
-export const START: [number, number] = [0, 0];
-export const ACTS: Act[] = ["R", "R", "D", "S", "D", "R", "R", "U", "F", "U", "L"];
+export const START: [number, number] = [0, 1];
+/**
+ * The swing is from cell (1, 0): a cell whose own corners are all clear of the
+ * frame centre, so the move is a 380 px arc about the centre and cannot be
+ * read as a roll about a corner (from (2, 1) it could, the centre being that
+ * cell's own bottom-left corner).
+ */
+export const ACTS: Act[] = ["R", "U", "S", "C", "R", "D", "F", "L", "L", "U", "U"];
 /**
  * What each move leaves, in its ink; null where the cell already holds what a spin or a fold left. The inks are
  * chosen so that nothing the module passes, and nothing in the finished poster, sits beside its own ink.
  */
-const LEAVES: (Ink | null)[] = ["black", "blue", "yellow", "red", null, "black", "yellow", "red", "yellow", null, "blue"];
+const LEAVES: (Ink | null)[] = ["black", "blue", "black", null, "yellow", "blue", "yellow", null, "red", "yellow", "black"];
 /** The corner each roll turns about, as a fraction of the cell, and which way. */
-export type Roll = Exclude<Act, "S" | "F">;
+export type Roll = Exclude<Act, "S" | "F" | "C">;
 export const PIVOT: Record<Roll, [number, number]> = { R: [1, 1], U: [1, 0], D: [0, 1], L: [0, 1] };
 export const TURN: Record<Roll, number> = { R: 90, U: 90, D: 90, L: -90 };
 /** The quarter disc a roll sweeps, as the `quarter` form's turn: its corner on the pivot (BL 0, TL 1, TR 2, BR 3). */
 export const SWEEP: Record<Roll, number> = { R: 3, U: 2, D: 0, L: 0 };
-const STEP: Record<Act, [number, number]> = { R: [1, 0], U: [0, -1], D: [0, 1], L: [-1, 0], S: [0, 0], F: [0, 0] };
+const STEP: Record<Exclude<Act, "C">, [number, number]> = { R: [1, 0], U: [0, -1], D: [0, 1], L: [-1, 0], S: [0, 0], F: [0, 0] };
+/**
+ * A quarter turn clockwise about the frame centre maps the module's grid onto
+ * itself: the frame centre sits a cell and a half from the grid's top-left
+ * cell centre on both axes, so cell (i, j) goes to (3 - j, i).
+ */
+export const swing = ([i, j]: [number, number]): [number, number] => [3 - j, i];
 
 /** The module's cell before each move, and after the last. */
 export const PATH: [number, number][] = ACTS.reduce<[number, number][]>(
   (acc, a) => {
     const [i, j] = acc[acc.length - 1]!;
-    acc.push([i + STEP[a][0], j + STEP[a][1]]);
+    acc.push(a === "C" ? swing([i, j]) : [i + STEP[a][0], j + STEP[a][1]]);
     return acc;
   },
   [START],

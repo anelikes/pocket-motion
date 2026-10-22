@@ -6,7 +6,7 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 
 mount(() => (
   <View class="w-full h-full bg-[#F1E9DA]">
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-ldh" src="paper.png" />
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-ld2" src="paper.png" />
     <View class="absolute left-[0px] top-[59px] w-[1920px] h-[2px] origin-center animate-a3" />
     <View class="absolute left-[0px] top-[179px] w-[1920px] h-[2px] origin-center animate-a7" />
     <View class="absolute left-[0px] top-[299px] w-[1920px] h-[2px] origin-center animate-ab" />
@@ -31,27 +31,26 @@ mount(() => (
     <View class="absolute left-[1559px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2f" />
     <View class="absolute left-[1679px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2j" />
     <View class="absolute left-[1799px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2n" />
-    <View class="absolute left-[478px] top-[542px] w-[480px] h-[480px] origin-center  animate-a2p"><Image class="w-[480px] h-[480px]" src="f-disc-blue-480x480-110.png" /></View>
-    <View class="absolute left-[481px] top-[59px] w-[240px] h-[240px] origin-center  animate-a2r"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-100-q3.png" /></View>
-    <View class="absolute left-[718px] top-[62px] w-[240px] h-[240px] origin-center  animate-a2t"><Image class="w-[240px] h-[240px]" src="f-quarter-blue-240x240-101-q3.png" /></View>
-    <View class="absolute left-[961px] top-[62px] w-[240px] h-[240px] origin-center  animate-a2v"><Image class="w-[240px] h-[240px]" src="f-quarter-yellow-240x240-102.png" /></View>
-    <View class="absolute left-[963px] top-[299px] w-[240px] h-[240px] origin-center  animate-a2x"><Image class="w-[240px] h-[240px]" src="f-disc-red-240x240-103.png" /></View>
-    <View class="absolute left-[961px] top-[539px] w-[240px] h-[240px] origin-center  animate-a2z"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-104-q3.png" /></View>
-    <View class="absolute left-[1201px] top-[542px] w-[240px] h-[240px] origin-center  animate-a31"><Image class="w-[240px] h-[240px]" src="f-quarter-yellow-240x240-105-q3.png" /></View>
-    <View class="absolute left-[1443px] top-[539px] w-[240px] h-[240px] origin-center  animate-a33"><Image class="w-[240px] h-[240px]" src="f-quarter-red-240x240-106-q2.png" /></View>
-    <View class="absolute left-[1441px] top-[302px] w-[240px] h-[240px] origin-center  animate-a35"><Image class="w-[240px] h-[240px]" src="f-tri-yellow-240x240-107.png" /></View>
-    <View class="absolute left-[1438px] top-[62px] w-[240px] h-[240px] origin-center  animate-a37"><Image class="w-[240px] h-[240px]" src="f-quarter-blue-240x240-108.png" /></View>
-    <View class="absolute left-[1203px] top-[59px] w-[240px] h-[240px] origin-center  animate-a3b"><View class="absolute inset-0 origin-center rotate-45"><View class="absolute inset-0 origin-center animate-a39"><View class="absolute inset-0 origin-center rotate-315"><Image class="w-[240px] h-[240px]" src="f-box-red-240x240-109.png" /></View></View></View></View>
-    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3e"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
-    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3g"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
-    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3j"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
-    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3m"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3o"><Image class="w-[242px] h-[242px]" src="cell-480-60-q0.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3q"><Image class="w-[242px] h-[242px]" src="cell-480-60-q1.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3s"><Image class="w-[242px] h-[242px]" src="cell-480-60-q2.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3u"><Image class="w-[242px] h-[242px]" src="cell-480-60-q3.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3w"><Image class="w-[242px] h-[242px]" src="cell-480-60-q0.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3z"><Image class="w-[242px] h-[242px]" src="cell-480-60-q0.png" /></View>
+    <View class="absolute left-[476px] top-[540px] w-[484px] h-[484px] origin-center  animate-a2p"><Image class="w-[484px] h-[484px]" src="f-disc-blue-484x484-110.png" /></View>
+    <View class="absolute left-[479px] top-[297px] w-[244px] h-[244px] origin-center  animate-a2r"><Image class="w-[244px] h-[244px]" src="f-quarter-black-244x244-100-q3.png" /></View>
+    <View class="absolute left-[716px] top-[300px] w-[244px] h-[244px] origin-center  animate-a2t"><Image class="w-[244px] h-[244px]" src="f-quarter-blue-244x244-101-q2.png" /></View>
+    <View class="absolute left-[719px] top-[57px] w-[244px] h-[244px] origin-center  animate-a2v"><Image class="w-[244px] h-[244px]" src="f-disc-black-244x244-102.png" /></View>
+    <View class="absolute left-[1199px] top-[300px] w-[244px] h-[244px] origin-center  animate-a2x"><Image class="w-[244px] h-[244px]" src="f-quarter-yellow-244x244-103-q3.png" /></View>
+    <View class="absolute left-[1436px] top-[300px] w-[244px] h-[244px] origin-center  animate-a2z"><Image class="w-[244px] h-[244px]" src="f-quarter-blue-244x244-104.png" /></View>
+    <View class="absolute left-[1439px] top-[540px] w-[244px] h-[244px] origin-center  animate-a31"><Image class="w-[244px] h-[244px]" src="f-tri-yellow-244x244-105.png" /></View>
+    <View class="absolute left-[1201px] top-[537px] w-[244px] h-[244px] origin-center  animate-a33"><Image class="w-[244px] h-[244px]" src="f-quarter-red-244x244-106.png" /></View>
+    <View class="absolute left-[959px] top-[540px] w-[244px] h-[244px] origin-center  animate-a35"><Image class="w-[244px] h-[244px]" src="f-quarter-yellow-244x244-107-q2.png" /></View>
+    <View class="absolute left-[959px] top-[297px] w-[244px] h-[244px] origin-center  animate-a37"><Image class="w-[244px] h-[244px]" src="f-quarter-black-244x244-108-q2.png" /></View>
+    <View class="absolute left-[963px] top-[59px] w-[240px] h-[240px] origin-center  animate-a3b"><View class="absolute inset-0 origin-center rotate-45"><View class="absolute inset-0 origin-center animate-a39"><View class="absolute inset-0 origin-center rotate-315"><Image class="w-[240px] h-[240px]" src="f-box-red-240x240-109.png" /></View></View></View></View>
+    <View class="absolute left-[948px] top-[528px] animate-a3d"><Image class="w-[24px] h-[24px]" src="pivot.png" /></View><View class="absolute left-[938px] top-[518px] w-[44px] h-[44px] border-[#111111] border-2 rounded-[22px] animate-a3d" />
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3g"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3i"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3l"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3o"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3r"><Image class="w-[242px] h-[242px]" src="field-yellow-q1.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3t"><Image class="w-[242px] h-[242px]" src="field-yellow-q2.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3w"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3z"><Image class="w-[242px] h-[242px]" src="field-yellow-q1.png" /></View>
     <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a41"><Image class="w-[242px] h-[242px]" src="cell-720-60-q0.png" /></View>
     <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a43"><Image class="w-[242px] h-[242px]" src="cell-720-60-q3.png" /></View>
     <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a45"><Image class="w-[242px] h-[242px]" src="cell-720-60-q2.png" /></View>
@@ -59,135 +58,132 @@ mount(() => (
     <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a49"><Image class="w-[242px] h-[242px]" src="cell-720-60-q0.png" /></View>
     <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] origin-center animate-a4c"><Image class="w-[242px] h-[242px]" src="cell-720-60-q0.png" /></View>
     <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4e"><Image class="w-[242px] h-[242px]" src="cell-960-60-q0.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4g"><Image class="w-[242px] h-[242px]" src="cell-960-60-q1.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4i"><Image class="w-[242px] h-[242px]" src="cell-960-60-q2.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4k"><Image class="w-[242px] h-[242px]" src="cell-960-60-q3.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4m"><Image class="w-[242px] h-[242px]" src="cell-960-60-q0.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] origin-center animate-a4p"><Image class="w-[242px] h-[242px]" src="cell-960-60-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] animate-a4r"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] animate-a4t"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] animate-a4v"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] animate-a4x"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] origin-center animate-a50"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a52"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a54"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q1.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a56"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a58"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a5a"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] origin-center animate-a5d"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a5g"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a5i"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a5l"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a5o"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5r"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5t"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5w"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5z"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] origin-center animate-a62"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] origin-center animate-a64"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] origin-center animate-a67"><Image class="w-[242px] h-[242px]" src="field-yellow-q2.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] origin-center animate-a6a"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] origin-center animate-a6d"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] origin-center animate-a6f"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] origin-center animate-a6i"><Image class="w-[242px] h-[242px]" src="field-yellow-q1.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] origin-center animate-a6l"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6n"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6p"><Image class="w-[242px] h-[242px]" src="cell-960-300-q3.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6r"><Image class="w-[242px] h-[242px]" src="cell-960-300-q2.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6t"><Image class="w-[242px] h-[242px]" src="cell-960-300-q1.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6v"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] origin-center animate-a6y"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] origin-center animate-a71"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] origin-center animate-a73"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] origin-center animate-a76"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] origin-center animate-a79"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7b"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7d"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7f"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7h"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q1.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7j"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] origin-center animate-a7m"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7p"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7r"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7u"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7x"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
-    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a80"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
-    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a82"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
-    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a85"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
-    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a88"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a8b"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a8d"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a8g"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a8j"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a8m"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8p"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8r"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8u"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8x"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a90"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a92"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a94"><Image class="w-[242px] h-[242px]" src="cell-960-540-q1.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a96"><Image class="w-[242px] h-[242px]" src="cell-960-540-q2.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a98"><Image class="w-[242px] h-[242px]" src="cell-960-540-q3.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a9a"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] origin-center animate-a9d"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9f"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9h"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9j"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9l"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9n"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] origin-center animate-a9q"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9s"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9u"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q1.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9w"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9y"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-aa0"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] origin-center animate-aa3"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-aa6"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-aa8"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-aab"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-aae"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
-    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aah"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
-    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aaj"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
-    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aam"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
-    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aap"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aas"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aau"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aax"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-ab0"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-ab3"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-ab6"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-ab8"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-abb"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-abe"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-abh"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
-    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abk"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
-    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abm"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
-    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abp"><Image class="w-[242px] h-[242px]" src="field-yellow-q2.png" /></View>
-    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abs"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-abv"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-abx"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-ac0"><Image class="w-[242px] h-[242px]" src="field-yellow-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-ac3"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-ac6"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-ac8"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-acb"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-ace"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-ach"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-acj"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-acm"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-acp"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
-    <View class="absolute left-[120px] top-[780px] w-[240px] h-[240px] origin-center  animate-acr"><Image class="w-[240px] h-[240px]" src="letter-0.png" /></View>
-    <View class="absolute left-[120px] top-[640px] w-[240px] h-[240px] origin-center  animate-act"><Image class="w-[240px] h-[240px]" src="letter-1.png" /></View>
-    <View class="absolute left-[120px] top-[500px] w-[240px] h-[240px] origin-center  animate-acv"><Image class="w-[240px] h-[240px]" src="letter-2.png" /></View>
-    <View class="absolute left-[120px] top-[360px] w-[240px] h-[240px] origin-center  animate-acx"><Image class="w-[240px] h-[240px]" src="letter-3.png" /></View>
-    <View class="absolute left-[120px] top-[220px] w-[240px] h-[240px] origin-center  animate-acz"><Image class="w-[240px] h-[240px]" src="letter-4.png" /></View>
-    <View class="absolute left-[120px] top-[80px] w-[240px] h-[240px] origin-center  animate-ad1"><Image class="w-[240px] h-[240px]" src="letter-5.png" /></View>
-    <View class="absolute left-[120px] top-[-60px] w-[240px] h-[240px] origin-center  animate-ad3"><Image class="w-[240px] h-[240px]" src="letter-6.png" /></View>
-    <View class="absolute left-[960px] top-[780px] w-[840px] h-[3px] bg-[#111111] origin-left animate-adb" />
-    <View class="absolute left-[960px] top-[804px] w-[840px] h-[56px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[840px] h-[56px] origin-center  animate-add"><View class="flex-row items-center gap-[16px]"><Text class="font-bold text-[32px] text-[#111111] animate-ad5">{"FORM"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"·"}</Text><Text class="font-bold text-[32px] text-[#111111] animate-ad7">{"FARBE"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"·"}</Text><Text class="font-bold text-[32px] text-[#111111] animate-ad9">{"FUNKTION"}</Text></View></View></View>
-    <View class="absolute left-[960px] top-[860px] w-[840px] h-[56px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[840px] h-[56px] origin-center  animate-adf"><View class="flex-row items-center gap-[16px]"><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"形式"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"色彩"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"功能"}</Text></View></View></View>
-    <View class="absolute left-[120px] top-[1034px] flex-row items-center gap-[12px] animate-adj"><Text class="font-bold text-[18px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[17px] text-[#3A342C]">{"模数构成"}</Text><Text class="font-bold text-[18px] text-[#3A342C]">{"· 120 PX · 2026"}</Text></View>
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-20 animate-ldh" src="grain.png" />
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] origin-center animate-a4h"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] origin-center animate-a4j"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] origin-center animate-a4m"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] origin-center animate-a4p"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] origin-center animate-a4s"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] origin-center animate-a4u"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] origin-center animate-a4x"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] origin-center animate-a50"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a53"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a55"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a58"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a5b"><Image class="w-[242px] h-[242px]" src="field-red-q2.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5e"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5g"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5j"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5m"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a5o"><Image class="w-[242px] h-[242px]" src="cell-480-300-q0.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a5q"><Image class="w-[242px] h-[242px]" src="cell-480-300-q3.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a5s"><Image class="w-[242px] h-[242px]" src="cell-480-300-q2.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a5u"><Image class="w-[242px] h-[242px]" src="cell-480-300-q1.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a5w"><Image class="w-[242px] h-[242px]" src="cell-480-300-q0.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] origin-center animate-a5z"><Image class="w-[242px] h-[242px]" src="cell-480-300-q0.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a61"><Image class="w-[242px] h-[242px]" src="cell-720-300-q0.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a63"><Image class="w-[242px] h-[242px]" src="cell-720-300-q1.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a65"><Image class="w-[242px] h-[242px]" src="cell-720-300-q2.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a67"><Image class="w-[242px] h-[242px]" src="cell-720-300-q3.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a69"><Image class="w-[242px] h-[242px]" src="cell-720-300-q0.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] origin-center animate-a6c"><Image class="w-[242px] h-[242px]" src="cell-720-300-q0.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6e"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6g"><Image class="w-[242px] h-[242px]" src="cell-960-300-q3.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6i"><Image class="w-[242px] h-[242px]" src="cell-960-300-q2.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6k"><Image class="w-[242px] h-[242px]" src="cell-960-300-q1.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6m"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] origin-center animate-a6p"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a6r"><Image class="w-[242px] h-[242px]" src="cell-1200-300-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a6t"><Image class="w-[242px] h-[242px]" src="cell-1200-300-q1.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a6v"><Image class="w-[242px] h-[242px]" src="cell-1200-300-q2.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a6x"><Image class="w-[242px] h-[242px]" src="cell-1200-300-q3.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a6z"><Image class="w-[242px] h-[242px]" src="cell-1200-300-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] origin-center animate-a72"><Image class="w-[242px] h-[242px]" src="cell-1200-300-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a74"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a76"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a78"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7a"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7c"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] origin-center animate-a7f"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7i"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7k"><Image class="w-[242px] h-[242px]" src="field-red-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7n"><Image class="w-[242px] h-[242px]" src="field-red-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7q"><Image class="w-[242px] h-[242px]" src="field-red-q3.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a7t"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a7v"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a7y"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a81"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a84"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a86"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a89"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a8c"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a8f"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8i"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8k"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8n"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8q"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8t"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a8v"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a8x"><Image class="w-[242px] h-[242px]" src="cell-960-540-q1.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a8z"><Image class="w-[242px] h-[242px]" src="cell-960-540-q2.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a91"><Image class="w-[242px] h-[242px]" src="cell-960-540-q3.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a93"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] origin-center animate-a96"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a98"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9a"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q3.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9c"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q2.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9e"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q1.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9g"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] origin-center animate-a9j"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9l"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9n"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9p"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9r"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9t"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] origin-center animate-a9w"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-a9z"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-aa1"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-aa4"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-aa7"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aaa"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aac"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aaf"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aai"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aal"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aan"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aaq"><Image class="w-[242px] h-[242px]" src="field-black-q2.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aat"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aaw"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-aaz"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-ab1"><Image class="w-[242px] h-[242px]" src="field-black-q0.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-ab4"><Image class="w-[242px] h-[242px]" src="field-black-q1.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-ab7"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-aba"><Image class="w-[242px] h-[242px]" src="field-black-q3.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abd"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abf"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abi"><Image class="w-[242px] h-[242px]" src="field-yellow-q2.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abl"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-abo"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-abq"><Image class="w-[242px] h-[242px]" src="field-yellow-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-abt"><Image class="w-[242px] h-[242px]" src="field-yellow-q1.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-abw"><Image class="w-[242px] h-[242px]" src="field-yellow-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-abz"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-ac1"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-ac4"><Image class="w-[242px] h-[242px]" src="field-blue-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-ac7"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-aca"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-acc"><Image class="w-[242px] h-[242px]" src="field-blue-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-acf"><Image class="w-[242px] h-[242px]" src="field-blue-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-aci"><Image class="w-[242px] h-[242px]" src="field-blue-q3.png" /></View>
+    <View class="absolute left-[120px] top-[780px] w-[240px] h-[240px] origin-center  animate-ack"><Image class="w-[240px] h-[240px]" src="letter-0.png" /></View>
+    <View class="absolute left-[120px] top-[640px] w-[240px] h-[240px] origin-center  animate-acm"><Image class="w-[240px] h-[240px]" src="letter-1.png" /></View>
+    <View class="absolute left-[120px] top-[500px] w-[240px] h-[240px] origin-center  animate-aco"><Image class="w-[240px] h-[240px]" src="letter-2.png" /></View>
+    <View class="absolute left-[120px] top-[360px] w-[240px] h-[240px] origin-center  animate-acq"><Image class="w-[240px] h-[240px]" src="letter-3.png" /></View>
+    <View class="absolute left-[120px] top-[220px] w-[240px] h-[240px] origin-center  animate-acs"><Image class="w-[240px] h-[240px]" src="letter-4.png" /></View>
+    <View class="absolute left-[120px] top-[80px] w-[240px] h-[240px] origin-center  animate-acu"><Image class="w-[240px] h-[240px]" src="letter-5.png" /></View>
+    <View class="absolute left-[120px] top-[-60px] w-[240px] h-[240px] origin-center  animate-acw"><Image class="w-[240px] h-[240px]" src="letter-6.png" /></View>
+    <View class="absolute left-[1080px] top-[780px] w-[600px] h-[3px] bg-[#111111] origin-left animate-acy" />
+    <View class="absolute left-[1080px] top-[802px] w-[600px] h-[90px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[600px] h-[90px] origin-center  animate-ad0"><View class="flex-row items-start"><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FORM"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"形式"}</Text></View><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FARBE"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"色彩"}</Text></View><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FUNKTION"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"功能"}</Text></View></View></View></View>
+    <View class="absolute left-[120px] top-[1034px] flex-row items-center gap-[12px] animate-ad4"><Text class="font-bold text-[18px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-bold text-[18px] text-[#3A342C]">{"·"}</Text><Text class="font-[cjk] font-bold text-[19px] text-[#3A342C]">{"模数构成"}</Text></View>
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-20 animate-ld2" src="grain.png" />
   </View>
 ));

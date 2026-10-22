@@ -1,35 +1,38 @@
 {
-  "f-disc-blue-480x480-110.png": {
+  "f-disc-blue-484x484-110.png": {
     "linear": true
   },
-  "f-quarter-black-240x240-100-q3.png": {
+  "f-quarter-black-244x244-100-q3.png": {
     "linear": true
   },
-  "f-quarter-blue-240x240-101-q3.png": {
+  "f-quarter-blue-244x244-101-q2.png": {
     "linear": true
   },
-  "f-quarter-yellow-240x240-102.png": {
+  "f-disc-black-244x244-102.png": {
     "linear": true
   },
-  "f-disc-red-240x240-103.png": {
+  "f-quarter-yellow-244x244-103-q3.png": {
     "linear": true
   },
-  "f-quarter-black-240x240-104-q3.png": {
+  "f-quarter-blue-244x244-104.png": {
     "linear": true
   },
-  "f-quarter-yellow-240x240-105-q3.png": {
+  "f-tri-yellow-244x244-105.png": {
     "linear": true
   },
-  "f-quarter-red-240x240-106-q2.png": {
+  "f-quarter-red-244x244-106.png": {
     "linear": true
   },
-  "f-tri-yellow-240x240-107.png": {
+  "f-quarter-yellow-244x244-107-q2.png": {
     "linear": true
   },
-  "f-quarter-blue-240x240-108.png": {
+  "f-quarter-black-244x244-108-q2.png": {
     "linear": true
   },
   "f-box-red-240x240-109.png": {
+    "linear": true
+  },
+  "pivot.png": {
     "linear": true
   },
   "field-red-q0.png": {
@@ -44,16 +47,16 @@
   "field-red-q3.png": {
     "linear": true
   },
-  "cell-480-60-q0.png": {
+  "field-yellow-q0.png": {
     "linear": true
   },
-  "cell-480-60-q1.png": {
+  "field-yellow-q1.png": {
     "linear": true
   },
-  "cell-480-60-q2.png": {
+  "field-yellow-q2.png": {
     "linear": true
   },
-  "cell-480-60-q3.png": {
+  "field-yellow-q3.png": {
     "linear": true
   },
   "cell-720-60-q0.png": {
@@ -71,49 +74,40 @@
   "cell-960-60-q0.png": {
     "linear": true
   },
-  "cell-960-60-q1.png": {
+  "field-black-q0.png": {
     "linear": true
   },
-  "cell-960-60-q2.png": {
+  "field-black-q1.png": {
     "linear": true
   },
-  "cell-960-60-q3.png": {
+  "field-black-q2.png": {
     "linear": true
   },
-  "cell-1200-60-q0.png": {
+  "field-black-q3.png": {
     "linear": true
   },
-  "cell-1200-60-q1.png": {
+  "cell-480-300-q0.png": {
     "linear": true
   },
-  "cell-1200-60-q2.png": {
+  "cell-480-300-q1.png": {
     "linear": true
   },
-  "cell-1200-60-q3.png": {
+  "cell-480-300-q2.png": {
     "linear": true
   },
-  "cell-1440-60-q0.png": {
+  "cell-480-300-q3.png": {
     "linear": true
   },
-  "cell-1440-60-q1.png": {
+  "cell-720-300-q0.png": {
     "linear": true
   },
-  "cell-1440-60-q2.png": {
+  "cell-720-300-q1.png": {
     "linear": true
   },
-  "cell-1440-60-q3.png": {
+  "cell-720-300-q2.png": {
     "linear": true
   },
-  "field-yellow-q0.png": {
-    "linear": true
-  },
-  "field-yellow-q1.png": {
-    "linear": true
-  },
-  "field-yellow-q2.png": {
-    "linear": true
-  },
-  "field-yellow-q3.png": {
+  "cell-720-300-q3.png": {
     "linear": true
   },
   "cell-960-300-q0.png": {
@@ -128,16 +122,16 @@
   "cell-960-300-q3.png": {
     "linear": true
   },
-  "field-black-q0.png": {
+  "cell-1200-300-q0.png": {
     "linear": true
   },
-  "field-black-q1.png": {
+  "cell-1200-300-q1.png": {
     "linear": true
   },
-  "field-black-q2.png": {
+  "cell-1200-300-q2.png": {
     "linear": true
   },
-  "field-black-q3.png": {
+  "cell-1200-300-q3.png": {
     "linear": true
   },
   "cell-1440-300-q0.png": {

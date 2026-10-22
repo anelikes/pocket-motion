@@ -91,8 +91,8 @@ const actEnd = (k: number) => b(2 + k);
 const T_DROP = b(12); // the last roll lands on the drop
 const T_POSTER = b(16); // 8.0 s: the finished poster
 const T_TYPE = b(16);
-const T_TAG = b(18);
-const T_LAST = b(19); // the module turns once more, about its own centre, on the last accent
+const T_TAG = b(17.5);
+const T_LAST = b(18); // the module turns once more, about its own centre; from 9.0 s the poster holds
 
 /** A roll tips slowly and lands hard: power-in, arriving at speed on the beat. */
 const tip = (u: number) => u ** 2.2;
@@ -117,7 +117,7 @@ function grid(): string {
         : reg.prop(v ? "scaleY" : "scaleX", [[0, u0.toFixed(3)], [Math.max(0, t0), u0.toFixed(3)], [t0 + 10, "1"]], "cubic-bezier(0.45,0,0.55,1)");
     const settle = reg.prop("backgroundColor", [[0, INK.black], [Math.max(1, t0 + 40), INK.black], [t0 + 70, "#DACDB5"]]);
     // the finished print: the construction fades to a third
-    const recede = reg.prop("opacity", [[0, "1"], [T_POSTER, "1"], [T_POSTER + 20, "0.35"]]);
+    const recede = reg.prop("opacity", [[0, "1"], [T_POSTER, "1"], [T_POSTER + 30, "0.2"]]);
     const cls = v ? `left-[${at - 1}px] top-[0px] w-[2px] h-[${H}px]` : `left-[0px] top-[${at - 1}px] w-[${W}px] h-[2px]`;
     out.push(`<View class="absolute ${cls} origin-center animate-${reg.anim(STATIC ? [recede] : [draw, settle, recede])}" />`);
   };
@@ -132,12 +132,18 @@ function misreg(f: Form): Form {
   const [dx, dy] = MISREG[f.ink];
   return { ...f, x: f.x + dx, y: f.y + dy };
 }
+/** A poster form as printed: misregistered, and two pixels larger on every side, so two plates' offsets never open a hairline of paper between neighbours. */
+const OVER = 2;
+function printed(f: Form): Form {
+  const m = misreg(f);
+  return { ...m, x: m.x - OVER, y: m.y - OVER, w: m.w + 2 * OVER, h: m.h + 2 * OVER };
+}
 const seedOf = (id: string) => 100 + POSTER.findIndex((f) => f.id === id);
 
 /** The poster drawn statically. */
 function posterNodes(): string {
   return POSTER.map((f0) => {
-    const f = misreg(f0);
+    const f = printed(f0);
     return `<View class="absolute left-[${f.x}px] top-[${f.y}px] w-[${f.w}px] h-[${f.h}px]">${formInner(f, seedOf(f.id))}</View>`;
   }).join("");
 }
@@ -163,6 +169,7 @@ function forms(): string {
     const [i, j] = PATH[k]!;
     if (a === "S") turn(k, () => mod.to(actEnd(k) - ROLL, actEnd(k), { rot: 90 }, inOut));
     else if (a === "F") return; // the fold is the picture's own: foldWrap
+    else if (a === "C") turn(k, () => mod.orbit(actEnd(k) - ROLL, actEnd(k), CX + mdx, CY + mdy, 90, inOut));
     else {
       const [fx, fy] = PIVOT[a];
       turn(k, () => mod.orbit(actEnd(k) - ROLL, actEnd(k), cellX(i) + fx * MOD + mdx, cellY(j) + fy * MOD + mdy, ROLL_TURN[a], tip));
@@ -171,18 +178,24 @@ function forms(): string {
 
   // what each move leaves is under the module as it starts to move: a roll's trailing edge uncovers its quarter,
   // and a spin's disc is uncovered by the move after it
+  // a roll's form is under the module as it starts to move, so its trailing edge uncovers it; a spin's or a fold's is
+  //   uncovered by the move after it, so it appears only then (shown earlier, it peeked out under the module's edge)
   const left = LEFT.flatMap((f0, k) => {
     if (!f0) return [];
-    const f = misreg(f0);
+    const f = printed(f0);
     const el = new El(reg, f, { op: 0 });
-    el.set(actEnd(k) - ROLL, { op: 1 });
+    if (ACTS[k] === "F") {
+      // seen through the fold, from the moment the module is a sliver on its diagonal, hidden while it lies on it again
+      //   (left showing, its plate's offset peeked out under the module's edge), and uncovered by the next move
+      el.set(actEnd(k) - ROLL / 2, { op: 1 }).set(actEnd(k) + 1, { op: 0 }).set(actEnd(k + 1) - ROLL, { op: 1 });
+    } else el.set(ACTS[k] === "S" ? actEnd(k + 1) - ROLL : actEnd(k) - ROLL, { op: 1 });
     return [{ el, f }];
   });
   // the drop hands the poster to the cells; the finished poster takes it back on b16, with the circle the drop left
   //   (the module's own hand-over is its last landing, above: an element's keys are written in time order)
   for (const l of left) l.el.set(T_DROP, { op: 0 }).set(T_POSTER, { op: 1 });
   mod.set(T_POSTER, { op: 1 });
-  const circle = misreg(CIRCLE);
+  const circle = printed(CIRCLE);
   const circleEl = new El(reg, circle, { op: 0 });
   circleEl.set(T_POSTER, { op: 1 });
   // b19 · the module turns once more about its own centre, the last accent
@@ -192,7 +205,16 @@ function forms(): string {
     circleEl.node(formInner(circle, seedOf("circle"))),
     ...left.map((l) => l.el.node(formInner(l.f, seedOf(l.f.id)))),
     mod.node(foldWrap(formInner(home, seedOf("module")))),
+    swingPivot(),
   ].join("\n    ");
+}
+
+/** The frame centre, marked while the module swings about it: a cross on the pivot. */
+function swingPivot(): string {
+  const k = ACTS.indexOf("C");
+  if (k < 0 || STATIC) return "";
+  const a = `animate-${reg.anim(reg.window(actEnd(k) - ROLL - 8, actEnd(k) + 6))}`;
+  return `<View class="absolute left-[${CX - 12}px] top-[${CY - 12}px] ${a}">${img(png("pivot", print.form("disc", 24, 24, rgb(INK.black), 12, 2)), 24, 24)}</View><View class="absolute left-[${CX - 22}px] top-[${CY - 22}px] w-[44px] h-[44px] border-[${INK.black}] border-2 rounded-[22px] ${a}" />`;
 }
 
 /**
@@ -258,9 +280,9 @@ const BLOCK_INK: Record<string, Ink> = { "-1,0": "red", "0,0": "yellow", "1,0": 
 const BLEED = 1;
 function cells(): string {
   if (STATIC) return "";
-  const placed: (Form & print.Placed)[] = [...TRAIL, MODULE].map((f0) => {
-    const f = misreg(f0);
-    return { ...f, rot: f.rot ?? 0, rgb: rgb(INK[f.ink]), seed: seedOf(f.id) };
+  const placed: (Form & print.Placed & { cell: [number, number] })[] = [...TRAIL, MODULE].map((f0) => {
+    const f = printed(f0);
+    return { ...f, rot: f.rot ?? 0, rgb: rgb(INK[f.ink]), seed: seedOf(f.id), cell: [f0.x, f0.y] };
   });
   // the field's quarter in each ink, sliced out of a whole disc so its bleed is ink where the disc continues
   const fieldFiles = new Map<Ink, string[]>();
@@ -296,13 +318,20 @@ function cells(): string {
       rot.push([t, `${dir * 90 * k}deg`], [t + TURN, `${dir * 90 * (k + 1)}deg`]);
       vis.push([t, "1"], [t + TURN, "0"]);
     }
+    // unclipped: clipped to its cell, a quarter mid-turn read as a hexagon or a bow-tie, which looks like a fault
     return view(g.x, g.y, file, [reg.prop("rotate", rot, ease), reg.step("opacity", vis)]);
   };
   for (const g of grid) {
     const [cx, cy] = centreOf(g.x, g.y);
     const dir = g.px === g.py ? 1 : -1;
     const starts = WAVES.map((w) => w.at + w.delay(cx, cy, g.j));
-    const here = placed.filter((f) => f.x - MISREG[f.ink][0] === g.x && f.y - MISREG[f.ink][1] === g.y);
+    const here = placed.filter((f) => f.cell[0] === g.x && f.cell[1] === g.y);
+    if (here.length && here.some((f) => f.id === "module")) {
+      // the module stays still through the drop: turning its cell the instant it landed read as a bounce
+      const slice = print.cell(here, g.x, g.y, MOD, 2, BLEED);
+      out.push(`<View class="absolute ${box(g.x, g.y)} animate-${reg.anim(reg.window(T_DROP, T_POSTER))}">${pic(png(`cell-${g.x}-${g.y}-q0`, slice))}</View>`);
+      continue;
+    }
     if (here.length) {
       const slice = print.cell(here, g.x, g.y, MOD, 2, BLEED);
       const files = [0, 1, 2, 3].map((q) => png(`cell-${g.x}-${g.y}-q${q}`, turnPlate(slice, q)));
@@ -324,18 +353,20 @@ function cells(): string {
     const q0 = (((homeTurn(g.px, g.py) - 2 * dir) % 4) + 4) % 4;
     const turned = (k: number) => files[(((q0 + dir * k) % 4) + 4) % 4]!;
     const steps = Math.abs((g.i < 0 ? -1 : g.i) - MOD_CELL[0]) + Math.abs(g.j - MOD_CELL[1]);
-    const tin = T_DROP + 2 * steps;
+    // the field lands on the downbeat: the four steps nearest the module finish their flip on frame 180, power-in;
+    //   the far ones follow a frame a step
+    const tin = T_DROP - FLIP + 2 * Math.max(0, steps - 4);
     const [s1, s2] = [starts[1]!, starts[2]!];
-    out.push(view(g.x, g.y, turned(0), [reg.window(tin, s1), reg.prop("scaleX", [[tin, "0"], [tin + FLIP, "1"]], ease)]));
+    out.push(view(g.x, g.y, turned(0), [reg.window(tin, s1), reg.prop("scaleX", [[tin, "0.12"], [tin + FLIP, "1"]], "cubic-bezier(0.55,0,1,0.45)")]));
     out.push(view(g.x, g.y, turned(1), [reg.window(s1 + TURN, s2)]));
     if (g.circle) {
       const n = (g.py === 0 ? (g.px === 0 ? 0 : 1) : g.px === 1 ? 2 : 3);
       const ft = circleFlip(n);
-      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, ft + FLIP / 2), reg.prop("scaleX", [[ft, "1"], [ft + FLIP / 2, "0"]], ease)]));
-      out.push(view(g.x, g.y, fieldOf("blue")[(((q0 + 2 * dir) % 4) + 4) % 4]!, [reg.window(ft + FLIP / 2, T_POSTER), reg.prop("scaleX", [[ft + FLIP / 2, "0"], [ft + FLIP, "1"]], ease)]));
+      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, ft + FLIP / 2), reg.prop("scaleX", [[ft, "1"], [ft + FLIP / 2, "0.12"]], ease)]));
+      out.push(view(g.x, g.y, fieldOf("blue")[(((q0 + 2 * dir) % 4) + 4) % 4]!, [reg.window(ft + FLIP / 2, T_POSTER), reg.prop("scaleX", [[ft + FLIP / 2, "0.12"], [ft + FLIP, "1"]], ease)]));
     } else {
       const fo = T_OUT + 2 * (7 - steps);
-      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, fo + FLIP), reg.prop("scaleX", [[fo, "1"], [fo + FLIP, "0"]], ease)]));
+      out.push(view(g.x, g.y, turned(2), [reg.window(s2 + TURN, fo + FLIP), reg.prop("scaleX", [[fo, "1"], [fo + FLIP, "0.12"]], ease)]));
     }
     out.push(turning(g, files[q0]!, dir, [[s1, 0], [s2, 1]]));
   }
@@ -369,35 +400,36 @@ function type(): string {
     // upright in the gutter: the letter turned a quarter clockwise about the corner it will tip over
     const px = WORD_X + MOD;
     const el = new El(reg, home, { cx: px + M, cy: foot - M, rot: 90, op: 0 });
-    el.set(t - 8, { op: 1 }).orbit(t - 6, t, px, foot, -90, tip);
+    el.set(t - 6, { op: 0 }).orbit(t - 6, t, px, foot, -90, tip);
+    // first seen two ticks into the tip, already turning, and from then on to the end
+    for (const [k, v] of el.keys) if (k >= t - 4) el.keys.set(k, { ...v, op: 1 });
+    el.s.op = 1;
     el.set(t + 1, { rot: 0 });
     out.push(el.node(img(file, MOD, MOD)));
   });
 
   // the tagline under a rule across the bottom right, drawn on b18
   const S = INK.black;
-  const tx = cellX(2);
+  const tx = cellX(2) + M;
   const ty = gy(6);
-  const RW = 3.5 * MOD; // the rule runs from column 8 to the grid's last line but one, x 1800
+  const RW = cellX(5) - tx; // the rule ends on the last module edge of the forms, x 1680
   const rule = (a: string) => `<View class="absolute left-[${tx}px] top-[${ty}px] w-[${RW}px] h-[3px] bg-[${S}] origin-left ${a}" />`;
   const track = (px: number) => reg.anim(reg.prop("letterSpacing", [[0, `${px}px`], [TICKS, `${px}px`]]));
   const dot = `<Text class="font-bold text-[30px] text-[${S}]">{"·"}</Text>`;
   const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[30px] text-[${S}]">${jsx(w)}</Text>`;
-  const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}] animate-${track(6)}">${jsx(w)}</Text>`;
-  const lines = [
-    `<View class="flex-row items-center gap-[16px]">${en("FORM")}${dot}${en("FARBE")}${dot}${en("FUNKTION")}</View>`,
-    `<View class="flex-row items-center gap-[16px]">${zh("形式")}${dot}${zh("色彩")}${dot}${zh("功能")}</View>`,
-  ];
+  const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}]">${jsx(w)}</Text>`;
+  const col = (w: string, z: string) => `<View class="flex-col gap-[6px] w-[${MOD}px]">${en(w)}${zh(z)}</View>`;
+  const lines = [`<View class="flex-row items-start">${col("FORM", "形式")}${col("FARBE", "色彩")}${col("FUNKTION", "功能")}</View>`];
   if (STATIC) {
     out.push(rule(""));
-    lines.forEach((l, i) => out.push(`<View class="absolute left-[${tx}px] top-[${ty + 24 + i * 56}px]">${l}</View>`));
+    lines.forEach((l) => out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22}px]">${l}</View>`));
   } else {
     out.push(rule(`animate-${reg.anim([reg.prop("scaleX", [[T_TAG - 8, "0"], [T_TAG, "1"]], "cubic-bezier(0.45,0,0.55,1)")])}`));
     lines.forEach((l, i) => {
       const t = T_TAG + 4 + 8 * i;
-      const el = new El(reg, { x: 0, y: 0, w: RW, h: 56 }, { cy: 28 + 56 });
-      el.to(t - 6, t, { cy: 28 }, outCubic);
-      out.push(`<View class="absolute left-[${tx}px] top-[${ty + 24 + i * 56}px] w-[${RW}px] h-[56px] overflow-hidden">${el.node(l)}</View>`);
+      const el = new El(reg, { x: 0, y: 0, w: RW, h: 90 }, { cy: 45 + 90 });
+      el.to(t - 6, t, { cy: 45 }, outCubic);
+      out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22 + i * 90}px] w-[${RW}px] h-[90px] overflow-hidden">${el.node(l)}</View>`);
     });
   }
   return out.join("\n    ");
@@ -408,7 +440,7 @@ function type(): string {
 function furniture(): string {
   const S = "#3A342C";
   const t = STATIC ? "" : `animate-${reg.anim(reg.window(40))}`;
-  return `<View class="absolute left-[${M}px] top-[1034px] flex-row items-center gap-[12px] ${t}"><Text class="font-bold text-[18px] text-[${S}]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[17px] text-[${S}]">{"模数构成"}</Text><Text class="font-bold text-[18px] text-[${S}]">{"· 120 PX · 2026"}</Text></View>`;
+  return `<View class="absolute left-[${M}px] top-[1034px] flex-row items-center gap-[12px] ${t}"><Text class="font-bold text-[18px] text-[${S}]">{"EIN MODUL"}</Text><Text class="font-bold text-[18px] text-[${S}]">{"·"}</Text><Text class="font-[cjk] font-bold text-[19px] text-[${S}]">{"模数构成"}</Text></View>`;
 }
 
 /** The paper: a ground under the inks, at the spec colour, its mottle and a fine grain over all boiling at 10 fps. */
@@ -477,6 +509,9 @@ await Bun.write(
       durationFrames: STATIC ? 1 : (DUR_MS / 1000) * FPS,
       fps: FPS,
       supersample: 1,
+      // motion blur: each frame an exposure of 8 renders over 144° of the frame's duration (patches/0034); only transform
+      //   timelines are sampled between ticks, so cuts, gates and fades stay where they are
+      ...(process.env.SHUTTER === "0" ? {} : { shutter: { angle: 144, samples: 8 } }),
       fonts: {
         regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf",
         bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf",
