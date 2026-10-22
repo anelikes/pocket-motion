@@ -46,12 +46,13 @@ const T_LOCK = 11 * B; // 5.5 s: brackets open wide on the contact, the lock cou
 const T_FLIP = 13 * B; // 6.5 s: the snap lands and the frame flips to alert
 const T_SNAP = T_FLIP - 8; // the four-frame snap that lands on the flip
 const T_PUSH = T_FLIP + 4; // the dive starts a moment after the flash
-const T_LAND = T_FLIP + 120; // 8.5 s: the dive lands
-const T_HOLD = T_LAND + 6;
-const T_SAR = T_FLIP + 30; // 7.0 s: the lens switches to the radar image of the vessel
-const T_KV = T_SAR + 30; // 7.5 s: the Kelvin V is drawn over its wake
+const T_LAND = T_FLIP + 60; // 7.5 s: one continuous push lands on the radar image of the vessel
+const T_HOLD = 17 * B; // 8.5 s: the panels step back
+const T_KV = T_LAND + 4; // the Kelvin V is drawn over its wake
 const T_CONF = T_FLIP + 96; // 8.1 s: CONFIRMED
+const T_INT = 17 * B; // 8.5 s: the interceptor's vector and ETA
 const T_TASK = 18 * B; // 9.0 s: the intercept is tasked
+const T_TAP = 19 * B + 6; // 9.6 s: the brackets bite twice
 
 // ── frame ──────────────────────────────────────────────────────────────────
 
@@ -210,7 +211,7 @@ function typed(x: number, y: number, size: number, parts: [string, string][], t0
  * A digit that changes runs through `scramble` frames of random digits first
  * (3 unless the entry says otherwise); 0 makes the entry a plain counter step.
  */
-function rolling(x: number, y: number, size: number, cellW: number, color: string, timeline: [number, string, number?][], font: "ui" | "code", seed: number, scramble = 3): string {
+function rolling(x: number, y: number, size: number, cellW: number, color: string, timeline: [number, string, number?][], font: "ui" | "code", seed: number, scramble = 3, fixed: number[] = []): string {
   const r = rng(seed);
   const len = timeline[0]![1].length;
   const cells: string[] = [];
@@ -222,7 +223,7 @@ function rolling(x: number, y: number, size: number, cellW: number, color: strin
       const frames = sc ?? scramble;
       // frames are two ticks: every change sits on an even tick so no frame lands between two digits
       const te = t + (t % 2);
-      if (k > 0 && frames > 0 && /\d/.test(ch) && ch !== prev) {
+      if (k > 0 && frames > 0 && !fixed.includes(c) && /\d/.test(ch) && ch !== prev) {
         for (let s = 0; s < frames; s++) seq.push([te + s * 2, String(Math.floor(r() * 10))]);
         seq.push([te + frames * 2, ch]);
       } else seq.push([te, ch]);
@@ -413,7 +414,8 @@ function globe(): string {
   const disc = pngFile("disc", raster.disc(2 * R_GLOBE, R_GLOBE - 2, 0.82, 1, [5, 5, 5]));
   const discEl = `<View class="absolute left-[${CX - R_GLOBE}px] top-[${CY - R_GLOBE}px] w-[${2 * R_GLOBE}px] h-[${2 * R_GLOBE}px] animate-${reg.anim([reg.prop("opacity", [[0, "0"], [29, "0"], [30, "1"], [T_PUSH, "1"], [T_PUSH + 8, "0"]]), reg.prop("translateZ", zKeys)])}">${img(disc, 2 * R_GLOBE, 2 * R_GLOBE)}</View>`;
   // the globe hands over to the wide map between ×2 and ×5 and is a faint field of points after
-  const fadeOut = reg.prop("opacity", [[0, "1"], [tickAtMag(2), "1"], [tickAtMag(5), "0.14"], [T_LAND, "0"]]);
+  // it steps back to half while the lock reads, so the brackets are the brightest thing in the lens
+  const fadeOut = reg.prop("opacity", [[0, "1"], [T_LOCK, "1"], [T_LOCK + 10, "0.5"], [tickAtMag(2), "0.5"], [tickAtMag(5), "0.1"], [T_LAND, "0"]]);
   return `
     <View class="absolute inset-0 perspective-[${PERSP}] animate-${reg.anim(fadeOut)}">
       <View class="absolute left-[${CX}px] top-[${CY}px] w-[0px] h-[0px] animate-${reg.anim([reg.prop("rotateX", tiltKeys), reg.prop("translateZ", zKeys)])}">
@@ -449,7 +451,7 @@ function rimAndScan(): string {
   const scan: Stops = { "0%": { translateY: `${-80}px` }, "100%": { translateY: `${2 * R_GLOBE + 20}px` } };
   const gone = reg.prop("opacity", [[0, "0"], [40, "0"], [44, "1"], [T_PUSH, "1"], [T_PUSH + 20, "0"]]);
   return `
-    ${at(CX - R_GLOBE - 20, CY - R_GLOBE - 20, img(rimF, 2 * R_GLOBE + 40, 2 * R_GLOBE + 40), "", reg.anim([power(40), reg.prop("opacity", [[0, "1"], [T_PUSH, "1"], [T_PUSH + 16, "0"]])]))}
+    ${at(CX - R_GLOBE - 20, CY - R_GLOBE - 20, img(rimF, 2 * R_GLOBE + 40, 2 * R_GLOBE + 40), "", reg.anim(reg.prop("opacity", [[0, "0"], [39, "0"], [40, "1"], [41, "1"], [42, "0.2"], [43, "0.2"], [44, "1"], [T_PUSH, "1"], [T_PUSH + 16, "0"]])))}
     <View class="absolute left-[${CX - R_GLOBE}px] top-[${CY - R_GLOBE}px] w-[${2 * R_GLOBE}px] h-[${2 * R_GLOBE}px] rounded-[${R_GLOBE}px] overflow-mask animate-${reg.anim(gone)}">
       <View class="absolute left-[0px] top-[0px] animate-${reg.loop([reg.short(scan, 90)], 90)}">${img(band, 2 * R_GLOBE, 64)}</View>
     </View>`;
@@ -483,45 +485,93 @@ function coastMap(name: string, m: number, size: number, grid: number, fade: [nu
 
 /** The coast's lens: inside the reticle's 470 px brackets, so the map never runs out under the panels or the top bar. */
 const LENS = 440;
+/** The radar picture's slow push after the dive lands, shared by the picture and what is drawn on it. */
+const sarPush = () => reg.prop("scale", [[0, "1"], [T_LAND, "1"], [TICKS, "1.06"]], "cubic-bezier(0.25,0.1,0.25,1)");
+const SAR_K = 4; // the radar picture's scale: the hull is 36 k px long
+const OTHERS: [number, number][] = [
+  [0.2, 0.66],
+  [0.8, 0.28],
+  [0.84, 0.74],
+];
+
 function coast(): string {
   const wide = coastMap("coast-wide", 8, 1000, 5, [360, 495], 1.4, 5);
   const keys: [number, string][] = [[0, (1 / 8).toFixed(4)]];
   for (let t = T_PUSH; t <= T_LAND; t += 2) keys.push([t, (worldMag(t) / 8).toFixed(4)]);
-  const map = `<View class="absolute left-[${LENS - 500}px] top-[${LENS - 500}px] w-[1000px] h-[1000px] origin-center animate-${reg.anim([reg.prop("scale", keys), reg.prop("opacity", [[0, "0"], [tickAtMag(2), "0"], [tickAtMag(4), "1"], [T_SAR + 8, "1"], [T_SAR + 24, "0"]])])}">${img(wide.file, 1000, 1000)}</View>`;
-  // the evidence: the radar image of the vessel, revealed under a scan bar, pushing in slowly for the rest of the film
+  const map = `<View class="absolute left-[${LENS - 500}px] top-[${LENS - 500}px] w-[1000px] h-[1000px] origin-center animate-${reg.anim([reg.prop("scale", keys), reg.prop("opacity", [[0, "0"], [tickAtMag(2), "0"], [tickAtMag(4), "1"], [tickAtMag(9), "1"], [tickAtMag(13), "0"]])])}">${img(wide.file, 1000, 1000)}</View>`;
+  // the radar picture is the last stage of the same zoom: it grows with the magnification from ×8, so the
+  // push never cuts; then it keeps pushing in slowly for the rest of the film
   const S = 2 * LENS;
-  const sarLens = pngFile("sar-lens", raster.sar(S, 11, true, 72, [0.5, 0.5], 2.4, 1.35), false);
-  const sar = `<View class="absolute left-[0px] top-[0px] w-[${S}px] h-[${S}px] origin-center animate-${reg.anim([reg.prop("opacity", [[0, "0"], [T_SAR, "0"], [T_SAR + 24, "1"]]), reg.prop("scale", [[0, "1"], [T_SAR, "1"], [TICKS, "1.07"]], "cubic-bezier(0.25,0.1,0.25,1)")])}">${img(sarLens, S, S)}</View>`;
-  const bar = `<View class="absolute left-[0px] top-[0px] w-[${S}px] h-[8px] bg-[${G.hot}] animate-${reg.anim([reg.window(T_SAR, T_SAR + 25), reg.prop("translateY", [[0, "0px"], [T_SAR, "0px"], [T_SAR + 24, `${S - 8}px`]])])}" />`;
+  const sarLens = pngFile(
+    "sar-lens",
+    raster.sar(S, 11, true, 72, [0.5, 0.5], SAR_K, 1.3, { clutter: 0.45, arms: 0.95, chevrons: true, shore: { side: "top", depth: 0.14 }, others: OTHERS, vignette: { r0: 0.8, r1: 1 } }),
+    false,
+  );
+  const sk: [number, string][] = [[0, (1 / M_FINAL).toFixed(4)]];
+  for (let t = T_PUSH; t <= T_LAND; t += 2) sk.push([t, (worldMag(t) / M_FINAL).toFixed(4)]);
+  const zoom = reg.prop("scale", sk);
+  const sar = `<View class="absolute left-[0px] top-[0px] w-[${S}px] h-[${S}px] origin-center animate-${reg.anim([reg.prop("opacity", [[0, "0"], [tickAtMag(8), "0"], [tickAtMag(12), "1"]]), zoom])}"><View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${img(sarLens, S, S)}
+      ${OTHERS.map(([fx, fy], i) => `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.loop([reg.short({ "0%": { opacity: "1" }, "40%": { opacity: "1" }, "41%": { opacity: "0" }, "100%": { opacity: "0" } }, B - 6 * i, "linear", 0)], B)}" />`).join("")}
+    </View></View>`;
   return `
     <View class="absolute left-[${CX - LENS}px] top-[${CY - LENS}px] w-[${2 * LENS}px] h-[${2 * LENS}px] rounded-[${LENS}px] overflow-mask">
       ${map}
       ${sar}
-      ${bar}
     </View>
-    ${kelvinOverlay()}`;
+    <View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${kelvinOverlay()}${interceptVector()}</View>`;
 }
 
 /**
  * The Kelvin V drawn on the real wake: from the stern, two arms at ±19.47°
- * to the track, the angle between them and its value, then CONFIRMED.
+ * to the track and the angle between them; its value sits on a plate.
  */
 function kelvinOverlay(): string {
   const hdg = (72 * Math.PI) / 180;
-  const half = 18 * 2.4; // the hull's half length in the lens picture
+  const half = 18 * SAR_K;
   const sx = CX - half * Math.sin(hdg);
   const sy = CY + half * Math.cos(hdg);
   const out: string[] = [];
   for (const deg of [252 - 19.47, 252 + 19.47]) {
-    out.push(`<View class="absolute left-[${sx.toFixed(1)}px] top-[${(sy - 1).toFixed(1)}px] w-[330px] h-[2px] bg-[${G.hot}] origin-left rotate-${(deg - 90).toFixed(2)} animate-${grow("x", T_KV, 14)}" />`);
+    out.push(`<View class="absolute left-[${sx.toFixed(1)}px] top-[${(sy - 1).toFixed(1)}px] w-[300px] h-[2px] bg-[${G.hot}] origin-left rotate-${(deg - 90).toFixed(2)} animate-${grow("x", T_KV, 14)}" />`);
   }
-  out.push(arc(130, 1.5, 252 - 19.47, 38.94, G.hot, [drawOn(38.94, T_KV + 10, 12)], sx, sy));
-  const lx = sx + 170 * Math.sin((252 * Math.PI) / 180);
-  const ly = sy - 170 * Math.cos((252 * Math.PI) / 180);
-  out.push(at(lx - 60, ly - 14, `<View class="flex-row items-end gap-[6px]">${ui("19.47°", 24, G.hot, true)}${mono("→ 18.4 KN", 13, G.mid)}</View>`, "", reg.anim(power(T_KV + 18))));
-  // CONFIRMED: the evidence agrees with the lock
+  out.push(arc(150, 1.5, 252 - 19.47, 38.94, G.hot, [drawOn(38.94, T_KV + 10, 12)], sx, sy));
+  return out.join("\n");
+}
+
+/** The value of the angle and what it gives, on a plate: drawn above the rings. */
+function kelvinLabel(): string {
+  const hdg = (72 * Math.PI) / 180;
+  const half = 18 * SAR_K;
+  const sx = CX - half * Math.sin(hdg);
+  const sy = CY + half * Math.cos(hdg);
+  const lx = sx + 190 * Math.sin((252 * Math.PI) / 180);
+  const ly = sy - 190 * Math.cos((252 * Math.PI) / 180);
+  return `<View class="absolute left-[${(lx - 70).toFixed(0)}px] top-[${(ly - 18).toFixed(0)}px] w-[176px] h-[36px] animate-${reg.anim(power(T_KV + 18))}"><View class="absolute inset-0 bg-[${G.plate}] opacity-85" /><View class="absolute inset-0 flex-row items-center justify-center gap-[8px]">${ui("19.47°", 22, G.hot, true)}${mono("→ 18.4 KN", 13, G.hot)}</View></View>`;
+}
+
+/** CONFIRMED: the evidence agrees with the lock — beside the brackets, above the rings. */
+function confirmStamp(): string {
   const flick = reg.anim(reg.step("opacity", [[0, "0"], [T_CONF, "1"], [T_CONF + 2, "0"], [T_CONF + 4, "1"]]));
-  out.push(`<View class="absolute left-[${CX - 330}px] top-[${CY - 180}px] w-[220px] h-[44px] animate-${flick}"><View class="absolute inset-0 bg-[${G.plate}]" /><View class="absolute inset-0 border-[${G.hot}] border-2" /><View class="absolute inset-0 flex-row items-center justify-center gap-[8px]">${ui("CONFIRMED", 22, G.hot, true)}${cjk("确认", 16, G.hot)}</View></View>`);
+  return `<View class="absolute left-[${CX + LOCK_S / 2 + 24}px] top-[${CY - 22}px] w-[220px] h-[44px] animate-${flick}"><View class="absolute inset-0 bg-[${G.plate}]" /><View class="absolute inset-0 border-[${G.hot}] border-2" /><View class="absolute inset-0 flex-row items-center justify-center gap-[8px]">${ui("CONFIRMED", 22, G.hot, true)}${cjk("确认", 16, G.hot)}</View></View>`;
+}
+
+/** The cutter's vector into the lens from its bearing, dotted on, the cutter creeping along it. */
+function interceptVector(): string {
+  const brg = (248 * Math.PI) / 180;
+  const ux = Math.sin(brg);
+  const uy = -Math.cos(brg);
+  const r0 = LENS - 10;
+  const r1 = LOCK_S / 2 + 30;
+  const out: string[] = [];
+  const n = 16;
+  for (let i = 0; i < n; i++) {
+    const r = r0 - ((r0 - r1) * i) / (n - 1);
+    out.push(rect(CX + ux * r - 4, CY + uy * r - 1, 8, 2, G.hot, `origin-center rotate-${((brg * 180) / Math.PI - 90).toFixed(1)}`, reg.anim(reg.window(T_INT + i))));
+  }
+  const cutter = new El(reg, { x: CX + ux * r0 - 8, y: CY + uy * r0 - 8, w: 16, h: 16 }, { op: 0 });
+  cutter.set(T_INT, { op: 1 }).to(T_INT, TICKS, { cx: CX + ux * (r0 - 90), cy: CY + uy * (r0 - 90) }, linear);
+  out.push(cutter.node(`<View class="w-[16px] h-[16px] bg-[${G.hot}] rotate-45" />`));
+  out.push(at(CX + ux * r0 + 14, CY + uy * r0 - 30, mono("CG-2108", 12, G.hot), "", reg.anim(power(T_INT + 6))));
   return out.join("\n");
 }
 
@@ -569,77 +619,90 @@ function tracking(): string {
  * that land at 1.00 on T_FLIP, the frame the alert fires — bites to 0.97 and
  * settles. Two echoes trail the snap; the LOCK reading is the snap itself.
  */
-const T_SNAP_IN = T_FLIP - 20;
-const lockScale = (t: number) => (t < T_SNAP_IN ? 1.4 : t <= T_FLIP ? 1 + 0.4 * (1 - snapEase((t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN))) : 1);
-function lock(): string {
-  const S = 150;
+const T_SNAP_IN = T_FLIP - 10;
+const LOCK_S = 400; // the brackets' box at rest
+const lockScale = (t: number) => (t < T_SNAP_IN ? 1.4 : t <= T_FLIP ? 1 + 0.4 * (1 - outExpo((t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN))) : 1);
+/**
+ * The lock: four corners open at 1.40 (560 px) on T_LOCK and hold, dipping on
+ * the beats; the snap is five frames of expo ease-out to 1.00 (400 px),
+ * landing on T_FLIP, the frame the alert fires; two echoes trail it. On 9.6 s
+ * the brackets bite twice, 1.00 → 1.06 → 1.00.
+ */
+function bracketEls(color: string, thick: number, op: number, lag: number, only?: [number, number]): string {
+  const S = LOCK_S;
   const out: string[] = [];
-  const brackets = (color: string, op: number, lag: number) => {
-    for (let k = 0; k < 4; k++) {
-      const el = new El(reg, { x: CX - S / 2, y: CY - S / 2, w: S, h: S }, { op: 0, sx: 1.4, sy: 1.4 });
-      if (lag === 0) {
-        const t0 = T_LOCK + k * 2;
-        el.set(t0, { op: 1 }).set(t0 + 2, { op: 0.2 }).set(t0 + 4, { op: 1 });
-        for (const tb of [T_LOCK + B / 2, T_LOCK + B]) el.to(tb, tb + 3, { sx: 1.36, sy: 1.36 }, outCubic).to(tb + 3, tb + 14, { sx: 1.4, sy: 1.4 }, inOut);
-        el.path(T_SNAP_IN, T_FLIP, (t) => ({ sx: lockScale(t), sy: lockScale(t) }));
-        el.to(T_FLIP, T_FLIP + 2, { sx: 0.97, sy: 0.97 }, outCubic).to(T_FLIP + 2, T_FLIP + 8, { sx: 1, sy: 1 }, inOut);
-      } else {
-        // an echo: the snap again, `lag` ticks behind, only while it moves
-        el.set(T_SNAP_IN + lag, { op, sx: 1.4, sy: 1.4 }).path(T_SNAP_IN + lag, T_FLIP + lag, (t) => ({ sx: lockScale(t - lag), sy: lockScale(t - lag) }));
-        el.set(T_FLIP + lag + 1, { op: 0 });
-      }
-      out.push(el.node(corner(S, 34, 4, color, k as 0)));
+  for (let k = 0; k < 4; k++) {
+    const el = new El(reg, { x: CX - S / 2, y: CY - S / 2, w: S, h: S }, { op: 0, sx: 1.4, sy: 1.4 });
+    if (only) {
+      el.set(only[0], { op, sx: 1, sy: 1 }).set(only[1], { op: 0 });
+    } else if (lag === 0) {
+      const t0 = T_LOCK + k * 2;
+      el.set(t0, { op: 1 }).set(t0 + 2, { op: 0.2 }).set(t0 + 4, { op: 1 });
+      for (const tb of [T_LOCK + B / 2, T_LOCK + B]) el.to(tb, tb + 3, { sx: 1.36, sy: 1.36 }, outCubic).to(tb + 3, tb + 14, { sx: 1.4, sy: 1.4 }, inOut);
+      el.path(T_SNAP_IN, T_FLIP, (t) => ({ sx: lockScale(t), sy: lockScale(t) }));
+      for (const tb of [T_TAP, T_TAP + 8]) el.to(tb, tb + 2, { sx: 1.06, sy: 1.06 }, outCubic).to(tb + 2, tb + 6, { sx: 1, sy: 1 }, inOut);
+    } else {
+      // an echo: the snap again, `lag` ticks behind, only while it moves
+      el.set(T_SNAP_IN + lag, { op, sx: 1.4, sy: 1.4 }).path(T_SNAP_IN + lag, T_FLIP + lag, (t) => ({ sx: lockScale(t - lag), sy: lockScale(t - lag) }));
+      el.set(T_FLIP + lag + 1, { op: 0 });
     }
-  };
-  brackets(G.hot, 0.2, 4);
-  brackets(G.hot, 0.4, 2);
-  brackets(G.hot, 1, 0);
-  out.push(`<View class="absolute left-[${CX - 22}px] top-[${CY - 22}px] w-[44px] h-[44px] rounded-[22px] border-[${G.hot}] border-2 animate-${reg.anim(reg.window(T_FLIP))}" />`);
-  // LOCK % is the snap's progress, read off the brackets' scale, frame by frame
-  const pct: [number, string, number?][] = [[0, "000"], ...series(T_SNAP_IN, T_FLIP, (t) => String(Math.round(((1.4 - lockScale(t)) / 0.4) * 100)).padStart(3, "0"))];
-  out.push(`<View class="absolute inset-0 animate-${reg.anim(reg.window(T_LOCK + 6, T_FLIP + 16))}">
-    ${rect(CX + 122, CY + 118, 132, 30, G.plate)}
-    ${at(CX + 130, CY + 125, mono("LOCK", 13, G.mid))}
-    ${rolling(CX + 176, CY + 120, 20, 12, G.hot, pct, "code", 3)}
-    ${at(CX + 214, CY + 123, mono("%", 18, G.hot))}
-  </View>`);
+    out.push(el.node(corner(S, 64, thick, color, k as 0)));
+  }
   return out.join("\n");
 }
 
+function lock(): string {
+  const out: string[] = [bracketEls(G.hot, 6, 0.2, 4), bracketEls(G.hot, 6, 0.4, 2), bracketEls(G.hot, 6, 1, 0)];
+  // LOCK % is the snap's progress, read off the brackets' scale, frame by frame, outside the open box
+  const pct: [number, string, number?][] = [[0, "000"], ...series(T_SNAP_IN, T_FLIP, (t) => String(Math.round(((1.4 - lockScale(t)) / 0.4) * 100)).padStart(3, "0"))];
+  out.push(`<View class="absolute inset-0 animate-${reg.anim(reg.window(T_LOCK + 6, T_FLIP + 16))}">
+    ${rect(CX + 150, CY + 292, 132, 30, G.plate)}
+    ${at(CX + 158, CY + 299, mono("LOCK", 13, G.mid))}
+    ${rolling(CX + 204, CY + 294, 20, 12, G.hot, pct, "code", 3)}
+    ${at(CX + 242, CY + 297, mono("%", 18, G.hot))}
+  </View>`);
+  // the shock: a ring thrown out of the brackets as they land, gone in three frames
+  const shock = pngFile("shock", raster.ring(1800, 880, 5, 1));
+  const ring = new El(reg, { x: CX - 900, y: CY - 900, w: 1800, h: 1800 }, { op: 0, sx: 0.12, sy: 0.12 });
+  ring.set(T_FLIP, { op: 1 }).to(T_FLIP, T_FLIP + 6, { op: 0, sx: 1, sy: 1 }, outCubic);
+  out.push(ring.node(img(shock, 1800, 1800)));
+  return out.join("\n");
+}
+
+/** The brackets once more, white, for the one frame they land: drawn above the tint, so the bite reads as light. */
+function lockCore(): string {
+  return bracketEls("#ffffff", 3, 1, 0, [T_FLIP, T_FLIP + 2]);
+}
+
 /**
- * The verdict, as a tag on a leader out of the brackets' upper-right corner,
- * over open sea and inside title-safe: priority, 目标锁定, TARGET LOCKED, the
- * coordinates typed, and on 9.0 s the tasking that closes the film.
+ * The verdict, centred on the lock: 目标锁定 across the disc above the
+ * brackets, TARGET LOCKED and the coordinates below them, each on a plate,
+ * stamped on as the brackets land.
  */
-function lockTag(): string {
-  const t0 = T_FLIP;
-  const leader = (x: number, y: number, len: number, deg: number, t: number) =>
-    `<View class="absolute left-[${x}px] top-[${y - 1}px] w-[${len}px] h-[2px] bg-[${G.hot}] origin-left ${deg ? `rotate-${deg}` : ""} animate-${grow("x", t, 6)}" />`;
+function lockup(): string {
+  const t0 = T_FLIP + 2;
   const out: string[] = [];
-  out.push(leader(CX + 75, CY - 75, 99, 315, t0 + 2));
-  out.push(leader(CX + 145, CY - 145, 32, 0, t0 + 6));
-  const x = CX + 177;
-  const y = 214;
-  const w = 324;
-  const h = 236;
-  const stamp = new El(reg, { x, y, w, h }, { op: 0, sx: 1.1, sy: 1.1 });
-  stamp.set(t0 + 8, { op: 1 }).path(t0 + 8, t0 + 16, (t) => {
-    const v = 1 + 0.1 * (1 - snapEase((t - t0 - 8) / 8));
-    return { sx: v, sy: v };
-  });
-  // three alarm blinks before the end, on sixteenths
-  const blinks: [number, string][] = [[0, "1"]];
-  for (const tb of [T_TASK, T_TASK + 15, T_TASK + 30]) blinks.push([tb, "0.15"], [tb + 6, "1"]);
+  const stamp = (x: number, y: number, w: number, h: number, inner: string, delay: number) => {
+    const el = new El(reg, { x, y, w, h }, { op: 0, sx: 1.12, sy: 1.12 });
+    el.set(t0 + delay, { op: 1 }).path(t0 + delay, t0 + delay + 8, (t) => {
+      const v = 1 + 0.12 * (1 - snapEase((t - t0 - delay) / 8));
+      return { sx: v, sy: v };
+    });
+    return el.node(`<View class="absolute inset-0 bg-[${G.plate}] opacity-85" /><View class="absolute inset-0 border-[${G.hot}] border-2" />${inner}`);
+  };
+  out.push(stamp(CX - 330, 118, 660, 196, `<View class="absolute inset-0 flex-row justify-center items-center">${cjk("目标锁定", 150, G.hot)}</View>`, 0));
   out.push(
-    stamp.node(`<View class="absolute inset-0 bg-[${G.plate}]" /><View class="absolute inset-0 border-[${G.hot}] border-2" />${rect(0, 0, 6, h, G.hot)}
-      <View class="absolute left-[22px] top-[12px] flex-row items-end gap-[6px] animate-${reg.anim(reg.step("opacity", blinks))}">${ui("PRIORITY 1 ·", 15, G.hot, true)}${cjk("优先级一", 13, G.hot)}</View>
-      <View class="absolute left-[20px] top-[30px]">${cjk("目标锁定", 72, G.hot)}</View>
-      <View class="absolute left-[22px] top-[122px]">${ui("TARGET LOCKED", 28, G.hot, true)}</View>
-      ${rect(22, 160, w - 44, 1, G.mid)}`),
+    stamp(
+      CX - 260,
+      CY + LOCK_S / 2 + 24,
+      520,
+      112,
+      `<View class="absolute left-[22px] top-[10px] flex-row items-end gap-[12px]">${ui("TARGET LOCKED", 40, G.hot, true)}</View>
+       <View class="absolute right-[18px] top-[18px] flex-row items-end gap-[6px]">${ui("PRIORITY 1 ·", 15, G.hot, true)}${cjk("一级优先", 13, G.hot)}</View>`,
+      4,
+    ),
   );
-  out.push(typed(x + 22, y + 170, 20, [["N31°14′  E121°29′", G.hot]], t0 + 20, { cps: 2, cursorUntil: T_TASK - 4 }));
-  out.push(typed(x + 22, y + 202, 14, [["> INTERCEPT TASKED", G.hot]], T_TASK, { cursorUntil: TICKS }));
-  out.push(at(x + 22 + 18 * 8.4 + 24, y + 202, cjk("已派遣拦截", 13, G.mid), "", reg.anim(power(T_TASK + 20))));
+  out.push(typed(CX - 238, CY + LOCK_S / 2 + 88, 26, [["N31°14′  E121°29′", G.hot]], t0 + 14, { cps: 2, cursorUntil: TICKS }));
   return out.join("\n");
 }
 
@@ -688,51 +751,51 @@ const CW = 360; // column width
 
 const STATES: [number, string, string][] = [
   [0, "POWER-ON", "上电"],
-  [T_SEARCH, "SURVEY", "搜索"],
+  [T_SEARCH, "SEARCH", "搜索"],
   [T_DETECT, "CONTACT", "发现目标"],
-  [T_LOCK, "TRACKING", "跟踪"],
-  [T_FLIP, "LOCKED", "锁定"],
+  [T_LOCK, "TRACK", "跟踪"],
+  [T_FLIP, "LOCK", "锁定"],
 ];
 
-function modeLadder(): string {
-  const out: string[] = [panelFrame(LX, 100, CW, 250, 4), header(LX + 20, 118, CW - 40, "", "MODE", "工作状态", 20)];
-  const x = LX + 20;
-  const spineX = LX + CW - 33;
-  // the spine between the status boxes grows a row at a time as the states are reached
-  const spine: [number, string][] = [[0, "0"]];
-  STATES.forEach(([t], i) => {
-    const y = 162 + i * 36;
+/**
+ * The suite's phase as a strip across the top of the frame: five segments,
+ * typed in at boot, each filled when the suite reaches it, the current one
+ * underlined; CONTACT and TRACKING blink on the half beat.
+ */
+function phaseStrip(): string {
+  const out: string[] = [];
+  const x0 = 470;
+  const w = 184;
+  const gap = 15;
+  const y = 22;
+  const h = 40;
+  STATES.forEach(([t, en, zh], i) => {
+    const x = x0 + i * (w + gap);
     const until = STATES[i + 1]?.[0];
-    const reached = Math.max(t, 30 + i * 15 + STATES[i]![1].length + 1);
-    // the row types itself in at boot, dim, with a cursor; it brightens when the suite reaches it
-    const en = STATES[i]![1];
+    // typed in on sixteenths 4, 6, 8, 10 and 12, each with its beep
     const tIn = 30 + i * 15;
-    out.push(typed(x, y - 2, 16, [[en, G.low]], tIn, { cursorUntil: tIn + en.length + 6 }));
-    // the dim label's power-on flicker runs four ticks; the bright one takes over no sooner than that
-    const lit = Math.max(reached, tIn + en.length + 6);
-    out.push(at(x + en.length * 9.6 + 12, y, cjk(STATES[i]![2], 13, G.faint), "", reg.anim(power(tIn + en.length, lit))));
-    out.push(at(x, y - 2, `<View class="flex-row items-end gap-[12px]">${mono(en, 16, G.hot)}${cjk(STATES[i]![2], 13, G.mid)}</View>`, "", reg.anim(reg.window(lit))));
-    // the box: an outline from boot, filled on the state
-    out.push(`<View class="absolute left-[${spineX - 7}px] top-[${y}px] w-[14px] h-[14px] border-[${G.mid}] border animate-${reg.anim(power(18 + i * 4))}" />`);
-    out.push(rect(spineX - 4, y + 3, 8, 8, G.hot, "", reg.anim(reg.window(reached))));
-    // the current state: an accent bar and a band; CONTACT and TRACKING blink on the half beat
+    const reached = Math.max(t, tIn + en.length + 6);
+    out.push(`<View class="absolute left-[${x}px] top-[${y}px] w-[${w}px] h-[${h}px] border-[${G.low}] border animate-${reg.anim(power(tIn - 4))}" />`);
+    out.push(rect(x, y, w, h, G.hot, "opacity-8", reg.anim(reg.window(reached))));
+    out.push(typed(x + 12, y + 11, 15, [[en, G.low]], tIn, { cursorUntil: tIn + en.length + 4 }));
     const blink = t === T_DETECT || t === T_LOCK;
-    const band = `<View class="absolute left-[${LX + 8}px] top-[${y - 8}px] w-[${CW - 16}px] h-[30px] animate-${reg.anim(reg.window(reached, until))}"><View class="absolute inset-0 bg-[${G.hot}] opacity-10" />${rect(0, 0, 4, 30, G.hot, "", blink ? reg.loop([reg.short({ "0%": { opacity: "1" }, "55%": { opacity: "1" }, "56%": { opacity: "0.2" }, "100%": { opacity: "0.2" } }, B / 2)], B / 2) : undefined)}</View>`;
-    out.push(band);
-    if (i > 0) spine.push([reached - 1, String((i - 1) / 4)], [reached + 6, String(i / 4)]);
+    const lit = `<View class="flex-row items-center gap-[8px]">${mono(en, 15, G.hot)}${cjk(zh, 13, G.mid)}</View>`;
+    out.push(at(x + 12, y + 9, lit, "", reg.anim(reg.window(reached))));
+    out.push(rect(x, y + h + 4, w, 3, G.hot, "", blink ? reg.loop([reg.short({ "0%": { opacity: "1" }, "55%": { opacity: "1" }, "56%": { opacity: "0.2" }, "100%": { opacity: "0.2" } }, B / 2)], B / 2) : undefined).replace("<View", `<View`));
+    // the underline shows only while this is the current phase
+    out[out.length - 1] = `<View class="absolute inset-0 animate-${reg.anim(reg.window(reached, until))}">${out[out.length - 1]}</View>`;
   });
-  out.push(rect(spineX - 0.5, 169, 1, 144, G.mid, "origin-top", reg.anim(reg.prop("scaleY", spine, "cubic-bezier(0.16,1,0.3,1)"))));
   return out.join("\n");
 }
 
 // ── the AIS gap: the transponder's last six hours, and the silence after ──
 
 function aisGap(): string {
-  const out: string[] = [panelFrame(LX, 372, CW, 260, 28), header(LX + 20, 390, CW - 40, "", "AIS SILENT", "应答静默", 50)];
+  const out: string[] = [panelFrame(LX, 100, CW, 260, 4), header(LX + 20, 118, CW - 40, "", "AIS SILENT", "AIS 静默", 20)];
   const x0 = LX + 20;
   const span = CW - 40;
   const hx = (h: number) => x0 + ((h + 6) / 6) * span; // -6 h .. now
-  const by = 478;
+  const by = 206;
   out.push(rect(x0, by, span, 1, G.low, "origin-left", grow("x", 28, 18)));
   for (let h = -6; h <= 0; h++) {
     out.push(rect(hx(h), by - 4, 1, 9, G.mid, "", reg.anim(power(30 + (h + 6) * 2))));
@@ -748,37 +811,59 @@ function aisGap(): string {
   out.push(`<View class="absolute left-[${hx(last)}px] top-[${by - 9}px] w-[${hx(0) - hx(last)}px] h-[19px] origin-left animate-${grow("x", T_SEARCH - 20, 24)}"><View class="absolute inset-0 bg-[${G.hot}] opacity-12" />${rect(0, 0, hx(0) - hx(last), 1, G.mid)}${rect(0, 18, hx(0) - hx(last), 1, G.mid)}</View>`);
   out.push(at(hx(last) - 4, by - 34, `<View class="flex-row items-end gap-[6px]">${mono("LAST AIS", 11, G.mid)}${mono("23:54Z", 12, G.hot)}</View>`, "", reg.anim(power(76))));
   // the gap's length counts in gapNumerals, drawn above the tint: the story's own clock is the hero number
-  out.push(at(x0, 530, `<View class="flex-col">${mono("SILENT", 12, G.mid)}${mono("FOR", 12, G.mid)}</View>`, "", reg.anim(power(80))));
+  out.push(at(x0, 258, `<View class="flex-col">${mono("SILENT", 12, G.mid)}${mono("FOR", 12, G.mid)}</View>`, "", reg.anim(power(80))));
   // the sweep finds it again: a hit on the timeline's NOW
   out.push(`<View class="absolute left-[${hx(0) - 1}px] top-[${by - 28}px] w-[2px] h-[56px] bg-[${G.hot}] origin-bottom animate-${reg.anim([reg.window(T_DETECT), reg.prop("scaleY", [[0, "0"], [T_DETECT, "0"], [T_DETECT + 8, "1"]], "cubic-bezier(0.16,1,0.3,1)")])}" />`);
   out.push(at(hx(0) - 66, by - 50, mono("SAR HIT", 12, G.hot), "", reg.anim(power(T_DETECT + 4))));
-  out.push(at(x0, 588, mono("MMSI 413 820 517 · LAST SOG 17.9 KN", 12, G.mid), "", reg.anim(power(84))));
+  out.push(at(x0, 318, mono("MMSI 413 820 517 · LAST SOG 17.9 KN", 12, G.mid), "", reg.anim(power(84))));
   return out.join("\n");
 }
 
 // ── the track: what the wake and the chip say about the vessel ─────────────
 
 function trackPanel(): string {
-  const out: string[] = [panelFrame(LX, 654, CW, 336, 52), header(LX + 20, 672, CW - 40, "", "TRACK", "航迹", 74)];
+  const out: string[] = [panelFrame(LX, 380, CW, 300, 28), header(LX + 20, 398, CW - 40, "", "TRACK", "航迹", 50)];
   const x = LX + 20;
-  const row = (y: number, label: string, timeline: [number, string, number?][], unit: string, t0: number, seed: number) =>
-    `${at(x, y + 3, mono(label, 13, G.mid), "", reg.anim(power(t0)))}<View class="absolute inset-0 animate-${reg.anim(power(t0))}">${rolling(x + 70, y, 16, 9.6, G.hot, timeline, "code", seed)}</View>${at(x + 70 + timeline[0]![1].length * 9.6 + 6, y + 3, mono(unit, 13, G.mid), "", reg.anim(power(t0)))}`;
+  const row = (y: number, label: string, timeline: [number, string, number?][], unit: string, t0: number, seed: number, fixed: number[] = []) =>
+    `${at(x, y + 3, mono(label, 13, G.mid), "", reg.anim(power(t0)))}<View class="absolute inset-0 animate-${reg.anim(power(t0))}">${rolling(x + 70, y, 16, 9.6, G.hot, timeline, "code", seed, 3, fixed)}</View>${at(x + 70 + timeline[0]![1].length * 9.6 + 6, y + 3, mono(unit, 13, G.mid), "", reg.anim(power(t0)))}`;
   const found = T_DETECT + 6;
-  out.push(row(722, "HDG", [[0, "---.-"], [found, "072.4"]], "°", 88, 31));
-  out.push(row(760, "SPD", [[0, "--.-"], [found + 4, "18.4"]], "KN", 92, 32));
-  out.push(row(798, "LEN", [[0, "---"], [found + 8, "182"]], "M", 96, 33));
-  out.push(row(836, "CONF", [[0, "0.000"], ...series(T_DETECT, T_FLIP, (t) => (0.997 * inOut((t - T_DETECT) / (T_FLIP - T_DETECT))).toFixed(3))], "", 100, 34));
-  out.push(rect(x, 876, 320, 6, G.faint, "", reg.anim(power(100))));
-  out.push(rect(x, 876, 320, 6, G.hot, "origin-left", reg.anim(reg.prop("scaleX", [[0, "0"], [T_DETECT, "0"], [T_FLIP, "0.997"]], "cubic-bezier(0.45,0,0.55,1)"))));
-  out.push(at(x, 932, `<View class="flex-col gap-[6px]">${mono("COURSE PROJ 072° → HUANGPU", 12, G.mid)}${mono("ETA BERTH 00:38", 12, G.mid)}</View>`, "", reg.anim(power(T_DETECT + 30))));
+  // a heading's hundreds is 0–3, so that cell settles without scrambling through 4–9
+  out.push(row(448, "HDG", [[0, "---.-"], [found, "072.4"]], "°", 64, 31, [0]));
+  out.push(row(486, "SPD", [[0, "--.-"], [found + 4, "18.4"]], "KN", 68, 32));
+  out.push(row(524, "LEN", [[0, "---"], [found + 8, "182"]], "M", 72, 33));
+  out.push(row(562, "CONF", [[0, "0.000"], ...series(T_DETECT, T_FLIP, (t) => (0.997 * inOut((t - T_DETECT) / (T_FLIP - T_DETECT))).toFixed(3))], "", 76, 34));
+  out.push(rect(x, 602, 320, 6, G.faint, "", reg.anim(power(76))));
+  out.push(rect(x, 602, 320, 6, G.hot, "origin-left", reg.anim(reg.prop("scaleX", [[0, "0"], [T_DETECT, "0"], [T_FLIP, "0.997"]], "cubic-bezier(0.45,0,0.55,1)"))));
+  out.push(at(x, 628, `<View class="flex-col gap-[6px]">${mono("COURSE PROJ 072° → HUANGPU", 12, G.mid)}${mono("ETA BERTH 00:38", 12, G.mid)}</View>`, "", reg.anim(power(T_DETECT + 30))));
   return out.join("\n");
 }
 
 /** The silence's length, the story's own clock, drawn above the alert tint so it stays white: 02:47:13 and counting. */
 function gapNumerals(): string {
-  const secs: [number, string, number?][] = [[0, "13"]];
-  for (let s = 1; s <= 9; s++) secs.push([s * 60, String(13 + s), 0]);
-  return `<View class="absolute inset-0 animate-${reg.anim(power(84))}">${at(LX + 78, 512, ui("02:47:", 52, G.hot, true))}${rolling(LX + 78 + 136, 512, 52, 27, G.hot, secs, "ui", 9)}</View>`;
+  // one string through rolling(), the colons and fixed digits as cells that never change, so nothing gaps
+  const clock: [number, string, number?][] = [[0, "02:47:13"]];
+  for (let s = 1; s <= 9; s++) clock.push([s * 60, `02:47:${13 + s}`, 0]);
+  return `<View class="absolute inset-0 animate-${reg.anim(power(84))}">${rolling(LX + 72, 240, 52, 27, G.hot, clock, "ui", 9)}</View>`;
+}
+
+// ── the intercept: a patrol cutter tasked to the contact ───────────────────
+
+function interceptPanel(): string {
+  const out: string[] = [panelFrame(LX, 700, CW, 290, 52), header(LX + 20, 718, CW - 40, "", "INTERCEPT", "拦截", 74)];
+  const x = LX + 20;
+  out.push(at(x, 762, `<View class="flex-col gap-[6px]">${mono("CG-2108 · PATROL CUTTER", 13, G.mid)}${mono("BRG 248° · 31 KN · 12.6 NM", 13, G.mid)}</View>`, "", reg.anim(power(90))));
+  out.push(at(x, 822, mono("STANDBY", 16, G.low), "", reg.anim(power(96, T_INT))));
+  // ETA to the contact, counting down a simulated twenty seconds a frame once the vector is drawn
+  const eta: [number, string, number?][] = [[0, "24:40"]];
+  let secs = 24 * 60 + 40;
+  for (let t = T_INT; t <= TICKS; t += 2) {
+    eta.push([t, `${String(Math.floor(secs / 60)).padStart(2, "0")}:${String(secs % 60).padStart(2, "0")}`, t === T_INT ? 3 : 0]);
+    secs -= 20;
+  }
+  out.push(`<View class="absolute inset-0 animate-${reg.anim(reg.window(T_INT))}">${at(x, 830, mono("ETA", 13, G.mid))}${rolling(x + 48, 812, 40, 22, G.hot, eta, "ui", 21)}</View>`);
+  out.push(typed(x, 884, 14, [["> TASKED", G.hot]], T_TASK, { cursorUntil: TICKS }));
+  out.push(at(x + 9 * 8.4 + 14, 884, cjk("拦截已指派", 13, G.mid), "", reg.anim(power(T_TASK + 12))));
+  return out.join("\n");
 }
 
 // ── the Kelvin wake: the angle every ship's wake makes, and the speed it gives ──
@@ -809,7 +894,7 @@ function kelvinPanel(): string {
 // ── the signal: two sparklines, the return's SNR and its coherence ───────
 
 function sparkPanel(): string {
-  const out: string[] = [panelFrame(RX, 424, CW, 412, 40), header(RX + 20, 442, CW - 40, "", "SIGNAL", "回波信号", 62)];
+  const out: string[] = [panelFrame(RX, 424, CW, 412, 40), header(RX + 20, 442, CW - 40, "", "WAKE SIGNAL", "尾迹回波", 62)];
   const x = RX + 20;
   const span = CW - 40;
   // each trace scrolls 330 px over the film, so its point at x is under the panel's right edge at t = (x - span) / 330 * T
@@ -830,15 +915,15 @@ function sparkPanel(): string {
   const coh = pngFile("spark-coh", raster.trace(760, 70, make(43, 54, [[T_DETECT, 34], [T_LOCK, 22], [T_FLIP, 12]], 9), 4, 1.6));
   const scroll = reg.prop("translateX", [[0, "0px"], [TICKS, "-330px"]]);
   const lane = (y: number, label: string, zh: string, file: string, values: [number, string, number?][], unit: string, seed: number, t0: number) => `
-    ${at(x, y, `<View class="flex-row items-end gap-[6px]">${mono(label, 13, G.mid)}${cjk(zh, 12, G.faint)}</View>`, "", reg.anim(power(t0)))}
+    ${at(x, y, `<View class="flex-row items-end gap-[8px]">${mono(label, 13, G.mid)}${cjk(zh, 13, G.mid)}</View>`, "", reg.anim(power(t0)))}
     <View class="absolute inset-0 animate-${reg.anim(power(t0))}">${rolling(x + span - 84, y - 4, 18, 10.8, G.hot, values, "code", seed)}</View>
     ${at(x + span - 84 + values[0]![1].length * 10.8 + 4, y, mono(unit, 12, G.mid), "", reg.anim(power(t0)))}
     <View class="absolute left-[${x}px] top-[${y + 24}px] w-[${span}px] h-[90px] overflow-hidden animate-${reg.anim(power(t0 + 4))}">
       ${rect(0, 20, span, 1, G.faint)}
       <View class="absolute left-[0px] top-[10px] animate-${reg.anim(scroll)}">${img(file, 760, 70)}</View>
     </View>`;
-  out.push(lane(490, "SNR", "信噪比", snr, [[0, "-3.2"], [T_DETECT, "14.8"], [T_FLIP, "21.6"]], "dB", 61, 70));
-  out.push(lane(650, "COHERENCE", "相干度", coh, [[0, "0.21"], [T_DETECT, "0.74"], [T_LOCK, "0.88"], [T_FLIP, "0.97"]], "", 62, 78));
+  out.push(lane(490, "BACKSCATTER σ0", "后向散射", snr, [[0, "-21.4"], [T_DETECT, "-12.8"], [T_FLIP, "-08.6"]], "dB", 61, 70));
+  out.push(lane(650, "WAKE CONTRAST", "尾迹对比度", coh, [[0, "0.21"], [T_DETECT, "0.74"], [T_LOCK, "0.88"], [T_FLIP, "0.97"]], "", 62, 78));
   return out.join("\n");
 }
 
@@ -850,21 +935,6 @@ function swathPanel(): string {
 
 // ── the frame's edges: the orbit along the top, the colophon along the foot ──
 
-function orbitTrack(): string {
-  const out: string[] = [];
-  const x0 = 470;
-  const x1 = 1450;
-  const y = 40;
-  out.push(rect(x0, y, x1 - x0, 1, G.low, "origin-center", grow("x", 4, 24)));
-  for (let x = x0; x <= x1; x += 49) out.push(rect(x, y - 3, 1, 7, G.mid, "", reg.anim(power(10 + Math.round((Math.abs(x - CX) / (x1 - x0)) * 30)))));
-  // the sub-satellite point creeping along the pass
-  const crawl = reg.prop("translateX", [[0, "0px"], [24, "0px"], [TICKS, `${((x1 - x0) * 0.62).toFixed(1)}px`]]);
-  out.push(`<View class="absolute left-[${x0 - 6}px] top-[${y - 6}px] w-[12px] h-[12px] animate-${reg.anim([crawl, reg.window(24)])}"><View class="w-[12px] h-[12px] bg-[${G.hot}] rotate-45" /></View>`);
-  out.push(at(x0, y + 10, mono("AOS 03:52Z", 11, G.mid), "", reg.anim(power(20))));
-  out.push(at(x1 - 66, y + 10, mono("LOS 04:03Z", 11, G.mid), "", reg.anim(power(20))));
-  out.push(at(CX - 70, y - 26, mono("REV 1127 · ASC 121.9°E", 11, G.low), "", reg.anim(power(22))));
-  return out.join("\n");
-}
 
 function colophon(): string {
   const out: string[] = [];
@@ -951,7 +1021,7 @@ function speedLines(): string {
 
 // panels dim to 30 % once the dive has landed, leaving the target and its words; they lose focus through the push
 const defocusEntry = reg.prop("blur", [[0, "0px"], [T_PUSH, "0px"], [T_PUSH + 8, "8px"], [T_PUSH + 30, "0px"]]);
-const dim = reg.anim([reg.prop("opacity", [[0, "1"], [T_HOLD, "1"], [T_HOLD + 24, "0.3"]]), defocusEntry]);
+const dim = reg.anim([reg.prop("opacity", [[0, "1"], [T_HOLD, "1"], [T_HOLD + 24, "0.6"]]), defocusEntry]);
 const defocus = reg.anim(defocusEntry);
 const GLOW = "glow-[12px] glow-[#ffffff] glow-gain-[1.0]";
 const centre = [hexGrid(), crosshair(), globe(), rimAndScan(), coast()].join("\n");
@@ -959,13 +1029,15 @@ const centre = [hexGrid(), crosshair(), globe(), rimAndScan(), coast()].join("\n
 // the wedge came out as a dark dither (an engine defect, reported) where white over white must only brighten
 const sweep = radar();
 const centreTop = [rings(), speedLines(), tracking(), lock()].join("\n");
-const panels = [modeLadder(), aisGap(), trackPanel(), kelvinPanel(), sparkPanel(), swathPanel(), orbitTrack(), colophon()].join("\n");
+const panels = [phaseStrip(), aisGap(), trackPanel(), interceptPanel(), kelvinPanel(), sparkPanel(), swathPanel(), colophon()].join("\n");
 // three restrained glitches — 2.0 s, 4.4 s and 6.4 s — each a frame of tears across the picture
 const GLITCH = [120, 264, 384];
 const tears = GLITCH.flatMap((t, i) =>
   [137, 491, 803].map((y, k) => rect(0, (y + i * 211 + k * 97) % H, W, 2 + ((i + k) % 2), G.hot, "opacity-40", reg.anim(reg.window(t, t + 2)))),
 ).join("");
-const top = [lockTag(), tears].join("\n");
+// an alert border, pulsing at 2 Hz from a second after the flip: the tail keeps its pulse
+const border = `<View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[${G.hot}] border-[3px] animate-${reg.anim(reg.window(T_FLIP + 30))}"><View class="absolute inset-0 border-[${G.hot}] border-[3px] animate-${reg.loop([reg.short({ "0%": { opacity: "1" }, "50%": { opacity: "0.6" }, "100%": { opacity: "1" } }, B)], B)}" /></View>`;
+const top = [lockup(), kelvinLabel(), confirmStamp(), tears, border].join("\n");
 const hud = `
       <View class="absolute inset-0 ${GLOW}">${centre}</View>
       <View class="absolute inset-0">${sweep}</View>
@@ -979,8 +1051,8 @@ const hud = `
 const ease = "cubic-bezier(0.3,0.6,0.5,1)";
 // both stops sit at 0 until the flip, so the rest state is cyan to the centre pixel; the 3 % band opens as the wave runs
 const tint = reg.anim([
-  reg.prop("gradVia1Pos", [[0, "0"], [T_FLIP, "0"], [T_FLIP + 8, "0.85"]], ease),
-  reg.prop("gradVia2Pos", [[0, "0"], [T_FLIP, "0"], [T_FLIP + 8, "0.88"]], ease),
+  reg.prop("gradVia1Pos", [[0, "0"], [T_FLIP, "0"], [T_FLIP + 12, "0.85"]], ease),
+  reg.prop("gradVia2Pos", [[0, "0"], [T_FLIP, "0"], [T_FLIP + 12, "0.88"]], ease),
 ]);
 // the punch: the HUD scales 1.06 -> 1 over six frames, jolting sideways once
 const punch = reg.anim([
@@ -990,8 +1062,7 @@ const punch = reg.anim([
     [T_FLIP, "10px"], [T_FLIP + 2, "-6px"], [T_FLIP + 4, "0px"], [T_FLIP + 31, "4px"], [T_FLIP + 33, "0px"],
   ]),
 ]);
-// the flip: an alert-orange bloom screened over the frame, 70 % falling to nothing over six frames
-const bloom = reg.anim(reg.prop("opacity", [[0, "0"], [T_FLIP - 1, "0"], [T_FLIP, "0.7"], [T_FLIP + 12, "0"]]));
+
 // the alert keeps a near-black ground: the grey under the tint drops by 60 % as it flips, so only the linework turns orange
 const groundDown = reg.anim(reg.prop("opacity", [[0, "0"], [T_FLIP, "0"], [T_FLIP + 4, "0.6"]]));
 // chromatic aberration: the reticle again in red and blue, a pixel and a half off, seven on the flip
@@ -999,10 +1070,10 @@ const groundDown = reg.anim(reg.prop("opacity", [[0, "0"], [T_FLIP, "0"], [T_FLI
 const caX = (sign: number) => {
   const k: [number, string][] = [[0, `${sign * 1.5}px`]];
   for (const t of GLITCH) k.push([t - 1, `${sign * 1.5}px`], [t, `${sign * 6}px`], [t + 4, `${sign * 1.5}px`]);
-  k.push([T_FLIP - 1, `${sign * 1.5}px`], [T_FLIP, `${sign * 8}px`], [T_FLIP + 8, `${sign * 1.5}px`]);
+  k.push([T_FLIP - 1, `${sign * 1.5}px`], [T_FLIP, `${sign * 4}px`], [T_FLIP + 2, `${sign * 1.5}px`]);
   // present only on the glitches and the flip: at rest its fringes cut through the type over the rings
   // the windows, merged where one ends on the tick the next begins (the 6.4 s glitch runs into the flip)
-  const spans: [number, number][] = [...GLITCH.map((t) => [t, t + 6] as [number, number]), [T_FLIP, T_FLIP + 14]];
+  const spans: [number, number][] = [...GLITCH.map((t) => [t, t + 6] as [number, number]), [T_FLIP, T_FLIP + 2]];
   const merged: [number, number][] = [];
   for (const [a, z] of spans.sort((p, q) => p[0] - q[0])) {
     if (merged.length && a <= merged[merged.length - 1]![1]) merged[merged.length - 1]![1] = Math.max(merged[merged.length - 1]![1], z);
@@ -1036,7 +1107,7 @@ ${hud}
     <View class="absolute inset-0 mix-blend-screen animate-${caX(1)}">${reticle("#ff1f3d", "#7a0f1d", true)}</View>
     <View class="absolute inset-0 mix-blend-screen animate-${caX(-1)}">${reticle("#1f6bff", "#0f2f7a", true)}</View>
     <View class="absolute inset-0 bg-[radial-gradient(#ff2a0000,#ff2a0030)] mix-blend-screen animate-${reg.anim([reg.window(T_FLIP)])}"><View class="absolute inset-0 animate-${reg.loop([reg.short(wash, B, "ease-out", 0)], B)}" /></View>
-    <View class="absolute inset-0 bg-[${ORANGE}] mix-blend-screen animate-${bloom}" />
+    <View class="absolute inset-0 origin-center animate-${punch}">${lockCore()}</View>
     <View class="absolute inset-0 origin-center animate-${punch}"><View class="absolute inset-0 glow-[10px] glow-[#ffffff] glow-gain-[0.6] animate-${defocus}">${gapNumerals()}</View></View>
     <Image class="absolute left-[0px] top-[0px] w-[1920px] h-[1080px] mix-blend-multiply opacity-50" src="${scan}" />
     <Image class="absolute left-[0px] top-[0px] w-[1920px] h-[1080px] mix-blend-overlay opacity-30" src="${grn}" />

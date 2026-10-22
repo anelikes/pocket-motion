@@ -5,7 +5,8 @@
 #   4.0 s 扫描第一圈扫过 C-04：双响 + ding
 #   5.5–6.5 s 锁定读数 0→100%：锁定音每个十六分音符升一级，6.0 s 起音乐被压出一个洞
 #   6.5 s 括号落定 = 全画面翻橙：冲击 + 低频下潜 + 双音警报；6.9 s 俯冲 whoosh
-#   7.0 s 镜头里扫出那艘船的雷达图像 · 7.5 s 开尔文角画上尾迹 · 8.1 s CONFIRMED
+#   6.33 s 括号咬合一记 · 7.5 s 一路推进落在那艘船的雷达图像上，开尔文角画上尾迹 · 8.1 s CONFIRMED
+#   8.5 s 巡逻艇的航向矢量进来 · 9.0 s 拦截已指派 · 9.6 / 9.75 s 括号再咬两下 · 最后降下去
 #   9.0 / 9.25 / 9.5 s 底部「目标锁定」告警闪三下，各一声
 title: Vega-7
 meta:
@@ -15,10 +16,10 @@ meta:
   seed: 0
 
 sections:
-  - { name: boot,   bars: 1, energy: 0.25 }                      # 0:00–0:02
-  - { name: search, bars: 1, energy: 0.2, at: "0:02" }            # 0:02–0:04 底层让开，提示音在前
-  - { name: track,  bars: 1, energy: "0.2->0.45", at: "0:04" }    # 0:04–0:06 向锁定蓄力，给锁定那一下留出余量
-  - { name: alert,  bars: 2, energy: "1.0->0.75", at: "0:06" }    # 0:06–0:10
+  - { name: boot,   bars: 1, energy: 0.2 }                       # 0:00–0:02 只有提示音和一点空气
+  - { name: search, bars: 1, energy: 0.25, at: "0:02" }           # 0:02–0:04 踩镲进来
+  - { name: track,  bars: 1, energy: "0.3->0.5", at: "0:04" }     # 0:04–0:06 底鼓和贝斯进来，向锁定蓄力
+  - { name: alert,  bars: 2, energy: "1.0->0.85", at: "0:06" }    # 0:06–0:10 全部进来
 
 harmony:
   boot:   "Dm"
@@ -27,24 +28,19 @@ harmony:
   alert:  "Dm Bb | Gm A"
 
 tracks:
+  # the bed is built a section at a time, so the hit on 6.5 s stands well above what led to it
   pad:
     sound: synth-pad
     texture: pad
-    in: all
-
-  sub:
-    sound: sub-bass
-    texture: bass-sustain
-    in: [boot]
+    in: [track, alert]
 
   pulse:
     sound: synth-bass
     texture: bassline
-    in: [search, track, alert]
+    in: [track, alert]
     articulation: staccato
     rhythm: "1111 1111 1111 1111"
     by_section:
-      search: {rhythm: "1.1. 1.1. 1.1. 1.1."}
       # the bar before the lock flash drops out for a beat, so the hit lands in a hole
       alert: {rhythm: ".... 1111 1111 1111 | 1111 1111 1111 1111"}
 
@@ -60,8 +56,8 @@ tracks:
       search: "r/16 r/16 r/16 A6/16' r/16 r/16 r/16 F6/16' r/16 r/16 r/16 A6/16' r/16 r/16 r/16 D7/16'"
       # the lock tone: one step up every 16th from the brackets opening (5.5 s) to the snap landing (6.5 s)
       track:  "D7/16' r/16 D7/16' r/16 r/4 r/4 D6/16' F6/16' A6/16' D7/16'"
-      # …and the banner's three alarm blinks at 9.0 / 9.25 / 9.5 s
-      alert:  "E7/16' F7/16' A7/16' A7/16' r/4 r/2 | r/2 A6/16' r/16 A6/16' r/16 A6/16' r/16 r/8"
+      # …then the tail: the intercept vector at 8.5, TASKED at 9.0, the brackets' double bite at 9.6 / 9.75
+      alert:  "E7/16' F7/16' A7/16' A7/16' r/4 r/2 | r/4 C7/16' r/16 r/8 A6/16' r/16 r/8 r/16 D7/16' D7/16' r/16"
 
   # the distance readout rolls on every beat of the search: a short high chirp each time it settles
   chirp:
@@ -99,12 +95,10 @@ tracks:
     by_section:
       search:
         pattern:
-          kick: "x... x... x... x..."
           hat:  "g.g. g.g. g.g. g.g."
       track:
         pattern:
           kick:  "x... x... x... x..."
-          snare: ".... x... .... x..."
           hat:   "xgxg xgxg xgxg xgxg"
       alert:
         pattern:
@@ -114,20 +108,22 @@ tracks:
           crash: ".... X... .... .... | .... .... .... ...."
 
 sfx:
-  - { type: impact, at: boot, level: 0.55 }
-  - { type: whoosh, at: "0:02.0", level: 0.4 }
+  - { type: impact, at: boot, level: 0.4 }
+  - { type: whoosh, at: "0:02.0", level: 0.35 }
   - { type: ding, at: "0:04.0", level: 0.45 }
-  # the lock counts up under a two-beat riser that arrives on the flip
+  # the lock counts up under a two-beat riser that arrives on the flip; the snap itself clacks
   - { type: riser, at: "0:06.5", length: 2, level: 0.6 }
+  - { type: pop, at: "0:06.33", level: 0.5 }
   # a near-silent pop whose only job is its duck: the bed drops out for the beat before the hit
   - { type: pop, at: "0:06.02", level: 0.02, duck: 18 }
   - { type: impact, at: "0:06.5", duck: 6, level: 1.0 }
-  - { type: sub-drop, at: "0:06.5", level: 0.7 }
-  # the lens scans the radar image of the vessel, the Kelvin V is drawn on it, the evidence is confirmed
-  - { type: ding, at: "0:07.0", level: 0.3 }
-  - { type: pop, at: "0:07.5", level: 0.3 }
+  - { type: sub-drop, at: "0:06.5", level: 0.8 }
+  - { type: whoosh, at: "0:06.8", level: 0.5 }
+  # the push lands on the vessel, the Kelvin V is drawn, the evidence is confirmed, the cutter's vector comes in
+  - { type: pop, at: "0:07.57", level: 0.35 }
   - { type: ding, at: "0:08.1", level: 0.4 }
-  # a tail that rings past the last frame instead of stopping
-  - { type: ding, at: "0:09.6", level: 0.25 }
-  - { type: whoosh, at: "0:06.9", level: 0.5 }
-  - { type: downlifter, at: "0:08.5", level: 0.35 }
+  - { type: whoosh, at: "0:08.5", level: 0.3 }
+  # the double bite, then the suite powers down under the last frames
+  - { type: pop, at: "0:09.6", level: 0.45 }
+  - { type: pop, at: "0:09.73", level: 0.45 }
+  - { type: downlifter, at: "0:09.0", length: 2, level: 0.4 }
