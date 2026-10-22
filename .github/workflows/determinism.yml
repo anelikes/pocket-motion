@@ -18,7 +18,7 @@
 # artifact, and the render draws it — `src/render/identity.ts` leaves ffmpeg's
 # version out of input identity for exactly that reason, because the frozen
 # artifact stands in front of it. So which ffmpeg runs here is an input to the
-# digest of every composition that declares footage — 2 of the ledger's 22
+# digest of every composition that declares footage — 3 of the ledger's 38
 # today — and it is pinned below rather than installed.
 
 name: determinism
@@ -139,8 +139,8 @@ jobs:
 
       # The whole ledger, never a subset. A full run decodes every footage track
       # to raw RGBA beside its bundle, and that is what decides whether this
-      # step fits on a hosted runner: today the two footage compositions leave
-      # 688 MiB over five files against about 12 GiB free. A tree carrying
+      # step fits on a hosted runner: today the three footage compositions leave
+      # 1.3 GiB over six files against about 12 GiB free. A tree carrying
       # recorded material at film length once left 64 GiB, which is what this
       # step could not fit — `src/cli/disk.ts` carried that as a high-water mark
       # long after the footage was gone, and `doctor` gated on it, so every run

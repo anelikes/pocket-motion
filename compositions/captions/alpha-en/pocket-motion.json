@@ -1,0 +1,25 @@
+{
+  "motion": 1,
+  "durationFrames": 180,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "vendor/pocketjs/assets/fonts/Inter-Regular.ttf",
+    "bold": "vendor/pocketjs/assets/fonts/Inter-Bold.ttf"
+  },
+  "assertions": [
+    { "node": "w0", "inPicture": [0, 9] },
+    { "node": "w1", "inPicture": [10, 18] },
+    { "node": "w2", "inPicture": [19, 26] },
+    { "node": "w3", "inPicture": [27, 38] },
+    { "node": "w4", "inPicture": [48, 56] },
+    { "node": "w5", "inPicture": [57, 68] },
+    { "node": "w6", "inPicture": [72, 80] },
+    { "node": "w7", "inPicture": [81, 95] },
+    { "node": "w8", "inPicture": [105, 116] },
+    { "node": "w9", "inPicture": [117, 128] },
+    { "node": "w10", "inPicture": [131, 142] },
+    { "node": "w11", "inPicture": [143, 151] },
+    { "node": "w12", "inPicture": [152, 164] }
+  ]
+}

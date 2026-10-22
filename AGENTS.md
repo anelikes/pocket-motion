@@ -718,7 +718,7 @@ mechanisms with the file or test beside them.
   checks less than its name claims. ffmpeg is pinned in the workflow rather than
   taken from whatever the image carries, because the frozen ingest artifact
   stands in front of the decoder and its bytes are an input to the digest of
-  every composition that declares footage — 2 of the ledger's 22 today. The
+  every composition that declares footage — 3 of the ledger's 38 today. The
   visibility ledger is NOT run there; it is a local step before a pull request
   and nothing on a runner would notice it going stale.
 - `CAPABILITIES.md` is generated from `src/catalog/surface.ts` by
@@ -923,13 +923,16 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   to the size itself.
 - **A full ledger run's disk cost is set by the footage in the tree, and only
   the ledger can measure it.** Ingest decodes each footage track to raw RGBA
-  next to the bundle and leaves it there. Measured 2026-09-02 by clearing
-  `dist/**/*.rgba` and running the whole ledger serially: 5 `.rgba` files
-  totalling 721,152,000 bytes — 688 MiB — from 1.5 MB of tracked clips. A tree
-  carrying recorded material at film length reached 92 files and 120 GB and
-  filled a 1.8 TiB volume, and the ingest that hit the wall reported
-  `No space left on device` from ffmpeg rather than anything about capacity.
-  That measurement is `FULL_RUN_RGBA_BYTES` (`src/cli/disk.ts`), in bytes
+  next to the bundle and leaves it there. Measured 2026-10-22 by clearing
+  `dist/**/*.rgba` and running the whole ledger serially: 6 `.rgba` files
+  totalling 1,381,017,600 bytes — 1.3 GiB — from 1.5 MB of tracked clips.
+  659,865,600 of those bytes are one 44 KB clip, the one
+  `compositions/captions/burn-zh` burns its captions into: ingest decodes a
+  source whole at the drawn size, here 179 frames at 720×1280, whatever window
+  the track uses. A tree carrying recorded material at film length reached 92
+  files and 120 GB and filled a 1.8 TiB volume, and the ingest that hit the
+  wall reported `No space left on device` from ffmpeg rather than anything
+  about capacity. That measurement is `FULL_RUN_RGBA_BYTES` (`src/cli/disk.ts`), in bytes
   because bytes are what was read, and both readers derive from it: `doctor`
   FAILS below it and passes calling the headroom thin below `HEADROOM_MULTIPLE`
   times it, and `scripts/digests.ts` prints the same two numbers before it

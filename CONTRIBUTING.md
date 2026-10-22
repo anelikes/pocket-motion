@@ -64,7 +64,7 @@ a `debugName`, and how many paint and are never shown, so a gate quietly
 covering less than it did is a diff rather than a memory.
 
 A full digest run leaves the decoded RGBA of every footage track beside its
-bundle: 688 MiB over five files, measured 2026-09-02 by clearing them first and
+bundle: 1.3 GiB over six files, measured 2026-10-22 by clearing them first and
 running the whole ledger serially. That measurement is what the script's banner
 and `doctor` both quote — `doctor` fails below it and calls the headroom thin
 below 3x it — and a full run re-reads `dist/` at the end and says so if what it

@@ -117,6 +117,14 @@ const ENTRIES = [
   "compositions/captions/pill-karaoke",
   "compositions/captions/clip-wipe",
   "compositions/captions/matrix-decode",
+  // captions/alpha-en, captions/burn-zh. The two samples of the `captions` job
+  // template (src/captions/template.ts): a Latin alpha track read from a
+  // WhisperX transcript, and a CJK track read from OpenAI's verbose_json and
+  // burned into a footage clip. Where a page breaks, what size it takes and
+  // which frame a word enters on are all decided by the template, so a change
+  // to the layout, the clock arithmetic or a style moves one of these first.
+  "compositions/captions/alpha-en",
+  "compositions/captions/burn-zh",
   // transitions. Nine scene-to-scene transitions ported from the HyperFrames
   // catalog in one film: a velocity-matched cut, a clip wipe, a wash, a tile
   // grid, a match cut, a rubber band, a whip pan with echoes, and two flat

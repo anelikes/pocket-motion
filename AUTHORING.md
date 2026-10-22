@@ -41,7 +41,7 @@ failed — the command that fixes it: the running Bun against the one
 `build.json` names; rustup and the wasm target; `ffmpeg` and `ffprobe`
 separately, with their version lines; the vendored tree at the pin with the
 patches applied; `assets/*/manifest.json` fetched and matching; and free disk
-against what a full ledger run was measured to decode (688 MiB — it fails below
+against what a full ledger run was measured to decode (1.3 GiB — it fails below
 that and calls the headroom thin below 3x it).
 
 `ffprobe` is asked for separately because it is separately load-bearing:

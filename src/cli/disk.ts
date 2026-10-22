@@ -11,8 +11,8 @@
  * at all. It used to be a HIGH-WATER MARK carried from another one: 52 `.rgba`
  * files totalling 64 GiB on 2026-08-20, when the ledger still covered the
  * study deliveries, and 92 files totalling 120 GB during one merge. Phase B
- * removed that footage. Everything the ledger decodes today comes from the two
- * synthetic-clip fixtures, and the number below was read off a full run rather
+ * removed that footage. Everything the ledger decodes today comes from the three
+ * compositions that draw synthetic clips, and the number below was read off a full run rather
  * than remembered — so `doctor` can say "this volume cannot hold a full run"
  * and mean it, instead of failing every hosted runner against a tree that no
  * longer exists. A standard GitHub runner has about 14 GiB free; against 64
@@ -37,20 +37,24 @@ const ROOT = resolve(import.meta.dir, "../..");
  * Decoded RGBA a full `bun scripts/digests.ts` leaves under `dist/`.
  *
  * Measured on the date below by clearing `dist/**\/*.rgba`, running the whole
- * ledger serially (22 compositions, all matching), and totalling what was
- * left: five files — four `footage-tracks` windows and one `sound-roles`
- * clip — at 721,152,000 bytes exactly.
+ * ledger serially (38 compositions, all matching), and totalling what was
+ * left: six files — four `footage-tracks` windows, one `sound-roles` clip,
+ * and the clip `captions/burn-zh` burns its captions into — at 1,381,017,600
+ * bytes exactly. That last one is 659,865,600 of it on its own: ingest
+ * decodes the whole 179-frame source at the drawn 720×1280 although the
+ * sample's window is 101 frames, because the decode is keyed on the source
+ * and not on the window (`src/cli/footage.ts`).
  *
  * Bytes rather than GiB because that is what was read; the GiB the callers
  * print is derived, so the two can never drift apart by a rounding.
  */
-export const FULL_RUN_RGBA_BYTES = 721_152_000;
+export const FULL_RUN_RGBA_BYTES = 1_381_017_600;
 
 /** How many files that was, for the sentence that prints it. */
-export const FULL_RUN_RGBA_FILES = 5;
+export const FULL_RUN_RGBA_FILES = 6;
 
 /** The day the figure above was measured. */
-export const FULL_RUN_RGBA_MEASURED = "2026-09-02";
+export const FULL_RUN_RGBA_MEASURED = "2026-10-22";
 
 /** `FULL_RUN_RGBA_BYTES` in the unit `freeGiB` reports. */
 export const FULL_RUN_NEED_GIB = FULL_RUN_RGBA_BYTES / 1073741824;
