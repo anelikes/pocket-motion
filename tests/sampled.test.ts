@@ -14,7 +14,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { bezier, decodeSeq, echo, El, glyphCell, MAX_KEYS, Reg, rng, stateAt } from "../src/anim/sampled.ts";
+import { bezier, decodeSeq, echo, El, glyphCell, MAX_KEYS, MOVE_STEP, Reg, rng, stateAt } from "../src/anim/sampled.ts";
 
 const reg = () => new Reg(600, 10_000);
 const opacityAt = (r: Reg, entry: string, t: number) => {
@@ -59,6 +59,17 @@ describe("El", () => {
     const ok = new El(reg(), { x: 0, y: 0, w: 10, h: 10 });
     ok.to(10, 20, { cx: 50 });
     expect(() => ok.set(21, { op: 0 })).not.toThrow();
+  });
+
+  test("a move is keyed every second tick and a cut on adjacent ticks, so a shutter can tell them apart", () => {
+    const el = new El(reg(), { x: 0, y: 0, w: 10, h: 10 }, { cx: 0 });
+    el.to(10, 30, { cx: 200 }).orbit(30, 50, 0, 0, 90).set(60, { op: 0 });
+    const ks = [...el.keys.keys()].sort((a, b) => a - b);
+    const gaps = ks.slice(1).map((t, i) => t - ks[i]!);
+    // inside the moves no segment is a single tick; the one single-tick segment is the cut at 60
+    expect(gaps.filter((g) => g === 1).length).toBe(1);
+    expect(ks).toContain(59);
+    expect(MOVE_STEP).toBe(2);
   });
 
   test("entry refuses a track the baker cannot hold", () => {
