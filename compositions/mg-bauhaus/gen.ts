@@ -96,6 +96,9 @@ const T_LAST = b(18); // the module turns once more, about its own centre; from 
 
 /** A roll tips slowly and lands hard: power-in, arriving at speed on the beat. */
 const tip = (u: number) => u ** 2.2;
+/** A letter's turn: out of the sixteenth at speed and settled ten ticks later, power3.out. */
+const settle = (u: number) => 1 - (1 - u) ** 3;
+const LETTER_SETTLE = 8;
 
 // ── grid: horizontals on the eighths, verticals on the sixteenths between, from the centre out ──
 
@@ -400,36 +403,41 @@ function type(): string {
     // upright in the gutter: the letter turned a quarter clockwise about the corner it will tip over
     const px = WORD_X + MOD;
     const el = new El(reg, home, { cx: px + M, cy: foot - M, rot: 90, op: 0 });
-    el.set(t - 6, { op: 0 }).orbit(t - 6, t, px, foot, -90, tip);
-    // first seen two ticks into the tip, already turning, and from then on to the end
-    for (const [k, v] of el.keys) if (k >= t - 4) el.keys.set(k, { ...v, op: 1 });
+    // the turn starts on the sixteenth and settles out of it: half of it is done by the first frame that shows the
+    //   letter, the next four are crisp. Tipped on a power-in over six ticks, both frames it was seen in were its fastest,
+    //   and under the shutter a 240 px letter smeared across 16° read as a grey fade rather than a move
+    el.set(t - 2, { op: 0 }).orbit(t - 2, t + LETTER_SETTLE, px, foot, -90, settle);
+    for (const [k, v] of el.keys) if (k >= t) el.keys.set(k, { ...v, op: 1 });
     el.s.op = 1;
-    el.set(t + 1, { rot: 0 });
+    el.set(t + LETTER_SETTLE + 1, { rot: 0 });
     out.push(el.node(img(file, MOD, MOD)));
   });
 
-  // the tagline under a rule across the bottom right, drawn on b18
+  // the rule under the right-hand group, drawn on b18; the tagline set as a stacked block in the two cells the
+  //   poster leaves empty at the top right, where it was a three-column label row under the rule
   const S = INK.black;
   const tx = cellX(2) + M;
   const ty = gy(6);
   const RW = 3 * MOD; // three 240 px columns, the rule ending on the grid's line at x 1800 (to 1680 it clipped FUNKTION)
   const rule = (a: string) => `<View class="absolute left-[${tx}px] top-[${ty}px] w-[${RW}px] h-[3px] bg-[${S}] origin-left ${a}" />`;
   const track = (px: number) => reg.anim(reg.prop("letterSpacing", [[0, `${px}px`], [TICKS, `${px}px`]]));
-  const dot = `<Text class="font-bold text-[30px] text-[${S}]">{"·"}</Text>`;
   const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[30px] text-[${S}]">${jsx(w)}</Text>`;
-  const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}]">${jsx(w)}</Text>`;
-  const col = (w: string, z: string) => `<View class="flex-col gap-[6px] w-[${MOD}px]">${en(w)}${zh(z)}</View>`;
-  const lines = [`<View class="flex-row items-start">${col("FORM", "形式")}${col("FARBE", "色彩")}${col("FUNKTION", "功能")}</View>`];
+  const en = (w: string) => `<Text class="font-bold text-[48px] text-[${S}]">${jsx(w)}</Text>`;
+  const row = (w: string, z: string) => `<View class="flex-row items-end gap-[16px]">${en(w)}${zh(z)}</View>`;
+  const lines = [row("FORM", "形式"), row("FARBE", "色彩"), row("FUNKTION", "功能")];
+  const bx = cellX(4); // x 1440: one module clear of the module at the top, on the grid line
+  const BW = 360; // to the margin at x 1800
+  const LH = MOD / 3; // three rows in one module's height, from y 60 to 300
   if (STATIC) {
     out.push(rule(""));
-    lines.forEach((l) => out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22}px]">${l}</View>`));
+    lines.forEach((l, i) => out.push(`<View class="absolute left-[${bx}px] top-[${cellY(0) + i * LH}px]">${l}</View>`));
   } else {
     out.push(rule(`animate-${reg.anim([reg.prop("scaleX", [[T_TAG - 8, "0"], [T_TAG, "1"]], "cubic-bezier(0.45,0,0.55,1)")])}`));
     lines.forEach((l, i) => {
       const t = T_TAG + 4 + 8 * i;
-      const el = new El(reg, { x: 0, y: 0, w: RW, h: 90 }, { cy: 45 + 90 });
-      el.to(t - 6, t, { cy: 45 }, outCubic);
-      out.push(`<View class="absolute left-[${tx}px] top-[${ty + 22 + i * 90}px] w-[${RW}px] h-[90px] overflow-hidden">${el.node(l)}</View>`);
+      const el = new El(reg, { x: 0, y: 0, w: BW, h: LH }, { cy: LH / 2 + LH });
+      el.to(t - 8, t, { cy: LH / 2 }, outCubic);
+      out.push(`<View class="absolute left-[${bx}px] top-[${cellY(0) + i * LH}px] w-[${BW}px] h-[${LH}px] overflow-hidden">${el.node(`<View class="absolute left-[0px] bottom-[6px]">${l}</View>`)}</View>`);
     });
   }
   return out.join("\n    ");
@@ -511,7 +519,7 @@ await Bun.write(
       supersample: 1,
       // motion blur: each frame an exposure of 8 renders over 144° of the frame's duration (patches/0034); only transform
       //   timelines are sampled between ticks, so cuts, gates and fades stay where they are
-      ...(process.env.SHUTTER === "0" ? {} : { shutter: { angle: 144, samples: 8 } }),
+      ...(process.env.SHUTTER === "0" ? {} : { shutter: { angle: 144, samples: 16 } }),
       fonts: {
         regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf",
         bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf",

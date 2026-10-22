@@ -6,7 +6,7 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 
 mount(() => (
   <View class="w-full h-full bg-[#F1E9DA]">
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-ld2" src="paper.png" />
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-ld6" src="paper.png" />
     <View class="absolute left-[0px] top-[59px] w-[1920px] h-[2px] origin-center animate-a3" />
     <View class="absolute left-[0px] top-[179px] w-[1920px] h-[2px] origin-center animate-a7" />
     <View class="absolute left-[0px] top-[299px] w-[1920px] h-[2px] origin-center animate-ab" />
@@ -182,8 +182,10 @@ mount(() => (
     <View class="absolute left-[120px] top-[80px] w-[240px] h-[240px] origin-center  animate-acu"><Image class="w-[240px] h-[240px]" src="letter-5.png" /></View>
     <View class="absolute left-[120px] top-[-60px] w-[240px] h-[240px] origin-center  animate-acw"><Image class="w-[240px] h-[240px]" src="letter-6.png" /></View>
     <View class="absolute left-[1080px] top-[780px] w-[720px] h-[3px] bg-[#111111] origin-left animate-acy" />
-    <View class="absolute left-[1080px] top-[802px] w-[720px] h-[90px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[720px] h-[90px] origin-center  animate-ad0"><View class="flex-row items-start"><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FORM"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"形式"}</Text></View><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FARBE"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"色彩"}</Text></View><View class="flex-col gap-[6px] w-[240px]"><Text class="font-bold text-[32px] text-[#111111]">{"FUNKTION"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"功能"}</Text></View></View></View></View>
-    <View class="absolute left-[120px] top-[1034px] flex-row items-center gap-[12px] animate-ad4"><Text class="font-bold text-[18px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-bold text-[18px] text-[#3A342C]">{"·"}</Text><Text class="font-[cjk] font-bold text-[19px] text-[#3A342C]">{"模数构成"}</Text></View>
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-20 animate-ld2" src="grain.png" />
+    <View class="absolute left-[1440px] top-[60px] w-[360px] h-[80px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[360px] h-[80px] origin-center  animate-ad0"><View class="absolute left-[0px] bottom-[6px]"><View class="flex-row items-end gap-[16px]"><Text class="font-bold text-[48px] text-[#111111]">{"FORM"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"形式"}</Text></View></View></View></View>
+    <View class="absolute left-[1440px] top-[140px] w-[360px] h-[80px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[360px] h-[80px] origin-center  animate-ad2"><View class="absolute left-[0px] bottom-[6px]"><View class="flex-row items-end gap-[16px]"><Text class="font-bold text-[48px] text-[#111111]">{"FARBE"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"色彩"}</Text></View></View></View></View>
+    <View class="absolute left-[1440px] top-[220px] w-[360px] h-[80px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[360px] h-[80px] origin-center  animate-ad4"><View class="absolute left-[0px] bottom-[6px]"><View class="flex-row items-end gap-[16px]"><Text class="font-bold text-[48px] text-[#111111]">{"FUNKTION"}</Text><Text class="font-[cjk] font-bold text-[30px] text-[#111111]">{"功能"}</Text></View></View></View></View>
+    <View class="absolute left-[120px] top-[1034px] flex-row items-center gap-[12px] animate-ad8"><Text class="font-bold text-[18px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-bold text-[18px] text-[#3A342C]">{"·"}</Text><Text class="font-[cjk] font-bold text-[19px] text-[#3A342C]">{"模数构成"}</Text></View>
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-20 animate-ld6" src="grain.png" />
   </View>
 ));
