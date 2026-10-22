@@ -72,8 +72,12 @@ const R_GLOBE = 270;
 const TARGET = { lat: 31.2304, lon: 121.4737 };
 const PERSP = 2600;
 const M_FINAL = 34;
-/** Magnification at the contact: 1 until the push, M_FINAL on the landing, eased in log space. */
-const worldMag = (t: number) => (t <= T_PUSH ? 1 : M_FINAL ** inOut(Math.min(1, (t - T_PUSH) / (T_LAND - T_PUSH))));
+/**
+ * Magnification at the contact: 1 until the push, M_FINAL on the landing, eased in log space on a cubic out: the dive
+ * leaves at speed off the flip and settles onto the vessel. On a power2.inOut it spent its first fifteen frames under
+ * ×2, and the globe's fade-out landed there, so the centre went black for most of a second.
+ */
+const worldMag = (t: number) => (t <= T_PUSH ? 1 : M_FINAL ** outCubic(Math.min(1, (t - T_PUSH) / (T_LAND - T_PUSH))));
 /** How far the globe is pulled toward the camera to give `worldMag` at its near point. */
 const diveZ = (t: number) => (PERSP - R_GLOBE) * (1 - 1 / worldMag(t));
 
@@ -366,8 +370,15 @@ function crosshair(): string {
 // the globe and the dive
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** The tick at which the dive reaches magnification m (the inverse of worldMag). */
-const tickAtMag = (m: number) => Math.round(T_PUSH + (T_LAND - T_PUSH) * (1 - (1 - Math.log(m) / Math.log(M_FINAL)) ** (1 / 3)));
+/**
+ * The first tick at which the dive reaches magnification m, found on worldMag itself. It was a closed form that
+ * inverted a cubic out while worldMag eased power2.inOut, so every fade placed with it landed at the wrong
+ * magnification: the radar picture came in at ×1.6, thirty pixels wide.
+ */
+const tickAtMag = (m: number) => {
+  for (let t = T_PUSH; t <= T_LAND; t++) if (worldMag(t) >= m) return t;
+  throw new Error(`tickAtMag: the dive never reaches ×${m} (M_FINAL ${M_FINAL})`);
+};
 /** Ticks the globe's pose is keyed at: every 4, every 2 through the fast half of the dive. */
 const poseTicks = (() => {
   const out: number[] = [];
@@ -521,19 +532,19 @@ function coast(): string {
   const wide = coastMap("coast-wide", 8, 1000, 5, [360, 495], 1.4, 5);
   const keys: [number, string][] = [[0, (1 / 8).toFixed(4)]];
   for (let t = T_PUSH; t <= T_LAND; t += 2) keys.push([t, (worldMag(t) / 8).toFixed(4)]);
-  const map = `<View class="absolute left-[${LENS - 500}px] top-[${LENS - 500}px] w-[1000px] h-[1000px] origin-center animate-${reg.anim([reg.prop("scale", keys), reg.prop("opacity", [[0, "0"], [tickAtMag(2), "0"], [tickAtMag(4), "1"], [tickAtMag(9), "1"], [tickAtMag(13), "0"]])])}">${img(wide.file, 1000, 1000)}</View>`;
+  const map = `<View class="absolute left-[${LENS - 500}px] top-[${LENS - 500}px] w-[1000px] h-[1000px] origin-center animate-${reg.anim([reg.prop("scale", keys), reg.prop("opacity", [[0, "0"], [tickAtMag(1.5), "0"], [tickAtMag(3), "1"], [tickAtMag(18), "1"], [tickAtMag(28), "0"]])])}">${img(wide.file, 1000, 1000)}</View>`;
   // the radar picture is the last stage of the same zoom: it grows with the magnification from ×8, so the
   // push never cuts; then it keeps pushing in slowly for the rest of the film
   const S = 2 * LENS;
   const sarLens = pngFile(
     "sar-lens",
-    raster.sar(S, 11, true, 72, [0.5, 0.5], SAR_K, 1.25, { clutter: 0.36, grain: 2.5, arms: 1.1, chevrons: false, shore: { side: "top", depth: 0.13, rough: true }, others: OTHERS, vignette: { r0: 0.8, r1: 1 } }),
+    raster.sar(S, 11, true, 72, [0.5, 0.5], SAR_K, 1.25, { clutter: 0.36, grain: 2.5, arms: 0.45, chevrons: false, shore: { side: "top", depth: 0.13, rough: true }, others: OTHERS, vignette: { r0: 0.8, r1: 1 } }),
     false,
   );
   const sk: [number, string][] = [[0, (1 / M_FINAL).toFixed(4)]];
   for (let t = T_PUSH; t <= T_LAND; t += 2) sk.push([t, (worldMag(t) / M_FINAL).toFixed(4)]);
   const zoom = reg.prop("scale", sk);
-  const sar = `<View class="absolute left-[0px] top-[0px] w-[${S}px] h-[${S}px] origin-center animate-${reg.anim([reg.prop("opacity", [[0, "0"], [tickAtMag(8), "0"], [tickAtMag(12), "1"]]), zoom])}"><View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${img(sarLens, S, S)}
+  const sar = `<View class="absolute left-[0px] top-[0px] w-[${S}px] h-[${S}px] origin-center animate-${reg.anim([reg.prop("opacity", [[0, "0"], [tickAtMag(5), "0"], [tickAtMag(9), "1"]]), zoom])}"><View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${img(sarLens, S, S)}
       ${OTHERS.map(([fx, fy]) => {
         // each other vessel's marker flares when the sweep's edge crosses its bearing, and decays over two thirds of a second
         const brg = (((Math.atan2(fx * S - S / 2, S / 2 - fy * S) * 180) / Math.PI) + 360) % 360;
@@ -557,7 +568,7 @@ function coast(): string {
       ${sar}
       ${pulses}
     </View>
-    <View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${kelvinOverlay()}${interceptVector()}</View>`;
+    <View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${kelvinOverlay()}</View>`;
 }
 
 /**
@@ -612,17 +623,30 @@ function kelvinOverlay(): string {
   const sx = CX;
   const sy = CY;
   const out: string[] = [];
+  // each ray starts 70 px out, past the stern, and runs to 300: drawn from the centre, the two rays and the hull read as
+  //   a clock's hands
   for (const deg of [252 - 19.47, 252 + 19.47]) {
-    out.push(`<View class="absolute left-[${sx.toFixed(1)}px] top-[${(sy - 1).toFixed(1)}px] w-[200px] h-[2px] bg-[${G.hot}] origin-left rotate-${(deg - 90).toFixed(2)} animate-${grow("x", T_KV, 40)}" />`);
+    const phi = ((deg - 90) * Math.PI) / 180;
+    const x0 = sx + 70 * Math.cos(phi);
+    const y0 = sy + 70 * Math.sin(phi);
+    out.push(`<View class="absolute left-[${x0.toFixed(1)}px] top-[${(y0 - 1).toFixed(1)}px] w-[230px] h-[2px] bg-[${G.hot}] opacity-70 origin-left rotate-${(deg - 90).toFixed(2)} animate-${grow("x", T_KV, 40)}" />`);
   }
   out.push(arc(130, 1.5, 252 - 19.47, 38.94, G.hot, [drawOn(38.94, T_KV + 30, 14)], sx, sy));
   return out.join("\n");
 }
 
-/** The hull, white above the alert's tint so the target is not the chrome's colour, riding the chip's slow push. */
+/**
+ * The hull as a radar return: a hard 136 × 12 px core on the 072° heading (182 m at 1.3 m/px), white-hot above the
+ * alert's tint, with the cross of sidelobes a bright point target throws along the image's range and azimuth axes,
+ * riding the chip's slow push. The raster's own return under it is soft, and at the end of the dive it read as a smear.
+ * A vector outline was tried first and read as clip-art; a filled core does not.
+ */
 function hullTop(): string {
-  // the vector outline read as clip-art over the radar picture: the hull is the radar's own return now
-  return "";
+  const core = "#ffe2c2";
+  const on = reg.anim(reg.window(T_LAND));
+  const lobes = `${rect(CX - 230, CY, 460, 1, core, "opacity-20")}${rect(CX, CY - 150, 1, 300, core, "opacity-15")}`;
+  const hull = `<View class="absolute left-[${CX - 68}px] top-[${CY - 6}px] w-[136px] h-[12px] rounded-[6px] bg-[${core}] origin-center rotate-342" />`;
+  return `<View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}"><View class="absolute inset-0 animate-${on}">${lobes}<View class="absolute inset-0 glow-[8px] glow-[#ff9a40] glow-gain-[1.2]">${hull}</View></View></View>`;
 }
 
 /**
@@ -643,11 +667,14 @@ function course(): string {
 
 /** The value of the angle and what it gives, on a plate: drawn above the rings. */
 /** 19.47° lifts off the KELVIN WAKE panel and flies onto the arc drawn on the picture: the panel's physics becomes the evidence. */
+const FLY = 20;
 function kelvinFly(lx: number, ly: number): string {
   const t0 = T_KV + 26;
   const from = { x: RX + CW - 64 - 236, y: 262 - 12 };
   const el = new El(reg, { x: lx - 70, y: ly - 18, w: 120, h: 30 }, { cx: from.x + 60, cy: from.y + 15, op: 0 });
-  el.set(t0, { op: 1 }).to(t0, t0 + 14, { cx: lx - 10, cy: ly - 3 }, (u) => 1 - (1 - u) ** 3).set(t0 + 15, { op: 0 });
+  // twenty ticks on a sine ease: the fastest frame moves ~78 px, where fourteen on a cubic-out moved ~214 and the shutter
+  //   drew six separate copies of the numerals across it
+  el.set(t0, { op: 1 }).to(t0, t0 + FLY, { cx: lx - 10, cy: ly - 3 }, (u) => 0.5 - 0.5 * Math.cos(Math.PI * u)).set(t0 + FLY + 1, { op: 0 });
   return el.node(ui("19.47°", 22, G.hot, true));
 }
 
@@ -656,7 +683,7 @@ function kelvinLabel(): string {
   const sy = CY;
   const lx = sx + 170 * Math.sin((252 * Math.PI) / 180);
   const ly = sy - 170 * Math.cos((252 * Math.PI) / 180);
-  return `${kelvinFly(lx, ly)}<View class="absolute left-[${(lx - 70).toFixed(0)}px] top-[${(ly - 18).toFixed(0)}px] w-[176px] h-[36px] animate-${reg.anim(power(T_KV + 40))}"><View class="absolute inset-0 bg-[${G.plate}] opacity-85" /><View class="absolute inset-0 flex-row items-center justify-center gap-[8px]">${ui("19.47°", 22, G.hot, true)}${mono("→ 18.4 KN", 13, G.hot)}</View></View>`;
+  return `${kelvinFly(lx, ly)}<View class="absolute left-[${(lx - 70).toFixed(0)}px] top-[${(ly - 18).toFixed(0)}px] w-[176px] h-[36px] animate-${reg.anim(power(T_KV + 26 + FLY))}"><View class="absolute inset-0 bg-[${G.plate}] opacity-85" /><View class="absolute inset-0 flex-row items-center justify-center gap-[8px]">${ui("19.47°", 22, G.hot, true)}${mono("→ 18.4 KN", 13, G.hot)}</View></View>`;
 }
 
 /** CONFIRMED: the evidence agrees with the lock — beside the brackets, above the rings. */
@@ -666,7 +693,7 @@ function confirmStamp(): string {
 }
 
 /** The cutter's vector into the lens from its bearing, dotted on, the cutter creeping along it. */
-function interceptVector(): string {
+function interceptVector(color: string): string {
   const brg = (248 * Math.PI) / 180;
   const ux = Math.sin(brg);
   const uy = -Math.cos(brg);
@@ -677,12 +704,13 @@ function interceptVector(): string {
   // dotted on over twenty-four frames from the cutter's bearing, a dash every three ticks
   for (let i = 0; i < n; i++) {
     const r = r0 - ((r0 - r1) * i) / (n - 1);
-    out.push(rect(CX + ux * r - 4, CY + uy * r - 1, 8, 2, G.hot, `origin-center rotate-${((brg * 180) / Math.PI - 90).toFixed(1)}`, reg.anim(reg.window(T_INT + 3 * i))));
+    out.push(rect(CX + ux * r - 4, CY + uy * r - 1, 8, 2, color, `origin-center rotate-${((brg * 180) / Math.PI - 90).toFixed(1)}`, reg.anim(reg.window(T_INT + 3 * i))));
   }
   const cutter = new El(reg, { x: CX + ux * r0 - 8, y: CY + uy * r0 - 8, w: 16, h: 16 }, { op: 0 });
   cutter.set(T_INT, { op: 1 }).to(T_INT, TICKS, { cx: CX + ux * (r0 - 90), cy: CY + uy * (r0 - 90) }, linear);
-  out.push(cutter.node(`<View class="w-[16px] h-[16px] bg-[${G.hot}] rotate-45" />`));
-  out.push(at(CX + ux * r0 - 124, CY + uy * r0 + 18, mono("CG-2108", 13, G.hot), "", reg.anim(power(T_INT + 6))));
+  // the label rides with the diamond: left at the cutter's first position, it was 110 px from it by the end and on the
+  //   left panel's border
+  out.push(cutter.node(`<View class="w-[16px] h-[16px] bg-[${color}] rotate-45" /><View class="absolute left-[24px] top-[-1px] animate-${reg.anim(power(T_INT + 6))}">${mono("CG-2108", 13, color)}</View>`));
   return out.join("\n");
 }
 
@@ -824,10 +852,10 @@ function lock(): string {
   return out.join("\n");
 }
 
-/** The brackets once more, white, for the frame they land and the two the film ends on: drawn above the tint, so the bite reads as light. */
+/** The brackets once more, white, for the frame they land, the frame they land again on the vessel, and the two the film ends on: drawn above the tint, so each bite reads as light. */
 function lockCore(): string {
   // the white flashes on the hit and the stand-down, and from the hit on a white-hot core inside the orange stroke
-  const flash = (t: number) => ((t >= T_FLIP && t < T_FLIP + 2) || (t >= T_END && t < T_END + 4) ? 1 : 0);
+  const flash = (t: number) => ((t >= T_FLIP && t < T_FLIP + 2) || (t >= T_LAND && t < T_LAND + 2) || (t >= T_END && t < T_END + 4) ? 1 : 0);
   return bracketCopy("#ffffff", 3, flash) + bracketCopy("#ffd8b0", 2, (t) => (flash(t) ? 0 : t >= T_FLIP + 2 ? 0.6 : 0));
 }
 
@@ -907,7 +935,9 @@ function lockup(): string {
   // the leader, dropped from the box's foot to the block as the brackets close; it goes with the rings
   out.push(`<View class="absolute left-[${CX - 1}px] top-[${CY + LOCK_D}px] w-[2px] h-[${HERO.y - CY - LOCK_D}px] bg-[${G.hot}] origin-top animate-${reg.anim([reg.prop("scaleY", [[0, "0"], [T_FLIP - 6, "0"], [T_FLIP, "1"]], "cubic-bezier(0.16,1,0.3,1)"), reg.window(0, T_END + 8)])}" />`);
   out.push(heroTitle(G.hot));
-  out.push(arc(LENS + 4, 2, 0, 360, G.hot, [reg.window(T_END + 10)]));
+  // the closing ring passes behind the plate: from 204.5° round to 155.5° it stops 2 px above the keyline on each side
+  //   (r 312 meets y = HERO.y at ±23.6° from the bottom), where a full circle drew across the title
+  out.push(arc(LENS + 4, 2, 204.5, 311, G.hot, [reg.window(T_END + 10)]));
   // the coordinates type in under it, two frames a character, behind a block cursor
   const coord = "N31°14′  E121°29′";
   out.push(typed(CX - Math.round((coord.length * 32 * 0.6) / 2), HERO.y + 100, 32, [[coord, G.hot]], T_FLIP + 8, { cps: 4, cursorUntil: T_FLIP + 8 + coord.length * 4 + 24 }));
@@ -1270,8 +1300,11 @@ const tears = GLITCH.flatMap((t, i) =>
 // an alert border, pulsing at 2 Hz from a second after the flip: the tail keeps its pulse
 const border = `<View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[${G.hot}] border-[3px] animate-${reg.anim(reg.window(T_FLIP + 30))}"><View class="absolute inset-0 border-[${G.hot}] border-[3px] animate-${reg.loop([reg.short({ "0%": { opacity: "1" }, "50%": { opacity: "0.6" }, "100%": { opacity: "1" } }, B)], B)}" /></View>`;
 const top = [kelvinLabel(), confirmStamp(), tears, border].join("\n");
+// lockup() pushes the verdict's plate into bandPlates: called inside the template below, it ran after the plates had
+//   been joined, and the solid plate was never drawn, so the rings crossed the title through it
+const verdict = lockup();
 const hud = `
-      <View class="absolute inset-0 ${GLOW} animate-${reg.anim(reg.prop("opacity", [[0, "1"], [T_END + 12, "1"], [T_END + 18, "0.7"]]))}">${centre}</View>
+      <View class="absolute inset-0 ${GLOW} animate-${reg.anim(reg.prop("opacity", [[0, "1"], [T_END + 12, "1"], [T_END + 18, "0.88"]]))}">${centre}</View>
       <View class="absolute inset-0 animate-${outAt(T_END + 18)}">${rim}</View>
       <View class="absolute inset-0">${sweep}</View>
       <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END + 12)}">${centreTop}</View>
@@ -1279,7 +1312,7 @@ const hud = `
       <View class="absolute inset-0 animate-${dim}">${panelPlates.join("")}</View>
       <View class="absolute inset-0 ${GLOW} animate-${dim}">${panels}</View>
       <View class="absolute inset-0">${bandPlates.join("")}</View>
-      <View class="absolute inset-0 ${GLOW}">${lockup()}${typed(HERO.x + 24, HERO.y + HERO.h - 36, 16, [["> HANDOFF → CG-2108", G.hot]], T_END + 14, { cps: 1, cursorUntil: TICKS })}</View>
+      <View class="absolute inset-0 ${GLOW}">${verdict}${typed(HERO.x + 24, HERO.y + HERO.h - 36, 16, [["> HANDOFF → CG-2108", G.hot]], T_END + 14, { cps: 1, cursorUntil: TICKS })}</View>
       <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END + 6)}">${top}</View>`;
 
 // the alert spreads from the contact to every corner: the gradient's box is a square the width of the frame,
@@ -1353,6 +1386,7 @@ ${hud}
     <View class="absolute inset-0 bg-[radial-gradient(#ff6a0000,#ff6a0000_55%,#ff6a00b0)] mix-blend-screen animate-${alarm}" />
     <View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[#ffd6a8] border-[7px] animate-${alarmEdge}" />
     <View class="absolute inset-0 origin-center animate-${punch}">${lockCore()}${alertFront()}${hullTop()}${heroHot()}</View>
+    <View class="absolute inset-0 origin-center animate-${punch}"><View class="absolute inset-0 origin-center opacity-85 animate-${reg.anim(sarPush())}">${interceptVector(CYAN)}</View></View>
     <View class="absolute inset-0 origin-center animate-${punch}"><View class="absolute inset-0 glow-[10px] glow-[#ffffff] glow-gain-[0.6] animate-${defocus}"><View class="absolute inset-0 animate-${outAt(T_END)}">${gapNumerals()}</View></View></View>
     <Image class="absolute left-[0px] top-[0px] w-[1920px] h-[1080px] mix-blend-multiply opacity-50" src="${scan}" />
     <Image class="absolute left-[0px] top-[0px] w-[1920px] h-[1080px] mix-blend-overlay opacity-30" src="${grn}" />
@@ -1385,7 +1419,7 @@ await Bun.write(
       supersample: 1,
       // motion blur: each frame an exposure of 6 renders over 120° of the frame's duration (patches/0034); only transform
       //   timelines are sampled between ticks, so cuts, gates and fades stay where they are
-      ...(process.env.SHUTTER === "0" ? {} : { shutter: { angle: 120, samples: 6 } }),
+      ...(process.env.SHUTTER === "0" ? {} : { shutter: { angle: 120, samples: 12 } }),
       fonts: {
         regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf",
         bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf",
