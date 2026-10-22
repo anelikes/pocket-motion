@@ -10,7 +10,9 @@
  * - `sar` gives the same speckle with or without the ship, which is what
  *   lets one dissolve into the other;
  * - `cell` cuts the printed poster into tiles that are the form again, pixel
- *   for pixel, so a row of cells has no seam.
+ *   for pixel, so a row of cells has no seam;
+ * - printed ink is opaque inside its edge — an ink that thinned its alpha let
+ *   the grid show through a red square (mg-bauhaus, fourth jury round).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -102,6 +104,13 @@ describe("print", () => {
     expect(sameInk(cell([disc], 0, 0, 120, 2), 0, 0, whole, 0, 0, 240)).toBe(0);
     expect(sameInk(cell([disc], 120, 0, 120, 2), 0, 0, whole, 240, 0, 240)).toBe(0);
     expect(sameInk(cell([disc], 120, 120, 120, 2), 0, 0, whole, 240, 240, 240)).toBe(0);
+  });
+
+  test("ink is opaque inside its edge: what lies under a form never shows through it", () => {
+    const sq = form("box", 120, 120, red, 3, 2);
+    let lowest = 255;
+    for (let y = 6; y < 234; y++) for (let x = 6; x < 234; x++) lowest = Math.min(lowest, sq.rgba[(y * 240 + x) * 4 + 3]!);
+    expect(lowest).toBe(255);
   });
 
   test("a form's own quarter turn is the turned picture, in a cell too", () => {

@@ -4,9 +4,9 @@
  *
  * A form is its exact geometry (box, disc, quarter, half, triangle) plus two
  * things a press adds: an edge that wanders by under a pixel (low-frequency
- * noise added to the distance), and ink that is not quite even (a few
- * percent of alpha noise inside the fill, a third as much for dark ink, whose
- * variation reads as paper showing through). Cost is the pixel count, which
+ * noise added to the distance), and ink that is not quite even — its colour
+ * lifted a few percent toward the paper where it was laid thin, a third as
+ * much for dark ink. The ink itself is opaque: only the edge has coverage. Cost is the pixel count, which
  * the build's SVG baker — a point-in-polygon test per subsample per edge —
  * could not afford for a rough outline the size of the frame.
  *
@@ -40,6 +40,23 @@ function noise(x: number, y: number, seed: number): number {
 }
 
 export type Kind = "box" | "disc" | "quarter" | "half" | "tri";
+
+/** The paper an uneven ink lifts toward: the cream the Bauhaus prompt specifies. */
+export const PAPER: [number, number, number] = [241, 233, 218];
+
+/**
+ * The ink at a point of a form's own coordinates: opaque inside the edge, its
+ * colour lifted toward the paper where the press laid it thin. Coverage is
+ * the edge alone; an ink that thinned its ALPHA instead let whatever lay
+ * under a form show through it — a grid line through a red square.
+ */
+function ink(rgb: [number, number, number], seed: number, x: number, y: number): [number, number, number] {
+  // dark ink varies a third as much: on black every step reads
+  const amp = rgb[0] + rgb[1] + rgb[2] < 120 ? 0.35 : 1;
+  const thin = amp * (0.06 - 0.04 * noise(x * 0.06, y * 0.06, seed + 13) - 0.02 * noise(x * 0.7, y * 0.7, seed + 29));
+  const t = Math.max(0, Math.min(0.12, thin));
+  return [rgb[0] + (PAPER[0] - rgb[0]) * t, rgb[1] + (PAPER[1] - rgb[1]) * t, rgb[2] + (PAPER[2] - rgb[2]) * t];
+}
 
 /**
  * Signed distance (px, negative inside) of a form filling a w×h box.
@@ -82,17 +99,15 @@ export function formPixels(kind: Kind, w: number, h: number, rgb: [number, numbe
     for (let i = 0; i < W; i++) {
       const x = (i + 0.5) / scale;
       const y = (j + 0.5) / scale;
-      // the edge wanders ±0.8 px over a few px of run; ink density varies ±3 %
+      // the edge wanders ±0.8 px over a few px of run
       const d = sdf(kind, w, h, x, y) + 0.55 * noise(x * 0.22, y * 0.22, seed) + 0.25 * noise(x * 0.9, y * 0.9, seed + 7);
       const a = Math.max(0, Math.min(1, 0.5 - d * scale));
-      // dark ink shows its density variation as paper coming through, so it varies a third as much
-      const amp = rgb[0] + rgb[1] + rgb[2] < 120 ? 0.35 : 1;
-      const dens = 1 - amp * (0.025 - 0.025 * noise(x * 0.06, y * 0.06, seed + 13) - 0.012 * noise(x * 0.7, y * 0.7, seed + 29));
+      const [r, g, b] = ink(rgb, seed, x, y);
       const k = (j * W + i) * 4;
-      px[k] = rgb[0];
-      px[k + 1] = rgb[1];
-      px[k + 2] = rgb[2];
-      px[k + 3] = Math.round(Math.max(0, Math.min(1, a * dens)) * 255);
+      px[k] = Math.round(r);
+      px[k + 1] = Math.round(g);
+      px[k + 2] = Math.round(b);
+      px[k + 3] = Math.round(a * 255);
     }
   }
   return { px, W, H };
@@ -192,14 +207,13 @@ export function cell(forms: Placed[], x0: number, y0: number, size: number, scal
         const d = sdf(f.kind, f.w, f.h, ox, oy) + 0.55 * noise(ox * 0.22, oy * 0.22, f.seed) + 0.25 * noise(ox * 0.9, oy * 0.9, f.seed + 7);
         const cov = Math.max(0, Math.min(1, 0.5 - d * scale));
         if (cov <= 0) continue;
-        const amp = f.rgb[0] + f.rgb[1] + f.rgb[2] < 120 ? 0.35 : 1;
-        const dens = 1 - amp * (0.025 - 0.025 * noise(ox * 0.06, oy * 0.06, f.seed + 13) - 0.012 * noise(ox * 0.7, oy * 0.7, f.seed + 29));
-        const s = Math.max(0, Math.min(1, cov * dens));
+        const s = cov;
+        const c = ink(f.rgb, f.seed, ox, oy);
         // straight-alpha src-over
         const na = s + a * (1 - s);
-        r = (f.rgb[0] * s + r * a * (1 - s)) / na;
-        g = (f.rgb[1] * s + g * a * (1 - s)) / na;
-        b = (f.rgb[2] * s + b * a * (1 - s)) / na;
+        r = (Math.round(c[0]) * s + r * a * (1 - s)) / na;
+        g = (Math.round(c[1]) * s + g * a * (1 - s)) / na;
+        b = (Math.round(c[2]) * s + b * a * (1 - s)) / na;
         a = na;
       }
       const k = (j * n + i) * 4;
