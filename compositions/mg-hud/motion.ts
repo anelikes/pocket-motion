@@ -97,6 +97,8 @@ export class Reg {
   }
   /** Opacity 1 on [from, until), 0 elsewhere, switched on single ticks. */
   window(from: number, until?: number): string {
+    // step() keys t - 1 and t for every change; with until <= from those keys cross and bake as a ramp from tick 0
+    if (until !== undefined && until <= from) throw new Error(`Reg.window(${from}, ${until}): empty or inverted window`);
     const ch: [number, string][] = [];
     if (from > 0) ch.push([0, "0"], [from, "1"]);
     else ch.push([0, "1"]);
