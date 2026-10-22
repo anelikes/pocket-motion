@@ -11,15 +11,6 @@
   "disc.png": {
     "linear": true
   },
-  "rim.png": {
-    "linear": true
-  },
-  "band.png": {
-    "linear": true
-  },
-  "limb.png": {
-    "linear": true
-  },
   "coast-wide.png": {
     "linear": true
   },
@@ -29,7 +20,13 @@
   "pulse.png": {
     "linear": true
   },
-  "hull.png": {
+  "rim.png": {
+    "linear": true
+  },
+  "band.png": {
+    "linear": true
+  },
+  "limb.png": {
     "linear": true
   },
   "wedge.png": {
@@ -54,6 +51,9 @@
     "linear": true
   },
   "front.png": {
+    "linear": true
+  },
+  "hull.png": {
     "linear": true
   }
 }

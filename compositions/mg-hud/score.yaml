@@ -5,9 +5,9 @@
 #   4.0 s 扫描第一圈扫过 C-04：双响 + ding
 #   5.5 s 括号张开 · 5.9–6.5 s 括号转正、锁定读数 0→100%：锁定音每个十六分音符升一级，6.0 s 起音乐被压出一个洞
 #   6.5 s 括号落定 = 一道橙色波前从目标扫出、全画面翻橙：冲击 + 低频下潜 + 双音警报；6.9 s 俯冲 whoosh
-#   7.2 s「目标锁定」解码进横带 · 7.5 s 推进落在船的雷达图像上，船体勾边、开尔文角画上尾迹、拦截矢量画进来
-#   7.57 / 9.3 s 两次告警扫频，画面边缘随之闪橙 · 8.1 s CONFIRMED · 9.0 s 拦截已下达
-#   9.5 s 括号闪白，随后整个画面像显像管一样塌成一条线、一个点，熄灭
+#   6.5 s 括号以速度咬上目标点，「目标锁定」在同一帧落下（白热两帧） · 7.5 s 推进落在船的雷达图像上，船体勾边、开尔文角画上尾迹、拦截矢量画进来
+#   7.57 / 9.3 s 两次告警扫频，画面边缘随之闪橙 · 8.1 s CONFIRMED，航向虚线往黄浦江延伸 · 9.0 s 拦截已下达
+#   9.5 s 括号闪白，系统按搭建的反序撤下：面板、环、镜头，只留下锁定框、船和结论，HANDOFF 打字
 title: Vega-7
 meta:
   bpm: 120
@@ -37,7 +37,8 @@ tracks:
   pulse:
     sound: synth-bass
     texture: bassline
-    in: [track, alert]
+    # in the search too, so the bed never drops out under the sweep
+    in: [search, track, alert]
     articulation: staccato
     rhythm: "1111 1111 1111 1111"
     by_section:
@@ -124,6 +125,5 @@ sfx:
   - { type: ding, at: "0:08.1", level: 0.4 }
   - { type: whoosh, at: "0:08.5", level: 0.3 }
   # the brackets flash white, then the picture collapses like a tube switched off
-  - { type: impact, at: "0:09.5", level: 0.45 }
-  - { type: sub-drop, at: "0:09.57", level: 0.6 }
+  - { type: impact, at: "0:09.5", level: 0.5 }
   - { type: downlifter, at: "0:09.0", length: 2, level: 0.4 }
