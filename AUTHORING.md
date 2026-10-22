@@ -361,6 +361,12 @@ on purpose rolls away with its tile, a pixel wide. The op is this repository's o
 it): no upstream backend draws it, so a composition that must stay portable to
 one keeps to `overflow-hidden`.
 
+**A rounded box keeps its corners when it turns.** A `rounded-*` node under
+a rotation, skew or mirror is drawn under its own rounded outline — the one
+`overflow-mask` uses — so a turning `rounded-full` circle stays a circle
+rather than turning as a square (`patches/0028`). Unturned, it is drawn as it
+always was.
+
 **An arc is a stroke.** `arc-width-[px]` turns a node's ground into an
 annular sector centred in its box — outer radius half the shorter side,
 `arc-start-[deg]` from 12 o'clock clockwise, `arc-sweep-[deg]` long, in the

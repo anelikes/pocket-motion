@@ -101,6 +101,7 @@ patch's own header carries the full note.
 | 0025 | upstream | an arc with no sweep draws nothing: any `arc-width` makes the node an arc, where a sweep of 0 fell through to the box painter — a full disc on a `rounded-full` node for the frame a drawn-on stroke starts from | unsubmitted | new at this pin |
 | 0026 | upstream | an arc follows its world transform: under a rotation, mirror, skew or per-axis scale every sample is tested in the node's own frame, where the arc returned unpainted under any world that was not axis-aligned; a per-axis scale stretches the ring into an elliptical band. Axis-aligned uniform scale keeps the screen-space path | unsubmitted | new at this pin |
 | 0027 | upstream | `arc-cap-butt` (PROP `arcCap` 183, `arc-cap-round` the default): an arc's ends stop on the radius instead of a half-disc each, so an arc as wide as its radius is a pie sector | unsubmitted | new at this pin |
+| 0028 | motion | a turned rounded box keeps its corners: under a world that is not axis-aligned it is its fill under a MASK_PUSH of its rounded outline (`mask_outline`, 0024's precision) inside its AABB's SCISSOR, where it was the plain box — a turning `rounded-full` circle was a turning square. Unturned boxes are byte-identical | never; the header says why | new at this pin |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
 #591 since 586428b2, so the pin needs no backport. The two places the
@@ -121,7 +122,7 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Eighteen patches are class `upstream` and eight `motion`. Of the eighteen,
+Eighteen patches are class `upstream` and nine `motion`. Of the eighteen,
 sixteen are unsubmitted declaration- or build-layer changes; `0008` is #301,
 and `0021` is a rasteriser change with no target-side cost.
 
