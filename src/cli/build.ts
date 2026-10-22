@@ -12,7 +12,7 @@
  * It does not wait for other builds. A build writes its outputs, its style
  * table among them, into the `--outdir` this argv names, and inside the
  * vendored tree only content-addressed transform-cache entries
- * (`patches/0023-style-table-outside-framework.patch`;
+ * (upstream #591, on the pin since 66caf4e5;
  * `tests/style-table.test.ts` holds both halves).
  */
 

@@ -178,7 +178,7 @@ ${nodes}
  * entirely reasonable, and the cmap guard cannot see it because the codepoints
  * are the same.
  *
- * Before `patches/0023-style-table-outside-framework.patch` that module was
+ * Before upstream #591 (backported, and on the pin since 66caf4e5) that module was
  * `vendor/pocketjs/framework/src/styles.generated.ts`, one file every build on
  * the machine rewrote, and a composition build landing between a measurement
  * build's write and the `import` below replaced it: `verifySlots` refused 3 of
@@ -471,7 +471,7 @@ async function buildMeasurement(
   }
 
   // The build's own style module, written beside its pak by pass 1
-  // (`patches/0023-style-table-outside-framework.patch`). The query defeats the
+  // (upstream #591, on the pin since 66caf4e5). The query defeats the
   // module cache: a cache bake is built at `<dir>.tmp-<pid>`, a path the same
   // process can reach twice.
   const generated = (await import(

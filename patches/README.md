@@ -96,12 +96,13 @@ patch's own header carries the full note.
 | 0020 | motion | images of any size: an IMG entry or uploaded texture is 1..`IMG_MAX_DIM` (2048) px per side, power of two or not; sprites, tilesets, stream planes and footage tiles keep 512 and powers of two | never; the header says why | `tests/image-dims.test.ts` listed in main's `tools/test.ts` |
 | 0021 | upstream | TEX_QUAD takes its sampling taps once per column and once per row instead of per pixel: a tap on a texel centre reads one texel instead of four, and an RGBA8888 texel of alpha 0 there is skipped. Byte-identical by construction; a core test holds `tex_quad` equal to the per-pixel sampler it replaced. No target-side change, so it belongs to upstream's software rasteriser as much as to this one | unsubmitted | applied unchanged |
 | 0022 | motion | the wasm core builds at `opt-level = 3` with `+simd128` (was `"s"`): the same pixels; the module grows from 312 to 513 KB | never; the header says why | applied unchanged |
+| 0023 | upstream | the build's style table, which upstream #591 serves from memory, stays in the file namespace, so a bundle names it `vendor/pocketjs/framework/src/styles.generated.ts` rather than `pocketjs-generated-styles:/<the checkout>/…`; and a `styles.generated.ts` reaching the loader at any other path fails the build naming both paths, where main bundles it from disk (a red class drawn blue, exit 0) | unsubmitted; #591 itself merged 2026-10-19 (`586428b2`) | new at this pin: the two departures the old pin's #591 backport made, against main's form; `tests/style-table.test.ts` was red on main's form in both |
 
-**The `0023` that backported #591 is gone.** Main carries #591 since
-586428b2, so the pin needs no backport; the two places the backport
-departed from upstream — the style module kept in the file namespace, and
-a second copy of it refused — are not in main and are carried forward
-against main's form as a patch of their own.
+**The `0023` that backported #591 onto the old pin is gone.** Main carries
+#591 since 586428b2, so the pin needs no backport. The two places the
+backport departed from upstream — the style module kept in the file
+namespace, and a second copy of it refused — are not in main, and the
+`0023` above carries them against main's form.
 
 **`0006` is gone.** It filled glyph outlines by non-zero winding; upstream
 8188d16a (#302) fills them by non-zero winding too, with spans merged where
@@ -116,9 +117,9 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Fourteen patches are class `upstream` and seven `motion`. Of the fourteen,
-eleven are unsubmitted declaration-layer changes; `0008` is #301, and `0021`
-is a rasteriser change with no target-side cost.
+Fifteen patches are class `upstream` and seven `motion`. Of the fifteen,
+thirteen are unsubmitted declaration- or build-layer changes; `0008` is #301,
+and `0021` is a rasteriser change with no target-side cost.
 
 ## Known gaps the rebase left
 

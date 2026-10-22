@@ -2,8 +2,10 @@
  * A build's style table is its own: written beside its bundle, served to pass 2
  * from memory, and never read off a file another build can write.
  *
- * `patches/0023-style-table-outside-framework.patch` backports upstream
- * pocket-nexus/pocketjs#591 (586428b2). Before it, pass 1 wrote
+ * Upstream pocket-nexus/pocketjs#591 (586428b2) — backported onto the old
+ * pin, and on the pin itself since 66caf4e5, with
+ * `patches/0023-style-table-file-namespace.patch` carrying the backport's two
+ * departures from upstream's form. Before it, pass 1 wrote
  * `vendor/pocketjs/framework/src/styles.generated.ts` — one file shared by
  * every build on the machine — and pass 2 resolved that path off disk. That
  * one file was the reason for a cross-process build lock, a seeded placeholder,
@@ -20,7 +22,7 @@
  *    The day a pin or a patch adds another shared write, this is what says
  *    the lock question is open again.
  *  - "a bundle names no absolute path": red with upstream's own form of the
- *    interception, which resolves into a `pocketjs-generated-styles`
+ *    interception (re-measured on 66caf4e5 with 0023 removed), which resolves into a `pocketjs-generated-styles`
  *    namespace and so prints `// pocketjs-generated-styles:/Users/...` — the
  *    checkout's location — above the table in every bundle. Before 0023 no
  *    bundle here carried one, and with this form `smoke`'s bundle is byte for
@@ -29,7 +31,8 @@
  *    from the patch — pass 2 then resolves the import off disk, and on a tree
  *    that has lost the file it fails `Could not resolve`, which is the CI
  *    failure's message, now deterministic instead of 6 in 20.
- *  - "a second copy is refused": red with the refusal removed from the patch.
+ *  - "a second copy is refused": red with the refusal removed from the patch
+ *    (re-measured on 66caf4e5 with 0023 removed: rgba(0,0,255,255) for red).
  *    The build then exits 0, the app's `mount` registers the copy's empty
  *    table, and the frame below comes back the clear colour instead of red —
  *    a picture with every class literal unstyled, a clean realm and a stable

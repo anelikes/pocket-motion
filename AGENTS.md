@@ -174,14 +174,14 @@ mechanisms with the file or test beside them.
   `tools/build.ts`, which writes no record — printing that as the fix for a
   missing record would be a loop. `tests/cli.test.ts` holds all three.
 - **A build writes inside its own `--outdir`, so builds run side by side.**
-  Until `patches/0023-style-table-outside-framework.patch` — upstream #591,
-  `586428b2`, backported — pass 1 wrote `framework/src/styles.generated.ts`
+  Until upstream #591 (`586428b2`) — backported as a patch first, and on the
+  pin since it moved to 66caf4e5 — pass 1 wrote `framework/src/styles.generated.ts`
   into the SHARED vendored tree and pass 2 resolved that path off disk, so two
   builds into two directories were not two independent builds. That one file
   failed in two shapes. A composition build landing between a measurement
   build's write and its read-back replaced the px -> slot table and
   `verifySlots` refused with `styles.generated.ts is not this build's` —
-  still 3 of 10 overlapping pairs on the pre-0023 tree with the lock bypassed,
+  still 3 of 10 overlapping pairs on the pre-#591 tree with the lock bypassed,
   measured 2026-10-22. And on a fresh tree, where the file is gitignored and
   absent, pass 2 had to find a path pass 1 had probed and missed:
   `Could not resolve: "./styles.generated.ts"` on 6 of 20 cold builds on a
@@ -193,11 +193,11 @@ mechanisms with the file or test beside them.
   from memory, so pass 2 never asks the disk for it; and the framework's file
   is a committed empty table no build writes. Upstream resolves the import
   into a namespace of its own, and Bun then names the module in the bundle
-  by its absolute path — the checkout's location, in every bundle. The patch
-  keeps it in the file namespace, where the name is repo-relative: all 45
-  compositions' bundles and paks are byte-identical before and after it, so
-  `identity`'s `bundle` and `pak` components did not move and its
-  `toolchain` did, as for any patch.
+  by its absolute path — the checkout's location, in every bundle.
+  `patches/0023-style-table-file-namespace.patch` keeps it in the file
+  namespace, where the name is repo-relative; when the backport landed on
+  the old pin, all 45 compositions' bundles and paks were byte-identical
+  before and after it.
   `src/text/measure.ts` and `scripts/fit-probe.ts` read the slot table from
   their own build's `main.styles.ts`. The lock, the seed and the check are
   deleted, each because its reason was measured gone: a build moves nothing in
@@ -207,13 +207,14 @@ mechanisms with the file or test beside them.
   measurer-beside-a-composition-build sweep that guarded the lock is 0 of 34
   red with no lock, over offsets where the two builds overlapped by up to
   670 ms. `tests/style-table.test.ts` holds the first two, the absolute-path
-  property and the sweep; the first goes red with 0023 moved out of
-  `patches/`, the second with the `onResolve` removed from it — as
+  property and the sweep; the first went red with the backport moved out of
+  `patches/` on the old pin, the second with the `onResolve` removed — as
   `Could not resolve: "./styles.generated.ts"`, the CI failure's message, on
-  every run — and the third with upstream's namespace form put back.
-  `scripts/vendor.ts` removes each file a patch creates before applying it,
-  because the pin's `.gitignore` covers this one: `git clean -fd` keeps it
-  and `git apply` refuses to create a file that is already there.
+  every run — and the third is red on main's own namespace form, which is
+  why 0023 exists. `scripts/vendor.ts` removes each file a patch creates
+  before applying it, because a file the pin's `.gitignore` covers survives
+  `git clean -fd` and `git apply` refuses to create a file that is already
+  there.
 - **The interception is a path comparison, so a miss is refused.** `jsxPlugin`
   serves the table for one path, compared as a string. Bun hands it realpaths
   on both sides, so a symlinked tree (`tests/authoring.test.ts` builds in one),
@@ -223,10 +224,10 @@ mechanisms with the file or test beside them.
   named `styles.generated.ts`, was bundled from disk. With the committed empty
   copy `mount` throws `unknown class ... (dynamic classes must be ternaries of
   full literals)`, a diagnosis that points elsewhere; with a stale copy — what
-  the framework's file held after any build before 0023 — a red class rendered
-  blue and the build exited 0. 0023 carries a refusal upstream does not: such a
-  load fails the build naming both paths. `tests/style-table.test.ts` is red
-  with it removed, and says which pixel shipped.
+  the framework's file held after any build before #591 — a red class rendered
+  blue and the build exited 0, as it still does on main's form. 0023 carries a
+  refusal upstream does not: such a load fails the build naming both paths.
+  `tests/style-table.test.ts` is red without it, and says which pixel shipped.
 - Each composition builds into its own dist directory, under ONE root, keyed
   by its path relative to the repository (`src/cli/resolve.ts`). Two things
   used to go wrong here and both are now one derivation. The key was the last
