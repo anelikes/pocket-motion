@@ -1,14 +1,18 @@
 /**
- * The poster this film builds, as data: the path one module rolls, and what
- * each roll leaves behind. The choreography in gen.ts walks this path; the
- * drop's cells show slices of the same forms.
+ * The poster this film builds, as data: the path one module takes, what each
+ * of its moves leaves behind, and the word, constructed from the same parts.
  *
- * The module is two grid modules square (240 px) and rolls on a 7 × 3 grid
- * of its own size laid over columns 1–14 and rows 0–5 of the 16 × 8 grid. A
- * roll turns it a quarter clockwise about the corner it rolls over — right
- * about its bottom-right, up about its top-right, down about its bottom-left
- * — and the quarter disc that corner sweeps is stamped into the cell it lifts
- * off. So the poster is the trace of the module's own motion.
+ * The module is two grid modules square (240 px) and moves on a 6 × 4 grid of
+ * its own size over columns 4–15 of the 16 × 8 grid, one move a beat. A roll
+ * turns it a quarter about the corner it rolls over — right about its
+ * bottom-right, up about its top-right, down and left about its bottom-left —
+ * and the quarter disc that corner sweeps is left in the cell it lifts off. A
+ * spin turns it a quarter about its own centre, and leaves the disc its edges
+ * sweep. So the poster is the trace of the module's own motion; the drop adds
+ * the one form the module cannot make, a circle four modules across.
+ *
+ * BAUHAUS stands in columns 1–2, reading upward, every letter cut from
+ * squares and quarter discs in a 120 × 240 box with 40 px strokes.
  */
 
 export const M = 120;
@@ -27,7 +31,7 @@ export type Ink = keyof typeof INK;
 
 /** Per-ink plate offset: a press never registers four plates perfectly. Visible where two inks meet. */
 export const MISREG: Record<Ink, [number, number]> = {
-  paper: [0, 0],
+  paper: [1, -1],
   red: [3, -1],
   yellow: [1, 2],
   blue: [-2, 2],
@@ -46,37 +50,46 @@ export interface Form {
   rot?: number;
 }
 
-/** The module's size, and the 7 × 3 grid it rolls on. */
+/** The module's size, and the grid it moves on: columns 4–15, rows 0–7. */
 export const MOD = 2 * M;
-export const cellX = (i: number) => gx(1 + 2 * i);
+export const cellX = (i: number) => gx(4 + 2 * i);
 export const cellY = (j: number) => gy(2 * j);
+export const COLS = 6;
+export const ROWS = 4;
 
-export type Roll = "R" | "U" | "D";
-/** Where the module lands on b1, and the rolls it makes, one per beat, b2 to b12. */
-export const START: [number, number] = [0, 1];
-export const ROLLS: Roll[] = ["R", "R", "U", "R", "R", "D", "D", "R", "R", "U", "U"];
-/** The corner each roll turns about, as a fraction of the cell: right about BR, up about TR, down about BL. */
-export const PIVOT: Record<Roll, [number, number]> = { R: [1, 1], U: [1, 0], D: [0, 1] };
+/** R, U, D, L roll about a corner; S spins about the module's own centre. */
+export type Act = "R" | "U" | "D" | "L" | "S";
+/** Where the module lands on b1, and its moves, one per beat, b2 to b12. */
+export const START: [number, number] = [0, 0];
+export const ACTS: Act[] = ["R", "R", "D", "S", "D", "R", "R", "U", "S", "U", "L"];
+/** What each move leaves, in its ink; null where the cell already holds a disc. */
+const LEAVES: (Ink | null)[] = ["black", "red", "yellow", "red", null, "black", "red", "yellow", "black", null, "blue"];
+/** The corner each roll turns about, as a fraction of the cell, and which way. */
+export const PIVOT: Record<Exclude<Act, "S">, [number, number]> = { R: [1, 1], U: [1, 0], D: [0, 1], L: [0, 1] };
+export const TURN: Record<Exclude<Act, "S">, number> = { R: 90, U: 90, D: 90, L: -90 };
 /** The quarter disc a roll sweeps, as the `quarter` form's turn: its corner on the pivot (BL 0, TL 1, TR 2, BR 3). */
-export const SWEEP: Record<Roll, number> = { R: 3, U: 2, D: 0 };
-const STEP: Record<Roll, [number, number]> = { R: [1, 0], U: [0, -1], D: [0, 1] };
-const CYCLE: Ink[] = ["black", "red", "yellow", "blue"];
+export const SWEEP: Record<Exclude<Act, "S">, number> = { R: 3, U: 2, D: 0, L: 0 };
+const STEP: Record<Act, [number, number]> = { R: [1, 0], U: [0, -1], D: [0, 1], L: [-1, 0], S: [0, 0] };
 
-/** The module's cell before each roll, and after the last. */
-export const PATH: [number, number][] = ROLLS.reduce<[number, number][]>(
-  (acc, r) => {
+/** The module's cell before each move, and after the last. */
+export const PATH: [number, number][] = ACTS.reduce<[number, number][]>(
+  (acc, a) => {
     const [i, j] = acc[acc.length - 1]!;
-    acc.push([i + STEP[r][0], j + STEP[r][1]]);
+    acc.push([i + STEP[a][0], j + STEP[a][1]]);
     return acc;
   },
   [START],
 );
 
-/** What each roll leaves behind: a quarter disc in the cell the module lifts off. */
-export const TRAIL: Form[] = ROLLS.map((r, k) => {
+/** What each move leaves behind, indexed by move: a quarter in the cell a roll lifts off, a disc where a spin turned. */
+export const LEFT: (Form | null)[] = ACTS.map((a, k) => {
+  const ink = LEAVES[k];
+  if (!ink) return null;
   const [i, j] = PATH[k]!;
-  return { id: `stamp-${k}`, kind: "quarter", ink: CYCLE[k % CYCLE.length]!, x: cellX(i), y: cellY(j), w: MOD, h: MOD, rot: SWEEP[r] };
+  const box = { x: cellX(i), y: cellY(j), w: MOD, h: MOD };
+  return a === "S" ? { id: `disc-${k}`, kind: "disc", ink, ...box } : { id: `stamp-${k}`, kind: "quarter", ink, ...box, rot: SWEEP[a] };
 });
+export const TRAIL: Form[] = LEFT.filter((f): f is Form => f !== null);
 
 /** The module itself, where its path ends. */
 export const MODULE: Form = (() => {
@@ -84,5 +97,66 @@ export const MODULE: Form = (() => {
   return { id: "module", kind: "box", ink: "red", x: cellX(i), y: cellY(j), w: MOD, h: MOD };
 })();
 
-/** Everything printed on the poster before the type. */
-export const POSTER: Form[] = [...TRAIL, MODULE];
+/** The circle the drop leaves: the one empty 2 × 2 block of the module's grid, four modules across. */
+export const CIRCLE_BLOCK: [number, number] = [0, 2];
+export const CIRCLE: Form = { id: "circle", kind: "disc", ink: "blue", x: cellX(CIRCLE_BLOCK[0]), y: cellY(CIRCLE_BLOCK[1]), w: 2 * MOD, h: 2 * MOD };
+
+/** Everything printed on the poster before the word. */
+export const POSTER: Form[] = [...TRAIL, MODULE, CIRCLE];
+
+// ── the word ────────────────────────────────────────────────────────────────
+
+type Part = [kind: "box" | "quarter", x: number, y: number, w: number, h: number, rot: number, ink: "black" | "paper"];
+const box = (x: number, y: number, w: number, h: number, ink: "black" | "paper" = "black"): Part => ["box", x, y, w, h, 0, ink];
+const q = (x: number, y: number, s: number, rot: number, ink: "black" | "paper" = "black"): Part => ["quarter", x, y, s, s, rot, ink];
+
+/**
+ * Each letter upright in a 120 × 240 box: black parts, then paper counters
+ * cut into them. Strokes are 40; a bowl or arch is a half disc of radius 60,
+ * its counter radius 20.
+ */
+export const GLYPHS: Record<string, Part[]> = {
+  B: [box(0, 0, 60, 240), q(60, 0, 60, 0), q(60, 60, 60, 1), q(60, 120, 60, 0), q(60, 180, 60, 1)],
+  A: [box(0, 60, 120, 180), q(0, 0, 60, 3), q(60, 0, 60, 0), q(40, 40, 20, 3, "paper"), q(60, 40, 20, 0, "paper"), box(40, 60, 40, 60, "paper"), box(40, 160, 40, 80, "paper")],
+  U: [box(0, 0, 120, 180), q(0, 180, 60, 2), q(60, 180, 60, 1), box(40, 0, 40, 180, "paper"), q(40, 180, 20, 2, "paper"), q(60, 180, 20, 1, "paper")],
+  H: [box(0, 0, 40, 240), box(80, 0, 40, 240), box(40, 100, 40, 40)],
+  S: [
+    box(60, 0, 60, 40),
+    q(0, 0, 60, 3),
+    box(0, 60, 40, 20),
+    q(0, 80, 60, 2),
+    q(60, 100, 60, 0),
+    box(80, 160, 40, 20),
+    q(60, 180, 60, 1),
+    box(0, 200, 60, 40),
+    q(40, 40, 20, 3, "paper"),
+    q(40, 80, 20, 2, "paper"),
+    q(60, 140, 20, 0, "paper"),
+    q(60, 180, 20, 1, "paper"),
+  ],
+};
+
+/** The word's column: columns 1–2, its letters reading upward with 20 px between them, B at the foot. */
+export const WORD = "BAUHAUS";
+export const WORD_X = gx(1);
+export const letterFoot = (k: number) => gy(8) - k * (M + 20);
+
+/**
+ * Letter k as frame forms, turned a quarter anticlockwise to read upward: its
+ * top on the column's left edge, its foot on the right, its left side down.
+ */
+export function letterForms(k: number): Form[] {
+  const foot = letterFoot(k);
+  return GLYPHS[WORD[k]!]!.map(([kind, x, y, w, h, rot, ink], n) => ({
+    id: `letter-${k}-${n}`,
+    kind,
+    ink,
+    x: WORD_X + y,
+    y: foot - x - w,
+    w: h,
+    h: w,
+    // a quarter's corner turns with the letter; a box is already re-boxed, and turning a box that is not square
+    // inside its own box would swap its sides
+    rot: kind === "quarter" ? (rot + 3) % 4 : 0,
+  }));
+}

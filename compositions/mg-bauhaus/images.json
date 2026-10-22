@@ -1,38 +1,35 @@
 {
+  "f-disc-blue-480x480-110.png": {
+    "linear": true
+  },
   "f-quarter-black-240x240-100-q3.png": {
     "linear": true
   },
   "f-quarter-red-240x240-101-q3.png": {
     "linear": true
   },
-  "f-quarter-yellow-240x240-102-q2.png": {
+  "f-quarter-yellow-240x240-102.png": {
     "linear": true
   },
-  "f-quarter-blue-240x240-103-q3.png": {
+  "f-disc-red-240x240-103.png": {
     "linear": true
   },
   "f-quarter-black-240x240-104-q3.png": {
     "linear": true
   },
-  "f-quarter-red-240x240-105.png": {
+  "f-quarter-red-240x240-105-q3.png": {
     "linear": true
   },
-  "f-quarter-yellow-240x240-106.png": {
+  "f-quarter-yellow-240x240-106-q2.png": {
     "linear": true
   },
-  "f-quarter-blue-240x240-107-q3.png": {
+  "f-disc-black-240x240-107.png": {
     "linear": true
   },
-  "f-quarter-black-240x240-108-q3.png": {
+  "f-quarter-blue-240x240-108.png": {
     "linear": true
   },
-  "f-quarter-red-240x240-109-q2.png": {
-    "linear": true
-  },
-  "f-quarter-yellow-240x240-110-q2.png": {
-    "linear": true
-  },
-  "f-box-red-240x240-111.png": {
+  "f-box-red-240x240-109.png": {
     "linear": true
   },
   "field-q0.png": {
@@ -47,601 +44,145 @@
   "field-q3.png": {
     "linear": true
   },
-  "cell-5-0-q0.png": {
+  "cell-480-60-q0.png": {
     "linear": true
   },
-  "cell-5-0-q1.png": {
+  "cell-480-60-q1.png": {
     "linear": true
   },
-  "cell-5-0-q2.png": {
+  "cell-480-60-q2.png": {
     "linear": true
   },
-  "cell-5-0-q3.png": {
+  "cell-480-60-q3.png": {
     "linear": true
   },
-  "cell-6-0-q0.png": {
+  "cell-720-60-q0.png": {
     "linear": true
   },
-  "cell-6-0-q1.png": {
+  "cell-720-60-q1.png": {
     "linear": true
   },
-  "cell-6-0-q2.png": {
+  "cell-720-60-q2.png": {
     "linear": true
   },
-  "cell-6-0-q3.png": {
+  "cell-720-60-q3.png": {
     "linear": true
   },
-  "cell-7-0-q0.png": {
+  "cell-960-60-q0.png": {
     "linear": true
   },
-  "cell-7-0-q1.png": {
+  "cell-960-60-q1.png": {
     "linear": true
   },
-  "cell-7-0-q2.png": {
+  "cell-960-60-q2.png": {
     "linear": true
   },
-  "cell-7-0-q3.png": {
+  "cell-960-60-q3.png": {
     "linear": true
   },
-  "cell-8-0-q0.png": {
+  "cell-1200-60-q0.png": {
     "linear": true
   },
-  "cell-8-0-q1.png": {
+  "cell-1200-60-q1.png": {
     "linear": true
   },
-  "cell-8-0-q2.png": {
+  "cell-1200-60-q2.png": {
     "linear": true
   },
-  "cell-8-0-q3.png": {
+  "cell-1200-60-q3.png": {
     "linear": true
   },
-  "cell-9-0-q0.png": {
+  "cell-1440-60-q0.png": {
     "linear": true
   },
-  "cell-9-0-q1.png": {
+  "cell-1440-60-q1.png": {
     "linear": true
   },
-  "cell-9-0-q2.png": {
+  "cell-1440-60-q2.png": {
     "linear": true
   },
-  "cell-9-0-q3.png": {
+  "cell-1440-60-q3.png": {
     "linear": true
   },
-  "cell-10-0-q0.png": {
+  "cell-960-300-q0.png": {
     "linear": true
   },
-  "cell-10-0-q1.png": {
+  "cell-960-300-q1.png": {
     "linear": true
   },
-  "cell-10-0-q2.png": {
+  "cell-960-300-q2.png": {
     "linear": true
   },
-  "cell-10-0-q3.png": {
+  "cell-960-300-q3.png": {
     "linear": true
   },
-  "cell-13-0-q0.png": {
+  "cell-1440-300-q0.png": {
     "linear": true
   },
-  "cell-13-0-q1.png": {
+  "cell-1440-300-q1.png": {
     "linear": true
   },
-  "cell-13-0-q2.png": {
+  "cell-1440-300-q2.png": {
     "linear": true
   },
-  "cell-13-0-q3.png": {
+  "cell-1440-300-q3.png": {
     "linear": true
   },
-  "cell-14-0-q0.png": {
+  "cell-960-540-q0.png": {
     "linear": true
   },
-  "cell-14-0-q1.png": {
+  "cell-960-540-q1.png": {
     "linear": true
   },
-  "cell-14-0-q2.png": {
+  "cell-960-540-q2.png": {
     "linear": true
   },
-  "cell-14-0-q3.png": {
+  "cell-960-540-q3.png": {
     "linear": true
   },
-  "cell-5-1-q0.png": {
+  "cell-1200-540-q0.png": {
     "linear": true
   },
-  "cell-5-1-q1.png": {
+  "cell-1200-540-q1.png": {
     "linear": true
   },
-  "cell-5-1-q2.png": {
+  "cell-1200-540-q2.png": {
     "linear": true
   },
-  "cell-5-1-q3.png": {
+  "cell-1200-540-q3.png": {
     "linear": true
   },
-  "cell-6-1-q0.png": {
+  "cell-1440-540-q0.png": {
     "linear": true
   },
-  "cell-6-1-q1.png": {
+  "cell-1440-540-q1.png": {
     "linear": true
   },
-  "cell-6-1-q2.png": {
+  "cell-1440-540-q2.png": {
     "linear": true
   },
-  "cell-6-1-q3.png": {
+  "cell-1440-540-q3.png": {
     "linear": true
   },
-  "cell-7-1-q0.png": {
+  "letter-0.png": {
     "linear": true
   },
-  "cell-7-1-q1.png": {
+  "letter-1.png": {
     "linear": true
   },
-  "cell-7-1-q2.png": {
+  "letter-2.png": {
     "linear": true
   },
-  "cell-7-1-q3.png": {
+  "letter-3.png": {
     "linear": true
   },
-  "cell-8-1-q0.png": {
+  "letter-4.png": {
     "linear": true
   },
-  "cell-8-1-q1.png": {
+  "letter-5.png": {
     "linear": true
   },
-  "cell-8-1-q2.png": {
-    "linear": true
-  },
-  "cell-8-1-q3.png": {
-    "linear": true
-  },
-  "cell-9-1-q0.png": {
-    "linear": true
-  },
-  "cell-9-1-q1.png": {
-    "linear": true
-  },
-  "cell-9-1-q2.png": {
-    "linear": true
-  },
-  "cell-9-1-q3.png": {
-    "linear": true
-  },
-  "cell-10-1-q0.png": {
-    "linear": true
-  },
-  "cell-10-1-q1.png": {
-    "linear": true
-  },
-  "cell-10-1-q2.png": {
-    "linear": true
-  },
-  "cell-10-1-q3.png": {
-    "linear": true
-  },
-  "cell-13-1-q0.png": {
-    "linear": true
-  },
-  "cell-13-1-q1.png": {
-    "linear": true
-  },
-  "cell-13-1-q2.png": {
-    "linear": true
-  },
-  "cell-13-1-q3.png": {
-    "linear": true
-  },
-  "cell-14-1-q0.png": {
-    "linear": true
-  },
-  "cell-14-1-q1.png": {
-    "linear": true
-  },
-  "cell-14-1-q2.png": {
-    "linear": true
-  },
-  "cell-14-1-q3.png": {
-    "linear": true
-  },
-  "cell-1-2-q0.png": {
-    "linear": true
-  },
-  "cell-1-2-q1.png": {
-    "linear": true
-  },
-  "cell-1-2-q2.png": {
-    "linear": true
-  },
-  "cell-1-2-q3.png": {
-    "linear": true
-  },
-  "cell-2-2-q0.png": {
-    "linear": true
-  },
-  "cell-2-2-q1.png": {
-    "linear": true
-  },
-  "cell-2-2-q2.png": {
-    "linear": true
-  },
-  "cell-2-2-q3.png": {
-    "linear": true
-  },
-  "cell-3-2-q0.png": {
-    "linear": true
-  },
-  "cell-3-2-q1.png": {
-    "linear": true
-  },
-  "cell-3-2-q2.png": {
-    "linear": true
-  },
-  "cell-3-2-q3.png": {
-    "linear": true
-  },
-  "cell-4-2-q0.png": {
-    "linear": true
-  },
-  "cell-4-2-q1.png": {
-    "linear": true
-  },
-  "cell-4-2-q2.png": {
-    "linear": true
-  },
-  "cell-4-2-q3.png": {
-    "linear": true
-  },
-  "cell-5-2-q0.png": {
-    "linear": true
-  },
-  "cell-5-2-q1.png": {
-    "linear": true
-  },
-  "cell-5-2-q2.png": {
-    "linear": true
-  },
-  "cell-5-2-q3.png": {
-    "linear": true
-  },
-  "cell-6-2-q0.png": {
-    "linear": true
-  },
-  "cell-6-2-q1.png": {
-    "linear": true
-  },
-  "cell-6-2-q2.png": {
-    "linear": true
-  },
-  "cell-6-2-q3.png": {
-    "linear": true
-  },
-  "cell-9-2-q0.png": {
-    "linear": true
-  },
-  "cell-9-2-q1.png": {
-    "linear": true
-  },
-  "cell-9-2-q2.png": {
-    "linear": true
-  },
-  "cell-9-2-q3.png": {
-    "linear": true
-  },
-  "cell-10-2-q0.png": {
-    "linear": true
-  },
-  "cell-10-2-q1.png": {
-    "linear": true
-  },
-  "cell-10-2-q2.png": {
-    "linear": true
-  },
-  "cell-10-2-q3.png": {
-    "linear": true
-  },
-  "cell-13-2-q0.png": {
-    "linear": true
-  },
-  "cell-13-2-q1.png": {
-    "linear": true
-  },
-  "cell-13-2-q2.png": {
-    "linear": true
-  },
-  "cell-13-2-q3.png": {
-    "linear": true
-  },
-  "cell-14-2-q0.png": {
-    "linear": true
-  },
-  "cell-14-2-q1.png": {
-    "linear": true
-  },
-  "cell-14-2-q2.png": {
-    "linear": true
-  },
-  "cell-14-2-q3.png": {
-    "linear": true
-  },
-  "cell-1-3-q0.png": {
-    "linear": true
-  },
-  "cell-1-3-q1.png": {
-    "linear": true
-  },
-  "cell-1-3-q2.png": {
-    "linear": true
-  },
-  "cell-1-3-q3.png": {
-    "linear": true
-  },
-  "cell-2-3-q0.png": {
-    "linear": true
-  },
-  "cell-2-3-q1.png": {
-    "linear": true
-  },
-  "cell-2-3-q2.png": {
-    "linear": true
-  },
-  "cell-2-3-q3.png": {
-    "linear": true
-  },
-  "cell-3-3-q0.png": {
-    "linear": true
-  },
-  "cell-3-3-q1.png": {
-    "linear": true
-  },
-  "cell-3-3-q2.png": {
-    "linear": true
-  },
-  "cell-3-3-q3.png": {
-    "linear": true
-  },
-  "cell-4-3-q0.png": {
-    "linear": true
-  },
-  "cell-4-3-q1.png": {
-    "linear": true
-  },
-  "cell-4-3-q2.png": {
-    "linear": true
-  },
-  "cell-4-3-q3.png": {
-    "linear": true
-  },
-  "cell-5-3-q0.png": {
-    "linear": true
-  },
-  "cell-5-3-q1.png": {
-    "linear": true
-  },
-  "cell-5-3-q2.png": {
-    "linear": true
-  },
-  "cell-5-3-q3.png": {
-    "linear": true
-  },
-  "cell-6-3-q0.png": {
-    "linear": true
-  },
-  "cell-6-3-q1.png": {
-    "linear": true
-  },
-  "cell-6-3-q2.png": {
-    "linear": true
-  },
-  "cell-6-3-q3.png": {
-    "linear": true
-  },
-  "cell-9-3-q0.png": {
-    "linear": true
-  },
-  "cell-9-3-q1.png": {
-    "linear": true
-  },
-  "cell-9-3-q2.png": {
-    "linear": true
-  },
-  "cell-9-3-q3.png": {
-    "linear": true
-  },
-  "cell-10-3-q0.png": {
-    "linear": true
-  },
-  "cell-10-3-q1.png": {
-    "linear": true
-  },
-  "cell-10-3-q2.png": {
-    "linear": true
-  },
-  "cell-10-3-q3.png": {
-    "linear": true
-  },
-  "cell-13-3-q0.png": {
-    "linear": true
-  },
-  "cell-13-3-q1.png": {
-    "linear": true
-  },
-  "cell-13-3-q2.png": {
-    "linear": true
-  },
-  "cell-13-3-q3.png": {
-    "linear": true
-  },
-  "cell-14-3-q0.png": {
-    "linear": true
-  },
-  "cell-14-3-q1.png": {
-    "linear": true
-  },
-  "cell-14-3-q2.png": {
-    "linear": true
-  },
-  "cell-14-3-q3.png": {
-    "linear": true
-  },
-  "cell-9-4-q0.png": {
-    "linear": true
-  },
-  "cell-9-4-q1.png": {
-    "linear": true
-  },
-  "cell-9-4-q2.png": {
-    "linear": true
-  },
-  "cell-9-4-q3.png": {
-    "linear": true
-  },
-  "cell-10-4-q0.png": {
-    "linear": true
-  },
-  "cell-10-4-q1.png": {
-    "linear": true
-  },
-  "cell-10-4-q2.png": {
-    "linear": true
-  },
-  "cell-10-4-q3.png": {
-    "linear": true
-  },
-  "cell-11-4-q0.png": {
-    "linear": true
-  },
-  "cell-11-4-q1.png": {
-    "linear": true
-  },
-  "cell-11-4-q2.png": {
-    "linear": true
-  },
-  "cell-11-4-q3.png": {
-    "linear": true
-  },
-  "cell-12-4-q0.png": {
-    "linear": true
-  },
-  "cell-12-4-q1.png": {
-    "linear": true
-  },
-  "cell-12-4-q2.png": {
-    "linear": true
-  },
-  "cell-12-4-q3.png": {
-    "linear": true
-  },
-  "cell-13-4-q0.png": {
-    "linear": true
-  },
-  "cell-13-4-q1.png": {
-    "linear": true
-  },
-  "cell-13-4-q2.png": {
-    "linear": true
-  },
-  "cell-13-4-q3.png": {
-    "linear": true
-  },
-  "cell-14-4-q0.png": {
-    "linear": true
-  },
-  "cell-14-4-q1.png": {
-    "linear": true
-  },
-  "cell-14-4-q2.png": {
-    "linear": true
-  },
-  "cell-14-4-q3.png": {
-    "linear": true
-  },
-  "cell-9-5-q0.png": {
-    "linear": true
-  },
-  "cell-9-5-q1.png": {
-    "linear": true
-  },
-  "cell-9-5-q2.png": {
-    "linear": true
-  },
-  "cell-9-5-q3.png": {
-    "linear": true
-  },
-  "cell-10-5-q0.png": {
-    "linear": true
-  },
-  "cell-10-5-q1.png": {
-    "linear": true
-  },
-  "cell-10-5-q2.png": {
-    "linear": true
-  },
-  "cell-10-5-q3.png": {
-    "linear": true
-  },
-  "cell-11-5-q0.png": {
-    "linear": true
-  },
-  "cell-11-5-q1.png": {
-    "linear": true
-  },
-  "cell-11-5-q2.png": {
-    "linear": true
-  },
-  "cell-11-5-q3.png": {
-    "linear": true
-  },
-  "cell-12-5-q0.png": {
-    "linear": true
-  },
-  "cell-12-5-q1.png": {
-    "linear": true
-  },
-  "cell-12-5-q2.png": {
-    "linear": true
-  },
-  "cell-12-5-q3.png": {
-    "linear": true
-  },
-  "cell-13-5-q0.png": {
-    "linear": true
-  },
-  "cell-13-5-q1.png": {
-    "linear": true
-  },
-  "cell-13-5-q2.png": {
-    "linear": true
-  },
-  "cell-13-5-q3.png": {
-    "linear": true
-  },
-  "cell-14-5-q0.png": {
-    "linear": true
-  },
-  "cell-14-5-q1.png": {
-    "linear": true
-  },
-  "cell-14-5-q2.png": {
-    "linear": true
-  },
-  "cell-14-5-q3.png": {
-    "linear": true
-  },
-  "word-0.png": {
-    "linear": true
-  },
-  "word-1.png": {
-    "linear": true
-  },
-  "word-2.png": {
-    "linear": true
-  },
-  "word-3.png": {
-    "linear": true
-  },
-  "word-4.png": {
-    "linear": true
-  },
-  "word-5.png": {
-    "linear": true
-  },
-  "word-6.png": {
+  "letter-6.png": {
     "linear": true
   },
   "paper.png": {

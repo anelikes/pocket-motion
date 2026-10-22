@@ -6,7 +6,7 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 
 mount(() => (
   <View class="w-full h-full bg-[#F1E9DA]">
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-a19q" src="paper.png" />
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-adc" src="paper.png" />
     <View class="absolute left-[0px] top-[59px] w-[1920px] h-[2px] origin-center animate-a3" />
     <View class="absolute left-[0px] top-[179px] w-[1920px] h-[2px] origin-center animate-a7" />
     <View class="absolute left-[0px] top-[299px] w-[1920px] h-[2px] origin-center animate-ab" />
@@ -31,631 +31,181 @@ mount(() => (
     <View class="absolute left-[1559px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2f" />
     <View class="absolute left-[1679px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2j" />
     <View class="absolute left-[1799px] top-[0px] w-[2px] h-[1080px] origin-center animate-a2n" />
-    <View class="absolute left-[121px] top-[299px] w-[240px] h-[240px] origin-center  animate-a2p"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-100-q3.png" /></View>
-    <View class="absolute left-[363px] top-[299px] w-[240px] h-[240px] origin-center  animate-a2r"><Image class="w-[240px] h-[240px]" src="f-quarter-red-240x240-101-q3.png" /></View>
-    <View class="absolute left-[601px] top-[302px] w-[240px] h-[240px] origin-center  animate-a2t"><Image class="w-[240px] h-[240px]" src="f-quarter-yellow-240x240-102-q2.png" /></View>
-    <View class="absolute left-[598px] top-[62px] w-[240px] h-[240px] origin-center  animate-a2v"><Image class="w-[240px] h-[240px]" src="f-quarter-blue-240x240-103-q3.png" /></View>
-    <View class="absolute left-[841px] top-[59px] w-[240px] h-[240px] origin-center  animate-a2x"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-104-q3.png" /></View>
-    <View class="absolute left-[1083px] top-[59px] w-[240px] h-[240px] origin-center  animate-a2z"><Image class="w-[240px] h-[240px]" src="f-quarter-red-240x240-105.png" /></View>
-    <View class="absolute left-[1081px] top-[302px] w-[240px] h-[240px] origin-center  animate-a31"><Image class="w-[240px] h-[240px]" src="f-quarter-yellow-240x240-106.png" /></View>
-    <View class="absolute left-[1078px] top-[542px] w-[240px] h-[240px] origin-center  animate-a33"><Image class="w-[240px] h-[240px]" src="f-quarter-blue-240x240-107-q3.png" /></View>
-    <View class="absolute left-[1321px] top-[539px] w-[240px] h-[240px] origin-center  animate-a35"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-108-q3.png" /></View>
-    <View class="absolute left-[1563px] top-[539px] w-[240px] h-[240px] origin-center  animate-a37"><Image class="w-[240px] h-[240px]" src="f-quarter-red-240x240-109-q2.png" /></View>
-    <View class="absolute left-[1561px] top-[302px] w-[240px] h-[240px] origin-center  animate-a39"><Image class="w-[240px] h-[240px]" src="f-quarter-yellow-240x240-110-q2.png" /></View>
-    <View class="absolute left-[1563px] top-[59px] w-[240px] h-[240px] origin-center  animate-a3b"><Image class="w-[240px] h-[240px]" src="f-box-red-240x240-111.png" /></View>
-    <View class="absolute left-[-1px] top-[59px] w-[122px] h-[122px] animate-a3d"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[59px] w-[122px] h-[122px] animate-a3f"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[59px] w-[122px] h-[122px] animate-a3h"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[-1px] top-[59px] w-[122px] h-[122px] origin-center animate-a3m"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[59px] w-[122px] h-[122px] animate-a3o"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[59px] w-[122px] h-[122px] animate-a3q"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[59px] w-[122px] h-[122px] animate-a3s"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[119px] top-[59px] w-[122px] h-[122px] origin-center animate-a3x"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[59px] w-[122px] h-[122px] animate-a3z"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[59px] w-[122px] h-[122px] animate-a41"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[59px] w-[122px] h-[122px] animate-a43"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[239px] top-[59px] w-[122px] h-[122px] origin-center animate-a48"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[59px] w-[122px] h-[122px] animate-a4a"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[59px] w-[122px] h-[122px] animate-a4c"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[59px] w-[122px] h-[122px] animate-a4e"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[359px] top-[59px] w-[122px] h-[122px] origin-center animate-a4j"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[122px] h-[122px] animate-a4l"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[122px] h-[122px] animate-a4n"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[122px] h-[122px] animate-a4p"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[479px] top-[59px] w-[122px] h-[122px] origin-center animate-a4u"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[599px] top-[59px] w-[122px] h-[122px] animate-a4w"><Image class="w-[122px] h-[122px]" src="cell-5-0-q0.png" /></View>
-    <View class="absolute left-[599px] top-[59px] w-[122px] h-[122px] animate-a4y"><Image class="w-[122px] h-[122px]" src="cell-5-0-q1.png" /></View>
-    <View class="absolute left-[599px] top-[59px] w-[122px] h-[122px] animate-a50"><Image class="w-[122px] h-[122px]" src="cell-5-0-q2.png" /></View>
-    <View class="absolute left-[599px] top-[59px] w-[122px] h-[122px] animate-a52"><Image class="w-[122px] h-[122px]" src="cell-5-0-q3.png" /></View>
-    <View class="absolute left-[599px] top-[59px] w-[122px] h-[122px] animate-a54"><Image class="w-[122px] h-[122px]" src="cell-5-0-q0.png" /></View>
-    <View class="absolute left-[599px] top-[59px] w-[122px] h-[122px] origin-center animate-a57"><Image class="w-[122px] h-[122px]" src="cell-5-0-q0.png" /></View>
-    <View class="absolute left-[719px] top-[59px] w-[122px] h-[122px] animate-a59"><Image class="w-[122px] h-[122px]" src="cell-6-0-q0.png" /></View>
-    <View class="absolute left-[719px] top-[59px] w-[122px] h-[122px] animate-a5b"><Image class="w-[122px] h-[122px]" src="cell-6-0-q3.png" /></View>
-    <View class="absolute left-[719px] top-[59px] w-[122px] h-[122px] animate-a5d"><Image class="w-[122px] h-[122px]" src="cell-6-0-q2.png" /></View>
-    <View class="absolute left-[719px] top-[59px] w-[122px] h-[122px] animate-a5f"><Image class="w-[122px] h-[122px]" src="cell-6-0-q1.png" /></View>
-    <View class="absolute left-[719px] top-[59px] w-[122px] h-[122px] animate-a5h"><Image class="w-[122px] h-[122px]" src="cell-6-0-q0.png" /></View>
-    <View class="absolute left-[719px] top-[59px] w-[122px] h-[122px] origin-center animate-a5k"><Image class="w-[122px] h-[122px]" src="cell-6-0-q0.png" /></View>
-    <View class="absolute left-[839px] top-[59px] w-[122px] h-[122px] animate-a5m"><Image class="w-[122px] h-[122px]" src="cell-7-0-q0.png" /></View>
-    <View class="absolute left-[839px] top-[59px] w-[122px] h-[122px] animate-a5o"><Image class="w-[122px] h-[122px]" src="cell-7-0-q1.png" /></View>
-    <View class="absolute left-[839px] top-[59px] w-[122px] h-[122px] animate-a5q"><Image class="w-[122px] h-[122px]" src="cell-7-0-q2.png" /></View>
-    <View class="absolute left-[839px] top-[59px] w-[122px] h-[122px] animate-a5s"><Image class="w-[122px] h-[122px]" src="cell-7-0-q3.png" /></View>
-    <View class="absolute left-[839px] top-[59px] w-[122px] h-[122px] animate-a5u"><Image class="w-[122px] h-[122px]" src="cell-7-0-q0.png" /></View>
-    <View class="absolute left-[839px] top-[59px] w-[122px] h-[122px] origin-center animate-a5x"><Image class="w-[122px] h-[122px]" src="cell-7-0-q0.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[122px] h-[122px] animate-a5z"><Image class="w-[122px] h-[122px]" src="cell-8-0-q0.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[122px] h-[122px] animate-a61"><Image class="w-[122px] h-[122px]" src="cell-8-0-q3.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[122px] h-[122px] animate-a63"><Image class="w-[122px] h-[122px]" src="cell-8-0-q2.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[122px] h-[122px] animate-a65"><Image class="w-[122px] h-[122px]" src="cell-8-0-q1.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[122px] h-[122px] animate-a67"><Image class="w-[122px] h-[122px]" src="cell-8-0-q0.png" /></View>
-    <View class="absolute left-[959px] top-[59px] w-[122px] h-[122px] origin-center animate-a6a"><Image class="w-[122px] h-[122px]" src="cell-8-0-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[59px] w-[122px] h-[122px] animate-a6c"><Image class="w-[122px] h-[122px]" src="cell-9-0-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[59px] w-[122px] h-[122px] animate-a6e"><Image class="w-[122px] h-[122px]" src="cell-9-0-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[59px] w-[122px] h-[122px] animate-a6g"><Image class="w-[122px] h-[122px]" src="cell-9-0-q2.png" /></View>
-    <View class="absolute left-[1079px] top-[59px] w-[122px] h-[122px] animate-a6i"><Image class="w-[122px] h-[122px]" src="cell-9-0-q3.png" /></View>
-    <View class="absolute left-[1079px] top-[59px] w-[122px] h-[122px] animate-a6k"><Image class="w-[122px] h-[122px]" src="cell-9-0-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[59px] w-[122px] h-[122px] origin-center animate-a6n"><Image class="w-[122px] h-[122px]" src="cell-9-0-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[122px] h-[122px] animate-a6p"><Image class="w-[122px] h-[122px]" src="cell-10-0-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[122px] h-[122px] animate-a6r"><Image class="w-[122px] h-[122px]" src="cell-10-0-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[122px] h-[122px] animate-a6t"><Image class="w-[122px] h-[122px]" src="cell-10-0-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[122px] h-[122px] animate-a6v"><Image class="w-[122px] h-[122px]" src="cell-10-0-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[122px] h-[122px] animate-a6x"><Image class="w-[122px] h-[122px]" src="cell-10-0-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[59px] w-[122px] h-[122px] origin-center animate-a70"><Image class="w-[122px] h-[122px]" src="cell-10-0-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[59px] w-[122px] h-[122px] animate-a72"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[59px] w-[122px] h-[122px] animate-a74"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[59px] w-[122px] h-[122px] animate-a76"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1319px] top-[59px] w-[122px] h-[122px] origin-center animate-a7b"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[122px] h-[122px] animate-a7d"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[122px] h-[122px] animate-a7f"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[122px] h-[122px] animate-a7h"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1439px] top-[59px] w-[122px] h-[122px] origin-center animate-a7m"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[59px] w-[122px] h-[122px] animate-a7o"><Image class="w-[122px] h-[122px]" src="cell-13-0-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[59px] w-[122px] h-[122px] animate-a7q"><Image class="w-[122px] h-[122px]" src="cell-13-0-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[59px] w-[122px] h-[122px] animate-a7s"><Image class="w-[122px] h-[122px]" src="cell-13-0-q2.png" /></View>
-    <View class="absolute left-[1559px] top-[59px] w-[122px] h-[122px] animate-a7u"><Image class="w-[122px] h-[122px]" src="cell-13-0-q3.png" /></View>
-    <View class="absolute left-[1559px] top-[59px] w-[122px] h-[122px] animate-a7w"><Image class="w-[122px] h-[122px]" src="cell-13-0-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[59px] w-[122px] h-[122px] origin-center animate-a7z"><Image class="w-[122px] h-[122px]" src="cell-13-0-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[122px] h-[122px] animate-a81"><Image class="w-[122px] h-[122px]" src="cell-14-0-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[122px] h-[122px] animate-a83"><Image class="w-[122px] h-[122px]" src="cell-14-0-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[122px] h-[122px] animate-a85"><Image class="w-[122px] h-[122px]" src="cell-14-0-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[122px] h-[122px] animate-a87"><Image class="w-[122px] h-[122px]" src="cell-14-0-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[122px] h-[122px] animate-a89"><Image class="w-[122px] h-[122px]" src="cell-14-0-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[59px] w-[122px] h-[122px] origin-center animate-a8c"><Image class="w-[122px] h-[122px]" src="cell-14-0-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[59px] w-[122px] h-[122px] animate-a8e"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[59px] w-[122px] h-[122px] animate-a8g"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[59px] w-[122px] h-[122px] animate-a8i"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1799px] top-[59px] w-[122px] h-[122px] origin-center animate-a8n"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[179px] w-[122px] h-[122px] animate-a8p"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[179px] w-[122px] h-[122px] animate-a8r"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[179px] w-[122px] h-[122px] animate-a8t"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[-1px] top-[179px] w-[122px] h-[122px] origin-center animate-a8y"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[179px] w-[122px] h-[122px] animate-a90"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[179px] w-[122px] h-[122px] animate-a92"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[179px] w-[122px] h-[122px] animate-a94"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[119px] top-[179px] w-[122px] h-[122px] origin-center animate-a99"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[179px] w-[122px] h-[122px] animate-a9b"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[179px] w-[122px] h-[122px] animate-a9d"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[179px] w-[122px] h-[122px] animate-a9f"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[239px] top-[179px] w-[122px] h-[122px] origin-center animate-a9k"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[179px] w-[122px] h-[122px] animate-a9m"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[179px] w-[122px] h-[122px] animate-a9o"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[179px] w-[122px] h-[122px] animate-a9q"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[359px] top-[179px] w-[122px] h-[122px] origin-center animate-a9v"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[179px] w-[122px] h-[122px] animate-a9x"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[179px] w-[122px] h-[122px] animate-a9z"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[179px] w-[122px] h-[122px] animate-aa1"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[479px] top-[179px] w-[122px] h-[122px] origin-center animate-aa6"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[599px] top-[179px] w-[122px] h-[122px] animate-aa8"><Image class="w-[122px] h-[122px]" src="cell-5-1-q0.png" /></View>
-    <View class="absolute left-[599px] top-[179px] w-[122px] h-[122px] animate-aaa"><Image class="w-[122px] h-[122px]" src="cell-5-1-q3.png" /></View>
-    <View class="absolute left-[599px] top-[179px] w-[122px] h-[122px] animate-aac"><Image class="w-[122px] h-[122px]" src="cell-5-1-q2.png" /></View>
-    <View class="absolute left-[599px] top-[179px] w-[122px] h-[122px] animate-aae"><Image class="w-[122px] h-[122px]" src="cell-5-1-q1.png" /></View>
-    <View class="absolute left-[599px] top-[179px] w-[122px] h-[122px] animate-aag"><Image class="w-[122px] h-[122px]" src="cell-5-1-q0.png" /></View>
-    <View class="absolute left-[599px] top-[179px] w-[122px] h-[122px] origin-center animate-aaj"><Image class="w-[122px] h-[122px]" src="cell-5-1-q0.png" /></View>
-    <View class="absolute left-[719px] top-[179px] w-[122px] h-[122px] animate-aal"><Image class="w-[122px] h-[122px]" src="cell-6-1-q0.png" /></View>
-    <View class="absolute left-[719px] top-[179px] w-[122px] h-[122px] animate-aan"><Image class="w-[122px] h-[122px]" src="cell-6-1-q1.png" /></View>
-    <View class="absolute left-[719px] top-[179px] w-[122px] h-[122px] animate-aap"><Image class="w-[122px] h-[122px]" src="cell-6-1-q2.png" /></View>
-    <View class="absolute left-[719px] top-[179px] w-[122px] h-[122px] animate-aar"><Image class="w-[122px] h-[122px]" src="cell-6-1-q3.png" /></View>
-    <View class="absolute left-[719px] top-[179px] w-[122px] h-[122px] animate-aat"><Image class="w-[122px] h-[122px]" src="cell-6-1-q0.png" /></View>
-    <View class="absolute left-[719px] top-[179px] w-[122px] h-[122px] origin-center animate-aaw"><Image class="w-[122px] h-[122px]" src="cell-6-1-q0.png" /></View>
-    <View class="absolute left-[839px] top-[179px] w-[122px] h-[122px] animate-aay"><Image class="w-[122px] h-[122px]" src="cell-7-1-q0.png" /></View>
-    <View class="absolute left-[839px] top-[179px] w-[122px] h-[122px] animate-ab0"><Image class="w-[122px] h-[122px]" src="cell-7-1-q3.png" /></View>
-    <View class="absolute left-[839px] top-[179px] w-[122px] h-[122px] animate-ab2"><Image class="w-[122px] h-[122px]" src="cell-7-1-q2.png" /></View>
-    <View class="absolute left-[839px] top-[179px] w-[122px] h-[122px] animate-ab4"><Image class="w-[122px] h-[122px]" src="cell-7-1-q1.png" /></View>
-    <View class="absolute left-[839px] top-[179px] w-[122px] h-[122px] animate-ab6"><Image class="w-[122px] h-[122px]" src="cell-7-1-q0.png" /></View>
-    <View class="absolute left-[839px] top-[179px] w-[122px] h-[122px] origin-center animate-ab9"><Image class="w-[122px] h-[122px]" src="cell-7-1-q0.png" /></View>
-    <View class="absolute left-[959px] top-[179px] w-[122px] h-[122px] animate-abb"><Image class="w-[122px] h-[122px]" src="cell-8-1-q0.png" /></View>
-    <View class="absolute left-[959px] top-[179px] w-[122px] h-[122px] animate-abd"><Image class="w-[122px] h-[122px]" src="cell-8-1-q1.png" /></View>
-    <View class="absolute left-[959px] top-[179px] w-[122px] h-[122px] animate-abf"><Image class="w-[122px] h-[122px]" src="cell-8-1-q2.png" /></View>
-    <View class="absolute left-[959px] top-[179px] w-[122px] h-[122px] animate-abh"><Image class="w-[122px] h-[122px]" src="cell-8-1-q3.png" /></View>
-    <View class="absolute left-[959px] top-[179px] w-[122px] h-[122px] animate-abj"><Image class="w-[122px] h-[122px]" src="cell-8-1-q0.png" /></View>
-    <View class="absolute left-[959px] top-[179px] w-[122px] h-[122px] origin-center animate-abm"><Image class="w-[122px] h-[122px]" src="cell-8-1-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[179px] w-[122px] h-[122px] animate-abo"><Image class="w-[122px] h-[122px]" src="cell-9-1-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[179px] w-[122px] h-[122px] animate-abq"><Image class="w-[122px] h-[122px]" src="cell-9-1-q3.png" /></View>
-    <View class="absolute left-[1079px] top-[179px] w-[122px] h-[122px] animate-abs"><Image class="w-[122px] h-[122px]" src="cell-9-1-q2.png" /></View>
-    <View class="absolute left-[1079px] top-[179px] w-[122px] h-[122px] animate-abu"><Image class="w-[122px] h-[122px]" src="cell-9-1-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[179px] w-[122px] h-[122px] animate-abw"><Image class="w-[122px] h-[122px]" src="cell-9-1-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[179px] w-[122px] h-[122px] origin-center animate-abz"><Image class="w-[122px] h-[122px]" src="cell-9-1-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[179px] w-[122px] h-[122px] animate-ac1"><Image class="w-[122px] h-[122px]" src="cell-10-1-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[179px] w-[122px] h-[122px] animate-ac3"><Image class="w-[122px] h-[122px]" src="cell-10-1-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[179px] w-[122px] h-[122px] animate-ac5"><Image class="w-[122px] h-[122px]" src="cell-10-1-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[179px] w-[122px] h-[122px] animate-ac7"><Image class="w-[122px] h-[122px]" src="cell-10-1-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[179px] w-[122px] h-[122px] animate-ac9"><Image class="w-[122px] h-[122px]" src="cell-10-1-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[179px] w-[122px] h-[122px] origin-center animate-acc"><Image class="w-[122px] h-[122px]" src="cell-10-1-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[179px] w-[122px] h-[122px] animate-ace"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[179px] w-[122px] h-[122px] animate-acg"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[179px] w-[122px] h-[122px] animate-aci"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1319px] top-[179px] w-[122px] h-[122px] origin-center animate-acn"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[179px] w-[122px] h-[122px] animate-acp"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[179px] w-[122px] h-[122px] animate-acr"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[179px] w-[122px] h-[122px] animate-act"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[179px] w-[122px] h-[122px] origin-center animate-acy"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[179px] w-[122px] h-[122px] animate-ad0"><Image class="w-[122px] h-[122px]" src="cell-13-1-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[179px] w-[122px] h-[122px] animate-ad2"><Image class="w-[122px] h-[122px]" src="cell-13-1-q3.png" /></View>
-    <View class="absolute left-[1559px] top-[179px] w-[122px] h-[122px] animate-ad4"><Image class="w-[122px] h-[122px]" src="cell-13-1-q2.png" /></View>
-    <View class="absolute left-[1559px] top-[179px] w-[122px] h-[122px] animate-ad6"><Image class="w-[122px] h-[122px]" src="cell-13-1-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[179px] w-[122px] h-[122px] animate-ad8"><Image class="w-[122px] h-[122px]" src="cell-13-1-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[179px] w-[122px] h-[122px] origin-center animate-adb"><Image class="w-[122px] h-[122px]" src="cell-13-1-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[179px] w-[122px] h-[122px] animate-add"><Image class="w-[122px] h-[122px]" src="cell-14-1-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[179px] w-[122px] h-[122px] animate-adf"><Image class="w-[122px] h-[122px]" src="cell-14-1-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[179px] w-[122px] h-[122px] animate-adh"><Image class="w-[122px] h-[122px]" src="cell-14-1-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[179px] w-[122px] h-[122px] animate-adj"><Image class="w-[122px] h-[122px]" src="cell-14-1-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[179px] w-[122px] h-[122px] animate-adl"><Image class="w-[122px] h-[122px]" src="cell-14-1-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[179px] w-[122px] h-[122px] origin-center animate-ado"><Image class="w-[122px] h-[122px]" src="cell-14-1-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[179px] w-[122px] h-[122px] animate-adq"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[179px] w-[122px] h-[122px] animate-ads"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[179px] w-[122px] h-[122px] animate-adu"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1799px] top-[179px] w-[122px] h-[122px] origin-center animate-adz"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[299px] w-[122px] h-[122px] animate-ae1"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[299px] w-[122px] h-[122px] animate-ae3"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[299px] w-[122px] h-[122px] animate-ae5"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[-1px] top-[299px] w-[122px] h-[122px] origin-center animate-aea"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[122px] h-[122px] animate-aec"><Image class="w-[122px] h-[122px]" src="cell-1-2-q0.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[122px] h-[122px] animate-aee"><Image class="w-[122px] h-[122px]" src="cell-1-2-q1.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[122px] h-[122px] animate-aeg"><Image class="w-[122px] h-[122px]" src="cell-1-2-q2.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[122px] h-[122px] animate-aei"><Image class="w-[122px] h-[122px]" src="cell-1-2-q3.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[122px] h-[122px] animate-aek"><Image class="w-[122px] h-[122px]" src="cell-1-2-q0.png" /></View>
-    <View class="absolute left-[119px] top-[299px] w-[122px] h-[122px] origin-center animate-aen"><Image class="w-[122px] h-[122px]" src="cell-1-2-q0.png" /></View>
-    <View class="absolute left-[239px] top-[299px] w-[122px] h-[122px] animate-aep"><Image class="w-[122px] h-[122px]" src="cell-2-2-q0.png" /></View>
-    <View class="absolute left-[239px] top-[299px] w-[122px] h-[122px] animate-aer"><Image class="w-[122px] h-[122px]" src="cell-2-2-q3.png" /></View>
-    <View class="absolute left-[239px] top-[299px] w-[122px] h-[122px] animate-aet"><Image class="w-[122px] h-[122px]" src="cell-2-2-q2.png" /></View>
-    <View class="absolute left-[239px] top-[299px] w-[122px] h-[122px] animate-aev"><Image class="w-[122px] h-[122px]" src="cell-2-2-q1.png" /></View>
-    <View class="absolute left-[239px] top-[299px] w-[122px] h-[122px] animate-aex"><Image class="w-[122px] h-[122px]" src="cell-2-2-q0.png" /></View>
-    <View class="absolute left-[239px] top-[299px] w-[122px] h-[122px] origin-center animate-af0"><Image class="w-[122px] h-[122px]" src="cell-2-2-q0.png" /></View>
-    <View class="absolute left-[359px] top-[299px] w-[122px] h-[122px] animate-af2"><Image class="w-[122px] h-[122px]" src="cell-3-2-q0.png" /></View>
-    <View class="absolute left-[359px] top-[299px] w-[122px] h-[122px] animate-af4"><Image class="w-[122px] h-[122px]" src="cell-3-2-q1.png" /></View>
-    <View class="absolute left-[359px] top-[299px] w-[122px] h-[122px] animate-af6"><Image class="w-[122px] h-[122px]" src="cell-3-2-q2.png" /></View>
-    <View class="absolute left-[359px] top-[299px] w-[122px] h-[122px] animate-af8"><Image class="w-[122px] h-[122px]" src="cell-3-2-q3.png" /></View>
-    <View class="absolute left-[359px] top-[299px] w-[122px] h-[122px] animate-afa"><Image class="w-[122px] h-[122px]" src="cell-3-2-q0.png" /></View>
-    <View class="absolute left-[359px] top-[299px] w-[122px] h-[122px] origin-center animate-afd"><Image class="w-[122px] h-[122px]" src="cell-3-2-q0.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[122px] h-[122px] animate-aff"><Image class="w-[122px] h-[122px]" src="cell-4-2-q0.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[122px] h-[122px] animate-afh"><Image class="w-[122px] h-[122px]" src="cell-4-2-q3.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[122px] h-[122px] animate-afj"><Image class="w-[122px] h-[122px]" src="cell-4-2-q2.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[122px] h-[122px] animate-afl"><Image class="w-[122px] h-[122px]" src="cell-4-2-q1.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[122px] h-[122px] animate-afn"><Image class="w-[122px] h-[122px]" src="cell-4-2-q0.png" /></View>
-    <View class="absolute left-[479px] top-[299px] w-[122px] h-[122px] origin-center animate-afq"><Image class="w-[122px] h-[122px]" src="cell-4-2-q0.png" /></View>
-    <View class="absolute left-[599px] top-[299px] w-[122px] h-[122px] animate-afs"><Image class="w-[122px] h-[122px]" src="cell-5-2-q0.png" /></View>
-    <View class="absolute left-[599px] top-[299px] w-[122px] h-[122px] animate-afu"><Image class="w-[122px] h-[122px]" src="cell-5-2-q1.png" /></View>
-    <View class="absolute left-[599px] top-[299px] w-[122px] h-[122px] animate-afw"><Image class="w-[122px] h-[122px]" src="cell-5-2-q2.png" /></View>
-    <View class="absolute left-[599px] top-[299px] w-[122px] h-[122px] animate-afy"><Image class="w-[122px] h-[122px]" src="cell-5-2-q3.png" /></View>
-    <View class="absolute left-[599px] top-[299px] w-[122px] h-[122px] animate-ag0"><Image class="w-[122px] h-[122px]" src="cell-5-2-q0.png" /></View>
-    <View class="absolute left-[599px] top-[299px] w-[122px] h-[122px] origin-center animate-ag3"><Image class="w-[122px] h-[122px]" src="cell-5-2-q0.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[122px] h-[122px] animate-ag5"><Image class="w-[122px] h-[122px]" src="cell-6-2-q0.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[122px] h-[122px] animate-ag7"><Image class="w-[122px] h-[122px]" src="cell-6-2-q3.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[122px] h-[122px] animate-ag9"><Image class="w-[122px] h-[122px]" src="cell-6-2-q2.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[122px] h-[122px] animate-agb"><Image class="w-[122px] h-[122px]" src="cell-6-2-q1.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[122px] h-[122px] animate-agd"><Image class="w-[122px] h-[122px]" src="cell-6-2-q0.png" /></View>
-    <View class="absolute left-[719px] top-[299px] w-[122px] h-[122px] origin-center animate-agg"><Image class="w-[122px] h-[122px]" src="cell-6-2-q0.png" /></View>
-    <View class="absolute left-[839px] top-[299px] w-[122px] h-[122px] animate-agi"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[839px] top-[299px] w-[122px] h-[122px] animate-agk"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[839px] top-[299px] w-[122px] h-[122px] animate-agm"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[839px] top-[299px] w-[122px] h-[122px] origin-center animate-agr"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[122px] h-[122px] animate-agt"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[122px] h-[122px] animate-agv"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[122px] h-[122px] animate-agx"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[959px] top-[299px] w-[122px] h-[122px] origin-center animate-ah2"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[299px] w-[122px] h-[122px] animate-ah4"><Image class="w-[122px] h-[122px]" src="cell-9-2-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[299px] w-[122px] h-[122px] animate-ah6"><Image class="w-[122px] h-[122px]" src="cell-9-2-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[299px] w-[122px] h-[122px] animate-ah8"><Image class="w-[122px] h-[122px]" src="cell-9-2-q2.png" /></View>
-    <View class="absolute left-[1079px] top-[299px] w-[122px] h-[122px] animate-aha"><Image class="w-[122px] h-[122px]" src="cell-9-2-q3.png" /></View>
-    <View class="absolute left-[1079px] top-[299px] w-[122px] h-[122px] animate-ahc"><Image class="w-[122px] h-[122px]" src="cell-9-2-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[299px] w-[122px] h-[122px] origin-center animate-ahf"><Image class="w-[122px] h-[122px]" src="cell-9-2-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[122px] h-[122px] animate-ahh"><Image class="w-[122px] h-[122px]" src="cell-10-2-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[122px] h-[122px] animate-ahj"><Image class="w-[122px] h-[122px]" src="cell-10-2-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[122px] h-[122px] animate-ahl"><Image class="w-[122px] h-[122px]" src="cell-10-2-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[122px] h-[122px] animate-ahn"><Image class="w-[122px] h-[122px]" src="cell-10-2-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[122px] h-[122px] animate-ahp"><Image class="w-[122px] h-[122px]" src="cell-10-2-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[299px] w-[122px] h-[122px] origin-center animate-ahs"><Image class="w-[122px] h-[122px]" src="cell-10-2-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[299px] w-[122px] h-[122px] animate-ahu"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[299px] w-[122px] h-[122px] animate-ahw"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[299px] w-[122px] h-[122px] animate-ahy"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1319px] top-[299px] w-[122px] h-[122px] origin-center animate-ai3"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[122px] h-[122px] animate-ai5"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[122px] h-[122px] animate-ai7"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[122px] h-[122px] animate-ai9"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1439px] top-[299px] w-[122px] h-[122px] origin-center animate-aie"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[299px] w-[122px] h-[122px] animate-aig"><Image class="w-[122px] h-[122px]" src="cell-13-2-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[299px] w-[122px] h-[122px] animate-aii"><Image class="w-[122px] h-[122px]" src="cell-13-2-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[299px] w-[122px] h-[122px] animate-aik"><Image class="w-[122px] h-[122px]" src="cell-13-2-q2.png" /></View>
-    <View class="absolute left-[1559px] top-[299px] w-[122px] h-[122px] animate-aim"><Image class="w-[122px] h-[122px]" src="cell-13-2-q3.png" /></View>
-    <View class="absolute left-[1559px] top-[299px] w-[122px] h-[122px] animate-aio"><Image class="w-[122px] h-[122px]" src="cell-13-2-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[299px] w-[122px] h-[122px] origin-center animate-air"><Image class="w-[122px] h-[122px]" src="cell-13-2-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[122px] h-[122px] animate-ait"><Image class="w-[122px] h-[122px]" src="cell-14-2-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[122px] h-[122px] animate-aiv"><Image class="w-[122px] h-[122px]" src="cell-14-2-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[122px] h-[122px] animate-aix"><Image class="w-[122px] h-[122px]" src="cell-14-2-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[122px] h-[122px] animate-aiz"><Image class="w-[122px] h-[122px]" src="cell-14-2-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[122px] h-[122px] animate-aj1"><Image class="w-[122px] h-[122px]" src="cell-14-2-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[299px] w-[122px] h-[122px] origin-center animate-aj4"><Image class="w-[122px] h-[122px]" src="cell-14-2-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[299px] w-[122px] h-[122px] animate-aj6"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[299px] w-[122px] h-[122px] animate-aj8"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[299px] w-[122px] h-[122px] animate-aja"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1799px] top-[299px] w-[122px] h-[122px] origin-center animate-ajf"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[419px] w-[122px] h-[122px] animate-ajh"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[419px] w-[122px] h-[122px] animate-ajj"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[419px] w-[122px] h-[122px] animate-ajl"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[-1px] top-[419px] w-[122px] h-[122px] origin-center animate-ajq"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[419px] w-[122px] h-[122px] animate-ajs"><Image class="w-[122px] h-[122px]" src="cell-1-3-q0.png" /></View>
-    <View class="absolute left-[119px] top-[419px] w-[122px] h-[122px] animate-aju"><Image class="w-[122px] h-[122px]" src="cell-1-3-q3.png" /></View>
-    <View class="absolute left-[119px] top-[419px] w-[122px] h-[122px] animate-ajw"><Image class="w-[122px] h-[122px]" src="cell-1-3-q2.png" /></View>
-    <View class="absolute left-[119px] top-[419px] w-[122px] h-[122px] animate-ajy"><Image class="w-[122px] h-[122px]" src="cell-1-3-q1.png" /></View>
-    <View class="absolute left-[119px] top-[419px] w-[122px] h-[122px] animate-ak0"><Image class="w-[122px] h-[122px]" src="cell-1-3-q0.png" /></View>
-    <View class="absolute left-[119px] top-[419px] w-[122px] h-[122px] origin-center animate-ak3"><Image class="w-[122px] h-[122px]" src="cell-1-3-q0.png" /></View>
-    <View class="absolute left-[239px] top-[419px] w-[122px] h-[122px] animate-ak5"><Image class="w-[122px] h-[122px]" src="cell-2-3-q0.png" /></View>
-    <View class="absolute left-[239px] top-[419px] w-[122px] h-[122px] animate-ak7"><Image class="w-[122px] h-[122px]" src="cell-2-3-q1.png" /></View>
-    <View class="absolute left-[239px] top-[419px] w-[122px] h-[122px] animate-ak9"><Image class="w-[122px] h-[122px]" src="cell-2-3-q2.png" /></View>
-    <View class="absolute left-[239px] top-[419px] w-[122px] h-[122px] animate-akb"><Image class="w-[122px] h-[122px]" src="cell-2-3-q3.png" /></View>
-    <View class="absolute left-[239px] top-[419px] w-[122px] h-[122px] animate-akd"><Image class="w-[122px] h-[122px]" src="cell-2-3-q0.png" /></View>
-    <View class="absolute left-[239px] top-[419px] w-[122px] h-[122px] origin-center animate-akg"><Image class="w-[122px] h-[122px]" src="cell-2-3-q0.png" /></View>
-    <View class="absolute left-[359px] top-[419px] w-[122px] h-[122px] animate-aki"><Image class="w-[122px] h-[122px]" src="cell-3-3-q0.png" /></View>
-    <View class="absolute left-[359px] top-[419px] w-[122px] h-[122px] animate-akk"><Image class="w-[122px] h-[122px]" src="cell-3-3-q3.png" /></View>
-    <View class="absolute left-[359px] top-[419px] w-[122px] h-[122px] animate-akm"><Image class="w-[122px] h-[122px]" src="cell-3-3-q2.png" /></View>
-    <View class="absolute left-[359px] top-[419px] w-[122px] h-[122px] animate-ako"><Image class="w-[122px] h-[122px]" src="cell-3-3-q1.png" /></View>
-    <View class="absolute left-[359px] top-[419px] w-[122px] h-[122px] animate-akq"><Image class="w-[122px] h-[122px]" src="cell-3-3-q0.png" /></View>
-    <View class="absolute left-[359px] top-[419px] w-[122px] h-[122px] origin-center animate-akt"><Image class="w-[122px] h-[122px]" src="cell-3-3-q0.png" /></View>
-    <View class="absolute left-[479px] top-[419px] w-[122px] h-[122px] animate-akv"><Image class="w-[122px] h-[122px]" src="cell-4-3-q0.png" /></View>
-    <View class="absolute left-[479px] top-[419px] w-[122px] h-[122px] animate-akx"><Image class="w-[122px] h-[122px]" src="cell-4-3-q1.png" /></View>
-    <View class="absolute left-[479px] top-[419px] w-[122px] h-[122px] animate-akz"><Image class="w-[122px] h-[122px]" src="cell-4-3-q2.png" /></View>
-    <View class="absolute left-[479px] top-[419px] w-[122px] h-[122px] animate-al1"><Image class="w-[122px] h-[122px]" src="cell-4-3-q3.png" /></View>
-    <View class="absolute left-[479px] top-[419px] w-[122px] h-[122px] animate-al3"><Image class="w-[122px] h-[122px]" src="cell-4-3-q0.png" /></View>
-    <View class="absolute left-[479px] top-[419px] w-[122px] h-[122px] origin-center animate-al6"><Image class="w-[122px] h-[122px]" src="cell-4-3-q0.png" /></View>
-    <View class="absolute left-[599px] top-[419px] w-[122px] h-[122px] animate-al8"><Image class="w-[122px] h-[122px]" src="cell-5-3-q0.png" /></View>
-    <View class="absolute left-[599px] top-[419px] w-[122px] h-[122px] animate-ala"><Image class="w-[122px] h-[122px]" src="cell-5-3-q3.png" /></View>
-    <View class="absolute left-[599px] top-[419px] w-[122px] h-[122px] animate-alc"><Image class="w-[122px] h-[122px]" src="cell-5-3-q2.png" /></View>
-    <View class="absolute left-[599px] top-[419px] w-[122px] h-[122px] animate-ale"><Image class="w-[122px] h-[122px]" src="cell-5-3-q1.png" /></View>
-    <View class="absolute left-[599px] top-[419px] w-[122px] h-[122px] animate-alg"><Image class="w-[122px] h-[122px]" src="cell-5-3-q0.png" /></View>
-    <View class="absolute left-[599px] top-[419px] w-[122px] h-[122px] origin-center animate-alj"><Image class="w-[122px] h-[122px]" src="cell-5-3-q0.png" /></View>
-    <View class="absolute left-[719px] top-[419px] w-[122px] h-[122px] animate-all"><Image class="w-[122px] h-[122px]" src="cell-6-3-q0.png" /></View>
-    <View class="absolute left-[719px] top-[419px] w-[122px] h-[122px] animate-aln"><Image class="w-[122px] h-[122px]" src="cell-6-3-q1.png" /></View>
-    <View class="absolute left-[719px] top-[419px] w-[122px] h-[122px] animate-alp"><Image class="w-[122px] h-[122px]" src="cell-6-3-q2.png" /></View>
-    <View class="absolute left-[719px] top-[419px] w-[122px] h-[122px] animate-alr"><Image class="w-[122px] h-[122px]" src="cell-6-3-q3.png" /></View>
-    <View class="absolute left-[719px] top-[419px] w-[122px] h-[122px] animate-alt"><Image class="w-[122px] h-[122px]" src="cell-6-3-q0.png" /></View>
-    <View class="absolute left-[719px] top-[419px] w-[122px] h-[122px] origin-center animate-alw"><Image class="w-[122px] h-[122px]" src="cell-6-3-q0.png" /></View>
-    <View class="absolute left-[839px] top-[419px] w-[122px] h-[122px] animate-aly"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[839px] top-[419px] w-[122px] h-[122px] animate-am0"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[839px] top-[419px] w-[122px] h-[122px] animate-am2"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[839px] top-[419px] w-[122px] h-[122px] origin-center animate-am7"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[419px] w-[122px] h-[122px] animate-am9"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[419px] w-[122px] h-[122px] animate-amb"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[419px] w-[122px] h-[122px] animate-amd"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[959px] top-[419px] w-[122px] h-[122px] origin-center animate-ami"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[419px] w-[122px] h-[122px] animate-amk"><Image class="w-[122px] h-[122px]" src="cell-9-3-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[419px] w-[122px] h-[122px] animate-amm"><Image class="w-[122px] h-[122px]" src="cell-9-3-q3.png" /></View>
-    <View class="absolute left-[1079px] top-[419px] w-[122px] h-[122px] animate-amo"><Image class="w-[122px] h-[122px]" src="cell-9-3-q2.png" /></View>
-    <View class="absolute left-[1079px] top-[419px] w-[122px] h-[122px] animate-amq"><Image class="w-[122px] h-[122px]" src="cell-9-3-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[419px] w-[122px] h-[122px] animate-ams"><Image class="w-[122px] h-[122px]" src="cell-9-3-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[419px] w-[122px] h-[122px] origin-center animate-amv"><Image class="w-[122px] h-[122px]" src="cell-9-3-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[419px] w-[122px] h-[122px] animate-amx"><Image class="w-[122px] h-[122px]" src="cell-10-3-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[419px] w-[122px] h-[122px] animate-amz"><Image class="w-[122px] h-[122px]" src="cell-10-3-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[419px] w-[122px] h-[122px] animate-an1"><Image class="w-[122px] h-[122px]" src="cell-10-3-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[419px] w-[122px] h-[122px] animate-an3"><Image class="w-[122px] h-[122px]" src="cell-10-3-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[419px] w-[122px] h-[122px] animate-an5"><Image class="w-[122px] h-[122px]" src="cell-10-3-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[419px] w-[122px] h-[122px] origin-center animate-an8"><Image class="w-[122px] h-[122px]" src="cell-10-3-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[419px] w-[122px] h-[122px] animate-ana"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[419px] w-[122px] h-[122px] animate-anc"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[419px] w-[122px] h-[122px] animate-ane"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1319px] top-[419px] w-[122px] h-[122px] origin-center animate-anj"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[419px] w-[122px] h-[122px] animate-anl"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[419px] w-[122px] h-[122px] animate-ann"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[419px] w-[122px] h-[122px] animate-anp"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[419px] w-[122px] h-[122px] origin-center animate-anu"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[419px] w-[122px] h-[122px] animate-anw"><Image class="w-[122px] h-[122px]" src="cell-13-3-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[419px] w-[122px] h-[122px] animate-any"><Image class="w-[122px] h-[122px]" src="cell-13-3-q3.png" /></View>
-    <View class="absolute left-[1559px] top-[419px] w-[122px] h-[122px] animate-ao0"><Image class="w-[122px] h-[122px]" src="cell-13-3-q2.png" /></View>
-    <View class="absolute left-[1559px] top-[419px] w-[122px] h-[122px] animate-ao2"><Image class="w-[122px] h-[122px]" src="cell-13-3-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[419px] w-[122px] h-[122px] animate-ao4"><Image class="w-[122px] h-[122px]" src="cell-13-3-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[419px] w-[122px] h-[122px] origin-center animate-ao7"><Image class="w-[122px] h-[122px]" src="cell-13-3-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[419px] w-[122px] h-[122px] animate-ao9"><Image class="w-[122px] h-[122px]" src="cell-14-3-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[419px] w-[122px] h-[122px] animate-aob"><Image class="w-[122px] h-[122px]" src="cell-14-3-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[419px] w-[122px] h-[122px] animate-aod"><Image class="w-[122px] h-[122px]" src="cell-14-3-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[419px] w-[122px] h-[122px] animate-aof"><Image class="w-[122px] h-[122px]" src="cell-14-3-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[419px] w-[122px] h-[122px] animate-aoh"><Image class="w-[122px] h-[122px]" src="cell-14-3-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[419px] w-[122px] h-[122px] origin-center animate-aok"><Image class="w-[122px] h-[122px]" src="cell-14-3-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[419px] w-[122px] h-[122px] animate-aom"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[419px] w-[122px] h-[122px] animate-aoo"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[419px] w-[122px] h-[122px] animate-aoq"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1799px] top-[419px] w-[122px] h-[122px] origin-center animate-aov"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[539px] w-[122px] h-[122px] animate-aox"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[539px] w-[122px] h-[122px] animate-aoz"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[539px] w-[122px] h-[122px] animate-ap1"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[-1px] top-[539px] w-[122px] h-[122px] origin-center animate-ap6"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[539px] w-[122px] h-[122px] animate-ap8"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[539px] w-[122px] h-[122px] animate-apa"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[539px] w-[122px] h-[122px] animate-apc"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[119px] top-[539px] w-[122px] h-[122px] origin-center animate-aph"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[539px] w-[122px] h-[122px] animate-apj"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[539px] w-[122px] h-[122px] animate-apl"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[539px] w-[122px] h-[122px] animate-apn"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[239px] top-[539px] w-[122px] h-[122px] origin-center animate-aps"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[539px] w-[122px] h-[122px] animate-apu"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[539px] w-[122px] h-[122px] animate-apw"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[539px] w-[122px] h-[122px] animate-apy"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[359px] top-[539px] w-[122px] h-[122px] origin-center animate-aq3"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[122px] h-[122px] animate-aq5"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[122px] h-[122px] animate-aq7"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[122px] h-[122px] animate-aq9"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[479px] top-[539px] w-[122px] h-[122px] origin-center animate-aqe"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[599px] top-[539px] w-[122px] h-[122px] animate-aqg"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[599px] top-[539px] w-[122px] h-[122px] animate-aqi"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[599px] top-[539px] w-[122px] h-[122px] animate-aqk"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[599px] top-[539px] w-[122px] h-[122px] origin-center animate-aqp"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[122px] h-[122px] animate-aqr"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[122px] h-[122px] animate-aqt"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[122px] h-[122px] animate-aqv"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[719px] top-[539px] w-[122px] h-[122px] origin-center animate-ar0"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[839px] top-[539px] w-[122px] h-[122px] animate-ar2"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[839px] top-[539px] w-[122px] h-[122px] animate-ar4"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[839px] top-[539px] w-[122px] h-[122px] animate-ar6"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[839px] top-[539px] w-[122px] h-[122px] origin-center animate-arb"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[122px] h-[122px] animate-ard"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[122px] h-[122px] animate-arf"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[122px] h-[122px] animate-arh"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[959px] top-[539px] w-[122px] h-[122px] origin-center animate-arm"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[539px] w-[122px] h-[122px] animate-aro"><Image class="w-[122px] h-[122px]" src="cell-9-4-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[539px] w-[122px] h-[122px] animate-arq"><Image class="w-[122px] h-[122px]" src="cell-9-4-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[539px] w-[122px] h-[122px] animate-ars"><Image class="w-[122px] h-[122px]" src="cell-9-4-q2.png" /></View>
-    <View class="absolute left-[1079px] top-[539px] w-[122px] h-[122px] animate-aru"><Image class="w-[122px] h-[122px]" src="cell-9-4-q3.png" /></View>
-    <View class="absolute left-[1079px] top-[539px] w-[122px] h-[122px] animate-arw"><Image class="w-[122px] h-[122px]" src="cell-9-4-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[539px] w-[122px] h-[122px] origin-center animate-arz"><Image class="w-[122px] h-[122px]" src="cell-9-4-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[122px] h-[122px] animate-as1"><Image class="w-[122px] h-[122px]" src="cell-10-4-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[122px] h-[122px] animate-as3"><Image class="w-[122px] h-[122px]" src="cell-10-4-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[122px] h-[122px] animate-as5"><Image class="w-[122px] h-[122px]" src="cell-10-4-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[122px] h-[122px] animate-as7"><Image class="w-[122px] h-[122px]" src="cell-10-4-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[122px] h-[122px] animate-as9"><Image class="w-[122px] h-[122px]" src="cell-10-4-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[539px] w-[122px] h-[122px] origin-center animate-asc"><Image class="w-[122px] h-[122px]" src="cell-10-4-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[539px] w-[122px] h-[122px] animate-ase"><Image class="w-[122px] h-[122px]" src="cell-11-4-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[539px] w-[122px] h-[122px] animate-asg"><Image class="w-[122px] h-[122px]" src="cell-11-4-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[539px] w-[122px] h-[122px] animate-asi"><Image class="w-[122px] h-[122px]" src="cell-11-4-q2.png" /></View>
-    <View class="absolute left-[1319px] top-[539px] w-[122px] h-[122px] animate-ask"><Image class="w-[122px] h-[122px]" src="cell-11-4-q3.png" /></View>
-    <View class="absolute left-[1319px] top-[539px] w-[122px] h-[122px] animate-asm"><Image class="w-[122px] h-[122px]" src="cell-11-4-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[539px] w-[122px] h-[122px] origin-center animate-asp"><Image class="w-[122px] h-[122px]" src="cell-11-4-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[122px] h-[122px] animate-asr"><Image class="w-[122px] h-[122px]" src="cell-12-4-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[122px] h-[122px] animate-ast"><Image class="w-[122px] h-[122px]" src="cell-12-4-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[122px] h-[122px] animate-asv"><Image class="w-[122px] h-[122px]" src="cell-12-4-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[122px] h-[122px] animate-asx"><Image class="w-[122px] h-[122px]" src="cell-12-4-q1.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[122px] h-[122px] animate-asz"><Image class="w-[122px] h-[122px]" src="cell-12-4-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[539px] w-[122px] h-[122px] origin-center animate-at2"><Image class="w-[122px] h-[122px]" src="cell-12-4-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[539px] w-[122px] h-[122px] animate-at4"><Image class="w-[122px] h-[122px]" src="cell-13-4-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[539px] w-[122px] h-[122px] animate-at6"><Image class="w-[122px] h-[122px]" src="cell-13-4-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[539px] w-[122px] h-[122px] animate-at8"><Image class="w-[122px] h-[122px]" src="cell-13-4-q2.png" /></View>
-    <View class="absolute left-[1559px] top-[539px] w-[122px] h-[122px] animate-ata"><Image class="w-[122px] h-[122px]" src="cell-13-4-q3.png" /></View>
-    <View class="absolute left-[1559px] top-[539px] w-[122px] h-[122px] animate-atc"><Image class="w-[122px] h-[122px]" src="cell-13-4-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[539px] w-[122px] h-[122px] origin-center animate-atf"><Image class="w-[122px] h-[122px]" src="cell-13-4-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[122px] h-[122px] animate-ath"><Image class="w-[122px] h-[122px]" src="cell-14-4-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[122px] h-[122px] animate-atj"><Image class="w-[122px] h-[122px]" src="cell-14-4-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[122px] h-[122px] animate-atl"><Image class="w-[122px] h-[122px]" src="cell-14-4-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[122px] h-[122px] animate-atn"><Image class="w-[122px] h-[122px]" src="cell-14-4-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[122px] h-[122px] animate-atp"><Image class="w-[122px] h-[122px]" src="cell-14-4-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[539px] w-[122px] h-[122px] origin-center animate-ats"><Image class="w-[122px] h-[122px]" src="cell-14-4-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[539px] w-[122px] h-[122px] animate-atu"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[539px] w-[122px] h-[122px] animate-atw"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[539px] w-[122px] h-[122px] animate-aty"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1799px] top-[539px] w-[122px] h-[122px] origin-center animate-au3"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[659px] w-[122px] h-[122px] animate-au5"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[659px] w-[122px] h-[122px] animate-au7"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[659px] w-[122px] h-[122px] animate-au9"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[-1px] top-[659px] w-[122px] h-[122px] origin-center animate-aue"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[659px] w-[122px] h-[122px] animate-aug"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[659px] w-[122px] h-[122px] animate-aui"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[659px] w-[122px] h-[122px] animate-auk"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[119px] top-[659px] w-[122px] h-[122px] origin-center animate-aup"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[659px] w-[122px] h-[122px] animate-aur"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[659px] w-[122px] h-[122px] animate-aut"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[659px] w-[122px] h-[122px] animate-auv"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[239px] top-[659px] w-[122px] h-[122px] origin-center animate-av0"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[659px] w-[122px] h-[122px] animate-av2"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[659px] w-[122px] h-[122px] animate-av4"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[659px] w-[122px] h-[122px] animate-av6"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[359px] top-[659px] w-[122px] h-[122px] origin-center animate-avb"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[659px] w-[122px] h-[122px] animate-avd"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[659px] w-[122px] h-[122px] animate-avf"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[659px] w-[122px] h-[122px] animate-avh"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[479px] top-[659px] w-[122px] h-[122px] origin-center animate-avm"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[599px] top-[659px] w-[122px] h-[122px] animate-avo"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[599px] top-[659px] w-[122px] h-[122px] animate-avq"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[599px] top-[659px] w-[122px] h-[122px] animate-avs"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[599px] top-[659px] w-[122px] h-[122px] origin-center animate-avx"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[719px] top-[659px] w-[122px] h-[122px] animate-avz"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[719px] top-[659px] w-[122px] h-[122px] animate-aw1"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[719px] top-[659px] w-[122px] h-[122px] animate-aw3"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[719px] top-[659px] w-[122px] h-[122px] origin-center animate-aw8"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[839px] top-[659px] w-[122px] h-[122px] animate-awa"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[839px] top-[659px] w-[122px] h-[122px] animate-awc"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[839px] top-[659px] w-[122px] h-[122px] animate-awe"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[839px] top-[659px] w-[122px] h-[122px] origin-center animate-awj"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[659px] w-[122px] h-[122px] animate-awl"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[659px] w-[122px] h-[122px] animate-awn"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[659px] w-[122px] h-[122px] animate-awp"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[959px] top-[659px] w-[122px] h-[122px] origin-center animate-awu"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[659px] w-[122px] h-[122px] animate-aww"><Image class="w-[122px] h-[122px]" src="cell-9-5-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[659px] w-[122px] h-[122px] animate-awy"><Image class="w-[122px] h-[122px]" src="cell-9-5-q3.png" /></View>
-    <View class="absolute left-[1079px] top-[659px] w-[122px] h-[122px] animate-ax0"><Image class="w-[122px] h-[122px]" src="cell-9-5-q2.png" /></View>
-    <View class="absolute left-[1079px] top-[659px] w-[122px] h-[122px] animate-ax2"><Image class="w-[122px] h-[122px]" src="cell-9-5-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[659px] w-[122px] h-[122px] animate-ax4"><Image class="w-[122px] h-[122px]" src="cell-9-5-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[659px] w-[122px] h-[122px] origin-center animate-ax7"><Image class="w-[122px] h-[122px]" src="cell-9-5-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[659px] w-[122px] h-[122px] animate-ax9"><Image class="w-[122px] h-[122px]" src="cell-10-5-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[659px] w-[122px] h-[122px] animate-axb"><Image class="w-[122px] h-[122px]" src="cell-10-5-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[659px] w-[122px] h-[122px] animate-axd"><Image class="w-[122px] h-[122px]" src="cell-10-5-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[659px] w-[122px] h-[122px] animate-axf"><Image class="w-[122px] h-[122px]" src="cell-10-5-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[659px] w-[122px] h-[122px] animate-axh"><Image class="w-[122px] h-[122px]" src="cell-10-5-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[659px] w-[122px] h-[122px] origin-center animate-axk"><Image class="w-[122px] h-[122px]" src="cell-10-5-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[659px] w-[122px] h-[122px] animate-axm"><Image class="w-[122px] h-[122px]" src="cell-11-5-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[659px] w-[122px] h-[122px] animate-axo"><Image class="w-[122px] h-[122px]" src="cell-11-5-q3.png" /></View>
-    <View class="absolute left-[1319px] top-[659px] w-[122px] h-[122px] animate-axq"><Image class="w-[122px] h-[122px]" src="cell-11-5-q2.png" /></View>
-    <View class="absolute left-[1319px] top-[659px] w-[122px] h-[122px] animate-axs"><Image class="w-[122px] h-[122px]" src="cell-11-5-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[659px] w-[122px] h-[122px] animate-axu"><Image class="w-[122px] h-[122px]" src="cell-11-5-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[659px] w-[122px] h-[122px] origin-center animate-axx"><Image class="w-[122px] h-[122px]" src="cell-11-5-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[659px] w-[122px] h-[122px] animate-axz"><Image class="w-[122px] h-[122px]" src="cell-12-5-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[659px] w-[122px] h-[122px] animate-ay1"><Image class="w-[122px] h-[122px]" src="cell-12-5-q1.png" /></View>
-    <View class="absolute left-[1439px] top-[659px] w-[122px] h-[122px] animate-ay3"><Image class="w-[122px] h-[122px]" src="cell-12-5-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[659px] w-[122px] h-[122px] animate-ay5"><Image class="w-[122px] h-[122px]" src="cell-12-5-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[659px] w-[122px] h-[122px] animate-ay7"><Image class="w-[122px] h-[122px]" src="cell-12-5-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[659px] w-[122px] h-[122px] origin-center animate-aya"><Image class="w-[122px] h-[122px]" src="cell-12-5-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[659px] w-[122px] h-[122px] animate-ayc"><Image class="w-[122px] h-[122px]" src="cell-13-5-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[659px] w-[122px] h-[122px] animate-aye"><Image class="w-[122px] h-[122px]" src="cell-13-5-q3.png" /></View>
-    <View class="absolute left-[1559px] top-[659px] w-[122px] h-[122px] animate-ayg"><Image class="w-[122px] h-[122px]" src="cell-13-5-q2.png" /></View>
-    <View class="absolute left-[1559px] top-[659px] w-[122px] h-[122px] animate-ayi"><Image class="w-[122px] h-[122px]" src="cell-13-5-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[659px] w-[122px] h-[122px] animate-ayk"><Image class="w-[122px] h-[122px]" src="cell-13-5-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[659px] w-[122px] h-[122px] origin-center animate-ayn"><Image class="w-[122px] h-[122px]" src="cell-13-5-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[659px] w-[122px] h-[122px] animate-ayp"><Image class="w-[122px] h-[122px]" src="cell-14-5-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[659px] w-[122px] h-[122px] animate-ayr"><Image class="w-[122px] h-[122px]" src="cell-14-5-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[659px] w-[122px] h-[122px] animate-ayt"><Image class="w-[122px] h-[122px]" src="cell-14-5-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[659px] w-[122px] h-[122px] animate-ayv"><Image class="w-[122px] h-[122px]" src="cell-14-5-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[659px] w-[122px] h-[122px] animate-ayx"><Image class="w-[122px] h-[122px]" src="cell-14-5-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[659px] w-[122px] h-[122px] origin-center animate-az0"><Image class="w-[122px] h-[122px]" src="cell-14-5-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[659px] w-[122px] h-[122px] animate-az2"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[659px] w-[122px] h-[122px] animate-az4"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[659px] w-[122px] h-[122px] animate-az6"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1799px] top-[659px] w-[122px] h-[122px] origin-center animate-azb"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[779px] w-[122px] h-[122px] animate-azd"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[779px] w-[122px] h-[122px] animate-azf"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[779px] w-[122px] h-[122px] animate-azh"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[-1px] top-[779px] w-[122px] h-[122px] origin-center animate-azm"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[779px] w-[122px] h-[122px] animate-azo"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[779px] w-[122px] h-[122px] animate-azq"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[779px] w-[122px] h-[122px] animate-azs"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[119px] top-[779px] w-[122px] h-[122px] origin-center animate-azx"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[779px] w-[122px] h-[122px] animate-azz"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[779px] w-[122px] h-[122px] animate-a101"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[779px] w-[122px] h-[122px] animate-a103"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[239px] top-[779px] w-[122px] h-[122px] origin-center animate-a108"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[779px] w-[122px] h-[122px] animate-a10a"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[779px] w-[122px] h-[122px] animate-a10c"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[779px] w-[122px] h-[122px] animate-a10e"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[359px] top-[779px] w-[122px] h-[122px] origin-center animate-a10j"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[122px] h-[122px] animate-a10l"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[122px] h-[122px] animate-a10n"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[122px] h-[122px] animate-a10p"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[479px] top-[779px] w-[122px] h-[122px] origin-center animate-a10u"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[599px] top-[779px] w-[122px] h-[122px] animate-a10w"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[599px] top-[779px] w-[122px] h-[122px] animate-a10y"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[599px] top-[779px] w-[122px] h-[122px] animate-a110"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[599px] top-[779px] w-[122px] h-[122px] origin-center animate-a115"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[122px] h-[122px] animate-a117"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[122px] h-[122px] animate-a119"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[122px] h-[122px] animate-a11b"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[719px] top-[779px] w-[122px] h-[122px] origin-center animate-a11g"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[839px] top-[779px] w-[122px] h-[122px] animate-a11i"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[839px] top-[779px] w-[122px] h-[122px] animate-a11k"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[839px] top-[779px] w-[122px] h-[122px] animate-a11m"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[839px] top-[779px] w-[122px] h-[122px] origin-center animate-a11r"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[779px] w-[122px] h-[122px] animate-a11t"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[779px] w-[122px] h-[122px] animate-a11v"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[779px] w-[122px] h-[122px] animate-a11x"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[959px] top-[779px] w-[122px] h-[122px] origin-center animate-a122"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[779px] w-[122px] h-[122px] animate-a124"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[779px] w-[122px] h-[122px] animate-a126"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[779px] w-[122px] h-[122px] animate-a128"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1079px] top-[779px] w-[122px] h-[122px] origin-center animate-a12d"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[779px] w-[122px] h-[122px] animate-a12f"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[779px] w-[122px] h-[122px] animate-a12h"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[779px] w-[122px] h-[122px] animate-a12j"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1199px] top-[779px] w-[122px] h-[122px] origin-center animate-a12o"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[779px] w-[122px] h-[122px] animate-a12q"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[779px] w-[122px] h-[122px] animate-a12s"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[779px] w-[122px] h-[122px] animate-a12u"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1319px] top-[779px] w-[122px] h-[122px] origin-center animate-a12z"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[779px] w-[122px] h-[122px] animate-a131"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[779px] w-[122px] h-[122px] animate-a133"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[779px] w-[122px] h-[122px] animate-a135"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1439px] top-[779px] w-[122px] h-[122px] origin-center animate-a13a"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[779px] w-[122px] h-[122px] animate-a13c"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[779px] w-[122px] h-[122px] animate-a13e"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[779px] w-[122px] h-[122px] animate-a13g"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1559px] top-[779px] w-[122px] h-[122px] origin-center animate-a13l"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[779px] w-[122px] h-[122px] animate-a13n"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[779px] w-[122px] h-[122px] animate-a13p"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[779px] w-[122px] h-[122px] animate-a13r"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1679px] top-[779px] w-[122px] h-[122px] origin-center animate-a13w"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[779px] w-[122px] h-[122px] animate-a13y"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[779px] w-[122px] h-[122px] animate-a140"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[779px] w-[122px] h-[122px] animate-a142"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1799px] top-[779px] w-[122px] h-[122px] origin-center animate-a147"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[899px] w-[122px] h-[122px] animate-a149"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[-1px] top-[899px] w-[122px] h-[122px] animate-a14b"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[-1px] top-[899px] w-[122px] h-[122px] animate-a14d"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[-1px] top-[899px] w-[122px] h-[122px] origin-center animate-a14i"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[899px] w-[122px] h-[122px] animate-a14k"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[119px] top-[899px] w-[122px] h-[122px] animate-a14m"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[119px] top-[899px] w-[122px] h-[122px] animate-a14o"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[119px] top-[899px] w-[122px] h-[122px] origin-center animate-a14t"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[899px] w-[122px] h-[122px] animate-a14v"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[239px] top-[899px] w-[122px] h-[122px] animate-a14x"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[239px] top-[899px] w-[122px] h-[122px] animate-a14z"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[239px] top-[899px] w-[122px] h-[122px] origin-center animate-a154"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[899px] w-[122px] h-[122px] animate-a156"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[359px] top-[899px] w-[122px] h-[122px] animate-a158"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[359px] top-[899px] w-[122px] h-[122px] animate-a15a"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[359px] top-[899px] w-[122px] h-[122px] origin-center animate-a15f"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[899px] w-[122px] h-[122px] animate-a15h"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[479px] top-[899px] w-[122px] h-[122px] animate-a15j"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[479px] top-[899px] w-[122px] h-[122px] animate-a15l"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[479px] top-[899px] w-[122px] h-[122px] origin-center animate-a15q"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[599px] top-[899px] w-[122px] h-[122px] animate-a15s"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[599px] top-[899px] w-[122px] h-[122px] animate-a15u"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[599px] top-[899px] w-[122px] h-[122px] animate-a15w"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[599px] top-[899px] w-[122px] h-[122px] origin-center animate-a161"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[719px] top-[899px] w-[122px] h-[122px] animate-a163"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[719px] top-[899px] w-[122px] h-[122px] animate-a165"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[719px] top-[899px] w-[122px] h-[122px] animate-a167"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[719px] top-[899px] w-[122px] h-[122px] origin-center animate-a16c"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[839px] top-[899px] w-[122px] h-[122px] animate-a16e"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[839px] top-[899px] w-[122px] h-[122px] animate-a16g"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[839px] top-[899px] w-[122px] h-[122px] animate-a16i"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[839px] top-[899px] w-[122px] h-[122px] origin-center animate-a16n"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[899px] w-[122px] h-[122px] animate-a16p"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[959px] top-[899px] w-[122px] h-[122px] animate-a16r"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[959px] top-[899px] w-[122px] h-[122px] animate-a16t"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[959px] top-[899px] w-[122px] h-[122px] origin-center animate-a16y"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[899px] w-[122px] h-[122px] animate-a170"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1079px] top-[899px] w-[122px] h-[122px] animate-a172"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1079px] top-[899px] w-[122px] h-[122px] animate-a174"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1079px] top-[899px] w-[122px] h-[122px] origin-center animate-a179"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[899px] w-[122px] h-[122px] animate-a17b"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1199px] top-[899px] w-[122px] h-[122px] animate-a17d"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1199px] top-[899px] w-[122px] h-[122px] animate-a17f"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1199px] top-[899px] w-[122px] h-[122px] origin-center animate-a17k"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[899px] w-[122px] h-[122px] animate-a17m"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1319px] top-[899px] w-[122px] h-[122px] animate-a17o"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1319px] top-[899px] w-[122px] h-[122px] animate-a17q"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1319px] top-[899px] w-[122px] h-[122px] origin-center animate-a17v"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[899px] w-[122px] h-[122px] animate-a17x"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1439px] top-[899px] w-[122px] h-[122px] animate-a17z"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1439px] top-[899px] w-[122px] h-[122px] animate-a181"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1439px] top-[899px] w-[122px] h-[122px] origin-center animate-a186"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[899px] w-[122px] h-[122px] animate-a188"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1559px] top-[899px] w-[122px] h-[122px] animate-a18a"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1559px] top-[899px] w-[122px] h-[122px] animate-a18c"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1559px] top-[899px] w-[122px] h-[122px] origin-center animate-a18h"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[899px] w-[122px] h-[122px] animate-a18j"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[1679px] top-[899px] w-[122px] h-[122px] animate-a18l"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1679px] top-[899px] w-[122px] h-[122px] animate-a18n"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1679px] top-[899px] w-[122px] h-[122px] origin-center animate-a18s"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[899px] w-[122px] h-[122px] animate-a18u"><Image class="w-[122px] h-[122px]" src="field-q1.png" /></View>
-    <View class="absolute left-[1799px] top-[899px] w-[122px] h-[122px] animate-a18w"><Image class="w-[122px] h-[122px]" src="field-q0.png" /></View>
-    <View class="absolute left-[1799px] top-[899px] w-[122px] h-[122px] animate-a18y"><Image class="w-[122px] h-[122px]" src="field-q3.png" /></View>
-    <View class="absolute left-[1799px] top-[899px] w-[122px] h-[122px] origin-center animate-a193"><Image class="w-[122px] h-[122px]" src="field-q2.png" /></View>
-    <View class="absolute left-[121px] top-[779px] w-[1680px] h-[240px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[210px] h-[240px] origin-center  animate-a195"><Image class="w-[210px] h-[240px]" src="word-0.png" /></View><View class="absolute left-[210px] top-[0px] w-[273px] h-[240px] origin-center  animate-a197"><Image class="w-[273px] h-[240px]" src="word-1.png" /></View><View class="absolute left-[483px] top-[0px] w-[236px] h-[240px] origin-center  animate-a199"><Image class="w-[236px] h-[240px]" src="word-2.png" /></View><View class="absolute left-[719px] top-[0px] w-[246px] h-[240px] origin-center  animate-a19b"><Image class="w-[246px] h-[240px]" src="word-3.png" /></View><View class="absolute left-[965px] top-[0px] w-[278px] h-[240px] origin-center  animate-a19d"><Image class="w-[278px] h-[240px]" src="word-4.png" /></View><View class="absolute left-[1243px] top-[0px] w-[232px] h-[240px] origin-center  animate-a19f"><Image class="w-[232px] h-[240px]" src="word-5.png" /></View><View class="absolute left-[1475px] top-[0px] w-[205px] h-[240px] origin-center  animate-a19h"><Image class="w-[205px] h-[240px]" src="word-6.png" /></View></View>
-    <View class="absolute left-[120px] top-[540px] w-[480px] h-[4px] bg-[#111111] origin-left animate-a19j" />
-    <View class="absolute left-[120px] top-[564px] w-[480px] h-[52px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[480px] h-[52px] origin-center  animate-a19l"><View class="flex-row items-center gap-[16px]"><Text class="font-bold text-[30px] text-[#111111]">{"FORM"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"·"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"FARBE"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"·"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"FUNKTION"}</Text></View></View></View>
-    <View class="absolute left-[120px] top-[616px] w-[480px] h-[52px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[480px] h-[52px] origin-center  animate-a19n"><View class="flex-row items-center gap-[16px]"><Text class="font-[cjk] font-bold text-[28px] text-[#111111]">{"形式"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[28px] text-[#111111]">{"色彩"}</Text><Text class="font-bold text-[30px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[28px] text-[#111111]">{"功能"}</Text></View></View></View>
-    <View class="absolute left-[60px] top-[1040px] flex-row items-center gap-[10px] animate-a19s"><Text class="font-bold text-[13px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"模数构成"}</Text></View>
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-14 animate-a19q" src="grain.png" />
+    <View class="absolute left-[478px] top-[542px] w-[480px] h-[480px] origin-center  animate-a2p"><Image class="w-[480px] h-[480px]" src="f-disc-blue-480x480-110.png" /></View>
+    <View class="absolute left-[481px] top-[59px] w-[240px] h-[240px] origin-center  animate-a2r"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-100-q3.png" /></View>
+    <View class="absolute left-[723px] top-[59px] w-[240px] h-[240px] origin-center  animate-a2t"><Image class="w-[240px] h-[240px]" src="f-quarter-red-240x240-101-q3.png" /></View>
+    <View class="absolute left-[961px] top-[62px] w-[240px] h-[240px] origin-center  animate-a2v"><Image class="w-[240px] h-[240px]" src="f-quarter-yellow-240x240-102.png" /></View>
+    <View class="absolute left-[963px] top-[299px] w-[240px] h-[240px] origin-center  animate-a2x"><Image class="w-[240px] h-[240px]" src="f-disc-red-240x240-103.png" /></View>
+    <View class="absolute left-[961px] top-[539px] w-[240px] h-[240px] origin-center  animate-a2z"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-104-q3.png" /></View>
+    <View class="absolute left-[1203px] top-[539px] w-[240px] h-[240px] origin-center  animate-a31"><Image class="w-[240px] h-[240px]" src="f-quarter-red-240x240-105-q3.png" /></View>
+    <View class="absolute left-[1441px] top-[542px] w-[240px] h-[240px] origin-center  animate-a33"><Image class="w-[240px] h-[240px]" src="f-quarter-yellow-240x240-106-q2.png" /></View>
+    <View class="absolute left-[1441px] top-[299px] w-[240px] h-[240px] origin-center  animate-a35"><Image class="w-[240px] h-[240px]" src="f-disc-black-240x240-107.png" /></View>
+    <View class="absolute left-[1438px] top-[62px] w-[240px] h-[240px] origin-center  animate-a37"><Image class="w-[240px] h-[240px]" src="f-quarter-blue-240x240-108.png" /></View>
+    <View class="absolute left-[1203px] top-[59px] w-[240px] h-[240px] origin-center  animate-a39"><Image class="w-[240px] h-[240px]" src="f-box-red-240x240-109.png" /></View>
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] animate-a3b"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] animate-a3d"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] animate-a3f"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] animate-a3h"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[119px] top-[59px] w-[242px] h-[242px] origin-center animate-a3k"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3m"><Image class="w-[242px] h-[242px]" src="cell-480-60-q0.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3o"><Image class="w-[242px] h-[242px]" src="cell-480-60-q1.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3q"><Image class="w-[242px] h-[242px]" src="cell-480-60-q2.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3s"><Image class="w-[242px] h-[242px]" src="cell-480-60-q3.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] animate-a3u"><Image class="w-[242px] h-[242px]" src="cell-480-60-q0.png" /></View>
+    <View class="absolute left-[479px] top-[59px] w-[242px] h-[242px] origin-center animate-a3x"><Image class="w-[242px] h-[242px]" src="cell-480-60-q0.png" /></View>
+    <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a3z"><Image class="w-[242px] h-[242px]" src="cell-720-60-q0.png" /></View>
+    <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a41"><Image class="w-[242px] h-[242px]" src="cell-720-60-q3.png" /></View>
+    <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a43"><Image class="w-[242px] h-[242px]" src="cell-720-60-q2.png" /></View>
+    <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a45"><Image class="w-[242px] h-[242px]" src="cell-720-60-q1.png" /></View>
+    <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] animate-a47"><Image class="w-[242px] h-[242px]" src="cell-720-60-q0.png" /></View>
+    <View class="absolute left-[719px] top-[59px] w-[242px] h-[242px] origin-center animate-a4a"><Image class="w-[242px] h-[242px]" src="cell-720-60-q0.png" /></View>
+    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4c"><Image class="w-[242px] h-[242px]" src="cell-960-60-q0.png" /></View>
+    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4e"><Image class="w-[242px] h-[242px]" src="cell-960-60-q1.png" /></View>
+    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4g"><Image class="w-[242px] h-[242px]" src="cell-960-60-q2.png" /></View>
+    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4i"><Image class="w-[242px] h-[242px]" src="cell-960-60-q3.png" /></View>
+    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] animate-a4k"><Image class="w-[242px] h-[242px]" src="cell-960-60-q0.png" /></View>
+    <View class="absolute left-[959px] top-[59px] w-[242px] h-[242px] origin-center animate-a4n"><Image class="w-[242px] h-[242px]" src="cell-960-60-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] animate-a4p"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q3.png" /></View>
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] animate-a4r"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q2.png" /></View>
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] animate-a4t"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q1.png" /></View>
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] animate-a4v"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[59px] w-[242px] h-[242px] origin-center animate-a4y"><Image class="w-[242px] h-[242px]" src="cell-1200-60-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a50"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a52"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a54"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a56"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] animate-a58"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[59px] w-[242px] h-[242px] origin-center animate-a5b"><Image class="w-[242px] h-[242px]" src="cell-1440-60-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] animate-a5d"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] animate-a5f"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] animate-a5h"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] animate-a5j"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[59px] w-[242px] h-[242px] origin-center animate-a5m"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] animate-a5o"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] animate-a5q"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] animate-a5s"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] animate-a5u"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[119px] top-[299px] w-[242px] h-[242px] origin-center animate-a5x"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a5z"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a61"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a63"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] animate-a65"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[479px] top-[299px] w-[242px] h-[242px] origin-center animate-a68"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a6a"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a6c"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a6e"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] animate-a6g"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[719px] top-[299px] w-[242px] h-[242px] origin-center animate-a6j"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6l"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6n"><Image class="w-[242px] h-[242px]" src="cell-960-300-q3.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6p"><Image class="w-[242px] h-[242px]" src="cell-960-300-q2.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6r"><Image class="w-[242px] h-[242px]" src="cell-960-300-q1.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] animate-a6t"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
+    <View class="absolute left-[959px] top-[299px] w-[242px] h-[242px] origin-center animate-a6w"><Image class="w-[242px] h-[242px]" src="cell-960-300-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a6y"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a70"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a72"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] animate-a74"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[299px] w-[242px] h-[242px] origin-center animate-a77"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a79"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7b"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7d"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7f"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] animate-a7h"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[299px] w-[242px] h-[242px] origin-center animate-a7k"><Image class="w-[242px] h-[242px]" src="cell-1440-300-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] animate-a7m"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] animate-a7o"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] animate-a7q"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] animate-a7s"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[299px] w-[242px] h-[242px] origin-center animate-a7v"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] animate-a7x"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] animate-a7z"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] animate-a81"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] animate-a83"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[119px] top-[539px] w-[242px] h-[242px] origin-center animate-a86"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] animate-a88"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] animate-a8a"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] animate-a8c"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] animate-a8e"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] animate-a8g"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[479px] top-[539px] w-[242px] h-[242px] origin-center animate-a8j"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] animate-a8l"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] animate-a8n"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] animate-a8p"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] animate-a8r"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] animate-a8t"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[719px] top-[539px] w-[242px] h-[242px] origin-center animate-a8w"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a8y"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a90"><Image class="w-[242px] h-[242px]" src="cell-960-540-q1.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a92"><Image class="w-[242px] h-[242px]" src="cell-960-540-q2.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a94"><Image class="w-[242px] h-[242px]" src="cell-960-540-q3.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] animate-a96"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
+    <View class="absolute left-[959px] top-[539px] w-[242px] h-[242px] origin-center animate-a99"><Image class="w-[242px] h-[242px]" src="cell-960-540-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9b"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9d"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q3.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9f"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q2.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9h"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q1.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] animate-a9j"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[539px] w-[242px] h-[242px] origin-center animate-a9m"><Image class="w-[242px] h-[242px]" src="cell-1200-540-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9o"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9q"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9s"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9u"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] animate-a9w"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[539px] w-[242px] h-[242px] origin-center animate-a9z"><Image class="w-[242px] h-[242px]" src="cell-1440-540-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] animate-aa1"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] animate-aa3"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] animate-aa5"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] animate-aa7"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[539px] w-[242px] h-[242px] origin-center animate-aaa"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] animate-aac"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] animate-aae"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] animate-aag"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] animate-aai"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[119px] top-[779px] w-[242px] h-[242px] origin-center animate-aal"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] animate-aan"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] animate-aap"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] animate-aar"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] animate-aat"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] animate-aav"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[479px] top-[779px] w-[242px] h-[242px] origin-center animate-aay"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] animate-ab0"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] animate-ab2"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] animate-ab4"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] animate-ab6"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] animate-ab8"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[719px] top-[779px] w-[242px] h-[242px] origin-center animate-abb"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] animate-abd"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] animate-abf"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] animate-abh"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] animate-abj"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[959px] top-[779px] w-[242px] h-[242px] origin-center animate-abm"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] animate-abo"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] animate-abq"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] animate-abs"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] animate-abu"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[1199px] top-[779px] w-[242px] h-[242px] origin-center animate-abx"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] animate-abz"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] animate-ac1"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] animate-ac3"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] animate-ac5"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[1439px] top-[779px] w-[242px] h-[242px] origin-center animate-ac8"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] animate-aca"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] animate-acc"><Image class="w-[242px] h-[242px]" src="field-q2.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] animate-ace"><Image class="w-[242px] h-[242px]" src="field-q3.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] animate-acg"><Image class="w-[242px] h-[242px]" src="field-q0.png" /></View>
+    <View class="absolute left-[1679px] top-[779px] w-[242px] h-[242px] origin-center animate-acj"><Image class="w-[242px] h-[242px]" src="field-q1.png" /></View>
+    <View class="absolute left-[120px] top-[780px] w-[240px] h-[240px] origin-center  animate-acl"><Image class="w-[240px] h-[240px]" src="letter-0.png" /></View>
+    <View class="absolute left-[120px] top-[640px] w-[240px] h-[240px] origin-center  animate-acn"><Image class="w-[240px] h-[240px]" src="letter-1.png" /></View>
+    <View class="absolute left-[120px] top-[500px] w-[240px] h-[240px] origin-center  animate-acp"><Image class="w-[240px] h-[240px]" src="letter-2.png" /></View>
+    <View class="absolute left-[120px] top-[360px] w-[240px] h-[240px] origin-center  animate-acr"><Image class="w-[240px] h-[240px]" src="letter-3.png" /></View>
+    <View class="absolute left-[120px] top-[220px] w-[240px] h-[240px] origin-center  animate-act"><Image class="w-[240px] h-[240px]" src="letter-4.png" /></View>
+    <View class="absolute left-[120px] top-[80px] w-[240px] h-[240px] origin-center  animate-acv"><Image class="w-[240px] h-[240px]" src="letter-5.png" /></View>
+    <View class="absolute left-[120px] top-[-60px] w-[240px] h-[240px] origin-center  animate-acx"><Image class="w-[240px] h-[240px]" src="letter-6.png" /></View>
+    <View class="absolute left-[960px] top-[900px] w-[720px] h-[3px] bg-[#111111] origin-left animate-ad5" />
+    <View class="absolute left-[960px] top-[920px] w-[720px] h-[44px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[720px] h-[44px] origin-center  animate-ad7"><View class="flex-row items-center gap-[12px]"><Text class="font-bold text-[22px] text-[#111111] animate-acz">{"FORM"}</Text><Text class="font-bold text-[22px] text-[#111111]">{"·"}</Text><Text class="font-bold text-[22px] text-[#111111] animate-ad1">{"FARBE"}</Text><Text class="font-bold text-[22px] text-[#111111]">{"·"}</Text><Text class="font-bold text-[22px] text-[#111111] animate-ad3">{"FUNKTION"}</Text></View></View></View>
+    <View class="absolute left-[960px] top-[964px] w-[720px] h-[44px] overflow-hidden"><View class="absolute left-[0px] top-[0px] w-[720px] h-[44px] origin-center  animate-ad9"><View class="flex-row items-center gap-[12px]"><Text class="font-[cjk] font-bold text-[24px] text-[#111111]">{"形式"}</Text><Text class="font-bold text-[22px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[24px] text-[#111111]">{"色彩"}</Text><Text class="font-bold text-[22px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[24px] text-[#111111]">{"功能"}</Text></View></View></View>
+    <View class="absolute left-[60px] top-[1040px] flex-row items-center gap-[10px] animate-ade"><Text class="font-bold text-[13px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"模数构成"}</Text></View>
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-20 animate-adc" src="grain.png" />
   </View>
 ));

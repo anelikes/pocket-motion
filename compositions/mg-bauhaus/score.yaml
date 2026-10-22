@@ -1,10 +1,9 @@
 # EIN MODUL · 模数构成 —— 极简 techno / click。120 BPM，一拍 = 画面 15 帧，一小节 = 2 秒。
 # 每个画面动作一记有音高的 blip，和 gen.ts 的拍号一一对应：
-#   0.5 s 模块滑入 · 1.0–6.0 s 每拍翻滚一次，共十一次：往上滚音往上跳，往下滚音往下走
-#   5.5–6.0 s 最后一拍棘轮：边鼓和踩镲十六分音符连打，最后一个十六分音符底层让开
-#   6.0 s 最后一滚落在落拍上（冲击），底鼓一路四拍踩到底
-#   6.0–8.0 s 四道波，每拍一道：全部 128 格各转四分之一圈，每道波一串十六分音符往上
-#   8.0–8.75 s BAUHAUS 每个十六分音符升起一个字母 · 9.0 s 标语画线 · 9.5 s 色版错位一下又对准：一记低音
+#   0.5 s 模块滑入 · 1.0–6.0 s 每拍一个动作：翻滚往上音往上走、往下音往下走；绕自身中心转（2.0 s、4.0 s）高八度
+#   5.5–6.0 s 最后一拍棘轮，底鼓让开 · 6.0 s 最后一滚落在落拍上：冲击 + 低频下潜 + 镲，整首最响的一下
+#   6.0–8.0 s 四道波，每拍一道，每道一串十六分音符往上
+#   8.0–8.75 s BAUHAUS 每个十六分音符一个字母翻进栏里 · 9.0 s 标语画线 · 9.5 s 模块最后转一下：一记低音
 title: Ein Modul
 meta:
   bpm: 120
@@ -14,7 +13,7 @@ meta:
 
 sections:
   - { name: intro, bars: 1, energy: 0.45 }                     # 0:00–0:02
-  - { name: build, bars: 2, energy: "0.55->0.75", at: "0:02" }  # 0:02–0:06
+  - { name: build, bars: 2, energy: "0.4->0.55", at: "0:02" }   # 0:02–0:06 kept low, so the drop is the loudest thing in the film
   - { name: drop,  bars: 1, energy: 1.0, at: "0:06" }           # 0:06–0:08
   - { name: outro, bars: 1, energy: 0.5, at: "0:08" }           # 0:08–0:10
 
@@ -34,10 +33,10 @@ tracks:
     notes:
       # b1 the module slides in; b2, b3 it rolls right
       intro: "r/4 C6/4' D6/4' E6/4'"
-      # one roll a beat: U R R D D R R U — and the last U lands on the drop
-      build: "A6/4' G6/4' A6/4' E6/4' | C6/4' D6/4' E6/4' G6/4'"
+      # one move a beat: D, spin, D, R, R, U, spin, U — and the last roll lands on the drop
+      build: "C6/4' C7/4' A5/4' C6/4' | D6/4' G6/4' D7/4' A6/4'"
       drop:  "A5/16' C6/16' E6/16' A6/16' B5/16' D6/16' F6/16' B6/16' C6/16' E6/16' G6/16' C7/16' E6/16' G6/16' B6/16' E7/16'"
-      # the seven letters rising on sixteenths, the tagline's rule on beat 3, the plates snapping back on beat 4
+      # the seven letters tipping in on sixteenths, the tagline's rule on beat 3, the module's last turn on beat 4
       outro: "C6/16' D6/16' E6/16' G6/16' A6/16' C7/16' D7/16' r/16 G5/8' E6/8' C4/8> r/8"
 
   # 海报落回原位那一刻：一个钟声
@@ -98,6 +97,7 @@ sfx:
   - { type: riser, at: drop, length: 2, level: 0.45 }
   # a near-silent pop whose only job is its duck: the bed drops out for the last sixteenth of the ratchet
   - { type: pop, at: "0:05.875", level: 0.02, duck: 14 }
-  - { type: impact, at: drop, level: 0.8 }
+  - { type: impact, at: drop, level: 1.0 }
+  - { type: sub-drop, at: drop, level: 0.8 }
   - { type: pop, at: "0:08.0", level: 0.5 }
   - { type: impact, at: "0:09.5", level: 0.35 }
