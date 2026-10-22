@@ -318,3 +318,45 @@ export function echo(el: El, lag: number, alpha: number, spans: [number, number]
   g.s = { ...stateAt(el, el.reg.ticks), op: 0 };
   return g;
 }
+
+/**
+ * A cell that shows one glyph at a time, for counters and decodes. `seq` is
+ * [tick, glyph] changes in time order; a later change on the same tick
+ * replaces an earlier one, and a change that goes back in time is refused.
+ * The cell is empty before the first change. Each distinct glyph is its own
+ * node switched on single ticks, so a change is a hard cut, and from the
+ * first change on exactly one glyph is lit at every tick: no frame shows two
+ * glyphs, or none.
+ */
+export function glyphCell(reg: Reg, seq: [number, string][], draw: (glyph: string) => string, w: number, h: number): string {
+  const norm: [number, string][] = [];
+  for (const [t, g] of seq) {
+    const last = norm[norm.length - 1];
+    if (last && t < last[0]) throw new Error(`glyphCell: change at tick ${t} comes after tick ${last[0]}; a cell's changes run forward in time`);
+    if (last && t === last[0]) norm[norm.length - 1] = [t, g];
+    else norm.push([t, g]);
+  }
+  const nodes = [...new Set(norm.map(([, g]) => g))].map((g) => {
+    const ch: [number, string][] = [];
+    let on = false;
+    for (const [t, v] of norm) {
+      if ((v === g) !== on) {
+        ch.push([t, v === g ? "1" : "0"]);
+        on = v === g;
+      }
+    }
+    // dark until its first change: a track's first value holds from tick 0
+    if (ch[0]![0] > 0) ch.unshift([0, "0"]);
+    return `<View class="absolute inset-0 flex-row justify-center items-center animate-${reg.anim(reg.step("opacity", ch))}">${draw(g)}</View>`;
+  });
+  return `<View class="w-[${w}px] h-[${h}px]">${nodes.join("")}</View>`;
+}
+
+/** A decode for `glyphCell`: `frames` frames of glyphs drawn from `pool`, two ticks each from `t0`, then `final`. */
+export function decodeSeq(final: string, pool: string, t0: number, frames: number, r: () => number): [number, string][] {
+  const chars = [...pool];
+  const seq: [number, string][] = [];
+  for (let f = 0; f < frames; f++) seq.push([t0 + 2 * f, chars[Math.floor(r() * chars.length)]!]);
+  seq.push([t0 + 2 * frames, final]);
+  return seq;
+}
