@@ -1,6 +1,6 @@
 # EIN MODUL · 模数构成 —— 极简 techno / click。120 BPM，一拍 = 画面 15 帧，一小节 = 2 秒。
 # 每个画面动作一记有音高的 blip，和 gen.ts 的拍号一一对应：
-#   0.5 s 模块滑入 · 1.0–6.0 s 每拍一个动作：翻滚往上音往上走、往下音往下走；绕自身中心转（2.0 s、4.0 s）高八度
+#   0.5 s 模块滑入 · 1.0–6.0 s 每拍一个动作：翻滚往上音往上走、往下音往下走；绕自身中心转（2.0 s）、沿对角线折（4.5 s）高八度
 #   5.5–6.0 s 最后一拍棘轮，底鼓让开 · 6.0 s 最后一滚落在落拍上：冲击 + 低频下潜 + 镲，整首最响的一下
 #   6.0–8.0 s 四道波，每拍一道，每道一串十六分音符往上
 #   8.0–8.75 s BAUHAUS 每个十六分音符一个字母翻进栏里 · 9.0 s 标语画线 · 9.5 s 模块最后转一下：一记低音
@@ -33,11 +33,20 @@ tracks:
     notes:
       # b1 the module slides in; b2, b3 it rolls right
       intro: "r/4 C6/4' D6/4' E6/4'"
-      # one move a beat: D, spin, D, R, R, U, spin, U — and the last roll lands on the drop
+      # one move a beat: D, spin, D, R, R, U, fold, U — and the last roll lands on the drop
       build: "C6/4' C7/4' A5/4' C6/4' | D6/4' G6/4' D7/4' A6/4'"
       drop:  "A5/16' C6/16' E6/16' A6/16' B5/16' D6/16' F6/16' B6/16' C6/16' E6/16' G6/16' C7/16' E6/16' G6/16' B6/16' E7/16'"
       # the seven letters tipping in on sixteenths, the tagline's rule on beat 3, the module's last turn on beat 4
       outro: "C6/16' D6/16' E6/16' G6/16' A6/16' C7/16' D7/16' r/16 G5/8' E6/8' C4/8> r/8"
+
+  # every letter that tips into the column gets its own click, a step up the scale each sixteenth, the S accented
+  letters:
+    sound: synth-pluck
+    texture: line
+    gain: 8
+    in: [outro]
+    notes:
+      outro: "G5/16' A5/16' C6/16' D6/16' E6/16' G6/16' C7/16> r/16 r/2"
 
   # 海报落回原位那一刻：一个钟声
   bell:

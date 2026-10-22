@@ -8,7 +8,7 @@
  * bottom-right, up about its top-right, down and left about its bottom-left —
  * and the quarter disc that corner sweeps is left in the cell it lifts off. A
  * spin turns it a quarter about its own centre, and leaves the disc its edges
- * sweep. So the poster is the trace of the module's own motion; the drop adds
+ * sweep. A fold turns it over its own diagonal, and leaves the half it lifted. So the poster is the trace of the module's own motion; the drop adds
  * the one form the module cannot make, a circle four modules across.
  *
  * BAUHAUS stands in columns 1–2, reading upward, every letter cut from
@@ -57,19 +57,23 @@ export const cellY = (j: number) => gy(2 * j);
 export const COLS = 6;
 export const ROWS = 4;
 
-/** R, U, D, L roll about a corner; S spins about the module's own centre. */
-export type Act = "R" | "U" | "D" | "L" | "S";
+/** R, U, D, L roll about a corner; S spins about the module's own centre; F folds it over its diagonal. */
+export type Act = "R" | "U" | "D" | "L" | "S" | "F";
 /** Where the module lands on b1, and its moves, one per beat, b2 to b12. */
 export const START: [number, number] = [0, 0];
-export const ACTS: Act[] = ["R", "R", "D", "S", "D", "R", "R", "U", "S", "U", "L"];
-/** What each move leaves, in its ink; null where the cell already holds a disc. */
-const LEAVES: (Ink | null)[] = ["black", "red", "yellow", "red", null, "black", "red", "yellow", "black", null, "blue"];
+export const ACTS: Act[] = ["R", "R", "D", "S", "D", "R", "R", "U", "F", "U", "L"];
+/**
+ * What each move leaves, in its ink; null where the cell already holds what a spin or a fold left. The inks are
+ * chosen so that nothing the module passes, and nothing in the finished poster, sits beside its own ink.
+ */
+const LEAVES: (Ink | null)[] = ["black", "blue", "yellow", "red", null, "black", "yellow", "red", "yellow", null, "blue"];
 /** The corner each roll turns about, as a fraction of the cell, and which way. */
-export const PIVOT: Record<Exclude<Act, "S">, [number, number]> = { R: [1, 1], U: [1, 0], D: [0, 1], L: [0, 1] };
-export const TURN: Record<Exclude<Act, "S">, number> = { R: 90, U: 90, D: 90, L: -90 };
+export type Roll = Exclude<Act, "S" | "F">;
+export const PIVOT: Record<Roll, [number, number]> = { R: [1, 1], U: [1, 0], D: [0, 1], L: [0, 1] };
+export const TURN: Record<Roll, number> = { R: 90, U: 90, D: 90, L: -90 };
 /** The quarter disc a roll sweeps, as the `quarter` form's turn: its corner on the pivot (BL 0, TL 1, TR 2, BR 3). */
-export const SWEEP: Record<Exclude<Act, "S">, number> = { R: 3, U: 2, D: 0, L: 0 };
-const STEP: Record<Act, [number, number]> = { R: [1, 0], U: [0, -1], D: [0, 1], L: [-1, 0], S: [0, 0] };
+export const SWEEP: Record<Roll, number> = { R: 3, U: 2, D: 0, L: 0 };
+const STEP: Record<Act, [number, number]> = { R: [1, 0], U: [0, -1], D: [0, 1], L: [-1, 0], S: [0, 0], F: [0, 0] };
 
 /** The module's cell before each move, and after the last. */
 export const PATH: [number, number][] = ACTS.reduce<[number, number][]>(
@@ -87,6 +91,8 @@ export const LEFT: (Form | null)[] = ACTS.map((a, k) => {
   if (!ink) return null;
   const [i, j] = PATH[k]!;
   const box = { x: cellX(i), y: cellY(j), w: MOD, h: MOD };
+  // a fold over the bottom-left/top-right diagonal leaves the half whose right angle is the bottom-right corner
+  if (a === "F") return { id: `tri-${k}`, kind: "tri", ink, ...box };
   return a === "S" ? { id: `disc-${k}`, kind: "disc", ink, ...box } : { id: `stamp-${k}`, kind: "quarter", ink, ...box, rot: SWEEP[a] };
 });
 export const TRAIL: Form[] = LEFT.filter((f): f is Form => f !== null);
