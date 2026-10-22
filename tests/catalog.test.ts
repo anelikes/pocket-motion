@@ -6,7 +6,12 @@
  * a regression, G5 was already red before the allowed-key messages were
  * rebuilt from the key sets, and G8 was red on the containment carve-out
  * before `findingsFor` had one (a background containing a caption reported
- * `content_overlap` against every named thing drawn on it).
+ * `content_overlap` against every named thing drawn on it). The captions halves
+ * of G2, G5 and G9 were each run red before they were kept: a layout key added
+ * with no row, every unknown-key message made to drop its first key, and a
+ * code renamed in `src/captions/spec.ts` with its row left behind — which G9
+ * reports three ways, as an emitted code with no row, a row whose code is
+ * never emitted, and a probe refused under the new name.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -37,6 +42,16 @@ import {
   parseSidecar,
 } from "../src/manifest/sidecar.ts";
 import { CATALOG_PATH, firstDifferingHunk, renderCatalog } from "../scripts/catalog.ts";
+import { WORD_KEYS } from "../src/captions/ingest.ts";
+import {
+  CAPTIONS_BODY_KEYS,
+  CAPTIONS_ENVELOPE_RULES,
+  CAPTIONS_LAYOUT_KEYS,
+  CAPTIONS_TRANSCRIPT_KEYS,
+  captionsStyleKeys,
+} from "../src/captions/spec.ts";
+import { STYLE_NAMES } from "../src/captions/styles.ts";
+import { SPEC_CAPTIONS_ROOT_KEYS, parseSpec } from "../src/manifest/spec.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SIDECAR_PATH = join(ROOT, "src/manifest/sidecar.ts");
@@ -193,12 +208,52 @@ function cataloguedCodes(): Map<string, string> {
   return owned;
 }
 
+/** Every key a `captions` row may describe, dotted as an author types it. */
+function captionsKeys(): Set<string> {
+  return new Set<string>([
+    ...CAPTIONS_BODY_KEYS,
+    ...CAPTIONS_ENVELOPE_RULES,
+    ...[...CAPTIONS_TRANSCRIPT_KEYS].map((k) => `transcript.${k}`),
+    ...STYLE_NAMES.flatMap((name) => [...captionsStyleKeys(name)].map((k) => `style.${k}`)),
+    ...[...CAPTIONS_LAYOUT_KEYS].map((k) => `layout.${k}`),
+  ]);
+}
+
+/** The files a `captions` spec diagnostic can come from. */
+const CAPTIONS_SOURCES = ["src/captions/spec.ts", "src/captions/ingest.ts"] as const;
+
+/**
+ * Every `spec.*` code the captions parser emits, read off its source.
+ *
+ * Codes are written out as literals there on purpose — `parseLayout` passes
+ * each one by name rather than building it from the key — so a string scan
+ * finds them all. The one family that is built is `pathIssue`'s, from the
+ * prefix `spec.transcript.src`; it is reconstructed here, and the scan fails
+ * if that call stops being the one this knows how to read.
+ */
+function captionsSourceCodes(): Set<string> {
+  const codes = new Set<string>();
+  for (const rel of CAPTIONS_SOURCES) {
+    const text = readFileSync(join(ROOT, rel), "utf8");
+    for (const match of text.matchAll(/"(spec\.[A-Za-z.]+)"/g)) codes.add(match[1]!);
+  }
+  const spec = readFileSync(join(ROOT, CAPTIONS_SOURCES[0]), "utf8");
+  if (!spec.includes('pathIssue(t.src, "src", "spec.transcript.src")')) {
+    throw new Error("src/captions/spec.ts no longer calls pathIssue with the prefix G9 reconstructs");
+  }
+  codes.delete("spec.transcript.src");
+  for (const suffix of PATH_ISSUE_SUFFIXES) codes.add(`spec.transcript.src.${suffix}`);
+  return codes;
+}
+
 describe("catalog gates", () => {
   test("G1 — no un-catalogued diagnostic", () => {
     const source = readFileSync(SIDECAR_PATH, "utf8");
     const inSource = extractSourceCodes(source);
     const owned = cataloguedCodes();
-    const inCatalog = new Set(owned.keys());
+    // The sidecar's codes, which is what this file scans. The captions job
+    // spec owns `spec.*` codes and G9 holds those to their own source.
+    const inCatalog = new Set([...owned.keys()].filter((code) => code.startsWith("sidecar.")));
 
     const missing = [...inSource].filter((code) => !inCatalog.has(code)).sort();
     const extra = [...inCatalog].filter((code) => !inSource.has(code)).sort();
@@ -264,6 +319,20 @@ describe("catalog gates", () => {
         }
       }
     }
+    // The captions job spec: every key of every set has a row, and every row
+    // names a key that exists. A style's keys are its own, so the set is the
+    // union over the five.
+    const declared = captionsKeys();
+    const rows = SURFACE.filter((row) => row.group === "captions");
+    const rowKeys = new Set(rows.map((row) => row.key));
+    for (const key of declared) {
+      if (!rowKeys.has(key)) parts.push(`captions key ${JSON.stringify(key)} is in no captions row`);
+    }
+    for (const row of rows) {
+      if (!declared.has(row.key)) {
+        parts.push(`captions row ${row.id} key ${JSON.stringify(row.key)} is in no captions key set`);
+      }
+    }
     expect(parts, parts.join("\n") || "G2 clean").toEqual([]);
   });
 
@@ -286,12 +355,14 @@ describe("catalog gates", () => {
         // constructed and the predicate named it. A probe expecting NOTHING is
         // the accepted side of a boundary and cannot earn `probed` alone, the
         // same rule `bakes: true` gets.
-        (row.findingProbes ?? []).filter((probe) => probe.expect.length > 0).length;
+        (row.findingProbes ?? []).filter((probe) => probe.expect.length > 0).length +
+        // A job spec refused by `parseSpec` (G9 executes them).
+        (row.specProbes ?? []).length;
       if (refusals === 0) {
         parts.push(`${row.id} claims probed with no refusal to execute`);
       }
 
-      const probed = new Set(row.probes.map((probe) => probe.code));
+      const probed = new Set([...row.probes, ...(row.specProbes ?? [])].map((probe) => probe.code));
       for (const code of row.diagnostics) {
         if (!probed.has(code)) {
           parts.push(`${row.id} diagnostic ${code} has no probe`);
@@ -779,7 +850,88 @@ describe("catalog gates", () => {
         );
       }
     }
+
+    // The captions job spec, through `parseSpec`. One case per style, because
+    // a style's key set is its own and its message must list that set.
+    const job = (overrides: Record<string, unknown>): Record<string, unknown> => ({
+      spec: 1,
+      template: "captions",
+      fonts: { regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf", bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf" },
+      transcript: { words: [{ text: "Hello", start: 0, end: 0.5 }], language: "en" },
+      style: { name: "highlight" },
+      ...overrides,
+    });
+    const specCases: Array<{ label: string; input: unknown; keys: ReadonlySet<string>; code: string }> = [
+      { label: "captions root", input: job({ nope: 1 }), keys: SPEC_CAPTIONS_ROOT_KEYS, code: "spec.unknownKey" },
+      {
+        label: "captions transcript",
+        input: job({ transcript: { words: [], language: "en", nope: 1 } }),
+        keys: CAPTIONS_TRANSCRIPT_KEYS,
+        code: "spec.transcript.unknownKey",
+      },
+      {
+        label: "captions transcript.words[0]",
+        input: job({ transcript: { words: [{ text: "a", start: 0, end: 1, nope: 1 }], language: "en" } }),
+        keys: WORD_KEYS,
+        code: "spec.transcript.unknownKey",
+      },
+      { label: "captions layout", input: job({ layout: { nope: 1 } }), keys: CAPTIONS_LAYOUT_KEYS, code: "spec.layout.unknownKey" },
+      ...STYLE_NAMES.map((name) => ({
+        label: `captions style ${name}`,
+        input: job({ style: { name, nope: 1 } }),
+        keys: captionsStyleKeys(name),
+        code: "spec.style.unknownKey",
+      })),
+    ];
+    for (const c of specCases) {
+      const result = parseSpec(c.input, { root: ROOT });
+      if (result.ok) {
+        parts.push(`${c.label}: parseSpec accepted an unknown key`);
+        continue;
+      }
+      const diag = result.diagnostics.find((d) => d.code === c.code);
+      const marker = "allowed keys are ";
+      const at = diag?.message.indexOf(marker) ?? -1;
+      if (diag === undefined || at === -1) {
+        parts.push(`${c.label}: no ${c.code} diagnostic listing the allowed keys`);
+        continue;
+      }
+      const listed = diag.message.slice(at + marker.length);
+      if (listed !== [...c.keys].join(", ")) {
+        parts.push(`${c.label}: message lists ${JSON.stringify(listed)}; the key set is ${JSON.stringify([...c.keys].join(", "))}`);
+      }
+    }
     expect(parts, parts.join("\n") || "G5 clean").toEqual([]);
+  });
+
+  test("G9 — every captions spec diagnostic is catalogued, and every spec probe is refused with its code", () => {
+    const parts: string[] = [];
+    const emitted = captionsSourceCodes();
+    const rows = SURFACE.filter((row) => row.group === "captions");
+    const owned = new Map<string, string>();
+    for (const row of rows) for (const code of row.diagnostics) owned.set(code, row.id);
+
+    for (const code of [...emitted].sort()) {
+      if (!owned.has(code)) parts.push(`in ${CAPTIONS_SOURCES.join(" / ")} but in no captions row: ${code}`);
+    }
+    for (const [code, id] of owned) {
+      if (!emitted.has(code)) parts.push(`row ${id} owns ${code}, which ${CAPTIONS_SOURCES.join(" / ")} never emits`);
+    }
+    for (const row of rows) {
+      if ((row.specProbes ?? []).length === 0) parts.push(`${row.id} has no spec probe`);
+      for (const probe of row.specProbes ?? []) {
+        const result = parseSpec(probe.input, { root: ROOT });
+        if (result.ok) {
+          parts.push(`${row.id} probe ${probe.code}: parseSpec accepted the input`);
+          continue;
+        }
+        const codes = result.diagnostics.map((d) => d.code);
+        if (!codes.includes(probe.code)) {
+          parts.push(`${row.id} probe ${probe.code}: parseSpec did not emit that code (got ${codes.join(", ")})`);
+        }
+      }
+    }
+    expect(parts, parts.join("\n") || "G9 clean").toEqual([]);
   });
 
   test("mirrored constants still equal upstream's", () => {
