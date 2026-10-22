@@ -1,5 +1,9 @@
 # Motion blur as a declared shutter — design (stage 1)
 
+**Stage 2 has landed** as `patches/0031-shutter.patch` and the host changes
+listed at the end of this document. Where the build departs from the plan
+below, the last section, "Stage 2 as built", says how and why.
+
 Design, before the patch. A prototype was built in a scratch copy of the
 vendored tree (`baselines/shutter/prototype.diff`, against the pin 66caf4e5
 plus `patches/0001`–`0022`) and every number below is measured in
@@ -418,3 +422,46 @@ In this repository:
 - `baselines/digests.json`: one new entry. No existing digest moves. Measured
   here: 11 compositions trace to the same digest with the prototype's wasm as
   with the pin's.
+
+## Stage 2 as built
+
+What differs from the file-by-file plan above, each for a reason found while
+building it:
+
+- **The patch is `0031`, the prop is 198.** `0024`–`0030` and props 183/184
+  are another branch's (the rasteriser-defect fixes), and the vector-paths
+  design has pencilled the thirteen props after them.
+- **An exposure ends with a draw walk at the tick.** Writing the tick's values
+  back restores the tree, but the DrawList and the inspector latch would still
+  be the last sample's. One walk without a raster makes the state after an
+  exposure the state after a plain render, so `layout`'s rect, read off that
+  latch, is the frame's own box whichever render filled it.
+- **The scratch is reserved at boot** (`ui_exposure_reserve`) rather than
+  preview taking its boot reading after the first exposure. Reserved before
+  the first snapshot, the allocation is in every snapshot's heap, so a restore
+  never allocates it again past the restored watermark, and preview's 4×
+  threshold multiplies a reading that already holds it. Its range comes back
+  as two exports, `ui_exposure_scratch_ptr` and `_len`.
+- **`paints` folds every sample's draw-list hash** (`ui_draw_hash_exposure`),
+  which is "emitted geometry in at least one sample" without N extra walks per
+  question on the host side.
+- **Ink boxes are read at the tick**, with rects. `text_box_overflow` and
+  `clipped_text` compare a glyph run's pixels with its box; a smear along the
+  run's motion is not a run that overflows, and reading it from the exposure
+  would report one on every fast caption.
+- **`keyframes` reports `step` and `cut`**: one-tick segments and a change of
+  value with no segment across it, in the first iteration of each transform
+  track. Iteration and loop wraps are jumps too when their two sides differ;
+  they are the timeline's period and are not listed.
+- **The `lint` warnings read the source text**: `shutter.holdUnderAnimatedAncestor`
+  for a held element inside an element whose class starts an animation and
+  does not hold, and `shutter.holdsNothing` for a hold on a literal that starts
+  no animation, or in a composition that declares no shutter. Ancestry is
+  lexical within one file, and the keyframes are not read, so the message says
+  "if that animation moves it".
+- **The fixture gained `known`**, a white square at 4 px a tick over a 64-tick
+  period, so a sample a quarter tick off the frame sits on a whole pixel and
+  a 2-sample exposure can be written down in advance. Before it was added the
+  fixture was the prototype scene with the hold class, and it traced to the
+  prototype's recorded digests: `015b2653…` with no shutter, `94b940d8…` at
+  180° × 4 and `1c985200…` at 180° × 8.

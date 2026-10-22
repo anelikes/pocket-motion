@@ -254,3 +254,94 @@ every one of them:
 
 The rest checked here (`alpha`, `curves`, `filters`, `masked`, `reel`,
 `stroke`) match the ledger. The full ledger was not run.
+
+## Stage 2: the patch, 2026-10-23
+
+`patches/0031-shutter.patch` and the host changes `docs/shutter.design.md`
+lists, on the pin bump's stage 2 (`64cb6ca`, pin `66caf4e5` plus
+`0001`–`0023`). Same machine. Before any change here, `bun test ./tests/`
+was 723 pass, 4 skip, 0 fail.
+
+### The patch is the prototype
+
+`compositions/shutter-blur` began as `scene-blur/` above with `shutter-hold`
+on `label-crisp` in place of the prototype's host-side exemption. Traced
+through the repository's own `trace`, it gave the digests in section 8 exactly:
+`015b265357fe689c…` with no `shutter` key, `94b940d89335eb2f…` at 180° × 4
+and `1c985200169db644…` at 180° × 8. So the class reaches the core as the
+exemption did, and the draw walk an exposure now ends with moves no pixel.
+The fixture then gained `known` (below) and its ledger digest is the one in
+`baselines/digests.json`.
+
+### No other picture moved
+
+With the patch applied: the digest ledger 37 of 37 (the 36 already recorded
+plus `shutter-blur`), the visibility ledger 44 of 44. A composition without a
+`shutter` key runs no new code: its boot reserves nothing and its render is
+`ui_render_scaled` as before.
+
+### Memory
+
+`compositions/shutter-blur` at 1920×1080, checkpoints every 30 frames
+(`WasmFrameSource`), MiB of wasm linear memory:
+
+| shutter | after boot | after frame 0 | after frame 60 | after two restores | each snapshot |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| none | 3.8 | 11.7 | 11.7 | 19.6 | 11.7 |
+| 180° × 8 | 43.3 | 51.3 | 51.3 | 59.2 | 11.7 |
+
+The 39.6 MiB scratch (five bytes per four of framebuffer: four u32 sums and
+the resolved RGBA per pixel) is reserved at boot, so it is in preview's boot
+reading and in every snapshot's heap, and the snapshot leaves it out: each one
+is the size it is without a shutter. A restore adds one framebuffer either
+way — the ratchet `src/runtime/checkpoint.ts` describes, unchanged.
+
+### Guards, watched red
+
+Each row is a core built from the patch with one edit, put in place of
+`vendor/pocketjs/hosts/web/pocketjs.wasm` for one run of
+`tests/shutter.test.ts`, then the vendored core put back. The scratch build
+of the unedited patch passes all 17.
+
+| edit | red in `tests/shutter.test.ts` |
+| --- | --- |
+| samples trail the tick, `span·(2k+1)/2n` | the 2-sample known move; the host-reference average |
+| the same, and no `samples <= 1` shortcut | the above, and "one sample is the unblurred frame" |
+| no `samples <= 1` shortcut, samples centred | nothing: one centred sample averages to itself, byte for byte |
+| a one-tick segment read as motion (`len < 1`) | the flick's lane |
+| the hold flag ignored | `shutter-hold` keeps a label sharp |
+| the opaque table rounds down (`sc / n`) | the 2-sample known move; the host-reference average |
+| no draw walk after writing the tick back | the core is left on the frame's tick (the rect) |
+
+Host side: `boot.ts` passing `samples + 1` turns the one-sample, known-move
+and host-reference tests red. `"shutter"` added to `NOT_IN_IDENTITY` turns
+"two sidecars that differ only in the shutter" red; the parser filling in a
+default turns "a sidecar without the key carries no shutter" red (and the
+sound projection test beside it). The `shutter.samples` catalogue row
+removed turns G1 and G2 red. The core's own red cases are in the patch
+header.
+
+The opacity rule's red case is the core's
+(`shutter_holds_everything_but_transforms`): the fixture's gates sit on even
+ticks, where an integrated opacity averages to the tick's value at 30 fps, so
+no frame of it can tell the two rules apart. `rename-card`'s odd-tick gates
+are where section 5 measured the difference.
+
+### The known move
+
+`known` is a 40 px white square at 4 px a tick over a 64-tick period, so at
+180° × 2 the two samples sit a quarter tick either side of the frame's tick
+at whole pixels: `4·(21 ± 1/4) = 84 ± 1` at frame 10. A column covered by one
+sample of two is `(2·(255 + g) + 2) / 4` over the ground `g`: 133, 135, 138
+over `#0b0f14`. The test writes the eight pixels across both edges down
+before rendering them.
+
+### Cost, on a loaded machine
+
+`world.render()` on the fixture at 1920×1080, median over its 90 frames,
+fastest of 3 runs, with the load average at 140–157 on 10 cores (other
+sessions' builds): no shutter 0.98 ms, 180° × 4 21.0 ms, × 8 39.2 ms, × 16
+68.6 ms. Section 6's numbers were taken at a load of 9–12 and are the
+reference; these say the patch is in the same range as the prototype under
+roughly fifteen times the contention, not what it costs on an idle machine.
+`visibility` over the fixture's 24-frame grid took 6.4 s, before `known` was added.
