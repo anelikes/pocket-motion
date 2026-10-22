@@ -73,7 +73,7 @@ const TARGET = { lat: 31.2304, lon: 121.4737 };
 const PERSP = 2600;
 const M_FINAL = 34;
 /** Magnification at the contact: 1 until the push, M_FINAL on the landing, eased in log space. */
-const worldMag = (t: number) => (t <= T_PUSH ? 1 : M_FINAL ** outCubic(Math.min(1, (t - T_PUSH) / (T_LAND - T_PUSH))));
+const worldMag = (t: number) => (t <= T_PUSH ? 1 : M_FINAL ** inOut(Math.min(1, (t - T_PUSH) / (T_LAND - T_PUSH))));
 /** How far the globe is pulled toward the camera to give `worldMag` at its near point. */
 const diveZ = (t: number) => (PERSP - R_GLOBE) * (1 - 1 / worldMag(t));
 
@@ -508,7 +508,7 @@ function coastMap(name: string, m: number, size: number, grid: number, fade: [nu
 const LENS = 308;
 /** The radar picture's slow push after the dive lands, shared by the picture and what is drawn on it. */
 const sarPush = () => reg.prop("scale", [[0, "1"], [T_LAND, "1"], [TICKS, "1.06"]], "cubic-bezier(0.25,0.1,0.25,1)");
-const SAR_K = 5; // the radar picture's scale: the hull is 36 k px long
+const SAR_K = 4; // the radar picture's scale: the hull is 36 k px long
 const OTHERS: [number, number][] = [
   [0.2, 0.66],
   [0.8, 0.28],
@@ -542,7 +542,7 @@ function coast(): string {
           if (Math.floor((prev - brg) / 360) !== Math.floor((cur - brg) / 360)) ch.push([t - 1, "0.25"], [t, "1"], [t + 20, "0.25"]);
           prev = cur;
         }
-        return `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.anim(reg.prop("opacity", ch))}" />`;
+        return `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.anim(reg.prop("opacity", ch))}" /><View class="absolute left-[${fx * S + 14}px] top-[${fy * S - 8}px]">${mono(`C-0${5 + OTHERS.findIndex((o) => o[0] === fx)} AIS`, 11, G.mid)}</View>`;
       }).join("")}
     </View></View>`;
   // range rings: one a beat out from the hull once the push has landed, the alarm's own pulse
@@ -734,21 +734,23 @@ function tracking(): string {
  * so their strokes keep their weight at every size.
  */
 const T_RAMP = T_LOCK + 6;
-const T_SNAP_IN = T_FLIP - 8;
+const T_SNAP_IN = T_FLIP - 12;
+const T_HELD = T_FLIP - 18; // f186: the brackets are square at 1.4 and hold for the snap
 const LOCK_D = 70; // half the box the brackets close on: 140 px around the contact
 const VESSEL_D = 130; // half the box they open to as the push lands on the vessel
 const LOCK_S = 2 * VESSEL_D;
 const lockD = (t: number): number => {
   if (t < T_RAMP) return 1.8 * LOCK_D;
-  if (t < T_SNAP_IN) return lerp(1.8 * LOCK_D, 1.3 * LOCK_D, inOut((t - T_RAMP) / (T_SNAP_IN - T_RAMP)));
-  if (t <= T_FLIP) return lerp(1.3 * LOCK_D, LOCK_D, ((t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN)) ** 2);
-  if (t <= T_FLIP + 2) return lerp(LOCK_D, 0.94 * LOCK_D, (t - T_FLIP) / 2);
-  if (t <= T_FLIP + 6) return lerp(0.94 * LOCK_D, LOCK_D, inOut((t - T_FLIP - 2) / 4));
+  if (t < T_HELD) return lerp(1.8 * LOCK_D, 1.4 * LOCK_D, inOut((t - T_RAMP) / (T_HELD - T_RAMP)));
+  if (t < T_SNAP_IN) return 1.4 * LOCK_D;
+  if (t <= T_FLIP) return lerp(1.4 * LOCK_D, LOCK_D, snapEase((t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN)));
+  if (t <= T_FLIP + 2) return lerp(LOCK_D, 0.97 * LOCK_D, (t - T_FLIP) / 2);
+  if (t <= T_FLIP + 4) return lerp(0.97 * LOCK_D, LOCK_D, (t - T_FLIP - 2) / 2);
   if (t <= T_PUSH) return LOCK_D;
   if (t <= T_LAND) return lerp(LOCK_D, VESSEL_D, outCubic((t - T_PUSH) / (T_LAND - T_PUSH)));
   return VESSEL_D;
 };
-const lockRot = (t: number): number => (t < T_RAMP ? 45 : t < T_SNAP_IN ? lerp(45, 0, inOut((t - T_RAMP) / (T_SNAP_IN - T_RAMP))) : 0);
+const lockRot = (t: number): number => (t < T_RAMP ? 45 : t < T_HELD ? lerp(45, 0, inOut((t - T_RAMP) / (T_HELD - T_RAMP))) : 0);
 /** LOCK's reading through the spin and the snap: slow while it turns, fast as it bites. */
 const lockPct = (t: number) => Math.round(100 * Math.max(0, Math.min(1, (t - T_RAMP) / (T_FLIP - T_RAMP))) ** 1.6);
 const CORNER = 64;
@@ -857,18 +859,18 @@ function alertFront(): string {
  * (heroHot), then the alert's orange takes it. Its plate sits outside every
  * glow layer (bandPlates), so it quiets the rings under it without haze.
  */
-const HERO = { x: CX - 280, y: CY + 300, w: 560, h: 160 };
+const HERO = { x: CX - 320, y: CY + 292, w: 640, h: 172 };
 const bandPlates: string[] = [];
 const SHADES = "▓▒░█";
 /** The title: each glyph a block for a frame, a lighter block for a frame, then itself, a tick apart, landing on the hit. */
 function heroTitle(c: string): string {
   const cell = (ch: string, i: number, w: number, draw: (g: string) => string) =>
-    glyphCell(reg, [[T_FLIP - 4 + i, SHADES[i % 2]!], [T_FLIP - 2 + i, SHADES[(i + 1) % 2]!], [T_FLIP + i, ch]], (g) => (SHADES.includes(g) ? mono(g, 40, c) : draw(g)), w, 64);
-  const zh = [..."目标锁定"].map((ch, i) => cell(ch, i, 56, (g) => cjk(g, 52, c))).join("");
-  const en = [..."TARGET LOCKED"].map((ch, i) => (ch === " " ? `<View class="w-[10px] h-[64px]" />` : cell(ch, i + 2, 21, (g) => ui(g, 34, c, true)))).join("");
+    glyphCell(reg, [[T_FLIP - 4 + i, SHADES[i % 2]!], [T_FLIP - 2 + i, SHADES[(i + 1) % 2]!], [T_FLIP + i, ch]], (g) => (SHADES.includes(g) ? mono(g, 48, c) : draw(g)), w, 72);
+  const zh = [..."目标锁定"].map((ch, i) => cell(ch, i, 72, (g) => cjk(g, 66, c))).join("");
+  const en = [..."TARGET LOCKED"].map((ch, i) => (ch === " " ? `<View class="w-[11px] h-[72px]" />` : cell(ch, i + 2, 24, (g) => ui(g, 40, c, true)))).join("");
   // the slam: 1.15 to 1 over four frames as the hit lands
   const slam = reg.anim(reg.prop("scale", [[0, "1.15"], [T_FLIP, "1.15"], [T_FLIP + 8, "1"]], "cubic-bezier(0.16,1,0.3,1)"));
-  return `<View class="absolute left-[${HERO.x}px] top-[${HERO.y + 10}px] w-[${HERO.w}px] h-[64px] flex-row justify-center items-center gap-[18px] origin-center animate-${slam}"><View class="flex-row">${zh}</View><View class="flex-row">${en}</View></View>`;
+  return `<View class="absolute left-[${HERO.x}px] top-[${HERO.y + 8}px] w-[${HERO.w}px] h-[72px] flex-row justify-center items-center gap-[20px] origin-center animate-${slam}"><View class="flex-row">${zh}</View><View class="flex-row">${en}</View></View>`;
 }
 /** A hazard cap: diagonal stripes across the plate's end. */
 function hazard(): string {
@@ -892,16 +894,16 @@ function hazard(): string {
 function lockup(): string {
   const out: string[] = [];
   const show = reg.anim(reg.window(T_FLIP));
-  bandPlates.push(rect(HERO.x, HERO.y, HERO.w, HERO.h, G.plate, "opacity-85", show));
-  const hz = hazard();
-  out.push(at(HERO.x - 28, HERO.y, img(hz, 28, HERO.h), "", show), at(HERO.x + HERO.w, HERO.y, img(hz, 28, HERO.h), "", show));
+  bandPlates.push(rect(HERO.x, HERO.y, HERO.w, HERO.h, "#140600", "opacity-90", show));
+  // the verdict's plate ends in two heavy rules rather than hazard caps (the reference's banner carries those)
+  out.push(rect(HERO.x - 8, HERO.y, 4, HERO.h, G.hot, "", show), rect(HERO.x + HERO.w + 4, HERO.y, 4, HERO.h, G.hot, "", show));
   out.push(rect(HERO.x, HERO.y, HERO.w, 2, G.hot, "origin-center", grow("x", T_FLIP - 4, 8)));
   // the leader, dropped from the box's foot to the block as the brackets close; it goes with the rings
   out.push(`<View class="absolute left-[${CX - 1}px] top-[${CY + LOCK_D}px] w-[2px] h-[${HERO.y - CY - LOCK_D}px] bg-[${G.hot}] origin-top animate-${reg.anim([reg.prop("scaleY", [[0, "0"], [T_FLIP - 6, "0"], [T_FLIP, "1"]], "cubic-bezier(0.16,1,0.3,1)"), reg.window(0, T_END + 8)])}" />`);
   out.push(heroTitle(G.hot));
   // the coordinates type in under it, two frames a character, behind a block cursor
   const coord = "N31°14′  E121°29′";
-  out.push(typed(CX - Math.round((coord.length * 34 * 0.6) / 2), HERO.y + 82, 34, [[coord, G.hot]], T_FLIP + 8, { cps: 4, cursorUntil: T_FLIP + 8 + coord.length * 4 + 24 }));
+  out.push(typed(CX - Math.round((coord.length * 32 * 0.6) / 2), HERO.y + 88, 32, [[coord, G.hot]], T_FLIP + 8, { cps: 4, cursorUntil: T_FLIP + 8 + coord.length * 4 + 24 }));
   out.push(at(HERO.x + 24, HERO.y + HERO.h - 34, `<View class="flex-row items-center gap-[8px]">${mono("PRIORITY 1", 15, G.mid)}${mono("·", 14, G.mid)}${cjk("一级优先", 16, G.mid)}</View>`, "", reg.anim(power(T_FLIP + 20, T_END + 12))));
   return out.join("\n");
 }
@@ -1256,7 +1258,7 @@ const panels = [phaseStrip(), aisGap(), trackPanel(), interceptPanel(), kelvinPa
 // three restrained glitches — 2.0 s, 4.4 s and 6.4 s — each a frame of tears across the picture
 const GLITCH = [120, 264, 384];
 const tears = GLITCH.flatMap((t, i) =>
-  [137, 491, 803].map((y, k) => rect(0, (y + i * 211 + k * 97) % H, W, 2 + ((i + k) % 2), G.hot, "opacity-40", reg.anim(reg.window(t, t + 2)))),
+  [137, 491, 803].map((y, k) => rect(0, (y + i * 211 + k * 97) % H, W, 2 + ((i + k) % 2), G.hot, "opacity-20", reg.anim(reg.window(t, t + 2)))),
 ).join("");
 // an alert border, pulsing at 2 Hz from a second after the flip: the tail keeps its pulse
 const border = `<View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[${G.hot}] border-[3px] animate-${reg.anim(reg.window(T_FLIP + 30))}"><View class="absolute inset-0 border-[${G.hot}] border-[3px] animate-${reg.loop([reg.short({ "0%": { opacity: "1" }, "50%": { opacity: "0.6" }, "100%": { opacity: "1" } }, B)], B)}" /></View>`;
@@ -1264,13 +1266,13 @@ const top = [kelvinLabel(), confirmStamp(), tears, border].join("\n");
 const hud = `
       <View class="absolute inset-0 ${GLOW} animate-${reg.anim(reg.prop("opacity", [[0, "1"], [T_END + 12, "1"], [T_END + 18, "0.7"]]))}">${centre}</View>
       <View class="absolute inset-0 animate-${outAt(T_END + 18)}">${rim}</View>
-      <View class="absolute inset-0 animate-${outAt(T_END + 12)}">${sweep}</View>
+      <View class="absolute inset-0">${sweep}</View>
       <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END + 12)}">${centreTop}</View>
       <View class="absolute inset-0 ${GLOW}">${lock()}${course()}</View>
       <View class="absolute inset-0 animate-${dim}">${panelPlates.join("")}</View>
       <View class="absolute inset-0 ${GLOW} animate-${dim}">${panels}</View>
       <View class="absolute inset-0">${bandPlates.join("")}</View>
-      <View class="absolute inset-0 ${GLOW}">${lockup()}${typed(HERO.x + 24, HERO.y + HERO.h - 36, 16, [["> HANDOFF → CG-2108", G.hot]], T_END + 18, { cps: 2, cursorUntil: TICKS })}</View>
+      <View class="absolute inset-0 ${GLOW}">${lockup()}${typed(HERO.x + 24, HERO.y + HERO.h - 36, 16, [["> HANDOFF → CG-2108", G.hot]], T_END + 14, { cps: 1, cursorUntil: TICKS })}</View>
       <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END + 6)}">${top}</View>`;
 
 // the alert spreads from the contact to every corner: the gradient's box is a square the width of the frame,
@@ -1307,8 +1309,8 @@ const caX = (sign: number) => {
     if (merged.length && a <= merged[merged.length - 1]![1]) merged[merged.length - 1]![1] = Math.max(merged[merged.length - 1]![1], z);
     else merged.push([a, z]);
   }
-  const on: [number, string][] = [[0, "0.16"]];
-  for (const [a, z] of merged) on.push([a, "0.45"], [z, "0.16"]);
+  const on: [number, string][] = [[0, "0"]];
+  for (const [a, z] of merged) on.push([a, "0.45"], [z, "0"]);
   return reg.anim([reg.prop("translateX", k), reg.step("opacity", on)]);
 };
 // the alarm sweeps: the frame's edge flares orange and the border doubles for a few frames
@@ -1340,7 +1342,7 @@ ${hud}
     <View class="absolute inset-0 mix-blend-screen animate-${caX(1)}">${reticle("#ff1f3d", "#7a0f1d", true)}</View>
     <View class="absolute inset-0 mix-blend-screen animate-${caX(-1)}">${reticle("#1f6bff", "#0f2f7a", true)}</View>
     <View class="absolute inset-0 bg-[radial-gradient(#ff2a0000,#ff2a0030)] mix-blend-screen animate-${reg.anim([reg.window(T_FLIP)])}"><View class="absolute inset-0 animate-${reg.loop([reg.short(wash, B, "ease-out", 0)], B)}" /></View>
-    <View class="absolute inset-0 bg-[#ffffff] mix-blend-screen animate-${reg.anim(reg.step("opacity", [[0, "0"], [T_FLIP, "0.15"], [T_FLIP + 2, "0"]]))}" />
+    <View class="absolute left-[0px] top-[${CY - W / 2}px] w-[${W}px] h-[${W}px] bg-[radial-gradient(#ffe2c0,#ffe2c000_38%)] mix-blend-screen animate-${reg.anim(reg.prop("opacity", [[0, "0"], [T_FLIP - 1, "0"], [T_FLIP, "0.85"], [T_FLIP + 4, "0"]]))}" />
     <View class="absolute inset-0 bg-[radial-gradient(#ff6a0000,#ff6a0000_55%,#ff6a00b0)] mix-blend-screen animate-${alarm}" />
     <View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[#ffd6a8] border-[7px] animate-${alarmEdge}" />
     <View class="absolute inset-0 origin-center animate-${punch}">${lockCore()}${alertFront()}${hullTop()}${heroHot()}</View>

@@ -44,9 +44,6 @@
   "spark-coh.png": {
     "linear": true
   },
-  "hazard.png": {
-    "linear": false
-  },
   "scan.png": {
     "linear": false
   },
