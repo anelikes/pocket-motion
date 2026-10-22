@@ -17,10 +17,19 @@
   "band.png": {
     "linear": true
   },
+  "coast-wide.png": {
+    "linear": true
+  },
   "coast.png": {
     "linear": true
   },
   "wedge.png": {
+    "linear": true
+  },
+  "streaks.png": {
+    "linear": true
+  },
+  "burst.png": {
     "linear": true
   },
   "orbit.png": {

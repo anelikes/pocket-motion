@@ -111,7 +111,16 @@ export function ellipse(w: number, h: number, a: number, b: number, lw: number, 
  * wide, plus fainter dotted `guides`. Only the pixels near each segment are
  * visited, so the cost is the drawn length, not the frame.
  */
-export function polylines(w: number, h: number, lines: [number, number][][], core: number, glow: number, guides: [number, number][][] = []): Buffer {
+export function polylines(
+  w: number,
+  h: number,
+  lines: [number, number][][],
+  core: number,
+  glow: number,
+  guides: [number, number][][] = [],
+  fade?: { r0: number; r1: number },
+  guideAlpha = 0.28,
+): Buffer {
   const alpha = new Float32Array(w * h);
   const seg = (x0: number, y0: number, x1: number, y1: number, f: (d: number, along: number) => number, reach: number) => {
     const minx = Math.max(0, Math.floor(Math.min(x0, x1) - reach));
@@ -140,7 +149,7 @@ export function polylines(w: number, h: number, lines: [number, number][][], cor
       const [x0, y0] = l[i]!;
       const [x1, y1] = l[i + 1]!;
       const base = run;
-      seg(x0, y0, x1, y1, (d, along) => ((base + along) % 10 < 4 ? 0.28 * cov(0.6, d) : 0), 2);
+      seg(x0, y0, x1, y1, (d, along) => ((base + along) % 10 < 4 ? guideAlpha * cov(0.6, d) : 0), 2);
       run += Math.hypot(x1 - x0, y1 - y0);
     }
   }
@@ -157,12 +166,60 @@ export function polylines(w: number, h: number, lines: [number, number][][], cor
   }
   const px = new Uint8Array(w * h * 4);
   for (let k = 0; k < w * h; k++) {
+    // an optional soft disc about the image centre: whole inside r0, gone by r1
+    let f = 1;
+    if (fade) {
+      const d = Math.hypot((k % w) + 0.5 - w / 2, Math.floor(k / w) + 0.5 - h / 2);
+      const u = Math.max(0, Math.min(1, (fade.r1 - d) / (fade.r1 - fade.r0)));
+      f = u * u * (3 - 2 * u);
+    }
     px[k * 4] = 255;
     px[k * 4 + 1] = 255;
     px[k * 4 + 2] = 255;
-    px[k * 4 + 3] = Math.round(Math.min(1, alpha[k]!) * 255);
+    px[k * 4 + 3] = Math.round(Math.min(1, alpha[k]!) * f * 255);
   }
   return encodePNG(px, w, h);
+}
+
+/**
+ * Speed lines for a push-in: `n` radial strokes between radii r0 and r1 about
+ * the image centre, each brightest two thirds of the way out and gone at both
+ * ends. Angles and lengths come from `seed`.
+ */
+export function streaks(w: number, h: number, n: number, r0: number, r1: number, seed: number): Buffer {
+  let s = seed | 0;
+  const rnd = () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const lines: { th: number; a: number; b: number; lw: number; peak: number }[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = r0 + rnd() * (r1 - r0) * 0.5;
+    lines.push({ th: rnd() * Math.PI * 2, a, b: a + (r1 - a) * (0.35 + rnd() * 0.65), lw: 0.8 + rnd() * 1.6, peak: 0.35 + rnd() * 0.65 });
+  }
+  const cx = w / 2;
+  const cy = h / 2;
+  return png(w, h, (x, y) => {
+    const dx = x - cx;
+    const dy = y - cy;
+    const r = Math.hypot(dx, dy);
+    if (r < r0) return 0;
+    const th = Math.atan2(dy, dx);
+    let best = 0;
+    for (const l of lines) {
+      if (r < l.a || r > l.b) continue;
+      // atan2 is in (-π, π] and the strokes' angles in [0, 2π): wrap the difference into [-π, π) before measuring
+      const dth = Math.abs(((((th - l.th) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+      const d = dth * r;
+      if (d > l.lw + 1) continue;
+      const u = (r - l.a) / (l.b - l.a);
+      const along = u < 0.66 ? u / 0.66 : (1 - u) / 0.34;
+      best = Math.max(best, l.peak * along * cov(l.lw / 2, d));
+    }
+    return best;
+  });
 }
 
 /**
