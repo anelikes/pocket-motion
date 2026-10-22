@@ -232,3 +232,72 @@ export function cell(forms: Placed[], x0: number, y0: number, size: number, scal
   return { width: n, height: n, rgba: px };
 }
 
+export interface Part {
+  kind: Kind;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** clockwise quarter turns of the drawn part inside its box */
+  rot: number;
+  /** a counter: cut out of the parts rather than added to them */
+  cut?: boolean;
+}
+
+/**
+ * One form built from parts, printed as one: the union of the parts less the
+ * union of the cuts. Parts that meet have no edge between them. Printing them
+ * as separate forms gives each its own wandering edge, and two edges that
+ * meet leave a hairline of paper (or, under a cut, of ink) along the joint.
+ * A distance union does not help either: the minimum of two boxes' distances
+ * is zero along the joint they share, so the joint still antialiases to half
+ * ink.
+ *
+ * Coverage is therefore membership: each sample point is inside the form or
+ * not, and the press's wandering edge is the sample point displaced by the
+ * same low-frequency noise `form` adds to its distance. Only the union's real
+ * boundary can wander. A pixel whose centre and four corners agree is taken
+ * whole; one on the boundary is sampled 4 × 4. The plate covers w × h from
+ * (x0, y0), in the parts' units, at `scale` px per unit.
+ */
+export function compound(parts: Part[], rgb: [number, number, number], seed: number, x0: number, y0: number, w: number, h: number, scale = 2): Plate {
+  const W = Math.round(w * scale);
+  const H = Math.round(h * scale);
+  const px = new Uint8Array(W * H * 4);
+  const local = (p: Part, X: number, Y: number): number => {
+    let ox = X - p.x - p.w / 2;
+    let oy = Y - p.y - p.h / 2;
+    for (let k = 0; k < ((p.rot % 4) + 4) % 4; k++) [ox, oy] = [oy, -ox];
+    return sdf(p.kind, p.w, p.h, ox + p.w / 2, oy + p.h / 2);
+  };
+  const adds = parts.filter((p) => !p.cut);
+  const cuts = parts.filter((p) => p.cut);
+  const inside = (X: number, Y: number): number => {
+    const x = X + 0.55 * noise(X * 0.22, Y * 0.22, seed) + 0.25 * noise(X * 0.9, Y * 0.9, seed + 7);
+    const y = Y + 0.55 * noise(X * 0.22, Y * 0.22, seed + 31) + 0.25 * noise(X * 0.9, Y * 0.9, seed + 37);
+    if (!adds.some((p) => local(p, x, y) <= 0)) return 0;
+    return cuts.some((p) => local(p, x, y) <= 0) ? 0 : 1;
+  };
+  const u = 1 / scale;
+  for (let j = 0; j < H; j++) {
+    for (let i = 0; i < W; i++) {
+      const X = x0 + i * u;
+      const Y = y0 + j * u;
+      const c = inside(X + u / 2, Y + u / 2);
+      let a = c;
+      if (c !== inside(X, Y) || c !== inside(X + u, Y) || c !== inside(X, Y + u) || c !== inside(X + u, Y + u)) {
+        a = 0;
+        for (let sy = 0; sy < 4; sy++) for (let sx = 0; sx < 4; sx++) a += inside(X + ((sx + 0.5) / 4) * u, Y + ((sy + 0.5) / 4) * u);
+        a /= 16;
+      }
+      const [r, g, b] = ink(rgb, seed, X + u / 2, Y + u / 2);
+      const k = (j * W + i) * 4;
+      px[k] = Math.round(r);
+      px[k + 1] = Math.round(g);
+      px[k + 2] = Math.round(b);
+      px[k + 3] = Math.round(a * 255);
+    }
+  }
+  return { width: W, height: H, rgba: px };
+}
+
