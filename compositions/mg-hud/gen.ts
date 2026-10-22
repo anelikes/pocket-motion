@@ -52,8 +52,8 @@ const T_KV = T_LAND + 4; // the Kelvin V is drawn over its wake
 const T_CONF = T_FLIP + 96; // 8.1 s: CONFIRMED
 const T_INT = T_LAND; // 7.5 s: the interceptor's vector is drawn in and its ETA starts counting
 const T_TASK = 18 * B; // 9.0 s: the intercept is tasked
-const T_ALARM = [T_LAND + 4, 558]; // 7.57 s and 9.3 s: the alarm sweeps, each answered by the border
-const T_END = 19 * B; // 9.5 s: the brackets flash white, then the suite collapses to a line
+const T_ALARM = [T_LAND + 4]; // 7.57 s: the alarm sweep, answered by the border (once: a second full-frame pump read as a repeat)
+const T_END = 552; // 9.2 s: the brackets flash white and the suite stands down over twelve frames; the end card holds 0.8 s
 
 
 // ── frame ──────────────────────────────────────────────────────────────────
@@ -333,6 +333,20 @@ function radar(): string {
       prev = cur;
     }
     out.push(el.node(`<View class="w-[8px] h-[8px] bg-[${G.hot}]" />`));
+    if (name === "C-02") {
+      // its first pass flags it; the AIS matches and it clears — the suite is looking for a vessel that is silent
+      let p0 = sweepAngle(T_SEARCH);
+      let first = 0;
+      for (let t = T_SEARCH + 1; t < T_DETECT && !first; t++) {
+        const c = sweepAngle(t);
+        if (Math.floor((p0 - bearing) / 360) !== Math.floor((c - bearing) / 360)) first = t;
+        p0 = c;
+      }
+      if (first) {
+        out.push(at(x + 12, y + 8, `<View class="flex-row gap-[6px]">${mono("AIS MATCH", 11, G.hot)}${mono("· CLEARED", 11, G.mid)}</View>`, "", reg.anim(reg.step("opacity", [[0, "0"], [first + 4, "1"], [first + 6, "0.2"], [first + 8, "1"], [first + 44, "0"]]))));
+        out.push(rect(x - 12, y - 12, 24, 24, "#00000000", `border-[${G.hot}] border`, reg.anim(reg.window(first, first + 30))));
+      }
+    }
     out.push(at(x + 10, y - 7, mono(name, 11, G.mid), "", reg.anim(reg.window(T_SEARCH + 10, T_FLIP))));
   }
   return out.join("\n");
@@ -426,7 +440,7 @@ function rimAndScan(): string {
     const h = 64;
     const px = new Uint8Array(w * h * 4);
     for (let j = 0; j < h; j++) {
-      const a = j >= 58 && j < 61 ? 0.55 : 0.18 * (j / 58) ** 2;
+      const a = 0.22 * Math.sin((Math.PI * j) / h) ** 2;
       for (let i = 0; i < w; i++) {
         const k = (j * w + i) * 4;
         px[k] = 255;
@@ -494,7 +508,7 @@ function coastMap(name: string, m: number, size: number, grid: number, fade: [nu
 const LENS = 308;
 /** The radar picture's slow push after the dive lands, shared by the picture and what is drawn on it. */
 const sarPush = () => reg.prop("scale", [[0, "1"], [T_LAND, "1"], [TICKS, "1.06"]], "cubic-bezier(0.25,0.1,0.25,1)");
-const SAR_K = 4; // the radar picture's scale: the hull is 36 k px long
+const SAR_K = 5; // the radar picture's scale: the hull is 36 k px long
 const OTHERS: [number, number][] = [
   [0.2, 0.66],
   [0.8, 0.28],
@@ -511,14 +525,25 @@ function coast(): string {
   const S = 2 * LENS;
   const sarLens = pngFile(
     "sar-lens",
-    raster.sar(S, 11, true, 72, [0.5, 0.5], SAR_K, 1.25, { clutter: 0.36, grain: 2.5, arms: 1.1, chevrons: true, shore: { side: "top", depth: 0.13, rough: true }, others: OTHERS, vignette: { r0: 0.8, r1: 1 } }),
+    raster.sar(S, 11, true, 72, [0.5, 0.5], SAR_K, 1.25, { clutter: 0.36, grain: 2.5, arms: 1.1, chevrons: false, shore: { side: "top", depth: 0.13, rough: true }, others: OTHERS, vignette: { r0: 0.8, r1: 1 } }),
     false,
   );
   const sk: [number, string][] = [[0, (1 / M_FINAL).toFixed(4)]];
   for (let t = T_PUSH; t <= T_LAND; t += 2) sk.push([t, (worldMag(t) / M_FINAL).toFixed(4)]);
   const zoom = reg.prop("scale", sk);
   const sar = `<View class="absolute left-[0px] top-[0px] w-[${S}px] h-[${S}px] origin-center animate-${reg.anim([reg.prop("opacity", [[0, "0"], [tickAtMag(8), "0"], [tickAtMag(12), "1"]]), zoom])}"><View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${img(sarLens, S, S)}
-      ${OTHERS.map(([fx, fy], i) => `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.loop([reg.short({ "0%": { opacity: "1" }, "40%": { opacity: "1" }, "41%": { opacity: "0" }, "100%": { opacity: "0" } }, B - 6 * i, "linear", 0)], B)}" />`).join("")}
+      ${OTHERS.map(([fx, fy]) => {
+        // each other vessel's marker flares when the sweep's edge crosses its bearing, and decays over two thirds of a second
+        const brg = (((Math.atan2(fx * S - S / 2, S / 2 - fy * S) * 180) / Math.PI) + 360) % 360;
+        const ch: [number, string][] = [[0, "0.25"]];
+        let prev = sweepAngle(T_LAND);
+        for (let t = T_LAND + 1; t < TICKS - 1; t++) {
+          const cur = sweepAngle(t);
+          if (Math.floor((prev - brg) / 360) !== Math.floor((cur - brg) / 360)) ch.push([t - 1, "0.25"], [t, "1"], [t + 20, "0.25"]);
+          prev = cur;
+        }
+        return `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.anim(reg.prop("opacity", ch))}" />`;
+      }).join("")}
     </View></View>`;
   // range rings: one a beat out from the hull once the push has landed, the alarm's own pulse
   const pr = pngFile("pulse", raster.ring(2 * LENS, LENS - 4, 2));
@@ -566,8 +591,8 @@ function hullPlate(): Plate {
       const a = Math.max(line, inside ? 0.22 : 0);
       const o = (j * n + i) * 4;
       px[o] = 255;
-      px[o + 1] = 255;
-      px[o + 2] = 255;
+      px[o + 1] = 216;
+      px[o + 2] = 176;
       px[o + 3] = Math.round(a * 255);
     }
   }
@@ -594,12 +619,13 @@ function kelvinOverlay(): string {
 
 /** The hull, white above the alert's tint so the target is not the chrome's colour, riding the chip's slow push. */
 function hullTop(): string {
-  return `<View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${at(CX - 100, CY - 100, img(pngFile("hull", hullPlate()), 200, 200), "", reg.anim(power(T_LAND)))}</View>`;
+  // the vector outline read as clip-art over the radar picture: the hull is the radar's own return now
+  return "";
 }
 
 /**
  * The vessel's projected course: dashes run out from the bow along its 072°
- * heading over 8.0–9.4 s, toward the HUANGPU the track panel names.
+ * heading over 8.1–9.0 s, toward the HUANGPU the track panel names.
  */
 function course(): string {
   const hdg = (72 * Math.PI) / 180;
@@ -607,13 +633,22 @@ function course(): string {
   const out: string[] = [];
   for (let i = 0; i < 9; i++) {
     const r = 92 + i * 24;
-    out.push(rect(CX + ux * r - 6, CY + uy * r - 1, 12, 2, G.hot, `origin-center rotate-${(72 - 90 + 360).toFixed(1)}`, reg.anim(reg.window(T_CONF + 4 + i * 8, T_END))));
+    out.push(rect(CX + ux * r - 6, CY + uy * r - 1, 12, 2, G.hot, `origin-center rotate-${(72 - 90 + 360).toFixed(1)}`, reg.anim(reg.window(T_CONF + 4 + i * 6, T_END))));
   }
-  out.push(at(CX + ux * 300 - 30, CY + uy * 300 - 34, mono("HUANGPU 072°", 13, G.hot), "", reg.anim(power(T_CONF + 70, T_END))));
+  out.push(at(CX + ux * 250 - 30, CY + uy * 250 - 34, mono("HUANGPU 072°", 13, G.hot), "", reg.anim(power(T_CONF + 52, T_END))));
   return `<View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}">${out.join("")}</View>`;
 }
 
 /** The value of the angle and what it gives, on a plate: drawn above the rings. */
+/** 19.47° lifts off the KELVIN WAKE panel and flies onto the arc drawn on the picture: the panel's physics becomes the evidence. */
+function kelvinFly(lx: number, ly: number): string {
+  const t0 = T_KV + 26;
+  const from = { x: RX + CW - 64 - 236, y: 262 - 12 };
+  const el = new El(reg, { x: lx - 70, y: ly - 18, w: 120, h: 30 }, { cx: from.x + 60, cy: from.y + 15, op: 0 });
+  el.set(t0, { op: 1 }).to(t0, t0 + 14, { cx: lx - 10, cy: ly - 3 }, (u) => 1 - (1 - u) ** 3).set(t0 + 15, { op: 0 });
+  return el.node(ui("19.47°", 22, G.hot, true));
+}
+
 function kelvinLabel(): string {
   const hdg = (72 * Math.PI) / 180;
   const half = 18 * SAR_K;
@@ -621,7 +656,7 @@ function kelvinLabel(): string {
   const sy = CY + half * Math.cos(hdg);
   const lx = sx + 170 * Math.sin((252 * Math.PI) / 180);
   const ly = sy - 170 * Math.cos((252 * Math.PI) / 180);
-  return `<View class="absolute left-[${(lx - 70).toFixed(0)}px] top-[${(ly - 18).toFixed(0)}px] w-[176px] h-[36px] animate-${reg.anim(power(T_KV + 40))}"><View class="absolute inset-0 bg-[${G.plate}] opacity-85" /><View class="absolute inset-0 flex-row items-center justify-center gap-[8px]">${ui("19.47°", 22, G.hot, true)}${mono("→ 18.4 KN", 13, G.hot)}</View></View>`;
+  return `${kelvinFly(lx, ly)}<View class="absolute left-[${(lx - 70).toFixed(0)}px] top-[${(ly - 18).toFixed(0)}px] w-[176px] h-[36px] animate-${reg.anim(power(T_KV + 40))}"><View class="absolute inset-0 bg-[${G.plate}] opacity-85" /><View class="absolute inset-0 flex-row items-center justify-center gap-[8px]">${ui("19.47°", 22, G.hot, true)}${mono("→ 18.4 KN", 13, G.hot)}</View></View>`;
 }
 
 /** CONFIRMED: the evidence agrees with the lock — beside the brackets, above the rings. */
@@ -647,7 +682,7 @@ function interceptVector(): string {
   const cutter = new El(reg, { x: CX + ux * r0 - 8, y: CY + uy * r0 - 8, w: 16, h: 16 }, { op: 0 });
   cutter.set(T_INT, { op: 1 }).to(T_INT, TICKS, { cx: CX + ux * (r0 - 90), cy: CY + uy * (r0 - 90) }, linear);
   out.push(cutter.node(`<View class="w-[16px] h-[16px] bg-[${G.hot}] rotate-45" />`));
-  out.push(at(CX + ux * r0 - 40, CY + uy * r0 + 16, mono("CG-2108", 13, G.hot), "", reg.anim(power(T_INT + 6))));
+  out.push(at(CX + ux * r0 - 124, CY + uy * r0 + 18, mono("CG-2108", 13, G.hot), "", reg.anim(power(T_INT + 6))));
   return out.join("\n");
 }
 
@@ -690,23 +725,23 @@ function tracking(): string {
 }
 
 /**
- * The lock. Four corners, each its own piece, open at 1.40 of a 140 px box on
- * the contact, turned 45°, on T_LOCK and hold. From 5.9 s they spin square
- * and close to 1.28 while LOCK counts up, then close the last of the way in
+ * The lock. Four corners, each its own piece, open at 1.8 of a 140 px box on
+ * the contact, turned 45°, on T_LOCK; from a fifth of a second later they
+ * spin square and close to 1.3 while LOCK counts up, then close the last of the way in
  * four frames that arrive at speed on T_FLIP, the frame the alert fires, bite
  * to 0.94 and settle. Through the dive the box opens with the zoom to frame
  * the vessel the contact turns out to be. The corners move rather than scale,
  * so their strokes keep their weight at every size.
  */
-const T_RAMP = T_FLIP - 36;
+const T_RAMP = T_LOCK + 6;
 const T_SNAP_IN = T_FLIP - 8;
 const LOCK_D = 70; // half the box the brackets close on: 140 px around the contact
 const VESSEL_D = 130; // half the box they open to as the push lands on the vessel
 const LOCK_S = 2 * VESSEL_D;
 const lockD = (t: number): number => {
-  if (t < T_RAMP) return 1.4 * LOCK_D;
-  if (t < T_SNAP_IN) return lerp(1.4 * LOCK_D, 1.28 * LOCK_D, inOut((t - T_RAMP) / (T_SNAP_IN - T_RAMP)));
-  if (t <= T_FLIP) return lerp(1.28 * LOCK_D, LOCK_D, ((t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN)) ** 2);
+  if (t < T_RAMP) return 1.8 * LOCK_D;
+  if (t < T_SNAP_IN) return lerp(1.8 * LOCK_D, 1.3 * LOCK_D, inOut((t - T_RAMP) / (T_SNAP_IN - T_RAMP)));
+  if (t <= T_FLIP) return lerp(1.3 * LOCK_D, LOCK_D, ((t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN)) ** 2);
   if (t <= T_FLIP + 2) return lerp(LOCK_D, 0.94 * LOCK_D, (t - T_FLIP) / 2);
   if (t <= T_FLIP + 6) return lerp(0.94 * LOCK_D, LOCK_D, inOut((t - T_FLIP - 2) / 4));
   if (t <= T_PUSH) return LOCK_D;
@@ -736,10 +771,27 @@ function bracketEls(color: string, thick: number, op: number, only?: [number, nu
       for (const [a, z] of only) el.set(a, { ...cornerPose(k, a), op }).set(z, { op: 0 });
     } else {
       const t0 = T_LOCK + k * 2;
-      el.set(t0, { op: 1 }).set(t0 + 2, { op: 0.2 }).set(t0 + 4, { op: 1 });
-      // the pose every tick through the spin, the snap and the dive, with the two blinks at 100 % in the same pass:
-      //   keys are written in time order, and a blink set after the path would carry the path's last pose back
-      el.path(T_RAMP, T_LAND, (t) => ({ ...cornerPose(k, t), op: blinkOp(t) }));
+      // the pose every tick from the lock opening through the spin, the snap and the dive, with the power-on flicker
+      //   and the two blinks at 100 % in the same pass: keys are written in time order
+      const powerOn = (t: number) => (t < t0 ? 0 : t < t0 + 2 ? 1 : t < t0 + 4 ? 0.2 : 1);
+      el.path(T_LOCK, T_LAND, (t) => ({ ...cornerPose(k, t), op: powerOn(t) * blinkOp(t) }));
+    }
+    out.push(el.node(corner(CORNER, 40, thick, color, k as 0)));
+  }
+  return out.join("\n");
+}
+
+/** The brackets again, following the pose every tick, at the opacity `opAt` gives: written in time order. */
+function bracketCopy(color: string, thick: number, opAt: (t: number) => number): string {
+  const out: string[] = [];
+  for (let k = 0; k < 4; k++) {
+    const el = new El(reg, { x: CX - CORNER / 2, y: CY - CORNER / 2, w: CORNER, h: CORNER }, { ...cornerPose(k, 0), op: 0 });
+    el.path(T_RAMP, T_LAND, (t) => ({ ...cornerPose(k, t), op: opAt(t) }));
+    let prev = opAt(T_LAND);
+    for (let t = T_LAND + 1; t <= TICKS; t++) {
+      const v = opAt(t);
+      if (v !== prev) el.set(t, { op: v });
+      prev = v;
     }
     out.push(el.node(corner(CORNER, 40, thick, color, k as 0)));
   }
@@ -768,7 +820,9 @@ function lock(): string {
 
 /** The brackets once more, white, for the frame they land and the two the film ends on: drawn above the tint, so the bite reads as light. */
 function lockCore(): string {
-  return bracketEls("#ffffff", 3, 1, [[T_FLIP, T_FLIP + 2], [T_END, T_END + 4]]);
+  // the white flashes on the hit and the stand-down, and from the hit on a white-hot core inside the orange stroke
+  const flash = (t: number) => ((t >= T_FLIP && t < T_FLIP + 2) || (t >= T_END && t < T_END + 4) ? 1 : 0);
+  return bracketCopy("#ffffff", 3, flash) + bracketCopy("#ffd8b0", 2, (t) => (flash(t) ? 0 : t >= T_FLIP + 2 ? 0.6 : 0));
 }
 
 /**
@@ -803,31 +857,57 @@ function alertFront(): string {
  * (heroHot), then the alert's orange takes it. Its plate sits outside every
  * glow layer (bandPlates), so it quiets the rings under it without haze.
  */
-const HERO = { x: CX - 270, y: CY + 316, w: 540, h: 176 };
+const HERO = { x: CX - 280, y: CY + 300, w: 560, h: 160 };
 const bandPlates: string[] = [];
-function heroLines(hot: boolean): string {
-  const c = hot ? "#ffffff" : G.hot;
-  const m = hot ? "#ffffff" : G.mid;
-  return `<View class="absolute left-[${HERO.x}px] top-[${HERO.y}px] w-[${HERO.w}px] h-[${HERO.h}px] flex-col items-center">
-    <View class="h-[12px]" />
-    <View class="flex-row items-center gap-[22px]">${cjk("目标锁定", 54, c)}${ui("TARGET LOCKED", 34, c, true)}</View>
-    <View class="h-[4px]" />
-    ${mono("N31°14′  E121°29′", 34, c)}
-  </View>`.replace(/\n\s*/g, "") + (hot ? "" : `<View class="absolute left-[${HERO.x + 24}px] top-[${HERO.y + HERO.h - 34}px] flex-row items-center gap-[8px]">${ui("PRIORITY 1", 16, m, true)}${mono("·", 14, G.mid)}${cjk("一级优先", 16, m)}</View>`);
+const SHADES = "▓▒░█";
+/** The title: each glyph a block for a frame, a lighter block for a frame, then itself, a tick apart, landing on the hit. */
+function heroTitle(c: string): string {
+  const cell = (ch: string, i: number, w: number, draw: (g: string) => string) =>
+    glyphCell(reg, [[T_FLIP - 4 + i, SHADES[i % 2]!], [T_FLIP - 2 + i, SHADES[(i + 1) % 2]!], [T_FLIP + i, ch]], (g) => (SHADES.includes(g) ? mono(g, 40, c) : draw(g)), w, 64);
+  const zh = [..."目标锁定"].map((ch, i) => cell(ch, i, 56, (g) => cjk(g, 52, c))).join("");
+  const en = [..."TARGET LOCKED"].map((ch, i) => (ch === " " ? `<View class="w-[10px] h-[64px]" />` : cell(ch, i + 2, 21, (g) => ui(g, 34, c, true)))).join("");
+  // the slam: 1.15 to 1 over four frames as the hit lands
+  const slam = reg.anim(reg.prop("scale", [[0, "1.15"], [T_FLIP, "1.15"], [T_FLIP + 8, "1"]], "cubic-bezier(0.16,1,0.3,1)"));
+  return `<View class="absolute left-[${HERO.x}px] top-[${HERO.y + 10}px] w-[${HERO.w}px] h-[64px] flex-row justify-center items-center gap-[18px] origin-center animate-${slam}"><View class="flex-row">${zh}</View><View class="flex-row">${en}</View></View>`;
+}
+/** A hazard cap: diagonal stripes across the plate's end. */
+function hazard(): string {
+  return pngFile("hazard", (() => {
+    const w = 28;
+    const h = HERO.h;
+    const px = new Uint8Array(w * h * 4);
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const on = ((i + j) % 16) < 8;
+        const o = (j * w + i) * 4;
+        px[o] = 255;
+        px[o + 1] = 255;
+        px[o + 2] = 255;
+        px[o + 3] = on ? 200 : 0;
+      }
+    }
+    return { width: w, height: h, rgba: px };
+  })(), false);
 }
 function lockup(): string {
   const out: string[] = [];
   const show = reg.anim(reg.window(T_FLIP));
-  bandPlates.push(rect(HERO.x, HERO.y, HERO.w, HERO.h, G.plate, "opacity-80", show));
+  bandPlates.push(rect(HERO.x, HERO.y, HERO.w, HERO.h, G.plate, "opacity-85", show));
+  const hz = hazard();
+  out.push(at(HERO.x - 28, HERO.y, img(hz, 28, HERO.h), "", show), at(HERO.x + HERO.w, HERO.y, img(hz, 28, HERO.h), "", show));
   out.push(rect(HERO.x, HERO.y, HERO.w, 2, G.hot, "origin-center", grow("x", T_FLIP - 4, 8)));
-  // the leader, dropped from the box's foot to the block as the brackets close
-  out.push(`<View class="absolute left-[${CX - 1}px] top-[${CY + LOCK_D}px] w-[2px] h-[${HERO.y - CY - LOCK_D}px] bg-[${G.hot}] origin-top animate-${reg.anim([reg.prop("scaleY", [[0, "0"], [T_FLIP - 6, "0"], [T_FLIP, "1"]], "cubic-bezier(0.16,1,0.3,1)")])}" />`);
-  out.push(`<View class="absolute inset-0 animate-${show}">${heroLines(false)}</View>`);
+  // the leader, dropped from the box's foot to the block as the brackets close; it goes with the rings
+  out.push(`<View class="absolute left-[${CX - 1}px] top-[${CY + LOCK_D}px] w-[2px] h-[${HERO.y - CY - LOCK_D}px] bg-[${G.hot}] origin-top animate-${reg.anim([reg.prop("scaleY", [[0, "0"], [T_FLIP - 6, "0"], [T_FLIP, "1"]], "cubic-bezier(0.16,1,0.3,1)"), reg.window(0, T_END + 8)])}" />`);
+  out.push(heroTitle(G.hot));
+  // the coordinates type in under it, two frames a character, behind a block cursor
+  const coord = "N31°14′  E121°29′";
+  out.push(typed(CX - Math.round((coord.length * 34 * 0.6) / 2), HERO.y + 82, 34, [[coord, G.hot]], T_FLIP + 8, { cps: 4, cursorUntil: T_FLIP + 8 + coord.length * 4 + 24 }));
+  out.push(at(HERO.x + 24, HERO.y + HERO.h - 34, `<View class="flex-row items-center gap-[8px]">${mono("PRIORITY 1", 15, G.mid)}${mono("·", 14, G.mid)}${cjk("一级优先", 16, G.mid)}</View>`, "", reg.anim(power(T_FLIP + 20, T_END + 12))));
   return out.join("\n");
 }
-/** The verdict's first two frames, white, above the tint: the hit burns it in before the orange takes it. */
+/** The title's first two frames, white, above the tint: the hit burns it in before the orange takes it. */
 function heroHot(): string {
-  return `<View class="absolute inset-0 glow-[16px] glow-[#ffffff] glow-gain-[1.4] animate-${reg.anim(reg.window(T_FLIP, T_FLIP + 4))}">${heroLines(true)}</View>`;
+  return `<View class="absolute inset-0 glow-[16px] glow-[#ffffff] glow-gain-[1.4] animate-${reg.anim(reg.window(T_FLIP, T_FLIP + 4))}">${heroTitle("#ffffff")}</View>`;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -925,7 +1005,7 @@ function aisGap(): string {
   out.push(rect(x0, by, span, 1, G.low, "origin-left", grow("x", 28, 18)));
   for (let h = -6; h <= 0; h++) {
     out.push(rect(hx(h), by - 4, 1, 9, G.mid, "", reg.anim(power(30 + (h + 6) * 2))));
-    out.push(at(hx(h) - (h === 0 ? 14 : 8), by + 10, mono(h === 0 ? "NOW" : `${h}h`, 11, G.low), "", reg.anim(power(32 + (h + 6) * 2))));
+    out.push(at(hx(h) - (h === 0 ? 30 : 8), by + 10, mono(h === 0 ? "NOW" : `${h}h`, 11, G.low), "", reg.anim(power(32 + (h + 6) * 2))));
   }
   // a ping every ten minutes until 2 h 47 min ago, loading in left to right
   const last = -(2 + 47 / 60);
@@ -994,6 +1074,9 @@ function interceptPanel(): string {
   const x = LX + 20;
   out.push(at(x, 762, `<View class="flex-col gap-[6px]">${mono("CG-2108 · PATROL CUTTER", 13, G.mid)}${mono("BRG 248° · 31 KN · 12.6 NM", 13, G.mid)}</View>`, "", reg.anim(power(90))));
   out.push(at(x, 822, mono("STANDBY", 16, G.low), "", reg.anim(power(96, T_INT))));
+  // while it stands by, its log types two frames a character, and goes when the cutter is tasked
+  const log = ["> UPLINK VEGA-7 · NOMINAL", "> CG-2108 ON STATION 31.06N", "> AWAIT TASKING · RTB 02:10"];
+  out.push(`<View class="absolute inset-0 animate-${reg.anim(reg.window(0, T_INT))}">${log.map((l, i) => typed(x, 856 + i * 22, 13, [[l, G.mid]], 180 + i * 96, { cps: 4, cursorUntil: 180 + i * 96 + l.length * 4 + (i === log.length - 1 ? 60 : 8) })).join("")}</View>`);
   out.push(at(x, 830, mono("ETA", 13, G.mid), "", reg.anim(reg.window(T_INT))));
   out.push(typed(x, 884, 14, [["> TASKED", G.hot]], T_TASK, { cursorUntil: TICKS }));
   out.push(at(x + 9 * 8.4 + 14, 884, cjk("拦截已下达", 13, G.mid), "", reg.anim(power(T_TASK + 12))));
@@ -1157,8 +1240,8 @@ function speedLines(): string {
 const defocusEntry = reg.prop("blur", [[0, "0px"], [T_PUSH, "0px"], [T_PUSH + 8, "8px"], [T_PUSH + 30, "0px"]]);
 // …and on 9.5 s the suite stands down in reverse order of what it built: panels first, the rings two ticks later,
 //   the lens two after that, leaving the lock, the vessel and the verdict
-const dim = reg.anim([reg.prop("opacity", [[0, "1"], [T_HOLD, "1"], [T_HOLD + 24, "0.72"], [T_END - 1, "0.72"], [T_END, "0"]]), defocusEntry]);
-const outAt = (t: number) => reg.anim(reg.window(0, t));
+const dim = reg.anim([reg.prop("opacity", [[0, "1"], [T_HOLD, "1"], [T_HOLD + 24, "0.72"], [T_END, "0.72"], [T_END + 6, "0"]]), defocusEntry]);
+const outAt = (t: number) => reg.anim(reg.prop("opacity", [[0, "1"], [t, "1"], [t + 6, "0"]]));
 const defocus = reg.anim(defocusEntry);
 const GLOW = "glow-[12px] glow-[#ffffff] glow-gain-[1.0]";
 const centre = [hexGrid(), crosshair(), globe(), coast()].join("\n");
@@ -1179,16 +1262,16 @@ const tears = GLITCH.flatMap((t, i) =>
 const border = `<View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[${G.hot}] border-[3px] animate-${reg.anim(reg.window(T_FLIP + 30))}"><View class="absolute inset-0 border-[${G.hot}] border-[3px] animate-${reg.loop([reg.short({ "0%": { opacity: "1" }, "50%": { opacity: "0.6" }, "100%": { opacity: "1" } }, B)], B)}" /></View>`;
 const top = [kelvinLabel(), confirmStamp(), tears, border].join("\n");
 const hud = `
-      <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END + 4)}">${centre}</View>
-      <View class="absolute inset-0 animate-${outAt(T_END + 4)}">${rim}</View>
-      <View class="absolute inset-0 animate-${outAt(T_END + 2)}">${sweep}</View>
-      <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END + 2)}">${centreTop}</View>
+      <View class="absolute inset-0 ${GLOW} animate-${reg.anim(reg.prop("opacity", [[0, "1"], [T_END + 12, "1"], [T_END + 18, "0.7"]]))}">${centre}</View>
+      <View class="absolute inset-0 animate-${outAt(T_END + 18)}">${rim}</View>
+      <View class="absolute inset-0 animate-${outAt(T_END + 12)}">${sweep}</View>
+      <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END + 12)}">${centreTop}</View>
       <View class="absolute inset-0 ${GLOW}">${lock()}${course()}</View>
       <View class="absolute inset-0 animate-${dim}">${panelPlates.join("")}</View>
       <View class="absolute inset-0 ${GLOW} animate-${dim}">${panels}</View>
       <View class="absolute inset-0">${bandPlates.join("")}</View>
-      <View class="absolute inset-0 ${GLOW}">${lockup()}${typed(HERO.x + 24, HERO.y + HERO.h + 10, 16, [["> HANDOFF → CG-2108", G.hot]], T_END + 2, { cursorUntil: TICKS })}</View>
-      <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END)}">${top}</View>`;
+      <View class="absolute inset-0 ${GLOW}">${lockup()}${typed(HERO.x + 24, HERO.y + HERO.h - 36, 16, [["> HANDOFF → CG-2108", G.hot]], T_END + 18, { cps: 2, cursorUntil: TICKS })}</View>
+      <View class="absolute inset-0 ${GLOW} animate-${outAt(T_END + 6)}">${top}</View>`;
 
 // the alert spreads from the contact to every corner: the gradient's box is a square the width of the frame,
 // so its farthest-corner ellipse is a circle, and 0.85 of its radius clears the frame's corners
@@ -1201,7 +1284,7 @@ const tint = reg.anim([
 ]);
 // the punch: the HUD scales 1.06 -> 1 over six frames, jolting sideways once; from the landing it pushes in 3 % to the end
 const punch = reg.anim([
-  reg.prop("scale", [[0, "1"], [T_FLIP, "1"], [T_FLIP + 1, "1.06"], [T_FLIP + 12, "1"], [T_LAND, "1"], [T_END, "1.03"]], "cubic-bezier(0.16,1,0.3,1)"),
+  reg.prop("scale", [[0, "1"], [T_SEARCH, "1"], [T_FLIP, "1.025"], [T_FLIP + 1, "1.08"], [T_FLIP + 12, "1"], [T_LAND, "1"], [T_END, "1.03"]], "cubic-bezier(0.16,1,0.3,1)"),
   reg.step("translateX", [
     [0, "0px"], [120, "8px"], [122, "0px"], [264, "-10px"], [266, "4px"], [268, "0px"], [384, "6px"], [386, "0px"],
     [T_FLIP, "10px"], [T_FLIP + 2, "-6px"], [T_FLIP + 4, "0px"], [T_FLIP + 31, "4px"], [T_FLIP + 33, "0px"],
@@ -1209,7 +1292,7 @@ const punch = reg.anim([
 ]);
 
 // the alert keeps a near-black ground: the grey under the tint drops by 60 % as it flips, so only the linework turns orange
-const groundDown = reg.anim(reg.prop("opacity", [[0, "0"], [T_FLIP, "0"], [T_FLIP + 4, "0.86"]]));
+const groundDown = reg.anim(reg.prop("opacity", [[0, "0"], [T_FLIP, "0"], [T_FLIP + 4, "0.95"]]));
 // chromatic aberration: the reticle again in red and blue, a pixel and a half off, seven on the flip
 // chromatic aberration: the reticle again in red and blue, 1.5 px off; 6 px on each glitch, 8 px decaying over four frames on the flip
 const caX = (sign: number) => {
@@ -1224,8 +1307,8 @@ const caX = (sign: number) => {
     if (merged.length && a <= merged[merged.length - 1]![1]) merged[merged.length - 1]![1] = Math.max(merged[merged.length - 1]![1], z);
     else merged.push([a, z]);
   }
-  const on: [number, string][] = [[0, "0"]];
-  for (const [a, z] of merged) on.push([a, "0.45"], [z, "0"]);
+  const on: [number, string][] = [[0, "0.16"]];
+  for (const [a, z] of merged) on.push([a, "0.45"], [z, "0.16"]);
   return reg.anim([reg.prop("translateX", k), reg.step("opacity", on)]);
 };
 // the alarm sweeps: the frame's edge flares orange and the border doubles for a few frames
@@ -1257,6 +1340,7 @@ ${hud}
     <View class="absolute inset-0 mix-blend-screen animate-${caX(1)}">${reticle("#ff1f3d", "#7a0f1d", true)}</View>
     <View class="absolute inset-0 mix-blend-screen animate-${caX(-1)}">${reticle("#1f6bff", "#0f2f7a", true)}</View>
     <View class="absolute inset-0 bg-[radial-gradient(#ff2a0000,#ff2a0030)] mix-blend-screen animate-${reg.anim([reg.window(T_FLIP)])}"><View class="absolute inset-0 animate-${reg.loop([reg.short(wash, B, "ease-out", 0)], B)}" /></View>
+    <View class="absolute inset-0 bg-[#ffffff] mix-blend-screen animate-${reg.anim(reg.step("opacity", [[0, "0"], [T_FLIP, "0.15"], [T_FLIP + 2, "0"]]))}" />
     <View class="absolute inset-0 bg-[radial-gradient(#ff6a0000,#ff6a0000_55%,#ff6a00b0)] mix-blend-screen animate-${alarm}" />
     <View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[#ffd6a8] border-[7px] animate-${alarmEdge}" />
     <View class="absolute inset-0 origin-center animate-${punch}">${lockCore()}${alertFront()}${hullTop()}${heroHot()}</View>
