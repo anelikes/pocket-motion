@@ -97,6 +97,7 @@ patch's own header carries the full note.
 | 0021 | upstream | TEX_QUAD takes its sampling taps once per column and once per row instead of per pixel: a tap on a texel centre reads one texel instead of four, and an RGBA8888 texel of alpha 0 there is skipped. Byte-identical by construction; a core test holds `tex_quad` equal to the per-pixel sampler it replaced. No target-side change, so it belongs to upstream's software rasteriser as much as to this one | unsubmitted | applied unchanged |
 | 0022 | motion | the wasm core builds at `opt-level = 3` with `+simd128` (was `"s"`): the same pixels; the module grows from 312 to 513 KB | never; the header says why | applied unchanged |
 | 0023 | upstream | the build's style table, which upstream #591 serves from memory, stays in the file namespace, so a bundle names it `vendor/pocketjs/framework/src/styles.generated.ts` rather than `pocketjs-generated-styles:/<the checkout>/…`; and a `styles.generated.ts` reaching the loader at any other path fails the build naming both paths, where main bundles it from disk (a red class drawn blue, exit 0) | unsubmitted; #591 itself merged 2026-10-19 (`586428b2`) | new at this pin: the two departures the old pin's #591 backport made, against main's form; `tests/style-table.test.ts` was red on main's form in both |
+| 0040 | upstream | the build's SVG baker covers by scanline instead of testing every subsample against every edge — the same 4x4 samples, the same crossing arithmetic, so every pixel's count is the integer it was (`tests/fixtures/bake-svg-reference.ts` is the old baker, kept as the oracle) and a 952-cell hex grid takes 63 ms instead of 23 minutes of CPU — and draws strokes (width, miter/round/bevel joins, butt/round/square caps, miter limit, stroke-opacity), `<g>` with transform, inherited paint and group opacity, `A` arcs, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>` and `rect` `rx`; what would paint and is not drawn is refused instead of dropped | unsubmitted | written on 66caf4e5 |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
 #591 since 586428b2, so the pin needs no backport. The two places the
@@ -117,9 +118,10 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Fifteen patches are class `upstream` and seven `motion`. Of the fifteen,
-thirteen are unsubmitted declaration- or build-layer changes; `0008` is #301,
-and `0021` is a rasteriser change with no target-side cost.
+Sixteen patches are class `upstream` and seven `motion`. Of the sixteen,
+fourteen are unsubmitted declaration- or build-layer changes, `0040`, the
+build-time SVG baker every target's pak goes through, among them; `0008` is
+#301, and `0021` is a rasteriser change with no target-side cost.
 
 ## Known gaps the rebase left
 

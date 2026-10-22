@@ -266,3 +266,8 @@ Each of these is a decision with a reason, not a gap to fill.
   checks — declared, resolvable, correctly placed — and not digest coverage.
 - **A missing still picture is refused rather than substituted.** Upstream's
   build bakes a checkerboard and succeeds; `lint` and `check` say no.
+- **An SVG bakes as written or stops the build.** Paths with arcs, circles,
+  ellipses, rounded rects, lines, polylines and polygons, fills and strokes
+  with joins and caps, and `<g transform>` are drawn; `<text>`, `<use>`,
+  `<image>`, `clip-path`, `stroke-dasharray` and the rest are refused by
+  name. The table is in AUTHORING.md under "Still pictures".

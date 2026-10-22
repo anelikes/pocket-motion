@@ -499,6 +499,24 @@ mechanisms with the file or test beside them.
   `compositions/missing-image` is the fixture and traces green on purpose;
   `check` asks before booting, because a clean realm is exactly what a missing
   picture leaves behind.
+- **An SVG either bakes as written or stops the build.** The build's baker
+  (`framework/compiler/bake-svg.ts`, `patches/0040`) used to scan a file for
+  three tag names and drop the rest — a `<text>`, a rect's `rx`, a transform
+  on a circle, paint on a `<g>` — so a picture could lose parts of itself
+  with every gate green; and it decided each subsample against every edge,
+  which on a 952-cell hex grid took 23 minutes of CPU, so a film rasterised
+  its own PNGs instead. It now walks the document, draws strokes, arcs and
+  `<g transform>`, and refuses what would paint and is not drawn, naming it.
+  Its coverage is a scanline held to the old baker kept verbatim as the
+  vendored `tests/fixtures/bake-svg-reference.ts`, count for count: every
+  shipped SVG at densities 1-3, seeded random fills and discs, and fills
+  whose edges pass through sample positions so the crossing's last bit
+  decides — the only cases that catch the same line computed from its other
+  endpoint, which no shipped SVG and about one random fill in 1,500 does.
+  `compositions/probe` bakes `mark.svg` and is in the digest ledger.
+  `tests/svg-bake.test.ts` holds it here; the vendored suite of the same
+  name, which this repository's `bun test ./tests/` does not run, holds
+  the rest.
 - **A job is a spec, and the sample is not the job.** `render --spec job.json`
   stages a throwaway copy of the composition (`src/cli/stage-sources.ts`), runs
   the generator into it, builds, encodes and removes the tree, so a batch never
@@ -877,6 +895,15 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   works because `readCache` wants all three of `cache.json`, `manifest.json`
   and `frames.rgba` and takes a missing one as a miss. Stating the recipe in
   the key would be the fix, at the cost of re-decoding every track once.
+- **An SVG's angles go through the host's `Math`.** `rotate()` and an
+  arc's x-axis-rotation take `Math.cos` and `Math.sin`, and `skewX`/`skewY`
+  take `Math.tan`, in the baker that writes the pak — upstream's choice for
+  `rotate()`, kept so the shipped icons bake to their old bytes. Whether
+  those agree bit for bit between the Bun on macOS/arm64 and the one on
+  Linux/x86-64 has not been measured, and nothing would report it: the one
+  SVG in the digest ledger (`compositions/probe/mark.svg`) has no angle in
+  it. An angle that is a multiple of 90 degrees is not exempt — `cos(90°)`
+  comes back as 6e-17, not 0.
 - **Two builds into ONE directory are ordered by nothing.** Builds into
   different directories share nothing but the content-addressed transform
   cache. Into the same one, identical inputs write identical bytes — three
