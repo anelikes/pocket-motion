@@ -8,6 +8,9 @@
   "ring.png": {
     "linear": true
   },
+  "disc.png": {
+    "linear": true
+  },
   "rim.png": {
     "linear": true
   },
@@ -17,11 +20,8 @@
   "coast-wide.png": {
     "linear": true
   },
-  "coast.png": {
-    "linear": true
-  },
-  "track.png": {
-    "linear": true
+  "sar-lens.png": {
+    "linear": false
   },
   "wedge.png": {
     "linear": true
@@ -32,11 +32,11 @@
   "burst.png": {
     "linear": true
   },
-  "sar-noise.png": {
-    "linear": false
+  "spark-snr.png": {
+    "linear": true
   },
-  "sar-ship.png": {
-    "linear": false
+  "spark-coh.png": {
+    "linear": true
   },
   "scan.png": {
     "linear": false

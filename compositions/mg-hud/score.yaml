@@ -4,7 +4,8 @@
 #   2.0–5.5 s 底层让开（能量压低），雷达扫到 C-01/02/03 各一声，视距每拍滚动一次各一声轻 chirp
 #   4.0 s 扫描第一圈扫过 C-04：双响 + ding
 #   5.5–6.5 s 锁定读数 0→100%：锁定音每个十六分音符升一级，6.0 s 起音乐被压出一个洞
-#   6.5 s 括号落定 = 全画面翻橙：冲击 + 双音警报；6.75 s 雷达成像片出来；6.9 s 俯冲 whoosh；8.5 s 着陆
+#   6.5 s 括号落定 = 全画面翻橙：冲击 + 低频下潜 + 双音警报；6.9 s 俯冲 whoosh
+#   7.0 s 镜头里扫出那艘船的雷达图像 · 7.5 s 开尔文角画上尾迹 · 8.1 s CONFIRMED
 #   9.0 / 9.25 / 9.5 s 底部「目标锁定」告警闪三下，各一声
 title: Vega-7
 meta:
@@ -14,9 +15,9 @@ meta:
   seed: 0
 
 sections:
-  - { name: boot,   bars: 1, energy: 0.3 }                       # 0:00–0:02
-  - { name: search, bars: 1, energy: 0.28, at: "0:02" }           # 0:02–0:04 底层让开，提示音在前
-  - { name: track,  bars: 1, energy: "0.3->0.65", at: "0:04" }    # 0:04–0:06 向锁定蓄力，给锁定那一下留出余量
+  - { name: boot,   bars: 1, energy: 0.25 }                      # 0:00–0:02
+  - { name: search, bars: 1, energy: 0.2, at: "0:02" }            # 0:02–0:04 底层让开，提示音在前
+  - { name: track,  bars: 1, energy: "0.2->0.45", at: "0:04" }    # 0:04–0:06 向锁定蓄力，给锁定那一下留出余量
   - { name: alert,  bars: 2, energy: "1.0->0.75", at: "0:06" }    # 0:06–0:10
 
 harmony:
@@ -53,7 +54,8 @@ tracks:
     gain: 7
     in: [boot, search, track, alert]
     notes:
-      boot:   "r/16 r/16 r/16 D6/16' r/16 D6/16' r/16 D6/16' r/16 D6/16' r/16 A6/16' r/16 r/16 r/16 r/16"
+      # the five MODE rows type in on sixteenths 4, 6, 8, 10 and 12, each a step higher
+      boot:   "r/16 r/16 r/16 r/16 D6/16' r/16 E6/16' r/16 F6/16' r/16 A6/16' r/16 D7/16' r/16 r/16 r/16"
       # C-01 / C-02 / C-03 flare as the sweep crosses them; the survey grid's own blip on the last 16th
       search: "r/16 r/16 r/16 A6/16' r/16 r/16 r/16 F6/16' r/16 r/16 r/16 A6/16' r/16 r/16 r/16 D7/16'"
       # the lock tone: one step up every 16th from the brackets opening (5.5 s) to the snap landing (6.5 s)
@@ -120,7 +122,12 @@ sfx:
   # a near-silent pop whose only job is its duck: the bed drops out for the beat before the hit
   - { type: pop, at: "0:06.02", level: 0.02, duck: 18 }
   - { type: impact, at: "0:06.5", duck: 6, level: 1.0 }
-  # the SAR chip resolving out of the noise
-  - { type: ding, at: "0:06.75", level: 0.3 }
+  - { type: sub-drop, at: "0:06.5", level: 0.7 }
+  # the lens scans the radar image of the vessel, the Kelvin V is drawn on it, the evidence is confirmed
+  - { type: ding, at: "0:07.0", level: 0.3 }
+  - { type: pop, at: "0:07.5", level: 0.3 }
+  - { type: ding, at: "0:08.1", level: 0.4 }
+  # a tail that rings past the last frame instead of stopping
+  - { type: ding, at: "0:09.6", level: 0.25 }
   - { type: whoosh, at: "0:06.9", level: 0.5 }
   - { type: downlifter, at: "0:08.5", level: 0.35 }

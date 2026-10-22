@@ -17,8 +17,8 @@
  * from the other corner turns them back onto the finished poster. BAUHAUS is
  * stamped a letter per sixteenth.
  *
- * Motion is sampled here at 60 Hz and baked as linear keyframes (motion.ts).
- * Forms are signed-distance PNGs with a printed edge (ink.ts), each ink
+ * Motion is sampled here at 60 Hz and baked as linear keyframes (src/anim/sampled.ts).
+ * Forms are signed-distance PNGs with a printed edge (src/image/print.ts), each ink
  * offset by its plate's misregistration; the paper is the ground under them.
  *
  *   bun compositions/mg-bauhaus/gen.ts
@@ -26,10 +26,10 @@
  */
 
 import { fileURLToPath } from "node:url";
-import * as opentype from "../../vendor/pocketjs/node_modules/opentype.js/dist/opentype.mjs";
-import { encodePNG } from "../../vendor/pocketjs/tests/png.ts";
-import * as ink from "./ink.ts";
-import { El, Reg, inOut, jsx, lerp, type State } from "./motion.ts";
+import { El, Reg, inOut, jsxText as jsx, stateAt } from "../../src/anim/sampled.ts";
+import * as print from "../../src/image/print.ts";
+import { encodePlate, turnPlate, type Plate } from "../../src/image/raster.ts";
+import { loadFace, setWord } from "../../src/text/outline.ts";
 import { GY, INK, M, MISREG, POSTER, gx, gy, type Form, type Ink } from "./poster.ts";
 
 const OUT = fileURLToPath(new URL(".", import.meta.url));
@@ -51,10 +51,10 @@ const CY = 540;
 
 const writes: Promise<number>[] = [];
 const images: Record<string, { linear: boolean }> = {};
-function png(name: string, buf: Buffer, linearSample = true): string {
+function png(name: string, plate: Plate, linearSample = true): string {
   const file = `${name}.png`;
   images[file] = { linear: linearSample };
-  writes.push(Bun.write(`${OUT}${file}`, buf));
+  writes.push(encodePlate(plate).then((bytes) => Bun.write(`${OUT}${file}`, bytes)));
   return file;
 }
 const rgb = (hex: string): [number, number, number] => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
@@ -71,7 +71,7 @@ function formFile(f: { kind: Form["kind"]; ink: Ink; w: number; h: number }, see
   const q = ((quarters % 4) + 4) % 4;
   const key = `${f.kind}-${f.ink}-${f.w}x${f.h}-${seed}${q ? `-q${q}` : ""}`;
   // twice the drawn size, unless that passes the 2048 px a picture may be
-  if (!formFiles.has(key)) formFiles.set(key, png(`f-${key}`, ink.form(f.kind, f.w, f.h, rgb(INK[f.ink]), seed, Math.min(2, 2048 / Math.max(f.w, f.h)), q)));
+  if (!formFiles.has(key)) formFiles.set(key, png(`f-${key}`, print.form(f.kind, f.w, f.h, rgb(INK[f.ink]), seed, Math.min(2, 2048 / Math.max(f.w, f.h)), q)));
   return formFiles.get(key)!;
 }
 /** A form's PNG in its box, its poster turn `rot` baked into the picture. */
@@ -81,117 +81,17 @@ function formInner(f: Form, seed: number): string {
 
 // ── type as outlines ───────────────────────────────────────────────────────
 
-const archivo = opentype.parse(await Bun.file(`${OUT}fonts/ArchivoBlack-Regular.ttf`).arrayBuffer());
+const archivo = await loadFace(`${OUT}fonts/ArchivoBlack-Regular.ttf`);
 
 /**
  * BAUHAUS set vertically, reading upward, its cap height exactly one module
- * and its length exactly eight: the word is scaled to the box, not to a size.
- * Rasterised by scanlines (non-zero, 4×4 subsamples) from its flattened
- * outline, then cut between its glyphs into one picture per letter, so each
- * letter can be stamped on its own sixteenth.
+ * and its length exactly eight: the word is scaled to the box, not to a size
+ * (src/text/outline.ts), and cut between its glyphs into one picture per
+ * letter, so each letter can be stamped on its own sixteenth.
  */
 function verticalWord(text: string, capH: number, length: number, color: string): { letters: { file: string; top: number; h: number }[]; w: number; h: number } {
-  const p = archivo.getPath(text, 0, 0, 100, { kerning: true });
-  const bb = p.getBoundingBox();
-  const sx = length / (bb.x2 - bb.x1);
-  const sy = capH / (bb.y2 - bb.y1);
-  const S = 2;
-  const w = capH;
-  const h = length;
-  const polys: [number, number][][] = [];
-  let cur: [number, number][] = [];
-  const P = (x: number, y: number): [number, number] => [(y - bb.y1) * sy * S, (length - (x - bb.x1) * sx) * S];
-  let last: [number, number] = [0, 0];
-  for (const c of p.commands as { type: string; x: number; y: number; x1: number; y1: number; x2: number; y2: number }[]) {
-    if (c.type === "M") {
-      if (cur.length) polys.push(cur);
-      cur = [P(c.x, c.y)];
-      last = [c.x, c.y];
-    } else if (c.type === "L") {
-      cur.push(P(c.x, c.y));
-      last = [c.x, c.y];
-    } else if (c.type === "Q") {
-      for (let k = 1; k <= 8; k++) {
-        const t = k / 8;
-        cur.push(P((1 - t) ** 2 * last[0] + 2 * (1 - t) * t * c.x1 + t * t * c.x, (1 - t) ** 2 * last[1] + 2 * (1 - t) * t * c.y1 + t * t * c.y));
-      }
-      last = [c.x, c.y];
-    } else if (c.type === "C") {
-      for (let k = 1; k <= 10; k++) {
-        const t = k / 10;
-        const u = 1 - t;
-        cur.push(P(u ** 3 * last[0] + 3 * u * u * t * c.x1 + 3 * u * t * t * c.x2 + t ** 3 * c.x, u ** 3 * last[1] + 3 * u * u * t * c.y1 + 3 * u * t * t * c.y2 + t ** 3 * c.y));
-      }
-      last = [c.x, c.y];
-    } else if (c.type === "Z") {
-      if (cur.length) polys.push(cur);
-      cur = [];
-    }
-  }
-  if (cur.length) polys.push(cur);
-  const PW = w * S;
-  const PH = h * S;
-  const cov = new Float32Array(PW * PH);
-  const SS = 4;
-  for (let j = 0; j < PH; j++) {
-    for (let sj = 0; sj < SS; sj++) {
-      const yy = j + (sj + 0.5) / SS;
-      const xs: [number, number][] = [];
-      for (const poly of polys) {
-        for (let i = 0; i < poly.length; i++) {
-          const [x0, y0] = poly[i]!;
-          const [x1, y1] = poly[(i + 1) % poly.length]!;
-          if ((y0 <= yy && y1 > yy) || (y1 <= yy && y0 > yy)) xs.push([x0 + ((yy - y0) / (y1 - y0)) * (x1 - x0), y1 > y0 ? 1 : -1]);
-        }
-      }
-      xs.sort((a, c) => a[0] - c[0]);
-      let wind = 0;
-      for (let k = 0; k < xs.length - 1; k++) {
-        wind += xs[k]![1];
-        if (wind === 0) continue;
-        const a = xs[k]![0];
-        const z = xs[k + 1]![0];
-        for (let s2 = 0; s2 < SS; s2++) {
-          const off = (s2 + 0.5) / SS;
-          const i0 = Math.max(0, Math.ceil(a - off));
-          const i1 = Math.min(PW - 1, Math.floor(z - off));
-          for (let i = i0; i <= i1; i++) cov[j * PW + i]! += 1 / (SS * SS);
-        }
-      }
-    }
-  }
-  // where each glyph sits along the line, in the path's own units, with the same kerning getPath applied
-  const glyphs = archivo.stringToGlyphs(text);
-  const em = 100 / archivo.unitsPerEm;
-  const ext: [number, number][] = [];
-  let pen = 0;
-  glyphs.forEach((gl: { advanceWidth: number; getBoundingBox(): { x1: number; x2: number } }, i: number) => {
-    const gb = gl.getBoundingBox();
-    ext.push([pen + gb.x1 * em, pen + gb.x2 * em]);
-    pen += gl.advanceWidth * em;
-    if (i < glyphs.length - 1) pen += archivo.getKerningValue(gl, glyphs[i + 1]) * em;
-  });
-  const cuts = [bb.x1 - 1, ...ext.slice(1).map(([x0], i) => (ext[i]![1] + x0) / 2), bb.x2 + 1];
-  // the word reads upward: glyph x maps to image row (length - (x - x1) * sx) * S, on even rows so each letter lands on a whole pixel
-  const row = (x: number) => Math.max(0, Math.min(PH, 2 * Math.round(((length - (x - bb.x1) * sx) * S) / 2)));
-  const [r, g, bl] = rgb(color);
-  const letters = text.split("").map((ch, i) => {
-    const r0 = row(cuts[i + 1]!);
-    const r1 = row(cuts[i]!);
-    const LH = r1 - r0;
-    const px = new Uint8Array(PW * LH * 4);
-    for (let j = 0; j < LH; j++) {
-      for (let x = 0; x < PW; x++) {
-        const k = (j * PW + x) * 4;
-        px[k] = r;
-        px[k + 1] = g;
-        px[k + 2] = bl;
-        px[k + 3] = Math.round(Math.min(1, cov[(r0 + j) * PW + x]!) * 255);
-      }
-    }
-    return { file: png(`word-${i}-${ch}`, encodePNG(px, PW, LH)), top: r0 / S, h: LH / S };
-  });
-  return { letters, w, h };
+  const set = setWord(archivo, text, capH, length, rgb(color), "up", 2);
+  return { letters: set.letters.map((l, i) => ({ file: png(`word-${i}-${text[i]}`, l.plate), top: l.at, h: l.size })), w: set.w, h: set.h };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -235,43 +135,6 @@ function posterNodes(ox: number, oy: number): string {
     const f = misreg(f0);
     return `<View class="absolute left-[${f.x + ox}px] top-[${f.y + oy}px] w-[${f.w}px] h-[${f.h}px]">${formInner(f, seedOf(f.id))}</View>`;
   }).join("");
-}
-
-/** An element's state at tick t: the baked keys are linear, so this is what the core will draw. */
-function stateAt(el: El, t: number): State {
-  const ks = [...el.keys.keys()].sort((a, c) => a - c);
-  if (t <= ks[0]!) return { ...el.keys.get(ks[0]!)! };
-  for (let i = 0; i + 1 < ks.length; i++) {
-    const a = ks[i]!;
-    const z = ks[i + 1]!;
-    if (t >= a && t <= z) {
-      const p = el.keys.get(a)!;
-      const q = el.keys.get(z)!;
-      const u = z === a ? 1 : (t - a) / (z - a);
-      return { cx: lerp(p.cx, q.cx, u), cy: lerp(p.cy, q.cy, u), rot: lerp(p.rot, q.rot, u), sx: lerp(p.sx, q.sx, u), sy: lerp(p.sy, q.sy, u), op: lerp(p.op, q.op, u) };
-    }
-  }
-  return { ...el.keys.get(ks[ks.length - 1]!)! };
-}
-
-/**
- * An echo of a fast move: the element again, `lag` ticks behind it at
- * `alpha` of its opacity, present only inside `spans`. Two of them stand in
- * for the motion blur a tick-quantised core cannot draw, and read as a
- * multiple exposure, which the style allows.
- */
-function echo(el: El, lag: number, alpha: number, spans: [number, number][]): El {
-  const g = new El(reg, el.home, { op: 0 });
-  for (const [a, z] of spans) {
-    g.keys.set(a + lag - 1, { ...stateAt(el, a - 1), op: 0 });
-    for (let t = a + lag; t <= z + lag; t++) {
-      const s = stateAt(el, t - lag);
-      g.keys.set(t, { ...s, op: s.op * alpha });
-    }
-    g.keys.set(z + lag + 1, { ...stateAt(el, z), op: 0 });
-  }
-  g.s = { ...stateAt(el, TICKS), op: 0 };
-  return g;
 }
 
 function forms(): string {
@@ -390,7 +253,7 @@ function forms(): string {
  * three mosaics of itself in all four inks; after the fourth wave every cell
  * has turned a whole turn and the poster is back, on b16.
  *
- * A cell between waves is a picture already turned in pixels (ink.turned),
+ * A cell between waves is a picture already turned in pixels (turnPlate),
  * so nothing rests as a turned quad; only the six frames of each turn are.
  */
 const WAVES: { from: [number, number]; at: number }[] = [
@@ -408,13 +271,12 @@ const waveStart = (w: number, c: number, r: number) => {
 
 function cells(): string {
   if (STATIC) return "";
-  const placed: (Form & ink.Placed)[] = POSTER.map((f0) => {
+  const placed: (Form & print.Placed)[] = POSTER.map((f0) => {
     const f = misreg(f0);
     return { ...f, rot: f.rot ?? 0, rgb: rgb(INK[f.ink]), seed: seedOf(f.id) };
   });
   const out: string[] = [];
   const SCALE = 2;
-  const n = M * SCALE;
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 16; c++) {
       const x = gx(c);
@@ -425,9 +287,9 @@ function cells(): string {
         return g.x < x + M && g.x + g.w > x && g.y < y + M && g.y + g.h > y;
       });
       if (!here.length) continue;
-      const px = ink.cell(here, x, y, M, SCALE);
+      const slice = print.cell(here, x, y, M, SCALE);
       const dir = (c + r) % 2 === 0 ? 1 : -1;
-      const files = [0, 1, 2, 3].map((q) => png(`cell-${c}-${r}-q${q}`, ink.encode(ink.turned(px, n, q), n, n)));
+      const files = [0, 1, 2, 3].map((q) => png(`cell-${c}-${r}-q${q}`, turnPlate(slice, q)));
       const starts = WAVES.map((_, w) => waveStart(w, c, r));
       // rest pictures: after wave k the cell has turned k quarters in its direction
       for (let k = 0; k <= 4; k++) {
@@ -544,8 +406,8 @@ function pivot(): string {
 
 /** The paper: a ground under the inks, at the spec colour, its mottle and a fine grain over all boiling at 10 fps. */
 function paper(): { ground: string; grain: string } {
-  const g = png("paper", ink.ground(1000, 570, rgb(INK.paper), 1919));
-  const gr = png("grain", ink.grain(1280, 720, 31));
+  const g = png("paper", print.ground(1000, 570, rgb(INK.paper), 1919));
+  const gr = png("grain", print.grain(1280, 720, 31));
   let a = "";
   if (!STATIC) {
     const xs: [number, string][] = [];
