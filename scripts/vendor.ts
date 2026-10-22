@@ -31,7 +31,6 @@ import { mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { UPSTREAM } from "../src/vendor/upstream.ts";
-import { seedMirror } from "../src/vendor/mirror.ts";
 import { patchFiles, vendorStatus } from "../src/vendor/status.ts";
 
 /**
@@ -54,6 +53,13 @@ async function sh(cmd: string[], cwd: string, env?: Record<string, string>): Pro
   ]);
   if (code !== 0) throw new Error(`${cmd.join(" ")} failed (${code})\n${err.trim()}`);
   return out.trim();
+}
+
+/** Repository-relative paths a patch creates, from `git apply --summary`. */
+async function createdBy(patch: string): Promise<string[]> {
+  const summary = await sh(["git", "apply", "--summary", patch], VENDOR);
+  // `sh` trims, so the first line has lost its leading space.
+  return [...summary.matchAll(/^\s*create mode \d+ (.+)$/gm)].map((m) => m[1]!);
 }
 
 /**
@@ -153,18 +159,22 @@ async function main(): Promise<void> {
   }
 
   const patches = await patchFiles();
+  // `git apply` refuses to create a file that is already there, and the
+  // checkout and clean above leave one behind exactly when the pin IGNORES
+  // it: `git clean -fd` keeps ignored files. 0023 creates
+  // `framework/src/styles.generated.ts`, which the pin's `.gitignore` covers
+  // and every build before 0023 wrote, so a re-run over an existing tree
+  // would stop there. Each file a patch creates is removed first; the patch
+  // is what supplies it. Not `git clean -x`, which would also take
+  // node_modules, the cargo target and the wasm.
+  for (const name of patches) {
+    for (const path of await createdBy(join(PATCHES, name))) {
+      await rm(join(VENDOR, path), { force: true });
+    }
+  }
   for (const name of patches) {
     console.log(`vendor: applying ${name}`);
     await sh(["git", "apply", join(PATCHES, name)], VENDOR);
-  }
-  // A tree with no `framework/src/styles.generated.ts` is a tree whose FIRST
-  // build has to resolve a path its own pass 1 creates, and upstream's
-  // `tools/site-build.ts` seeds this same stub rather than depend on Bun
-  // noticing. `src/vendor/mirror.ts` carries the mechanism and the CI run it
-  // came from. `git clean -qfd` above leaves ignored files alone, so a re-run
-  // over an existing tree keeps whatever table the last build wrote.
-  if (seedMirror(VENDOR)) {
-    console.log("vendor: seeded framework/src/styles.generated.ts (placeholder)");
   }
 
   if (!args.includes("--no-wasm")) await buildWasm();

@@ -15,7 +15,6 @@ import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { mirrorPath } from "./mirror.ts";
 import { UPSTREAM } from "./upstream.ts";
 
 /** The repository root — this module sits at `src/vendor/`. */
@@ -44,18 +43,6 @@ export interface VendorStatus {
   /** The wasm the web host loads. A patch touching Rust does not reach it until rebuilt. */
   readonly wasmPath: string;
   readonly wasmPresent: boolean;
-  /**
-   * `framework/src/styles.generated.ts` — the style table a build writes in
-   * pass 1 and resolves off disk in pass 2.
-   *
-   * It is upstream-gitignored, so a tree that never ran `bun run vendor` (or
-   * one somebody cleaned with `git clean -x`) does not have it, and the first
-   * build there has to resolve a path it creates mid-run. `src/vendor/mirror.ts`
-   * carries the mechanism; this is the field that lets `doctor` say so instead
-   * of a build saying `Could not resolve` two passes later.
-   */
-  readonly mirrorPath: string;
-  readonly mirrorPresent: boolean;
 }
 
 /** Every `patches/*.patch`, sorted — the order `scripts/vendor.ts` applies them in. */
@@ -76,7 +63,6 @@ async function git(args: readonly string[], cwd: string): Promise<string | null>
 
 export async function vendorStatus(): Promise<VendorStatus> {
   const wasmPath = join(VENDOR, "hosts", "web", "pocketjs.wasm");
-  const mirror = mirrorPath(VENDOR);
   const patches = await patchFiles();
   if (!existsSync(VENDOR)) {
     return {
@@ -88,8 +74,6 @@ export async function vendorStatus(): Promise<VendorStatus> {
       dirtyLines: [],
       wasmPath,
       wasmPresent: false,
-      mirrorPath: mirror,
-      mirrorPresent: false,
     };
   }
   const head = await git(["rev-parse", "--short", "HEAD"], VENDOR);
@@ -103,8 +87,6 @@ export async function vendorStatus(): Promise<VendorStatus> {
     dirtyLines: dirty ? dirty.split("\n").filter(Boolean) : [],
     wasmPath,
     wasmPresent: existsSync(wasmPath),
-    mirrorPath: mirror,
-    mirrorPresent: existsSync(mirror),
   };
 }
 
@@ -137,12 +119,6 @@ export function vendorProblems(status: VendorStatus): string[] {
   }
   if (!status.wasmPresent) {
     out.push(`${status.wasmPath} is missing, so nothing can rasterise`);
-  }
-  if (!status.mirrorPresent) {
-    out.push(
-      `${status.mirrorPath} is missing, so the next build has to resolve a path ` +
-        "its own pass 1 creates (run `bun run vendor`)",
-    );
   }
   return out;
 }
