@@ -8,8 +8,8 @@
  * writable — a sandbox, some runners — and every checkout on one machine
  * shares one directory. Naming the vendored tree's own `.cache/` puts the
  * transforms back where they were at e0b37e2 (`vendor/pocketjs/.cache/
- * transforms/`): beside the build lock, inside `/vendor/`, which `.gitignore`
- * already excludes, and gone with the tree on `bun run vendor --refresh`.
+ * transforms/`): inside `/vendor/`, which `.gitignore` already excludes, and
+ * gone with the tree on `bun run vendor --refresh`.
  *
  * The cache is not an input to the picture. Its key mixes the module's source,
  * the framework, the feature set and a digest of the compiler's own sources

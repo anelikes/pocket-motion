@@ -261,7 +261,7 @@ export async function checkVendor(): Promise<DoctorCheck> {
     detail:
       `${status.head} (pinned ${status.pinned}) + ${status.patches.length} patch(es), ` +
       `${status.dirtyLines.length} file(s) modified by them; ` +
-      "hosts/web/pocketjs.wasm and framework/src/styles.generated.ts present",
+      "hosts/web/pocketjs.wasm present",
     fix: null,
   };
 }

@@ -97,6 +97,12 @@ patch's own header carries the full note.
 | 0021 | upstream | TEX_QUAD takes its sampling taps once per column and once per row instead of per pixel: a tap on a texel centre reads one texel instead of four, and an RGBA8888 texel of alpha 0 there is skipped. Byte-identical by construction; a core test holds `tex_quad` equal to the per-pixel sampler it replaced. No target-side change, so it belongs to upstream's software rasteriser as much as to this one | unsubmitted | applied unchanged |
 | 0022 | motion | the wasm core builds at `opt-level = 3` with `+simd128` (was `"s"`): the same pixels; the module grows from 312 to 513 KB | never; the header says why | applied unchanged |
 
+**The `0023` that backported #591 is gone.** Main carries #591 since
+586428b2, so the pin needs no backport; the two places the backport
+departed from upstream — the style module kept in the file namespace, and
+a second copy of it refused — are not in main and are carried forward
+against main's form as a patch of their own.
+
 **`0006` is gone.** It filled glyph outlines by non-zero winding; upstream
 8188d16a (#302) fills them by non-zero winding too, with spans merged where
 the winding leaves zero rather than one span per crossing pair. Dropped on
