@@ -6,7 +6,7 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 
 mount(() => (
   <View class="w-full h-full bg-[#F1E9DA]">
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-aub" src="paper.png" />
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] animate-ath" src="paper.png" />
     <View class="absolute left-[0px] top-[59px] w-[1920px] h-[2px] origin-center animate-a3" />
     <View class="absolute left-[0px] top-[179px] w-[1920px] h-[2px] origin-center animate-a7" />
     <View class="absolute left-[0px] top-[299px] w-[1920px] h-[2px] origin-center animate-ab" />
@@ -34,498 +34,487 @@ mount(() => (
     <View class="absolute left-[362px] top-[59px] w-[720px] h-[360px] origin-center  animate-a2p"><Image class="w-[720px] h-[360px]" src="f-half-red-720x360-100-q2.png" /></View>
     <View class="absolute left-[362px] top-[59px] w-[720px] h-[360px] origin-center  animate-a2r"><Image class="w-[720px] h-[360px]" src="f-half-red-720x360-100.png" /></View>
     <View class="absolute left-[362px] top-[59px] w-[720px] h-[720px] origin-center  animate-a2t"><Image class="w-[720px] h-[720px]" src="f-disc-red-720x720-100.png" /></View>
-    <View class="absolute left-[360px] top-[780px] w-[1200px] h-[120px] origin-center  animate-a2v"><Image class="w-[1200px] h-[120px]" src="f-box-black-1200x120-101.png" /></View>
-    <View class="absolute left-[1081px] top-[301px] w-[480px] h-[480px] origin-center  animate-a2x"><Image class="w-[480px] h-[480px]" src="f-tri-yellow-480x480-102.png" /></View>
-    <View class="absolute left-[1319px] top-[62px] w-[240px] h-[240px] origin-center  animate-a2z"><Image class="w-[240px] h-[240px]" src="f-box-blue-240x240-103.png" /></View>
-    <View class="absolute left-[1199px] top-[902px] w-[240px] h-[120px] origin-center  animate-a31"><Image class="w-[240px] h-[120px]" src="f-half-blue-240x120-104.png" /></View>
-    <View class="absolute left-[120px] top-[780px] w-[240px] h-[240px] origin-center  animate-a33"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-105-q1.png" /></View>
-    <View class="absolute left-[1562px] top-[59px] w-[120px] h-[120px] origin-center  animate-a35"><Image class="w-[120px] h-[120px]" src="f-box-red-120x120-106.png" /></View>
-    <View class="absolute left-[946px] top-[539px] w-[28px] h-[3px] bg-[#111111] animate-a37" /><View class="absolute left-[959px] top-[526px] w-[3px] h-[28px] bg-[#111111] animate-a37" />
-    <View class="absolute left-[360px] top-[60px] animate-a39"><Image class="w-[120px] h-[120px]" src="cell-3-0-q0.png" /></View>
-    <View class="absolute left-[360px] top-[60px] animate-a3b"><Image class="w-[120px] h-[120px]" src="cell-3-0-q3.png" /></View>
-    <View class="absolute left-[360px] top-[60px] animate-a3d"><Image class="w-[120px] h-[120px]" src="cell-3-0-q2.png" /></View>
-    <View class="absolute left-[360px] top-[60px] animate-a3f"><Image class="w-[120px] h-[120px]" src="cell-3-0-q1.png" /></View>
-    <View class="absolute left-[360px] top-[60px] animate-a3h"><Image class="w-[120px] h-[120px]" src="cell-3-0-q0.png" /></View>
-    <View class="absolute left-[360px] top-[60px] w-[120px] h-[120px] origin-center animate-a3k"><Image class="w-[120px] h-[120px]" src="cell-3-0-q0.png" /></View>
-    <View class="absolute left-[480px] top-[60px] animate-a3m"><Image class="w-[120px] h-[120px]" src="cell-4-0-q0.png" /></View>
-    <View class="absolute left-[480px] top-[60px] animate-a3o"><Image class="w-[120px] h-[120px]" src="cell-4-0-q1.png" /></View>
-    <View class="absolute left-[480px] top-[60px] animate-a3q"><Image class="w-[120px] h-[120px]" src="cell-4-0-q2.png" /></View>
-    <View class="absolute left-[480px] top-[60px] animate-a3s"><Image class="w-[120px] h-[120px]" src="cell-4-0-q3.png" /></View>
-    <View class="absolute left-[480px] top-[60px] animate-a3u"><Image class="w-[120px] h-[120px]" src="cell-4-0-q0.png" /></View>
-    <View class="absolute left-[480px] top-[60px] w-[120px] h-[120px] origin-center animate-a3x"><Image class="w-[120px] h-[120px]" src="cell-4-0-q0.png" /></View>
-    <View class="absolute left-[600px] top-[60px] animate-a3z"><Image class="w-[120px] h-[120px]" src="cell-5-0-q0.png" /></View>
-    <View class="absolute left-[600px] top-[60px] animate-a41"><Image class="w-[120px] h-[120px]" src="cell-5-0-q3.png" /></View>
-    <View class="absolute left-[600px] top-[60px] animate-a43"><Image class="w-[120px] h-[120px]" src="cell-5-0-q2.png" /></View>
-    <View class="absolute left-[600px] top-[60px] animate-a45"><Image class="w-[120px] h-[120px]" src="cell-5-0-q1.png" /></View>
-    <View class="absolute left-[600px] top-[60px] animate-a47"><Image class="w-[120px] h-[120px]" src="cell-5-0-q0.png" /></View>
-    <View class="absolute left-[600px] top-[60px] w-[120px] h-[120px] origin-center animate-a4a"><Image class="w-[120px] h-[120px]" src="cell-5-0-q0.png" /></View>
-    <View class="absolute left-[720px] top-[60px] animate-a4c"><Image class="w-[120px] h-[120px]" src="cell-6-0-q0.png" /></View>
-    <View class="absolute left-[720px] top-[60px] animate-a4e"><Image class="w-[120px] h-[120px]" src="cell-6-0-q1.png" /></View>
-    <View class="absolute left-[720px] top-[60px] animate-a4g"><Image class="w-[120px] h-[120px]" src="cell-6-0-q2.png" /></View>
-    <View class="absolute left-[720px] top-[60px] animate-a4i"><Image class="w-[120px] h-[120px]" src="cell-6-0-q3.png" /></View>
-    <View class="absolute left-[720px] top-[60px] animate-a4k"><Image class="w-[120px] h-[120px]" src="cell-6-0-q0.png" /></View>
-    <View class="absolute left-[720px] top-[60px] w-[120px] h-[120px] origin-center animate-a4n"><Image class="w-[120px] h-[120px]" src="cell-6-0-q0.png" /></View>
-    <View class="absolute left-[840px] top-[60px] animate-a4p"><Image class="w-[120px] h-[120px]" src="cell-7-0-q0.png" /></View>
-    <View class="absolute left-[840px] top-[60px] animate-a4r"><Image class="w-[120px] h-[120px]" src="cell-7-0-q3.png" /></View>
-    <View class="absolute left-[840px] top-[60px] animate-a4t"><Image class="w-[120px] h-[120px]" src="cell-7-0-q2.png" /></View>
-    <View class="absolute left-[840px] top-[60px] animate-a4v"><Image class="w-[120px] h-[120px]" src="cell-7-0-q1.png" /></View>
-    <View class="absolute left-[840px] top-[60px] animate-a4x"><Image class="w-[120px] h-[120px]" src="cell-7-0-q0.png" /></View>
-    <View class="absolute left-[840px] top-[60px] w-[120px] h-[120px] origin-center animate-a50"><Image class="w-[120px] h-[120px]" src="cell-7-0-q0.png" /></View>
-    <View class="absolute left-[960px] top-[60px] animate-a52"><Image class="w-[120px] h-[120px]" src="cell-8-0-q0.png" /></View>
-    <View class="absolute left-[960px] top-[60px] animate-a54"><Image class="w-[120px] h-[120px]" src="cell-8-0-q1.png" /></View>
-    <View class="absolute left-[960px] top-[60px] animate-a56"><Image class="w-[120px] h-[120px]" src="cell-8-0-q2.png" /></View>
-    <View class="absolute left-[960px] top-[60px] animate-a58"><Image class="w-[120px] h-[120px]" src="cell-8-0-q3.png" /></View>
-    <View class="absolute left-[960px] top-[60px] animate-a5a"><Image class="w-[120px] h-[120px]" src="cell-8-0-q0.png" /></View>
-    <View class="absolute left-[960px] top-[60px] w-[120px] h-[120px] origin-center animate-a5d"><Image class="w-[120px] h-[120px]" src="cell-8-0-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[60px] animate-a5f"><Image class="w-[120px] h-[120px]" src="cell-11-0-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[60px] animate-a5h"><Image class="w-[120px] h-[120px]" src="cell-11-0-q3.png" /></View>
-    <View class="absolute left-[1320px] top-[60px] animate-a5j"><Image class="w-[120px] h-[120px]" src="cell-11-0-q2.png" /></View>
-    <View class="absolute left-[1320px] top-[60px] animate-a5l"><Image class="w-[120px] h-[120px]" src="cell-11-0-q1.png" /></View>
-    <View class="absolute left-[1320px] top-[60px] animate-a5n"><Image class="w-[120px] h-[120px]" src="cell-11-0-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[60px] w-[120px] h-[120px] origin-center animate-a5q"><Image class="w-[120px] h-[120px]" src="cell-11-0-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[60px] animate-a5s"><Image class="w-[120px] h-[120px]" src="cell-12-0-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[60px] animate-a5u"><Image class="w-[120px] h-[120px]" src="cell-12-0-q1.png" /></View>
-    <View class="absolute left-[1440px] top-[60px] animate-a5w"><Image class="w-[120px] h-[120px]" src="cell-12-0-q2.png" /></View>
-    <View class="absolute left-[1440px] top-[60px] animate-a5y"><Image class="w-[120px] h-[120px]" src="cell-12-0-q3.png" /></View>
-    <View class="absolute left-[1440px] top-[60px] animate-a60"><Image class="w-[120px] h-[120px]" src="cell-12-0-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[60px] w-[120px] h-[120px] origin-center animate-a63"><Image class="w-[120px] h-[120px]" src="cell-12-0-q0.png" /></View>
-    <View class="absolute left-[1560px] top-[60px] animate-a65"><Image class="w-[120px] h-[120px]" src="cell-13-0-q0.png" /></View>
-    <View class="absolute left-[1560px] top-[60px] animate-a67"><Image class="w-[120px] h-[120px]" src="cell-13-0-q3.png" /></View>
-    <View class="absolute left-[1560px] top-[60px] animate-a69"><Image class="w-[120px] h-[120px]" src="cell-13-0-q2.png" /></View>
-    <View class="absolute left-[1560px] top-[60px] animate-a6b"><Image class="w-[120px] h-[120px]" src="cell-13-0-q1.png" /></View>
-    <View class="absolute left-[1560px] top-[60px] animate-a6d"><Image class="w-[120px] h-[120px]" src="cell-13-0-q0.png" /></View>
-    <View class="absolute left-[1560px] top-[60px] w-[120px] h-[120px] origin-center animate-a6g"><Image class="w-[120px] h-[120px]" src="cell-13-0-q0.png" /></View>
-    <View class="absolute left-[360px] top-[180px] animate-a6i"><Image class="w-[120px] h-[120px]" src="cell-3-1-q0.png" /></View>
-    <View class="absolute left-[360px] top-[180px] animate-a6k"><Image class="w-[120px] h-[120px]" src="cell-3-1-q1.png" /></View>
-    <View class="absolute left-[360px] top-[180px] animate-a6m"><Image class="w-[120px] h-[120px]" src="cell-3-1-q2.png" /></View>
-    <View class="absolute left-[360px] top-[180px] animate-a6o"><Image class="w-[120px] h-[120px]" src="cell-3-1-q3.png" /></View>
-    <View class="absolute left-[360px] top-[180px] animate-a6q"><Image class="w-[120px] h-[120px]" src="cell-3-1-q0.png" /></View>
-    <View class="absolute left-[360px] top-[180px] w-[120px] h-[120px] origin-center animate-a6t"><Image class="w-[120px] h-[120px]" src="cell-3-1-q0.png" /></View>
-    <View class="absolute left-[480px] top-[180px] animate-a6v"><Image class="w-[120px] h-[120px]" src="cell-4-1-q0.png" /></View>
-    <View class="absolute left-[480px] top-[180px] animate-a6x"><Image class="w-[120px] h-[120px]" src="cell-4-1-q3.png" /></View>
-    <View class="absolute left-[480px] top-[180px] animate-a6z"><Image class="w-[120px] h-[120px]" src="cell-4-1-q2.png" /></View>
-    <View class="absolute left-[480px] top-[180px] animate-a71"><Image class="w-[120px] h-[120px]" src="cell-4-1-q1.png" /></View>
-    <View class="absolute left-[480px] top-[180px] animate-a73"><Image class="w-[120px] h-[120px]" src="cell-4-1-q0.png" /></View>
-    <View class="absolute left-[480px] top-[180px] w-[120px] h-[120px] origin-center animate-a76"><Image class="w-[120px] h-[120px]" src="cell-4-1-q0.png" /></View>
-    <View class="absolute left-[600px] top-[180px] animate-a78"><Image class="w-[120px] h-[120px]" src="cell-5-1-q0.png" /></View>
-    <View class="absolute left-[600px] top-[180px] animate-a7a"><Image class="w-[120px] h-[120px]" src="cell-5-1-q1.png" /></View>
-    <View class="absolute left-[600px] top-[180px] animate-a7c"><Image class="w-[120px] h-[120px]" src="cell-5-1-q2.png" /></View>
-    <View class="absolute left-[600px] top-[180px] animate-a7e"><Image class="w-[120px] h-[120px]" src="cell-5-1-q3.png" /></View>
-    <View class="absolute left-[600px] top-[180px] animate-a7g"><Image class="w-[120px] h-[120px]" src="cell-5-1-q0.png" /></View>
-    <View class="absolute left-[600px] top-[180px] w-[120px] h-[120px] origin-center animate-a7j"><Image class="w-[120px] h-[120px]" src="cell-5-1-q0.png" /></View>
-    <View class="absolute left-[720px] top-[180px] animate-a7l"><Image class="w-[120px] h-[120px]" src="cell-6-1-q0.png" /></View>
-    <View class="absolute left-[720px] top-[180px] animate-a7n"><Image class="w-[120px] h-[120px]" src="cell-6-1-q3.png" /></View>
-    <View class="absolute left-[720px] top-[180px] animate-a7p"><Image class="w-[120px] h-[120px]" src="cell-6-1-q2.png" /></View>
-    <View class="absolute left-[720px] top-[180px] animate-a7r"><Image class="w-[120px] h-[120px]" src="cell-6-1-q1.png" /></View>
-    <View class="absolute left-[720px] top-[180px] animate-a7t"><Image class="w-[120px] h-[120px]" src="cell-6-1-q0.png" /></View>
-    <View class="absolute left-[720px] top-[180px] w-[120px] h-[120px] origin-center animate-a7w"><Image class="w-[120px] h-[120px]" src="cell-6-1-q0.png" /></View>
-    <View class="absolute left-[840px] top-[180px] animate-a7y"><Image class="w-[120px] h-[120px]" src="cell-7-1-q0.png" /></View>
-    <View class="absolute left-[840px] top-[180px] animate-a80"><Image class="w-[120px] h-[120px]" src="cell-7-1-q1.png" /></View>
-    <View class="absolute left-[840px] top-[180px] animate-a82"><Image class="w-[120px] h-[120px]" src="cell-7-1-q2.png" /></View>
-    <View class="absolute left-[840px] top-[180px] animate-a84"><Image class="w-[120px] h-[120px]" src="cell-7-1-q3.png" /></View>
-    <View class="absolute left-[840px] top-[180px] animate-a86"><Image class="w-[120px] h-[120px]" src="cell-7-1-q0.png" /></View>
-    <View class="absolute left-[840px] top-[180px] w-[120px] h-[120px] origin-center animate-a89"><Image class="w-[120px] h-[120px]" src="cell-7-1-q0.png" /></View>
-    <View class="absolute left-[960px] top-[180px] animate-a8b"><Image class="w-[120px] h-[120px]" src="cell-8-1-q0.png" /></View>
-    <View class="absolute left-[960px] top-[180px] animate-a8d"><Image class="w-[120px] h-[120px]" src="cell-8-1-q3.png" /></View>
-    <View class="absolute left-[960px] top-[180px] animate-a8f"><Image class="w-[120px] h-[120px]" src="cell-8-1-q2.png" /></View>
-    <View class="absolute left-[960px] top-[180px] animate-a8h"><Image class="w-[120px] h-[120px]" src="cell-8-1-q1.png" /></View>
-    <View class="absolute left-[960px] top-[180px] animate-a8j"><Image class="w-[120px] h-[120px]" src="cell-8-1-q0.png" /></View>
-    <View class="absolute left-[960px] top-[180px] w-[120px] h-[120px] origin-center animate-a8m"><Image class="w-[120px] h-[120px]" src="cell-8-1-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[180px] animate-a8o"><Image class="w-[120px] h-[120px]" src="cell-11-1-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[180px] animate-a8q"><Image class="w-[120px] h-[120px]" src="cell-11-1-q1.png" /></View>
-    <View class="absolute left-[1320px] top-[180px] animate-a8s"><Image class="w-[120px] h-[120px]" src="cell-11-1-q2.png" /></View>
-    <View class="absolute left-[1320px] top-[180px] animate-a8u"><Image class="w-[120px] h-[120px]" src="cell-11-1-q3.png" /></View>
-    <View class="absolute left-[1320px] top-[180px] animate-a8w"><Image class="w-[120px] h-[120px]" src="cell-11-1-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[180px] w-[120px] h-[120px] origin-center animate-a8z"><Image class="w-[120px] h-[120px]" src="cell-11-1-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[180px] animate-a91"><Image class="w-[120px] h-[120px]" src="cell-12-1-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[180px] animate-a93"><Image class="w-[120px] h-[120px]" src="cell-12-1-q3.png" /></View>
-    <View class="absolute left-[1440px] top-[180px] animate-a95"><Image class="w-[120px] h-[120px]" src="cell-12-1-q2.png" /></View>
-    <View class="absolute left-[1440px] top-[180px] animate-a97"><Image class="w-[120px] h-[120px]" src="cell-12-1-q1.png" /></View>
-    <View class="absolute left-[1440px] top-[180px] animate-a99"><Image class="w-[120px] h-[120px]" src="cell-12-1-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[180px] w-[120px] h-[120px] origin-center animate-a9c"><Image class="w-[120px] h-[120px]" src="cell-12-1-q0.png" /></View>
-    <View class="absolute left-[360px] top-[300px] animate-a9e"><Image class="w-[120px] h-[120px]" src="cell-3-2-q0.png" /></View>
-    <View class="absolute left-[360px] top-[300px] animate-a9g"><Image class="w-[120px] h-[120px]" src="cell-3-2-q3.png" /></View>
-    <View class="absolute left-[360px] top-[300px] animate-a9i"><Image class="w-[120px] h-[120px]" src="cell-3-2-q2.png" /></View>
-    <View class="absolute left-[360px] top-[300px] animate-a9k"><Image class="w-[120px] h-[120px]" src="cell-3-2-q1.png" /></View>
-    <View class="absolute left-[360px] top-[300px] animate-a9m"><Image class="w-[120px] h-[120px]" src="cell-3-2-q0.png" /></View>
-    <View class="absolute left-[360px] top-[300px] w-[120px] h-[120px] origin-center animate-a9p"><Image class="w-[120px] h-[120px]" src="cell-3-2-q0.png" /></View>
-    <View class="absolute left-[480px] top-[300px] animate-a9r"><Image class="w-[120px] h-[120px]" src="cell-4-2-q0.png" /></View>
-    <View class="absolute left-[480px] top-[300px] animate-a9t"><Image class="w-[120px] h-[120px]" src="cell-4-2-q1.png" /></View>
-    <View class="absolute left-[480px] top-[300px] animate-a9v"><Image class="w-[120px] h-[120px]" src="cell-4-2-q2.png" /></View>
-    <View class="absolute left-[480px] top-[300px] animate-a9x"><Image class="w-[120px] h-[120px]" src="cell-4-2-q3.png" /></View>
-    <View class="absolute left-[480px] top-[300px] animate-a9z"><Image class="w-[120px] h-[120px]" src="cell-4-2-q0.png" /></View>
-    <View class="absolute left-[480px] top-[300px] w-[120px] h-[120px] origin-center animate-aa2"><Image class="w-[120px] h-[120px]" src="cell-4-2-q0.png" /></View>
-    <View class="absolute left-[600px] top-[300px] animate-aa4"><Image class="w-[120px] h-[120px]" src="cell-5-2-q0.png" /></View>
-    <View class="absolute left-[600px] top-[300px] animate-aa6"><Image class="w-[120px] h-[120px]" src="cell-5-2-q3.png" /></View>
-    <View class="absolute left-[600px] top-[300px] animate-aa8"><Image class="w-[120px] h-[120px]" src="cell-5-2-q2.png" /></View>
-    <View class="absolute left-[600px] top-[300px] animate-aaa"><Image class="w-[120px] h-[120px]" src="cell-5-2-q1.png" /></View>
-    <View class="absolute left-[600px] top-[300px] animate-aac"><Image class="w-[120px] h-[120px]" src="cell-5-2-q0.png" /></View>
-    <View class="absolute left-[600px] top-[300px] w-[120px] h-[120px] origin-center animate-aaf"><Image class="w-[120px] h-[120px]" src="cell-5-2-q0.png" /></View>
-    <View class="absolute left-[720px] top-[300px] animate-aah"><Image class="w-[120px] h-[120px]" src="cell-6-2-q0.png" /></View>
-    <View class="absolute left-[720px] top-[300px] animate-aaj"><Image class="w-[120px] h-[120px]" src="cell-6-2-q1.png" /></View>
-    <View class="absolute left-[720px] top-[300px] animate-aal"><Image class="w-[120px] h-[120px]" src="cell-6-2-q2.png" /></View>
-    <View class="absolute left-[720px] top-[300px] animate-aan"><Image class="w-[120px] h-[120px]" src="cell-6-2-q3.png" /></View>
-    <View class="absolute left-[720px] top-[300px] animate-aap"><Image class="w-[120px] h-[120px]" src="cell-6-2-q0.png" /></View>
-    <View class="absolute left-[720px] top-[300px] w-[120px] h-[120px] origin-center animate-aas"><Image class="w-[120px] h-[120px]" src="cell-6-2-q0.png" /></View>
-    <View class="absolute left-[840px] top-[300px] animate-aau"><Image class="w-[120px] h-[120px]" src="cell-7-2-q0.png" /></View>
-    <View class="absolute left-[840px] top-[300px] animate-aaw"><Image class="w-[120px] h-[120px]" src="cell-7-2-q3.png" /></View>
-    <View class="absolute left-[840px] top-[300px] animate-aay"><Image class="w-[120px] h-[120px]" src="cell-7-2-q2.png" /></View>
-    <View class="absolute left-[840px] top-[300px] animate-ab0"><Image class="w-[120px] h-[120px]" src="cell-7-2-q1.png" /></View>
-    <View class="absolute left-[840px] top-[300px] animate-ab2"><Image class="w-[120px] h-[120px]" src="cell-7-2-q0.png" /></View>
-    <View class="absolute left-[840px] top-[300px] w-[120px] h-[120px] origin-center animate-ab5"><Image class="w-[120px] h-[120px]" src="cell-7-2-q0.png" /></View>
-    <View class="absolute left-[960px] top-[300px] animate-ab7"><Image class="w-[120px] h-[120px]" src="cell-8-2-q0.png" /></View>
-    <View class="absolute left-[960px] top-[300px] animate-ab9"><Image class="w-[120px] h-[120px]" src="cell-8-2-q1.png" /></View>
-    <View class="absolute left-[960px] top-[300px] animate-abb"><Image class="w-[120px] h-[120px]" src="cell-8-2-q2.png" /></View>
-    <View class="absolute left-[960px] top-[300px] animate-abd"><Image class="w-[120px] h-[120px]" src="cell-8-2-q3.png" /></View>
-    <View class="absolute left-[960px] top-[300px] animate-abf"><Image class="w-[120px] h-[120px]" src="cell-8-2-q0.png" /></View>
-    <View class="absolute left-[960px] top-[300px] w-[120px] h-[120px] origin-center animate-abi"><Image class="w-[120px] h-[120px]" src="cell-8-2-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[300px] animate-abk"><Image class="w-[120px] h-[120px]" src="cell-9-2-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[300px] animate-abm"><Image class="w-[120px] h-[120px]" src="cell-9-2-q3.png" /></View>
-    <View class="absolute left-[1080px] top-[300px] animate-abo"><Image class="w-[120px] h-[120px]" src="cell-9-2-q2.png" /></View>
-    <View class="absolute left-[1080px] top-[300px] animate-abq"><Image class="w-[120px] h-[120px]" src="cell-9-2-q1.png" /></View>
-    <View class="absolute left-[1080px] top-[300px] animate-abs"><Image class="w-[120px] h-[120px]" src="cell-9-2-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[300px] w-[120px] h-[120px] origin-center animate-abv"><Image class="w-[120px] h-[120px]" src="cell-9-2-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[300px] animate-abx"><Image class="w-[120px] h-[120px]" src="cell-10-2-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[300px] animate-abz"><Image class="w-[120px] h-[120px]" src="cell-10-2-q1.png" /></View>
-    <View class="absolute left-[1200px] top-[300px] animate-ac1"><Image class="w-[120px] h-[120px]" src="cell-10-2-q2.png" /></View>
-    <View class="absolute left-[1200px] top-[300px] animate-ac3"><Image class="w-[120px] h-[120px]" src="cell-10-2-q3.png" /></View>
-    <View class="absolute left-[1200px] top-[300px] animate-ac5"><Image class="w-[120px] h-[120px]" src="cell-10-2-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[300px] w-[120px] h-[120px] origin-center animate-ac8"><Image class="w-[120px] h-[120px]" src="cell-10-2-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[300px] animate-aca"><Image class="w-[120px] h-[120px]" src="cell-11-2-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[300px] animate-acc"><Image class="w-[120px] h-[120px]" src="cell-11-2-q3.png" /></View>
-    <View class="absolute left-[1320px] top-[300px] animate-ace"><Image class="w-[120px] h-[120px]" src="cell-11-2-q2.png" /></View>
-    <View class="absolute left-[1320px] top-[300px] animate-acg"><Image class="w-[120px] h-[120px]" src="cell-11-2-q1.png" /></View>
-    <View class="absolute left-[1320px] top-[300px] animate-aci"><Image class="w-[120px] h-[120px]" src="cell-11-2-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[300px] w-[120px] h-[120px] origin-center animate-acl"><Image class="w-[120px] h-[120px]" src="cell-11-2-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[300px] animate-acn"><Image class="w-[120px] h-[120px]" src="cell-12-2-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[300px] animate-acp"><Image class="w-[120px] h-[120px]" src="cell-12-2-q1.png" /></View>
-    <View class="absolute left-[1440px] top-[300px] animate-acr"><Image class="w-[120px] h-[120px]" src="cell-12-2-q2.png" /></View>
-    <View class="absolute left-[1440px] top-[300px] animate-act"><Image class="w-[120px] h-[120px]" src="cell-12-2-q3.png" /></View>
-    <View class="absolute left-[1440px] top-[300px] animate-acv"><Image class="w-[120px] h-[120px]" src="cell-12-2-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[300px] w-[120px] h-[120px] origin-center animate-acy"><Image class="w-[120px] h-[120px]" src="cell-12-2-q0.png" /></View>
-    <View class="absolute left-[360px] top-[420px] animate-ad0"><Image class="w-[120px] h-[120px]" src="cell-3-3-q0.png" /></View>
-    <View class="absolute left-[360px] top-[420px] animate-ad2"><Image class="w-[120px] h-[120px]" src="cell-3-3-q1.png" /></View>
-    <View class="absolute left-[360px] top-[420px] animate-ad4"><Image class="w-[120px] h-[120px]" src="cell-3-3-q2.png" /></View>
-    <View class="absolute left-[360px] top-[420px] animate-ad6"><Image class="w-[120px] h-[120px]" src="cell-3-3-q3.png" /></View>
-    <View class="absolute left-[360px] top-[420px] animate-ad8"><Image class="w-[120px] h-[120px]" src="cell-3-3-q0.png" /></View>
-    <View class="absolute left-[360px] top-[420px] w-[120px] h-[120px] origin-center animate-adb"><Image class="w-[120px] h-[120px]" src="cell-3-3-q0.png" /></View>
-    <View class="absolute left-[480px] top-[420px] animate-add"><Image class="w-[120px] h-[120px]" src="cell-4-3-q0.png" /></View>
-    <View class="absolute left-[480px] top-[420px] animate-adf"><Image class="w-[120px] h-[120px]" src="cell-4-3-q3.png" /></View>
-    <View class="absolute left-[480px] top-[420px] animate-adh"><Image class="w-[120px] h-[120px]" src="cell-4-3-q2.png" /></View>
-    <View class="absolute left-[480px] top-[420px] animate-adj"><Image class="w-[120px] h-[120px]" src="cell-4-3-q1.png" /></View>
-    <View class="absolute left-[480px] top-[420px] animate-adl"><Image class="w-[120px] h-[120px]" src="cell-4-3-q0.png" /></View>
-    <View class="absolute left-[480px] top-[420px] w-[120px] h-[120px] origin-center animate-ado"><Image class="w-[120px] h-[120px]" src="cell-4-3-q0.png" /></View>
-    <View class="absolute left-[600px] top-[420px] animate-adq"><Image class="w-[120px] h-[120px]" src="cell-5-3-q0.png" /></View>
-    <View class="absolute left-[600px] top-[420px] animate-ads"><Image class="w-[120px] h-[120px]" src="cell-5-3-q1.png" /></View>
-    <View class="absolute left-[600px] top-[420px] animate-adu"><Image class="w-[120px] h-[120px]" src="cell-5-3-q2.png" /></View>
-    <View class="absolute left-[600px] top-[420px] animate-adw"><Image class="w-[120px] h-[120px]" src="cell-5-3-q3.png" /></View>
-    <View class="absolute left-[600px] top-[420px] animate-ady"><Image class="w-[120px] h-[120px]" src="cell-5-3-q0.png" /></View>
-    <View class="absolute left-[600px] top-[420px] w-[120px] h-[120px] origin-center animate-ae1"><Image class="w-[120px] h-[120px]" src="cell-5-3-q0.png" /></View>
-    <View class="absolute left-[720px] top-[420px] animate-ae3"><Image class="w-[120px] h-[120px]" src="cell-6-3-q0.png" /></View>
-    <View class="absolute left-[720px] top-[420px] animate-ae5"><Image class="w-[120px] h-[120px]" src="cell-6-3-q3.png" /></View>
-    <View class="absolute left-[720px] top-[420px] animate-ae7"><Image class="w-[120px] h-[120px]" src="cell-6-3-q2.png" /></View>
-    <View class="absolute left-[720px] top-[420px] animate-ae9"><Image class="w-[120px] h-[120px]" src="cell-6-3-q1.png" /></View>
-    <View class="absolute left-[720px] top-[420px] animate-aeb"><Image class="w-[120px] h-[120px]" src="cell-6-3-q0.png" /></View>
-    <View class="absolute left-[720px] top-[420px] w-[120px] h-[120px] origin-center animate-aee"><Image class="w-[120px] h-[120px]" src="cell-6-3-q0.png" /></View>
-    <View class="absolute left-[840px] top-[420px] animate-aeg"><Image class="w-[120px] h-[120px]" src="cell-7-3-q0.png" /></View>
-    <View class="absolute left-[840px] top-[420px] animate-aei"><Image class="w-[120px] h-[120px]" src="cell-7-3-q1.png" /></View>
-    <View class="absolute left-[840px] top-[420px] animate-aek"><Image class="w-[120px] h-[120px]" src="cell-7-3-q2.png" /></View>
-    <View class="absolute left-[840px] top-[420px] animate-aem"><Image class="w-[120px] h-[120px]" src="cell-7-3-q3.png" /></View>
-    <View class="absolute left-[840px] top-[420px] animate-aeo"><Image class="w-[120px] h-[120px]" src="cell-7-3-q0.png" /></View>
-    <View class="absolute left-[840px] top-[420px] w-[120px] h-[120px] origin-center animate-aer"><Image class="w-[120px] h-[120px]" src="cell-7-3-q0.png" /></View>
-    <View class="absolute left-[960px] top-[420px] animate-aet"><Image class="w-[120px] h-[120px]" src="cell-8-3-q0.png" /></View>
-    <View class="absolute left-[960px] top-[420px] animate-aev"><Image class="w-[120px] h-[120px]" src="cell-8-3-q3.png" /></View>
-    <View class="absolute left-[960px] top-[420px] animate-aex"><Image class="w-[120px] h-[120px]" src="cell-8-3-q2.png" /></View>
-    <View class="absolute left-[960px] top-[420px] animate-aez"><Image class="w-[120px] h-[120px]" src="cell-8-3-q1.png" /></View>
-    <View class="absolute left-[960px] top-[420px] animate-af1"><Image class="w-[120px] h-[120px]" src="cell-8-3-q0.png" /></View>
-    <View class="absolute left-[960px] top-[420px] w-[120px] h-[120px] origin-center animate-af4"><Image class="w-[120px] h-[120px]" src="cell-8-3-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[420px] animate-af6"><Image class="w-[120px] h-[120px]" src="cell-9-3-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[420px] animate-af8"><Image class="w-[120px] h-[120px]" src="cell-9-3-q1.png" /></View>
-    <View class="absolute left-[1080px] top-[420px] animate-afa"><Image class="w-[120px] h-[120px]" src="cell-9-3-q2.png" /></View>
-    <View class="absolute left-[1080px] top-[420px] animate-afc"><Image class="w-[120px] h-[120px]" src="cell-9-3-q3.png" /></View>
-    <View class="absolute left-[1080px] top-[420px] animate-afe"><Image class="w-[120px] h-[120px]" src="cell-9-3-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[420px] w-[120px] h-[120px] origin-center animate-afh"><Image class="w-[120px] h-[120px]" src="cell-9-3-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[420px] animate-afj"><Image class="w-[120px] h-[120px]" src="cell-10-3-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[420px] animate-afl"><Image class="w-[120px] h-[120px]" src="cell-10-3-q3.png" /></View>
-    <View class="absolute left-[1200px] top-[420px] animate-afn"><Image class="w-[120px] h-[120px]" src="cell-10-3-q2.png" /></View>
-    <View class="absolute left-[1200px] top-[420px] animate-afp"><Image class="w-[120px] h-[120px]" src="cell-10-3-q1.png" /></View>
-    <View class="absolute left-[1200px] top-[420px] animate-afr"><Image class="w-[120px] h-[120px]" src="cell-10-3-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[420px] w-[120px] h-[120px] origin-center animate-afu"><Image class="w-[120px] h-[120px]" src="cell-10-3-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[420px] animate-afw"><Image class="w-[120px] h-[120px]" src="cell-11-3-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[420px] animate-afy"><Image class="w-[120px] h-[120px]" src="cell-11-3-q1.png" /></View>
-    <View class="absolute left-[1320px] top-[420px] animate-ag0"><Image class="w-[120px] h-[120px]" src="cell-11-3-q2.png" /></View>
-    <View class="absolute left-[1320px] top-[420px] animate-ag2"><Image class="w-[120px] h-[120px]" src="cell-11-3-q3.png" /></View>
-    <View class="absolute left-[1320px] top-[420px] animate-ag4"><Image class="w-[120px] h-[120px]" src="cell-11-3-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[420px] w-[120px] h-[120px] origin-center animate-ag7"><Image class="w-[120px] h-[120px]" src="cell-11-3-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[420px] animate-ag9"><Image class="w-[120px] h-[120px]" src="cell-12-3-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[420px] animate-agb"><Image class="w-[120px] h-[120px]" src="cell-12-3-q3.png" /></View>
-    <View class="absolute left-[1440px] top-[420px] animate-agd"><Image class="w-[120px] h-[120px]" src="cell-12-3-q2.png" /></View>
-    <View class="absolute left-[1440px] top-[420px] animate-agf"><Image class="w-[120px] h-[120px]" src="cell-12-3-q1.png" /></View>
-    <View class="absolute left-[1440px] top-[420px] animate-agh"><Image class="w-[120px] h-[120px]" src="cell-12-3-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[420px] w-[120px] h-[120px] origin-center animate-agk"><Image class="w-[120px] h-[120px]" src="cell-12-3-q0.png" /></View>
-    <View class="absolute left-[360px] top-[540px] animate-agm"><Image class="w-[120px] h-[120px]" src="cell-3-4-q0.png" /></View>
-    <View class="absolute left-[360px] top-[540px] animate-ago"><Image class="w-[120px] h-[120px]" src="cell-3-4-q3.png" /></View>
-    <View class="absolute left-[360px] top-[540px] animate-agq"><Image class="w-[120px] h-[120px]" src="cell-3-4-q2.png" /></View>
-    <View class="absolute left-[360px] top-[540px] animate-ags"><Image class="w-[120px] h-[120px]" src="cell-3-4-q1.png" /></View>
-    <View class="absolute left-[360px] top-[540px] animate-agu"><Image class="w-[120px] h-[120px]" src="cell-3-4-q0.png" /></View>
-    <View class="absolute left-[360px] top-[540px] w-[120px] h-[120px] origin-center animate-agx"><Image class="w-[120px] h-[120px]" src="cell-3-4-q0.png" /></View>
-    <View class="absolute left-[480px] top-[540px] animate-agz"><Image class="w-[120px] h-[120px]" src="cell-4-4-q0.png" /></View>
-    <View class="absolute left-[480px] top-[540px] animate-ah1"><Image class="w-[120px] h-[120px]" src="cell-4-4-q1.png" /></View>
-    <View class="absolute left-[480px] top-[540px] animate-ah3"><Image class="w-[120px] h-[120px]" src="cell-4-4-q2.png" /></View>
-    <View class="absolute left-[480px] top-[540px] animate-ah5"><Image class="w-[120px] h-[120px]" src="cell-4-4-q3.png" /></View>
-    <View class="absolute left-[480px] top-[540px] animate-ah7"><Image class="w-[120px] h-[120px]" src="cell-4-4-q0.png" /></View>
-    <View class="absolute left-[480px] top-[540px] w-[120px] h-[120px] origin-center animate-aha"><Image class="w-[120px] h-[120px]" src="cell-4-4-q0.png" /></View>
-    <View class="absolute left-[600px] top-[540px] animate-ahc"><Image class="w-[120px] h-[120px]" src="cell-5-4-q0.png" /></View>
-    <View class="absolute left-[600px] top-[540px] animate-ahe"><Image class="w-[120px] h-[120px]" src="cell-5-4-q3.png" /></View>
-    <View class="absolute left-[600px] top-[540px] animate-ahg"><Image class="w-[120px] h-[120px]" src="cell-5-4-q2.png" /></View>
-    <View class="absolute left-[600px] top-[540px] animate-ahi"><Image class="w-[120px] h-[120px]" src="cell-5-4-q1.png" /></View>
-    <View class="absolute left-[600px] top-[540px] animate-ahk"><Image class="w-[120px] h-[120px]" src="cell-5-4-q0.png" /></View>
-    <View class="absolute left-[600px] top-[540px] w-[120px] h-[120px] origin-center animate-ahn"><Image class="w-[120px] h-[120px]" src="cell-5-4-q0.png" /></View>
-    <View class="absolute left-[720px] top-[540px] animate-ahp"><Image class="w-[120px] h-[120px]" src="cell-6-4-q0.png" /></View>
-    <View class="absolute left-[720px] top-[540px] animate-ahr"><Image class="w-[120px] h-[120px]" src="cell-6-4-q1.png" /></View>
-    <View class="absolute left-[720px] top-[540px] animate-aht"><Image class="w-[120px] h-[120px]" src="cell-6-4-q2.png" /></View>
-    <View class="absolute left-[720px] top-[540px] animate-ahv"><Image class="w-[120px] h-[120px]" src="cell-6-4-q3.png" /></View>
-    <View class="absolute left-[720px] top-[540px] animate-ahx"><Image class="w-[120px] h-[120px]" src="cell-6-4-q0.png" /></View>
-    <View class="absolute left-[720px] top-[540px] w-[120px] h-[120px] origin-center animate-ai0"><Image class="w-[120px] h-[120px]" src="cell-6-4-q0.png" /></View>
-    <View class="absolute left-[840px] top-[540px] animate-ai2"><Image class="w-[120px] h-[120px]" src="cell-7-4-q0.png" /></View>
-    <View class="absolute left-[840px] top-[540px] animate-ai4"><Image class="w-[120px] h-[120px]" src="cell-7-4-q3.png" /></View>
-    <View class="absolute left-[840px] top-[540px] animate-ai6"><Image class="w-[120px] h-[120px]" src="cell-7-4-q2.png" /></View>
-    <View class="absolute left-[840px] top-[540px] animate-ai8"><Image class="w-[120px] h-[120px]" src="cell-7-4-q1.png" /></View>
-    <View class="absolute left-[840px] top-[540px] animate-aia"><Image class="w-[120px] h-[120px]" src="cell-7-4-q0.png" /></View>
-    <View class="absolute left-[840px] top-[540px] w-[120px] h-[120px] origin-center animate-aid"><Image class="w-[120px] h-[120px]" src="cell-7-4-q0.png" /></View>
-    <View class="absolute left-[960px] top-[540px] animate-aif"><Image class="w-[120px] h-[120px]" src="cell-8-4-q0.png" /></View>
-    <View class="absolute left-[960px] top-[540px] animate-aih"><Image class="w-[120px] h-[120px]" src="cell-8-4-q1.png" /></View>
-    <View class="absolute left-[960px] top-[540px] animate-aij"><Image class="w-[120px] h-[120px]" src="cell-8-4-q2.png" /></View>
-    <View class="absolute left-[960px] top-[540px] animate-ail"><Image class="w-[120px] h-[120px]" src="cell-8-4-q3.png" /></View>
-    <View class="absolute left-[960px] top-[540px] animate-ain"><Image class="w-[120px] h-[120px]" src="cell-8-4-q0.png" /></View>
-    <View class="absolute left-[960px] top-[540px] w-[120px] h-[120px] origin-center animate-aiq"><Image class="w-[120px] h-[120px]" src="cell-8-4-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[540px] animate-ais"><Image class="w-[120px] h-[120px]" src="cell-9-4-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[540px] animate-aiu"><Image class="w-[120px] h-[120px]" src="cell-9-4-q3.png" /></View>
-    <View class="absolute left-[1080px] top-[540px] animate-aiw"><Image class="w-[120px] h-[120px]" src="cell-9-4-q2.png" /></View>
-    <View class="absolute left-[1080px] top-[540px] animate-aiy"><Image class="w-[120px] h-[120px]" src="cell-9-4-q1.png" /></View>
-    <View class="absolute left-[1080px] top-[540px] animate-aj0"><Image class="w-[120px] h-[120px]" src="cell-9-4-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[540px] w-[120px] h-[120px] origin-center animate-aj3"><Image class="w-[120px] h-[120px]" src="cell-9-4-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[540px] animate-aj5"><Image class="w-[120px] h-[120px]" src="cell-10-4-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[540px] animate-aj7"><Image class="w-[120px] h-[120px]" src="cell-10-4-q1.png" /></View>
-    <View class="absolute left-[1200px] top-[540px] animate-aj9"><Image class="w-[120px] h-[120px]" src="cell-10-4-q2.png" /></View>
-    <View class="absolute left-[1200px] top-[540px] animate-ajb"><Image class="w-[120px] h-[120px]" src="cell-10-4-q3.png" /></View>
-    <View class="absolute left-[1200px] top-[540px] animate-ajd"><Image class="w-[120px] h-[120px]" src="cell-10-4-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[540px] w-[120px] h-[120px] origin-center animate-ajg"><Image class="w-[120px] h-[120px]" src="cell-10-4-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[540px] animate-aji"><Image class="w-[120px] h-[120px]" src="cell-11-4-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[540px] animate-ajk"><Image class="w-[120px] h-[120px]" src="cell-11-4-q3.png" /></View>
-    <View class="absolute left-[1320px] top-[540px] animate-ajm"><Image class="w-[120px] h-[120px]" src="cell-11-4-q2.png" /></View>
-    <View class="absolute left-[1320px] top-[540px] animate-ajo"><Image class="w-[120px] h-[120px]" src="cell-11-4-q1.png" /></View>
-    <View class="absolute left-[1320px] top-[540px] animate-ajq"><Image class="w-[120px] h-[120px]" src="cell-11-4-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[540px] w-[120px] h-[120px] origin-center animate-ajt"><Image class="w-[120px] h-[120px]" src="cell-11-4-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[540px] animate-ajv"><Image class="w-[120px] h-[120px]" src="cell-12-4-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[540px] animate-ajx"><Image class="w-[120px] h-[120px]" src="cell-12-4-q1.png" /></View>
-    <View class="absolute left-[1440px] top-[540px] animate-ajz"><Image class="w-[120px] h-[120px]" src="cell-12-4-q2.png" /></View>
-    <View class="absolute left-[1440px] top-[540px] animate-ak1"><Image class="w-[120px] h-[120px]" src="cell-12-4-q3.png" /></View>
-    <View class="absolute left-[1440px] top-[540px] animate-ak3"><Image class="w-[120px] h-[120px]" src="cell-12-4-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[540px] w-[120px] h-[120px] origin-center animate-ak6"><Image class="w-[120px] h-[120px]" src="cell-12-4-q0.png" /></View>
-    <View class="absolute left-[360px] top-[660px] animate-ak8"><Image class="w-[120px] h-[120px]" src="cell-3-5-q0.png" /></View>
-    <View class="absolute left-[360px] top-[660px] animate-aka"><Image class="w-[120px] h-[120px]" src="cell-3-5-q1.png" /></View>
-    <View class="absolute left-[360px] top-[660px] animate-akc"><Image class="w-[120px] h-[120px]" src="cell-3-5-q2.png" /></View>
-    <View class="absolute left-[360px] top-[660px] animate-ake"><Image class="w-[120px] h-[120px]" src="cell-3-5-q3.png" /></View>
-    <View class="absolute left-[360px] top-[660px] animate-akg"><Image class="w-[120px] h-[120px]" src="cell-3-5-q0.png" /></View>
-    <View class="absolute left-[360px] top-[660px] w-[120px] h-[120px] origin-center animate-akj"><Image class="w-[120px] h-[120px]" src="cell-3-5-q0.png" /></View>
-    <View class="absolute left-[480px] top-[660px] animate-akl"><Image class="w-[120px] h-[120px]" src="cell-4-5-q0.png" /></View>
-    <View class="absolute left-[480px] top-[660px] animate-akn"><Image class="w-[120px] h-[120px]" src="cell-4-5-q3.png" /></View>
-    <View class="absolute left-[480px] top-[660px] animate-akp"><Image class="w-[120px] h-[120px]" src="cell-4-5-q2.png" /></View>
-    <View class="absolute left-[480px] top-[660px] animate-akr"><Image class="w-[120px] h-[120px]" src="cell-4-5-q1.png" /></View>
-    <View class="absolute left-[480px] top-[660px] animate-akt"><Image class="w-[120px] h-[120px]" src="cell-4-5-q0.png" /></View>
-    <View class="absolute left-[480px] top-[660px] w-[120px] h-[120px] origin-center animate-akw"><Image class="w-[120px] h-[120px]" src="cell-4-5-q0.png" /></View>
-    <View class="absolute left-[600px] top-[660px] animate-aky"><Image class="w-[120px] h-[120px]" src="cell-5-5-q0.png" /></View>
-    <View class="absolute left-[600px] top-[660px] animate-al0"><Image class="w-[120px] h-[120px]" src="cell-5-5-q1.png" /></View>
-    <View class="absolute left-[600px] top-[660px] animate-al2"><Image class="w-[120px] h-[120px]" src="cell-5-5-q2.png" /></View>
-    <View class="absolute left-[600px] top-[660px] animate-al4"><Image class="w-[120px] h-[120px]" src="cell-5-5-q3.png" /></View>
-    <View class="absolute left-[600px] top-[660px] animate-al6"><Image class="w-[120px] h-[120px]" src="cell-5-5-q0.png" /></View>
-    <View class="absolute left-[600px] top-[660px] w-[120px] h-[120px] origin-center animate-al9"><Image class="w-[120px] h-[120px]" src="cell-5-5-q0.png" /></View>
-    <View class="absolute left-[720px] top-[660px] animate-alb"><Image class="w-[120px] h-[120px]" src="cell-6-5-q0.png" /></View>
-    <View class="absolute left-[720px] top-[660px] animate-ald"><Image class="w-[120px] h-[120px]" src="cell-6-5-q3.png" /></View>
-    <View class="absolute left-[720px] top-[660px] animate-alf"><Image class="w-[120px] h-[120px]" src="cell-6-5-q2.png" /></View>
-    <View class="absolute left-[720px] top-[660px] animate-alh"><Image class="w-[120px] h-[120px]" src="cell-6-5-q1.png" /></View>
-    <View class="absolute left-[720px] top-[660px] animate-alj"><Image class="w-[120px] h-[120px]" src="cell-6-5-q0.png" /></View>
-    <View class="absolute left-[720px] top-[660px] w-[120px] h-[120px] origin-center animate-alm"><Image class="w-[120px] h-[120px]" src="cell-6-5-q0.png" /></View>
-    <View class="absolute left-[840px] top-[660px] animate-alo"><Image class="w-[120px] h-[120px]" src="cell-7-5-q0.png" /></View>
-    <View class="absolute left-[840px] top-[660px] animate-alq"><Image class="w-[120px] h-[120px]" src="cell-7-5-q1.png" /></View>
-    <View class="absolute left-[840px] top-[660px] animate-als"><Image class="w-[120px] h-[120px]" src="cell-7-5-q2.png" /></View>
-    <View class="absolute left-[840px] top-[660px] animate-alu"><Image class="w-[120px] h-[120px]" src="cell-7-5-q3.png" /></View>
-    <View class="absolute left-[840px] top-[660px] animate-alw"><Image class="w-[120px] h-[120px]" src="cell-7-5-q0.png" /></View>
-    <View class="absolute left-[840px] top-[660px] w-[120px] h-[120px] origin-center animate-alz"><Image class="w-[120px] h-[120px]" src="cell-7-5-q0.png" /></View>
-    <View class="absolute left-[960px] top-[660px] animate-am1"><Image class="w-[120px] h-[120px]" src="cell-8-5-q0.png" /></View>
-    <View class="absolute left-[960px] top-[660px] animate-am3"><Image class="w-[120px] h-[120px]" src="cell-8-5-q3.png" /></View>
-    <View class="absolute left-[960px] top-[660px] animate-am5"><Image class="w-[120px] h-[120px]" src="cell-8-5-q2.png" /></View>
-    <View class="absolute left-[960px] top-[660px] animate-am7"><Image class="w-[120px] h-[120px]" src="cell-8-5-q1.png" /></View>
-    <View class="absolute left-[960px] top-[660px] animate-am9"><Image class="w-[120px] h-[120px]" src="cell-8-5-q0.png" /></View>
-    <View class="absolute left-[960px] top-[660px] w-[120px] h-[120px] origin-center animate-amc"><Image class="w-[120px] h-[120px]" src="cell-8-5-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[660px] animate-ame"><Image class="w-[120px] h-[120px]" src="cell-9-5-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[660px] animate-amg"><Image class="w-[120px] h-[120px]" src="cell-9-5-q1.png" /></View>
-    <View class="absolute left-[1080px] top-[660px] animate-ami"><Image class="w-[120px] h-[120px]" src="cell-9-5-q2.png" /></View>
-    <View class="absolute left-[1080px] top-[660px] animate-amk"><Image class="w-[120px] h-[120px]" src="cell-9-5-q3.png" /></View>
-    <View class="absolute left-[1080px] top-[660px] animate-amm"><Image class="w-[120px] h-[120px]" src="cell-9-5-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[660px] w-[120px] h-[120px] origin-center animate-amp"><Image class="w-[120px] h-[120px]" src="cell-9-5-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[660px] animate-amr"><Image class="w-[120px] h-[120px]" src="cell-10-5-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[660px] animate-amt"><Image class="w-[120px] h-[120px]" src="cell-10-5-q3.png" /></View>
-    <View class="absolute left-[1200px] top-[660px] animate-amv"><Image class="w-[120px] h-[120px]" src="cell-10-5-q2.png" /></View>
-    <View class="absolute left-[1200px] top-[660px] animate-amx"><Image class="w-[120px] h-[120px]" src="cell-10-5-q1.png" /></View>
-    <View class="absolute left-[1200px] top-[660px] animate-amz"><Image class="w-[120px] h-[120px]" src="cell-10-5-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[660px] w-[120px] h-[120px] origin-center animate-an2"><Image class="w-[120px] h-[120px]" src="cell-10-5-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[660px] animate-an4"><Image class="w-[120px] h-[120px]" src="cell-11-5-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[660px] animate-an6"><Image class="w-[120px] h-[120px]" src="cell-11-5-q1.png" /></View>
-    <View class="absolute left-[1320px] top-[660px] animate-an8"><Image class="w-[120px] h-[120px]" src="cell-11-5-q2.png" /></View>
-    <View class="absolute left-[1320px] top-[660px] animate-ana"><Image class="w-[120px] h-[120px]" src="cell-11-5-q3.png" /></View>
-    <View class="absolute left-[1320px] top-[660px] animate-anc"><Image class="w-[120px] h-[120px]" src="cell-11-5-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[660px] w-[120px] h-[120px] origin-center animate-anf"><Image class="w-[120px] h-[120px]" src="cell-11-5-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[660px] animate-anh"><Image class="w-[120px] h-[120px]" src="cell-12-5-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[660px] animate-anj"><Image class="w-[120px] h-[120px]" src="cell-12-5-q3.png" /></View>
-    <View class="absolute left-[1440px] top-[660px] animate-anl"><Image class="w-[120px] h-[120px]" src="cell-12-5-q2.png" /></View>
-    <View class="absolute left-[1440px] top-[660px] animate-ann"><Image class="w-[120px] h-[120px]" src="cell-12-5-q1.png" /></View>
-    <View class="absolute left-[1440px] top-[660px] animate-anp"><Image class="w-[120px] h-[120px]" src="cell-12-5-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[660px] w-[120px] h-[120px] origin-center animate-ans"><Image class="w-[120px] h-[120px]" src="cell-12-5-q0.png" /></View>
-    <View class="absolute left-[120px] top-[780px] animate-anu"><Image class="w-[120px] h-[120px]" src="cell-1-6-q0.png" /></View>
-    <View class="absolute left-[120px] top-[780px] animate-anw"><Image class="w-[120px] h-[120px]" src="cell-1-6-q3.png" /></View>
-    <View class="absolute left-[120px] top-[780px] animate-any"><Image class="w-[120px] h-[120px]" src="cell-1-6-q2.png" /></View>
-    <View class="absolute left-[120px] top-[780px] animate-ao0"><Image class="w-[120px] h-[120px]" src="cell-1-6-q1.png" /></View>
-    <View class="absolute left-[120px] top-[780px] animate-ao2"><Image class="w-[120px] h-[120px]" src="cell-1-6-q0.png" /></View>
-    <View class="absolute left-[120px] top-[780px] w-[120px] h-[120px] origin-center animate-ao5"><Image class="w-[120px] h-[120px]" src="cell-1-6-q0.png" /></View>
-    <View class="absolute left-[240px] top-[780px] animate-ao7"><Image class="w-[120px] h-[120px]" src="cell-2-6-q0.png" /></View>
-    <View class="absolute left-[240px] top-[780px] animate-ao9"><Image class="w-[120px] h-[120px]" src="cell-2-6-q1.png" /></View>
-    <View class="absolute left-[240px] top-[780px] animate-aob"><Image class="w-[120px] h-[120px]" src="cell-2-6-q2.png" /></View>
-    <View class="absolute left-[240px] top-[780px] animate-aod"><Image class="w-[120px] h-[120px]" src="cell-2-6-q3.png" /></View>
-    <View class="absolute left-[240px] top-[780px] animate-aof"><Image class="w-[120px] h-[120px]" src="cell-2-6-q0.png" /></View>
-    <View class="absolute left-[240px] top-[780px] w-[120px] h-[120px] origin-center animate-aoi"><Image class="w-[120px] h-[120px]" src="cell-2-6-q0.png" /></View>
-    <View class="absolute left-[360px] top-[780px] animate-aok"><Image class="w-[120px] h-[120px]" src="cell-3-6-q0.png" /></View>
-    <View class="absolute left-[360px] top-[780px] animate-aom"><Image class="w-[120px] h-[120px]" src="cell-3-6-q3.png" /></View>
-    <View class="absolute left-[360px] top-[780px] animate-aoo"><Image class="w-[120px] h-[120px]" src="cell-3-6-q2.png" /></View>
-    <View class="absolute left-[360px] top-[780px] animate-aoq"><Image class="w-[120px] h-[120px]" src="cell-3-6-q1.png" /></View>
-    <View class="absolute left-[360px] top-[780px] animate-aos"><Image class="w-[120px] h-[120px]" src="cell-3-6-q0.png" /></View>
-    <View class="absolute left-[360px] top-[780px] w-[120px] h-[120px] origin-center animate-aov"><Image class="w-[120px] h-[120px]" src="cell-3-6-q0.png" /></View>
-    <View class="absolute left-[480px] top-[780px] animate-aox"><Image class="w-[120px] h-[120px]" src="cell-4-6-q0.png" /></View>
-    <View class="absolute left-[480px] top-[780px] animate-aoz"><Image class="w-[120px] h-[120px]" src="cell-4-6-q1.png" /></View>
-    <View class="absolute left-[480px] top-[780px] animate-ap1"><Image class="w-[120px] h-[120px]" src="cell-4-6-q2.png" /></View>
-    <View class="absolute left-[480px] top-[780px] animate-ap3"><Image class="w-[120px] h-[120px]" src="cell-4-6-q3.png" /></View>
-    <View class="absolute left-[480px] top-[780px] animate-ap5"><Image class="w-[120px] h-[120px]" src="cell-4-6-q0.png" /></View>
-    <View class="absolute left-[480px] top-[780px] w-[120px] h-[120px] origin-center animate-ap8"><Image class="w-[120px] h-[120px]" src="cell-4-6-q0.png" /></View>
-    <View class="absolute left-[600px] top-[780px] animate-apa"><Image class="w-[120px] h-[120px]" src="cell-5-6-q0.png" /></View>
-    <View class="absolute left-[600px] top-[780px] animate-apc"><Image class="w-[120px] h-[120px]" src="cell-5-6-q3.png" /></View>
-    <View class="absolute left-[600px] top-[780px] animate-ape"><Image class="w-[120px] h-[120px]" src="cell-5-6-q2.png" /></View>
-    <View class="absolute left-[600px] top-[780px] animate-apg"><Image class="w-[120px] h-[120px]" src="cell-5-6-q1.png" /></View>
-    <View class="absolute left-[600px] top-[780px] animate-api"><Image class="w-[120px] h-[120px]" src="cell-5-6-q0.png" /></View>
-    <View class="absolute left-[600px] top-[780px] w-[120px] h-[120px] origin-center animate-apl"><Image class="w-[120px] h-[120px]" src="cell-5-6-q0.png" /></View>
-    <View class="absolute left-[720px] top-[780px] animate-apn"><Image class="w-[120px] h-[120px]" src="cell-6-6-q0.png" /></View>
-    <View class="absolute left-[720px] top-[780px] animate-app"><Image class="w-[120px] h-[120px]" src="cell-6-6-q1.png" /></View>
-    <View class="absolute left-[720px] top-[780px] animate-apr"><Image class="w-[120px] h-[120px]" src="cell-6-6-q2.png" /></View>
-    <View class="absolute left-[720px] top-[780px] animate-apt"><Image class="w-[120px] h-[120px]" src="cell-6-6-q3.png" /></View>
-    <View class="absolute left-[720px] top-[780px] animate-apv"><Image class="w-[120px] h-[120px]" src="cell-6-6-q0.png" /></View>
-    <View class="absolute left-[720px] top-[780px] w-[120px] h-[120px] origin-center animate-apy"><Image class="w-[120px] h-[120px]" src="cell-6-6-q0.png" /></View>
-    <View class="absolute left-[840px] top-[780px] animate-aq0"><Image class="w-[120px] h-[120px]" src="cell-7-6-q0.png" /></View>
-    <View class="absolute left-[840px] top-[780px] animate-aq2"><Image class="w-[120px] h-[120px]" src="cell-7-6-q3.png" /></View>
-    <View class="absolute left-[840px] top-[780px] animate-aq4"><Image class="w-[120px] h-[120px]" src="cell-7-6-q2.png" /></View>
-    <View class="absolute left-[840px] top-[780px] animate-aq6"><Image class="w-[120px] h-[120px]" src="cell-7-6-q1.png" /></View>
-    <View class="absolute left-[840px] top-[780px] animate-aq8"><Image class="w-[120px] h-[120px]" src="cell-7-6-q0.png" /></View>
-    <View class="absolute left-[840px] top-[780px] w-[120px] h-[120px] origin-center animate-aqb"><Image class="w-[120px] h-[120px]" src="cell-7-6-q0.png" /></View>
-    <View class="absolute left-[960px] top-[780px] animate-aqd"><Image class="w-[120px] h-[120px]" src="cell-8-6-q0.png" /></View>
-    <View class="absolute left-[960px] top-[780px] animate-aqf"><Image class="w-[120px] h-[120px]" src="cell-8-6-q1.png" /></View>
-    <View class="absolute left-[960px] top-[780px] animate-aqh"><Image class="w-[120px] h-[120px]" src="cell-8-6-q2.png" /></View>
-    <View class="absolute left-[960px] top-[780px] animate-aqj"><Image class="w-[120px] h-[120px]" src="cell-8-6-q3.png" /></View>
-    <View class="absolute left-[960px] top-[780px] animate-aql"><Image class="w-[120px] h-[120px]" src="cell-8-6-q0.png" /></View>
-    <View class="absolute left-[960px] top-[780px] w-[120px] h-[120px] origin-center animate-aqo"><Image class="w-[120px] h-[120px]" src="cell-8-6-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[780px] animate-aqq"><Image class="w-[120px] h-[120px]" src="cell-9-6-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[780px] animate-aqs"><Image class="w-[120px] h-[120px]" src="cell-9-6-q3.png" /></View>
-    <View class="absolute left-[1080px] top-[780px] animate-aqu"><Image class="w-[120px] h-[120px]" src="cell-9-6-q2.png" /></View>
-    <View class="absolute left-[1080px] top-[780px] animate-aqw"><Image class="w-[120px] h-[120px]" src="cell-9-6-q1.png" /></View>
-    <View class="absolute left-[1080px] top-[780px] animate-aqy"><Image class="w-[120px] h-[120px]" src="cell-9-6-q0.png" /></View>
-    <View class="absolute left-[1080px] top-[780px] w-[120px] h-[120px] origin-center animate-ar1"><Image class="w-[120px] h-[120px]" src="cell-9-6-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[780px] animate-ar3"><Image class="w-[120px] h-[120px]" src="cell-10-6-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[780px] animate-ar5"><Image class="w-[120px] h-[120px]" src="cell-10-6-q1.png" /></View>
-    <View class="absolute left-[1200px] top-[780px] animate-ar7"><Image class="w-[120px] h-[120px]" src="cell-10-6-q2.png" /></View>
-    <View class="absolute left-[1200px] top-[780px] animate-ar9"><Image class="w-[120px] h-[120px]" src="cell-10-6-q3.png" /></View>
-    <View class="absolute left-[1200px] top-[780px] animate-arb"><Image class="w-[120px] h-[120px]" src="cell-10-6-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[780px] w-[120px] h-[120px] origin-center animate-are"><Image class="w-[120px] h-[120px]" src="cell-10-6-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[780px] animate-arg"><Image class="w-[120px] h-[120px]" src="cell-11-6-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[780px] animate-ari"><Image class="w-[120px] h-[120px]" src="cell-11-6-q3.png" /></View>
-    <View class="absolute left-[1320px] top-[780px] animate-ark"><Image class="w-[120px] h-[120px]" src="cell-11-6-q2.png" /></View>
-    <View class="absolute left-[1320px] top-[780px] animate-arm"><Image class="w-[120px] h-[120px]" src="cell-11-6-q1.png" /></View>
-    <View class="absolute left-[1320px] top-[780px] animate-aro"><Image class="w-[120px] h-[120px]" src="cell-11-6-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[780px] w-[120px] h-[120px] origin-center animate-arr"><Image class="w-[120px] h-[120px]" src="cell-11-6-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[780px] animate-art"><Image class="w-[120px] h-[120px]" src="cell-12-6-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[780px] animate-arv"><Image class="w-[120px] h-[120px]" src="cell-12-6-q1.png" /></View>
-    <View class="absolute left-[1440px] top-[780px] animate-arx"><Image class="w-[120px] h-[120px]" src="cell-12-6-q2.png" /></View>
-    <View class="absolute left-[1440px] top-[780px] animate-arz"><Image class="w-[120px] h-[120px]" src="cell-12-6-q3.png" /></View>
-    <View class="absolute left-[1440px] top-[780px] animate-as1"><Image class="w-[120px] h-[120px]" src="cell-12-6-q0.png" /></View>
-    <View class="absolute left-[1440px] top-[780px] w-[120px] h-[120px] origin-center animate-as4"><Image class="w-[120px] h-[120px]" src="cell-12-6-q0.png" /></View>
-    <View class="absolute left-[120px] top-[900px] animate-as6"><Image class="w-[120px] h-[120px]" src="cell-1-7-q0.png" /></View>
-    <View class="absolute left-[120px] top-[900px] animate-as8"><Image class="w-[120px] h-[120px]" src="cell-1-7-q1.png" /></View>
-    <View class="absolute left-[120px] top-[900px] animate-asa"><Image class="w-[120px] h-[120px]" src="cell-1-7-q2.png" /></View>
-    <View class="absolute left-[120px] top-[900px] animate-asc"><Image class="w-[120px] h-[120px]" src="cell-1-7-q3.png" /></View>
-    <View class="absolute left-[120px] top-[900px] animate-ase"><Image class="w-[120px] h-[120px]" src="cell-1-7-q0.png" /></View>
-    <View class="absolute left-[120px] top-[900px] w-[120px] h-[120px] origin-center animate-ash"><Image class="w-[120px] h-[120px]" src="cell-1-7-q0.png" /></View>
-    <View class="absolute left-[240px] top-[900px] animate-asj"><Image class="w-[120px] h-[120px]" src="cell-2-7-q0.png" /></View>
-    <View class="absolute left-[240px] top-[900px] animate-asl"><Image class="w-[120px] h-[120px]" src="cell-2-7-q3.png" /></View>
-    <View class="absolute left-[240px] top-[900px] animate-asn"><Image class="w-[120px] h-[120px]" src="cell-2-7-q2.png" /></View>
-    <View class="absolute left-[240px] top-[900px] animate-asp"><Image class="w-[120px] h-[120px]" src="cell-2-7-q1.png" /></View>
-    <View class="absolute left-[240px] top-[900px] animate-asr"><Image class="w-[120px] h-[120px]" src="cell-2-7-q0.png" /></View>
-    <View class="absolute left-[240px] top-[900px] w-[120px] h-[120px] origin-center animate-asu"><Image class="w-[120px] h-[120px]" src="cell-2-7-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[900px] animate-asw"><Image class="w-[120px] h-[120px]" src="cell-10-7-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[900px] animate-asy"><Image class="w-[120px] h-[120px]" src="cell-10-7-q3.png" /></View>
-    <View class="absolute left-[1200px] top-[900px] animate-at0"><Image class="w-[120px] h-[120px]" src="cell-10-7-q2.png" /></View>
-    <View class="absolute left-[1200px] top-[900px] animate-at2"><Image class="w-[120px] h-[120px]" src="cell-10-7-q1.png" /></View>
-    <View class="absolute left-[1200px] top-[900px] animate-at4"><Image class="w-[120px] h-[120px]" src="cell-10-7-q0.png" /></View>
-    <View class="absolute left-[1200px] top-[900px] w-[120px] h-[120px] origin-center animate-at7"><Image class="w-[120px] h-[120px]" src="cell-10-7-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[900px] animate-at9"><Image class="w-[120px] h-[120px]" src="cell-11-7-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[900px] animate-atb"><Image class="w-[120px] h-[120px]" src="cell-11-7-q1.png" /></View>
-    <View class="absolute left-[1320px] top-[900px] animate-atd"><Image class="w-[120px] h-[120px]" src="cell-11-7-q2.png" /></View>
-    <View class="absolute left-[1320px] top-[900px] animate-atf"><Image class="w-[120px] h-[120px]" src="cell-11-7-q3.png" /></View>
-    <View class="absolute left-[1320px] top-[900px] animate-ath"><Image class="w-[120px] h-[120px]" src="cell-11-7-q0.png" /></View>
-    <View class="absolute left-[1320px] top-[900px] w-[120px] h-[120px] origin-center animate-atk"><Image class="w-[120px] h-[120px]" src="cell-11-7-q0.png" /></View>
-    <View class="absolute left-[1710px] top-[898px] animate-atm"><Image class="w-[120px] h-[122px]" src="word-0-B.png" /></View>
-    <View class="absolute left-[1710px] top-[755px] animate-ato"><Image class="w-[120px] h-[143px]" src="word-1-A.png" /></View>
-    <View class="absolute left-[1710px] top-[615px] animate-atq"><Image class="w-[120px] h-[140px]" src="word-2-U.png" /></View>
-    <View class="absolute left-[1710px] top-[471px] animate-ats"><Image class="w-[120px] h-[144px]" src="word-3-H.png" /></View>
-    <View class="absolute left-[1710px] top-[323px] animate-atu"><Image class="w-[120px] h-[148px]" src="word-4-A.png" /></View>
-    <View class="absolute left-[1710px] top-[186px] animate-atw"><Image class="w-[120px] h-[137px]" src="word-5-U.png" /></View>
-    <View class="absolute left-[1710px] top-[60px] animate-aty"><Image class="w-[120px] h-[126px]" src="word-6-S.png" /></View>
-    <View class="absolute left-[364px] top-[912px] w-[480px] h-[80px] origin-center  animate-au8"><View class="flex-col gap-[10px]"><Text class="font-bold text-[26px] text-[#111111] animate-au0">{"FORM · FARBE · FUNKTION"}</Text><View class="flex-row items-center gap-[12px]"><Text class="font-[cjk] font-bold text-[24px] text-[#111111] animate-au2">{"形式"}</Text><Text class="font-bold text-[26px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[24px] text-[#111111] animate-au4">{"色彩"}</Text><Text class="font-bold text-[26px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[24px] text-[#111111] animate-au6">{"功能"}</Text></View></View></View>
-    <View class="absolute left-[120px] top-[46px] animate-aud"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[127px] top-[34px] animate-aud"><Text class="font-bold text-[11px] text-[#3A342C]">{"02"}</Text></View>
-    <View class="absolute left-[240px] top-[46px] animate-auf"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[247px] top-[34px] animate-auf"><Text class="font-bold text-[11px] text-[#3A342C]">{"03"}</Text></View>
-    <View class="absolute left-[360px] top-[46px] animate-auh"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[367px] top-[34px] animate-auh"><Text class="font-bold text-[11px] text-[#3A342C]">{"04"}</Text></View>
-    <View class="absolute left-[480px] top-[46px] animate-auj"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[487px] top-[34px] animate-auj"><Text class="font-bold text-[11px] text-[#3A342C]">{"05"}</Text></View>
-    <View class="absolute left-[600px] top-[46px] animate-aul"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[607px] top-[34px] animate-aul"><Text class="font-bold text-[11px] text-[#3A342C]">{"06"}</Text></View>
-    <View class="absolute left-[720px] top-[46px] animate-aun"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[727px] top-[34px] animate-aun"><Text class="font-bold text-[11px] text-[#3A342C]">{"07"}</Text></View>
-    <View class="absolute left-[840px] top-[46px] animate-aup"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[847px] top-[34px] animate-aup"><Text class="font-bold text-[11px] text-[#3A342C]">{"08"}</Text></View>
-    <View class="absolute left-[960px] top-[46px] animate-aur"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[967px] top-[34px] animate-aur"><Text class="font-bold text-[11px] text-[#3A342C]">{"09"}</Text></View>
-    <View class="absolute left-[1080px] top-[46px] animate-aut"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[1087px] top-[34px] animate-aut"><Text class="font-bold text-[11px] text-[#3A342C]">{"10"}</Text></View>
-    <View class="absolute left-[1200px] top-[46px] animate-auv"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[1207px] top-[34px] animate-auv"><Text class="font-bold text-[11px] text-[#3A342C]">{"11"}</Text></View>
-    <View class="absolute left-[1320px] top-[46px] animate-aux"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[1327px] top-[34px] animate-aux"><Text class="font-bold text-[11px] text-[#3A342C]">{"12"}</Text></View>
-    <View class="absolute left-[1440px] top-[46px] animate-auz"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[1447px] top-[34px] animate-auz"><Text class="font-bold text-[11px] text-[#3A342C]">{"13"}</Text></View>
-    <View class="absolute left-[1560px] top-[46px] animate-av1"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[1567px] top-[34px] animate-av1"><Text class="font-bold text-[11px] text-[#3A342C]">{"14"}</Text></View>
-    <View class="absolute left-[1680px] top-[46px] animate-av3"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[1687px] top-[34px] animate-av3"><Text class="font-bold text-[11px] text-[#3A342C]">{"15"}</Text></View>
-    <View class="absolute left-[1800px] top-[46px] animate-av5"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
-    <View class="absolute left-[1807px] top-[34px] animate-av5"><Text class="font-bold text-[11px] text-[#3A342C]">{"16"}</Text></View>
-    <View class="absolute left-[730px] top-[1038px] animate-av7"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[0px] top-[4px] w-[12px] h-[12px] bg-[#B9AE9C]" /><View class="absolute left-[10px] top-[14px] w-[4px] h-[4px] bg-[#B9AE9C]" /><View class="absolute left-[14px] top-[4px] w-[12px] h-[12px] border-[#B9AE9C] border" /></View><Text class="font-bold text-[12px] text-[#B9AE9C]">{"ROLL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#B9AE9C]">{"滚"}</Text></View></View>
-    <View class="absolute left-[730px] top-[1038px] animate-av9"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[0px] top-[4px] w-[12px] h-[12px] bg-[#3A342C]" /><View class="absolute left-[10px] top-[14px] w-[4px] h-[4px] bg-[#3A342C]" /><View class="absolute left-[14px] top-[4px] w-[12px] h-[12px] border-[#3A342C] border" /></View><Text class="font-bold text-[12px] text-[#3A342C]">{"ROLL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"滚"}</Text></View></View>
-    <View class="absolute left-[850px] top-[1038px] animate-avb"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[6px] top-[2px] w-[14px] h-[14px] border-[#B9AE9C] border" /><View class="absolute left-[8px] top-[4px] w-[10px] h-[10px] bg-[#B9AE9C] rotate-45 origin-center" /></View><Text class="font-bold text-[12px] text-[#B9AE9C]">{"TURN"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#B9AE9C]">{"转"}</Text></View></View>
-    <View class="absolute left-[850px] top-[1038px] animate-avd"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[6px] top-[2px] w-[14px] h-[14px] border-[#3A342C] border" /><View class="absolute left-[8px] top-[4px] w-[10px] h-[10px] bg-[#3A342C] rotate-45 origin-center" /></View><Text class="font-bold text-[12px] text-[#3A342C]">{"TURN"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"转"}</Text></View></View>
-    <View class="absolute left-[970px] top-[1038px] animate-avf"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[0px] top-[4px] w-[12px] h-[12px] border-[#B9AE9C] border" /><View class="absolute left-[13px] top-[9px] w-[8px] h-[2px] bg-[#B9AE9C]" /><View class="absolute left-[14px] top-[4px] w-[12px] h-[12px] bg-[#B9AE9C]" /></View><Text class="font-bold text-[12px] text-[#B9AE9C]">{"SLIDE"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#B9AE9C]">{"移"}</Text></View></View>
-    <View class="absolute left-[970px] top-[1038px] animate-avh"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[0px] top-[4px] w-[12px] h-[12px] border-[#3A342C] border" /><View class="absolute left-[13px] top-[9px] w-[8px] h-[2px] bg-[#3A342C]" /><View class="absolute left-[14px] top-[4px] w-[12px] h-[12px] bg-[#3A342C]" /></View><Text class="font-bold text-[12px] text-[#3A342C]">{"SLIDE"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"移"}</Text></View></View>
-    <View class="absolute left-[1090px] top-[1038px] animate-avj"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[2px] top-[0px] w-[20px] h-[20px] border-[#B9AE9C] border" /><View class="absolute left-[7px] top-[5px] w-[10px] h-[10px] bg-[#B9AE9C]" /></View><Text class="font-bold text-[12px] text-[#B9AE9C]">{"GROW"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#B9AE9C]">{"长"}</Text></View></View>
-    <View class="absolute left-[1090px] top-[1038px] animate-avl"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[2px] top-[0px] w-[20px] h-[20px] border-[#3A342C] border" /><View class="absolute left-[7px] top-[5px] w-[10px] h-[10px] bg-[#3A342C]" /></View><Text class="font-bold text-[12px] text-[#3A342C]">{"GROW"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"长"}</Text></View></View>
-    <View class="absolute left-[60px] top-[1040px] flex-row items-center gap-[10px] animate-avn"><Text class="font-bold text-[13px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"模数构成"}</Text></View>
-    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-14 animate-aub" src="grain.png" />
+    <View class="absolute left-[1081px] top-[301px] w-[480px] h-[480px] origin-center  animate-a2v"><Image class="w-[480px] h-[480px]" src="f-tri-yellow-480x480-102.png" /></View>
+    <View class="absolute left-[1319px] top-[62px] w-[240px] h-[240px] origin-center  animate-a2x"><Image class="w-[240px] h-[240px]" src="f-box-blue-240x240-103.png" /></View>
+    <View class="absolute left-[479px] top-[782px] w-[240px] h-[120px] origin-center  animate-a2z"><Image class="w-[240px] h-[120px]" src="f-half-blue-240x120-104.png" /></View>
+    <View class="absolute left-[121px] top-[779px] w-[240px] h-[240px] origin-center  animate-a31"><Image class="w-[240px] h-[240px]" src="f-quarter-black-240x240-105-q1.png" /></View>
+    <View class="absolute left-[1562px] top-[59px] w-[120px] h-[120px] origin-center  animate-a33"><Image class="w-[120px] h-[120px]" src="f-box-red-120x120-106.png" /></View>
+    <View class="absolute left-[721px] top-[899px] w-[960px] h-[120px] origin-center  animate-a35"><Image class="w-[960px] h-[120px]" src="f-box-black-960x120-101.png" /></View>
+    <View class="absolute left-[1681px] top-[59px] w-[120px] h-[960px] origin-center  animate-a37"><Image class="w-[120px] h-[960px]" src="f-box-black-960x120-101-q1.png" /></View>
+    <View class="absolute left-[946px] top-[539px] w-[28px] h-[3px] bg-[#111111] animate-a39" /><View class="absolute left-[959px] top-[526px] w-[3px] h-[28px] bg-[#111111] animate-a39" />
+    <View class="absolute left-[360px] top-[60px] animate-a3b"><Image class="w-[120px] h-[120px]" src="cell-3-0-q0.png" /></View>
+    <View class="absolute left-[360px] top-[60px] animate-a3d"><Image class="w-[120px] h-[120px]" src="cell-3-0-q3.png" /></View>
+    <View class="absolute left-[360px] top-[60px] animate-a3f"><Image class="w-[120px] h-[120px]" src="cell-3-0-q2.png" /></View>
+    <View class="absolute left-[360px] top-[60px] animate-a3h"><Image class="w-[120px] h-[120px]" src="cell-3-0-q1.png" /></View>
+    <View class="absolute left-[360px] top-[60px] animate-a3j"><Image class="w-[120px] h-[120px]" src="cell-3-0-q0.png" /></View>
+    <View class="absolute left-[360px] top-[60px] w-[120px] h-[120px] origin-center animate-a3m"><Image class="w-[120px] h-[120px]" src="cell-3-0-q0.png" /></View>
+    <View class="absolute left-[480px] top-[60px] animate-a3o"><Image class="w-[120px] h-[120px]" src="cell-4-0-q0.png" /></View>
+    <View class="absolute left-[480px] top-[60px] animate-a3q"><Image class="w-[120px] h-[120px]" src="cell-4-0-q1.png" /></View>
+    <View class="absolute left-[480px] top-[60px] animate-a3s"><Image class="w-[120px] h-[120px]" src="cell-4-0-q2.png" /></View>
+    <View class="absolute left-[480px] top-[60px] animate-a3u"><Image class="w-[120px] h-[120px]" src="cell-4-0-q3.png" /></View>
+    <View class="absolute left-[480px] top-[60px] animate-a3w"><Image class="w-[120px] h-[120px]" src="cell-4-0-q0.png" /></View>
+    <View class="absolute left-[480px] top-[60px] w-[120px] h-[120px] origin-center animate-a3z"><Image class="w-[120px] h-[120px]" src="cell-4-0-q0.png" /></View>
+    <View class="absolute left-[600px] top-[60px] animate-a41"><Image class="w-[120px] h-[120px]" src="cell-5-0-q0.png" /></View>
+    <View class="absolute left-[600px] top-[60px] animate-a43"><Image class="w-[120px] h-[120px]" src="cell-5-0-q3.png" /></View>
+    <View class="absolute left-[600px] top-[60px] animate-a45"><Image class="w-[120px] h-[120px]" src="cell-5-0-q2.png" /></View>
+    <View class="absolute left-[600px] top-[60px] animate-a47"><Image class="w-[120px] h-[120px]" src="cell-5-0-q1.png" /></View>
+    <View class="absolute left-[600px] top-[60px] animate-a49"><Image class="w-[120px] h-[120px]" src="cell-5-0-q0.png" /></View>
+    <View class="absolute left-[600px] top-[60px] w-[120px] h-[120px] origin-center animate-a4c"><Image class="w-[120px] h-[120px]" src="cell-5-0-q0.png" /></View>
+    <View class="absolute left-[720px] top-[60px] animate-a4e"><Image class="w-[120px] h-[120px]" src="cell-6-0-q0.png" /></View>
+    <View class="absolute left-[720px] top-[60px] animate-a4g"><Image class="w-[120px] h-[120px]" src="cell-6-0-q1.png" /></View>
+    <View class="absolute left-[720px] top-[60px] animate-a4i"><Image class="w-[120px] h-[120px]" src="cell-6-0-q2.png" /></View>
+    <View class="absolute left-[720px] top-[60px] animate-a4k"><Image class="w-[120px] h-[120px]" src="cell-6-0-q3.png" /></View>
+    <View class="absolute left-[720px] top-[60px] animate-a4m"><Image class="w-[120px] h-[120px]" src="cell-6-0-q0.png" /></View>
+    <View class="absolute left-[720px] top-[60px] w-[120px] h-[120px] origin-center animate-a4p"><Image class="w-[120px] h-[120px]" src="cell-6-0-q0.png" /></View>
+    <View class="absolute left-[840px] top-[60px] animate-a4r"><Image class="w-[120px] h-[120px]" src="cell-7-0-q0.png" /></View>
+    <View class="absolute left-[840px] top-[60px] animate-a4t"><Image class="w-[120px] h-[120px]" src="cell-7-0-q3.png" /></View>
+    <View class="absolute left-[840px] top-[60px] animate-a4v"><Image class="w-[120px] h-[120px]" src="cell-7-0-q2.png" /></View>
+    <View class="absolute left-[840px] top-[60px] animate-a4x"><Image class="w-[120px] h-[120px]" src="cell-7-0-q1.png" /></View>
+    <View class="absolute left-[840px] top-[60px] animate-a4z"><Image class="w-[120px] h-[120px]" src="cell-7-0-q0.png" /></View>
+    <View class="absolute left-[840px] top-[60px] w-[120px] h-[120px] origin-center animate-a52"><Image class="w-[120px] h-[120px]" src="cell-7-0-q0.png" /></View>
+    <View class="absolute left-[960px] top-[60px] animate-a54"><Image class="w-[120px] h-[120px]" src="cell-8-0-q0.png" /></View>
+    <View class="absolute left-[960px] top-[60px] animate-a56"><Image class="w-[120px] h-[120px]" src="cell-8-0-q1.png" /></View>
+    <View class="absolute left-[960px] top-[60px] animate-a58"><Image class="w-[120px] h-[120px]" src="cell-8-0-q2.png" /></View>
+    <View class="absolute left-[960px] top-[60px] animate-a5a"><Image class="w-[120px] h-[120px]" src="cell-8-0-q3.png" /></View>
+    <View class="absolute left-[960px] top-[60px] animate-a5c"><Image class="w-[120px] h-[120px]" src="cell-8-0-q0.png" /></View>
+    <View class="absolute left-[960px] top-[60px] w-[120px] h-[120px] origin-center animate-a5f"><Image class="w-[120px] h-[120px]" src="cell-8-0-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[60px] animate-a5h"><Image class="w-[120px] h-[120px]" src="cell-11-0-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[60px] animate-a5j"><Image class="w-[120px] h-[120px]" src="cell-11-0-q3.png" /></View>
+    <View class="absolute left-[1320px] top-[60px] animate-a5l"><Image class="w-[120px] h-[120px]" src="cell-11-0-q2.png" /></View>
+    <View class="absolute left-[1320px] top-[60px] animate-a5n"><Image class="w-[120px] h-[120px]" src="cell-11-0-q1.png" /></View>
+    <View class="absolute left-[1320px] top-[60px] animate-a5p"><Image class="w-[120px] h-[120px]" src="cell-11-0-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[60px] w-[120px] h-[120px] origin-center animate-a5s"><Image class="w-[120px] h-[120px]" src="cell-11-0-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[60px] animate-a5u"><Image class="w-[120px] h-[120px]" src="cell-12-0-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[60px] animate-a5w"><Image class="w-[120px] h-[120px]" src="cell-12-0-q1.png" /></View>
+    <View class="absolute left-[1440px] top-[60px] animate-a5y"><Image class="w-[120px] h-[120px]" src="cell-12-0-q2.png" /></View>
+    <View class="absolute left-[1440px] top-[60px] animate-a60"><Image class="w-[120px] h-[120px]" src="cell-12-0-q3.png" /></View>
+    <View class="absolute left-[1440px] top-[60px] animate-a62"><Image class="w-[120px] h-[120px]" src="cell-12-0-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[60px] w-[120px] h-[120px] origin-center animate-a65"><Image class="w-[120px] h-[120px]" src="cell-12-0-q0.png" /></View>
+    <View class="absolute left-[1560px] top-[60px] animate-a67"><Image class="w-[120px] h-[120px]" src="cell-13-0-q0.png" /></View>
+    <View class="absolute left-[1560px] top-[60px] animate-a69"><Image class="w-[120px] h-[120px]" src="cell-13-0-q3.png" /></View>
+    <View class="absolute left-[1560px] top-[60px] animate-a6b"><Image class="w-[120px] h-[120px]" src="cell-13-0-q2.png" /></View>
+    <View class="absolute left-[1560px] top-[60px] animate-a6d"><Image class="w-[120px] h-[120px]" src="cell-13-0-q1.png" /></View>
+    <View class="absolute left-[1560px] top-[60px] animate-a6f"><Image class="w-[120px] h-[120px]" src="cell-13-0-q0.png" /></View>
+    <View class="absolute left-[1560px] top-[60px] w-[120px] h-[120px] origin-center animate-a6i"><Image class="w-[120px] h-[120px]" src="cell-13-0-q0.png" /></View>
+    <View class="absolute left-[360px] top-[180px] animate-a6k"><Image class="w-[120px] h-[120px]" src="cell-3-1-q0.png" /></View>
+    <View class="absolute left-[360px] top-[180px] animate-a6m"><Image class="w-[120px] h-[120px]" src="cell-3-1-q1.png" /></View>
+    <View class="absolute left-[360px] top-[180px] animate-a6o"><Image class="w-[120px] h-[120px]" src="cell-3-1-q2.png" /></View>
+    <View class="absolute left-[360px] top-[180px] animate-a6q"><Image class="w-[120px] h-[120px]" src="cell-3-1-q3.png" /></View>
+    <View class="absolute left-[360px] top-[180px] animate-a6s"><Image class="w-[120px] h-[120px]" src="cell-3-1-q0.png" /></View>
+    <View class="absolute left-[360px] top-[180px] w-[120px] h-[120px] origin-center animate-a6v"><Image class="w-[120px] h-[120px]" src="cell-3-1-q0.png" /></View>
+    <View class="absolute left-[480px] top-[180px] animate-a6x"><Image class="w-[120px] h-[120px]" src="cell-4-1-q0.png" /></View>
+    <View class="absolute left-[480px] top-[180px] animate-a6z"><Image class="w-[120px] h-[120px]" src="cell-4-1-q3.png" /></View>
+    <View class="absolute left-[480px] top-[180px] animate-a71"><Image class="w-[120px] h-[120px]" src="cell-4-1-q2.png" /></View>
+    <View class="absolute left-[480px] top-[180px] animate-a73"><Image class="w-[120px] h-[120px]" src="cell-4-1-q1.png" /></View>
+    <View class="absolute left-[480px] top-[180px] animate-a75"><Image class="w-[120px] h-[120px]" src="cell-4-1-q0.png" /></View>
+    <View class="absolute left-[480px] top-[180px] w-[120px] h-[120px] origin-center animate-a78"><Image class="w-[120px] h-[120px]" src="cell-4-1-q0.png" /></View>
+    <View class="absolute left-[600px] top-[180px] animate-a7a"><Image class="w-[120px] h-[120px]" src="cell-5-1-q0.png" /></View>
+    <View class="absolute left-[600px] top-[180px] animate-a7c"><Image class="w-[120px] h-[120px]" src="cell-5-1-q1.png" /></View>
+    <View class="absolute left-[600px] top-[180px] animate-a7e"><Image class="w-[120px] h-[120px]" src="cell-5-1-q2.png" /></View>
+    <View class="absolute left-[600px] top-[180px] animate-a7g"><Image class="w-[120px] h-[120px]" src="cell-5-1-q3.png" /></View>
+    <View class="absolute left-[600px] top-[180px] animate-a7i"><Image class="w-[120px] h-[120px]" src="cell-5-1-q0.png" /></View>
+    <View class="absolute left-[600px] top-[180px] w-[120px] h-[120px] origin-center animate-a7l"><Image class="w-[120px] h-[120px]" src="cell-5-1-q0.png" /></View>
+    <View class="absolute left-[720px] top-[180px] animate-a7n"><Image class="w-[120px] h-[120px]" src="cell-6-1-q0.png" /></View>
+    <View class="absolute left-[720px] top-[180px] animate-a7p"><Image class="w-[120px] h-[120px]" src="cell-6-1-q3.png" /></View>
+    <View class="absolute left-[720px] top-[180px] animate-a7r"><Image class="w-[120px] h-[120px]" src="cell-6-1-q2.png" /></View>
+    <View class="absolute left-[720px] top-[180px] animate-a7t"><Image class="w-[120px] h-[120px]" src="cell-6-1-q1.png" /></View>
+    <View class="absolute left-[720px] top-[180px] animate-a7v"><Image class="w-[120px] h-[120px]" src="cell-6-1-q0.png" /></View>
+    <View class="absolute left-[720px] top-[180px] w-[120px] h-[120px] origin-center animate-a7y"><Image class="w-[120px] h-[120px]" src="cell-6-1-q0.png" /></View>
+    <View class="absolute left-[840px] top-[180px] animate-a80"><Image class="w-[120px] h-[120px]" src="cell-7-1-q0.png" /></View>
+    <View class="absolute left-[840px] top-[180px] animate-a82"><Image class="w-[120px] h-[120px]" src="cell-7-1-q1.png" /></View>
+    <View class="absolute left-[840px] top-[180px] animate-a84"><Image class="w-[120px] h-[120px]" src="cell-7-1-q2.png" /></View>
+    <View class="absolute left-[840px] top-[180px] animate-a86"><Image class="w-[120px] h-[120px]" src="cell-7-1-q3.png" /></View>
+    <View class="absolute left-[840px] top-[180px] animate-a88"><Image class="w-[120px] h-[120px]" src="cell-7-1-q0.png" /></View>
+    <View class="absolute left-[840px] top-[180px] w-[120px] h-[120px] origin-center animate-a8b"><Image class="w-[120px] h-[120px]" src="cell-7-1-q0.png" /></View>
+    <View class="absolute left-[960px] top-[180px] animate-a8d"><Image class="w-[120px] h-[120px]" src="cell-8-1-q0.png" /></View>
+    <View class="absolute left-[960px] top-[180px] animate-a8f"><Image class="w-[120px] h-[120px]" src="cell-8-1-q3.png" /></View>
+    <View class="absolute left-[960px] top-[180px] animate-a8h"><Image class="w-[120px] h-[120px]" src="cell-8-1-q2.png" /></View>
+    <View class="absolute left-[960px] top-[180px] animate-a8j"><Image class="w-[120px] h-[120px]" src="cell-8-1-q1.png" /></View>
+    <View class="absolute left-[960px] top-[180px] animate-a8l"><Image class="w-[120px] h-[120px]" src="cell-8-1-q0.png" /></View>
+    <View class="absolute left-[960px] top-[180px] w-[120px] h-[120px] origin-center animate-a8o"><Image class="w-[120px] h-[120px]" src="cell-8-1-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[180px] animate-a8q"><Image class="w-[120px] h-[120px]" src="cell-11-1-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[180px] animate-a8s"><Image class="w-[120px] h-[120px]" src="cell-11-1-q1.png" /></View>
+    <View class="absolute left-[1320px] top-[180px] animate-a8u"><Image class="w-[120px] h-[120px]" src="cell-11-1-q2.png" /></View>
+    <View class="absolute left-[1320px] top-[180px] animate-a8w"><Image class="w-[120px] h-[120px]" src="cell-11-1-q3.png" /></View>
+    <View class="absolute left-[1320px] top-[180px] animate-a8y"><Image class="w-[120px] h-[120px]" src="cell-11-1-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[180px] w-[120px] h-[120px] origin-center animate-a91"><Image class="w-[120px] h-[120px]" src="cell-11-1-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[180px] animate-a93"><Image class="w-[120px] h-[120px]" src="cell-12-1-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[180px] animate-a95"><Image class="w-[120px] h-[120px]" src="cell-12-1-q3.png" /></View>
+    <View class="absolute left-[1440px] top-[180px] animate-a97"><Image class="w-[120px] h-[120px]" src="cell-12-1-q2.png" /></View>
+    <View class="absolute left-[1440px] top-[180px] animate-a99"><Image class="w-[120px] h-[120px]" src="cell-12-1-q1.png" /></View>
+    <View class="absolute left-[1440px] top-[180px] animate-a9b"><Image class="w-[120px] h-[120px]" src="cell-12-1-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[180px] w-[120px] h-[120px] origin-center animate-a9e"><Image class="w-[120px] h-[120px]" src="cell-12-1-q0.png" /></View>
+    <View class="absolute left-[360px] top-[300px] animate-a9g"><Image class="w-[120px] h-[120px]" src="cell-3-2-q0.png" /></View>
+    <View class="absolute left-[360px] top-[300px] animate-a9i"><Image class="w-[120px] h-[120px]" src="cell-3-2-q3.png" /></View>
+    <View class="absolute left-[360px] top-[300px] animate-a9k"><Image class="w-[120px] h-[120px]" src="cell-3-2-q2.png" /></View>
+    <View class="absolute left-[360px] top-[300px] animate-a9m"><Image class="w-[120px] h-[120px]" src="cell-3-2-q1.png" /></View>
+    <View class="absolute left-[360px] top-[300px] animate-a9o"><Image class="w-[120px] h-[120px]" src="cell-3-2-q0.png" /></View>
+    <View class="absolute left-[360px] top-[300px] w-[120px] h-[120px] origin-center animate-a9r"><Image class="w-[120px] h-[120px]" src="cell-3-2-q0.png" /></View>
+    <View class="absolute left-[480px] top-[300px] animate-a9t"><Image class="w-[120px] h-[120px]" src="cell-4-2-q0.png" /></View>
+    <View class="absolute left-[480px] top-[300px] animate-a9v"><Image class="w-[120px] h-[120px]" src="cell-4-2-q1.png" /></View>
+    <View class="absolute left-[480px] top-[300px] animate-a9x"><Image class="w-[120px] h-[120px]" src="cell-4-2-q2.png" /></View>
+    <View class="absolute left-[480px] top-[300px] animate-a9z"><Image class="w-[120px] h-[120px]" src="cell-4-2-q3.png" /></View>
+    <View class="absolute left-[480px] top-[300px] animate-aa1"><Image class="w-[120px] h-[120px]" src="cell-4-2-q0.png" /></View>
+    <View class="absolute left-[480px] top-[300px] w-[120px] h-[120px] origin-center animate-aa4"><Image class="w-[120px] h-[120px]" src="cell-4-2-q0.png" /></View>
+    <View class="absolute left-[600px] top-[300px] animate-aa6"><Image class="w-[120px] h-[120px]" src="cell-5-2-q0.png" /></View>
+    <View class="absolute left-[600px] top-[300px] animate-aa8"><Image class="w-[120px] h-[120px]" src="cell-5-2-q3.png" /></View>
+    <View class="absolute left-[600px] top-[300px] animate-aaa"><Image class="w-[120px] h-[120px]" src="cell-5-2-q2.png" /></View>
+    <View class="absolute left-[600px] top-[300px] animate-aac"><Image class="w-[120px] h-[120px]" src="cell-5-2-q1.png" /></View>
+    <View class="absolute left-[600px] top-[300px] animate-aae"><Image class="w-[120px] h-[120px]" src="cell-5-2-q0.png" /></View>
+    <View class="absolute left-[600px] top-[300px] w-[120px] h-[120px] origin-center animate-aah"><Image class="w-[120px] h-[120px]" src="cell-5-2-q0.png" /></View>
+    <View class="absolute left-[720px] top-[300px] animate-aaj"><Image class="w-[120px] h-[120px]" src="cell-6-2-q0.png" /></View>
+    <View class="absolute left-[720px] top-[300px] animate-aal"><Image class="w-[120px] h-[120px]" src="cell-6-2-q1.png" /></View>
+    <View class="absolute left-[720px] top-[300px] animate-aan"><Image class="w-[120px] h-[120px]" src="cell-6-2-q2.png" /></View>
+    <View class="absolute left-[720px] top-[300px] animate-aap"><Image class="w-[120px] h-[120px]" src="cell-6-2-q3.png" /></View>
+    <View class="absolute left-[720px] top-[300px] animate-aar"><Image class="w-[120px] h-[120px]" src="cell-6-2-q0.png" /></View>
+    <View class="absolute left-[720px] top-[300px] w-[120px] h-[120px] origin-center animate-aau"><Image class="w-[120px] h-[120px]" src="cell-6-2-q0.png" /></View>
+    <View class="absolute left-[840px] top-[300px] animate-aaw"><Image class="w-[120px] h-[120px]" src="cell-7-2-q0.png" /></View>
+    <View class="absolute left-[840px] top-[300px] animate-aay"><Image class="w-[120px] h-[120px]" src="cell-7-2-q3.png" /></View>
+    <View class="absolute left-[840px] top-[300px] animate-ab0"><Image class="w-[120px] h-[120px]" src="cell-7-2-q2.png" /></View>
+    <View class="absolute left-[840px] top-[300px] animate-ab2"><Image class="w-[120px] h-[120px]" src="cell-7-2-q1.png" /></View>
+    <View class="absolute left-[840px] top-[300px] animate-ab4"><Image class="w-[120px] h-[120px]" src="cell-7-2-q0.png" /></View>
+    <View class="absolute left-[840px] top-[300px] w-[120px] h-[120px] origin-center animate-ab7"><Image class="w-[120px] h-[120px]" src="cell-7-2-q0.png" /></View>
+    <View class="absolute left-[960px] top-[300px] animate-ab9"><Image class="w-[120px] h-[120px]" src="cell-8-2-q0.png" /></View>
+    <View class="absolute left-[960px] top-[300px] animate-abb"><Image class="w-[120px] h-[120px]" src="cell-8-2-q1.png" /></View>
+    <View class="absolute left-[960px] top-[300px] animate-abd"><Image class="w-[120px] h-[120px]" src="cell-8-2-q2.png" /></View>
+    <View class="absolute left-[960px] top-[300px] animate-abf"><Image class="w-[120px] h-[120px]" src="cell-8-2-q3.png" /></View>
+    <View class="absolute left-[960px] top-[300px] animate-abh"><Image class="w-[120px] h-[120px]" src="cell-8-2-q0.png" /></View>
+    <View class="absolute left-[960px] top-[300px] w-[120px] h-[120px] origin-center animate-abk"><Image class="w-[120px] h-[120px]" src="cell-8-2-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[300px] animate-abm"><Image class="w-[120px] h-[120px]" src="cell-9-2-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[300px] animate-abo"><Image class="w-[120px] h-[120px]" src="cell-9-2-q3.png" /></View>
+    <View class="absolute left-[1080px] top-[300px] animate-abq"><Image class="w-[120px] h-[120px]" src="cell-9-2-q2.png" /></View>
+    <View class="absolute left-[1080px] top-[300px] animate-abs"><Image class="w-[120px] h-[120px]" src="cell-9-2-q1.png" /></View>
+    <View class="absolute left-[1080px] top-[300px] animate-abu"><Image class="w-[120px] h-[120px]" src="cell-9-2-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[300px] w-[120px] h-[120px] origin-center animate-abx"><Image class="w-[120px] h-[120px]" src="cell-9-2-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[300px] animate-abz"><Image class="w-[120px] h-[120px]" src="cell-10-2-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[300px] animate-ac1"><Image class="w-[120px] h-[120px]" src="cell-10-2-q1.png" /></View>
+    <View class="absolute left-[1200px] top-[300px] animate-ac3"><Image class="w-[120px] h-[120px]" src="cell-10-2-q2.png" /></View>
+    <View class="absolute left-[1200px] top-[300px] animate-ac5"><Image class="w-[120px] h-[120px]" src="cell-10-2-q3.png" /></View>
+    <View class="absolute left-[1200px] top-[300px] animate-ac7"><Image class="w-[120px] h-[120px]" src="cell-10-2-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[300px] w-[120px] h-[120px] origin-center animate-aca"><Image class="w-[120px] h-[120px]" src="cell-10-2-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[300px] animate-acc"><Image class="w-[120px] h-[120px]" src="cell-11-2-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[300px] animate-ace"><Image class="w-[120px] h-[120px]" src="cell-11-2-q3.png" /></View>
+    <View class="absolute left-[1320px] top-[300px] animate-acg"><Image class="w-[120px] h-[120px]" src="cell-11-2-q2.png" /></View>
+    <View class="absolute left-[1320px] top-[300px] animate-aci"><Image class="w-[120px] h-[120px]" src="cell-11-2-q1.png" /></View>
+    <View class="absolute left-[1320px] top-[300px] animate-ack"><Image class="w-[120px] h-[120px]" src="cell-11-2-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[300px] w-[120px] h-[120px] origin-center animate-acn"><Image class="w-[120px] h-[120px]" src="cell-11-2-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[300px] animate-acp"><Image class="w-[120px] h-[120px]" src="cell-12-2-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[300px] animate-acr"><Image class="w-[120px] h-[120px]" src="cell-12-2-q1.png" /></View>
+    <View class="absolute left-[1440px] top-[300px] animate-act"><Image class="w-[120px] h-[120px]" src="cell-12-2-q2.png" /></View>
+    <View class="absolute left-[1440px] top-[300px] animate-acv"><Image class="w-[120px] h-[120px]" src="cell-12-2-q3.png" /></View>
+    <View class="absolute left-[1440px] top-[300px] animate-acx"><Image class="w-[120px] h-[120px]" src="cell-12-2-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[300px] w-[120px] h-[120px] origin-center animate-ad0"><Image class="w-[120px] h-[120px]" src="cell-12-2-q0.png" /></View>
+    <View class="absolute left-[360px] top-[420px] animate-ad2"><Image class="w-[120px] h-[120px]" src="cell-3-3-q0.png" /></View>
+    <View class="absolute left-[360px] top-[420px] animate-ad4"><Image class="w-[120px] h-[120px]" src="cell-3-3-q1.png" /></View>
+    <View class="absolute left-[360px] top-[420px] animate-ad6"><Image class="w-[120px] h-[120px]" src="cell-3-3-q2.png" /></View>
+    <View class="absolute left-[360px] top-[420px] animate-ad8"><Image class="w-[120px] h-[120px]" src="cell-3-3-q3.png" /></View>
+    <View class="absolute left-[360px] top-[420px] animate-ada"><Image class="w-[120px] h-[120px]" src="cell-3-3-q0.png" /></View>
+    <View class="absolute left-[360px] top-[420px] w-[120px] h-[120px] origin-center animate-add"><Image class="w-[120px] h-[120px]" src="cell-3-3-q0.png" /></View>
+    <View class="absolute left-[480px] top-[420px] animate-adf"><Image class="w-[120px] h-[120px]" src="cell-4-3-q0.png" /></View>
+    <View class="absolute left-[480px] top-[420px] animate-adh"><Image class="w-[120px] h-[120px]" src="cell-4-3-q3.png" /></View>
+    <View class="absolute left-[480px] top-[420px] animate-adj"><Image class="w-[120px] h-[120px]" src="cell-4-3-q2.png" /></View>
+    <View class="absolute left-[480px] top-[420px] animate-adl"><Image class="w-[120px] h-[120px]" src="cell-4-3-q1.png" /></View>
+    <View class="absolute left-[480px] top-[420px] animate-adn"><Image class="w-[120px] h-[120px]" src="cell-4-3-q0.png" /></View>
+    <View class="absolute left-[480px] top-[420px] w-[120px] h-[120px] origin-center animate-adq"><Image class="w-[120px] h-[120px]" src="cell-4-3-q0.png" /></View>
+    <View class="absolute left-[600px] top-[420px] animate-ads"><Image class="w-[120px] h-[120px]" src="cell-5-3-q0.png" /></View>
+    <View class="absolute left-[600px] top-[420px] animate-adu"><Image class="w-[120px] h-[120px]" src="cell-5-3-q1.png" /></View>
+    <View class="absolute left-[600px] top-[420px] animate-adw"><Image class="w-[120px] h-[120px]" src="cell-5-3-q2.png" /></View>
+    <View class="absolute left-[600px] top-[420px] animate-ady"><Image class="w-[120px] h-[120px]" src="cell-5-3-q3.png" /></View>
+    <View class="absolute left-[600px] top-[420px] animate-ae0"><Image class="w-[120px] h-[120px]" src="cell-5-3-q0.png" /></View>
+    <View class="absolute left-[600px] top-[420px] w-[120px] h-[120px] origin-center animate-ae3"><Image class="w-[120px] h-[120px]" src="cell-5-3-q0.png" /></View>
+    <View class="absolute left-[720px] top-[420px] animate-ae5"><Image class="w-[120px] h-[120px]" src="cell-6-3-q0.png" /></View>
+    <View class="absolute left-[720px] top-[420px] animate-ae7"><Image class="w-[120px] h-[120px]" src="cell-6-3-q3.png" /></View>
+    <View class="absolute left-[720px] top-[420px] animate-ae9"><Image class="w-[120px] h-[120px]" src="cell-6-3-q2.png" /></View>
+    <View class="absolute left-[720px] top-[420px] animate-aeb"><Image class="w-[120px] h-[120px]" src="cell-6-3-q1.png" /></View>
+    <View class="absolute left-[720px] top-[420px] animate-aed"><Image class="w-[120px] h-[120px]" src="cell-6-3-q0.png" /></View>
+    <View class="absolute left-[720px] top-[420px] w-[120px] h-[120px] origin-center animate-aeg"><Image class="w-[120px] h-[120px]" src="cell-6-3-q0.png" /></View>
+    <View class="absolute left-[840px] top-[420px] animate-aei"><Image class="w-[120px] h-[120px]" src="cell-7-3-q0.png" /></View>
+    <View class="absolute left-[840px] top-[420px] animate-aek"><Image class="w-[120px] h-[120px]" src="cell-7-3-q1.png" /></View>
+    <View class="absolute left-[840px] top-[420px] animate-aem"><Image class="w-[120px] h-[120px]" src="cell-7-3-q2.png" /></View>
+    <View class="absolute left-[840px] top-[420px] animate-aeo"><Image class="w-[120px] h-[120px]" src="cell-7-3-q3.png" /></View>
+    <View class="absolute left-[840px] top-[420px] animate-aeq"><Image class="w-[120px] h-[120px]" src="cell-7-3-q0.png" /></View>
+    <View class="absolute left-[840px] top-[420px] w-[120px] h-[120px] origin-center animate-aet"><Image class="w-[120px] h-[120px]" src="cell-7-3-q0.png" /></View>
+    <View class="absolute left-[960px] top-[420px] animate-aev"><Image class="w-[120px] h-[120px]" src="cell-8-3-q0.png" /></View>
+    <View class="absolute left-[960px] top-[420px] animate-aex"><Image class="w-[120px] h-[120px]" src="cell-8-3-q3.png" /></View>
+    <View class="absolute left-[960px] top-[420px] animate-aez"><Image class="w-[120px] h-[120px]" src="cell-8-3-q2.png" /></View>
+    <View class="absolute left-[960px] top-[420px] animate-af1"><Image class="w-[120px] h-[120px]" src="cell-8-3-q1.png" /></View>
+    <View class="absolute left-[960px] top-[420px] animate-af3"><Image class="w-[120px] h-[120px]" src="cell-8-3-q0.png" /></View>
+    <View class="absolute left-[960px] top-[420px] w-[120px] h-[120px] origin-center animate-af6"><Image class="w-[120px] h-[120px]" src="cell-8-3-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[420px] animate-af8"><Image class="w-[120px] h-[120px]" src="cell-9-3-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[420px] animate-afa"><Image class="w-[120px] h-[120px]" src="cell-9-3-q1.png" /></View>
+    <View class="absolute left-[1080px] top-[420px] animate-afc"><Image class="w-[120px] h-[120px]" src="cell-9-3-q2.png" /></View>
+    <View class="absolute left-[1080px] top-[420px] animate-afe"><Image class="w-[120px] h-[120px]" src="cell-9-3-q3.png" /></View>
+    <View class="absolute left-[1080px] top-[420px] animate-afg"><Image class="w-[120px] h-[120px]" src="cell-9-3-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[420px] w-[120px] h-[120px] origin-center animate-afj"><Image class="w-[120px] h-[120px]" src="cell-9-3-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[420px] animate-afl"><Image class="w-[120px] h-[120px]" src="cell-10-3-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[420px] animate-afn"><Image class="w-[120px] h-[120px]" src="cell-10-3-q3.png" /></View>
+    <View class="absolute left-[1200px] top-[420px] animate-afp"><Image class="w-[120px] h-[120px]" src="cell-10-3-q2.png" /></View>
+    <View class="absolute left-[1200px] top-[420px] animate-afr"><Image class="w-[120px] h-[120px]" src="cell-10-3-q1.png" /></View>
+    <View class="absolute left-[1200px] top-[420px] animate-aft"><Image class="w-[120px] h-[120px]" src="cell-10-3-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[420px] w-[120px] h-[120px] origin-center animate-afw"><Image class="w-[120px] h-[120px]" src="cell-10-3-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[420px] animate-afy"><Image class="w-[120px] h-[120px]" src="cell-11-3-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[420px] animate-ag0"><Image class="w-[120px] h-[120px]" src="cell-11-3-q1.png" /></View>
+    <View class="absolute left-[1320px] top-[420px] animate-ag2"><Image class="w-[120px] h-[120px]" src="cell-11-3-q2.png" /></View>
+    <View class="absolute left-[1320px] top-[420px] animate-ag4"><Image class="w-[120px] h-[120px]" src="cell-11-3-q3.png" /></View>
+    <View class="absolute left-[1320px] top-[420px] animate-ag6"><Image class="w-[120px] h-[120px]" src="cell-11-3-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[420px] w-[120px] h-[120px] origin-center animate-ag9"><Image class="w-[120px] h-[120px]" src="cell-11-3-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[420px] animate-agb"><Image class="w-[120px] h-[120px]" src="cell-12-3-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[420px] animate-agd"><Image class="w-[120px] h-[120px]" src="cell-12-3-q3.png" /></View>
+    <View class="absolute left-[1440px] top-[420px] animate-agf"><Image class="w-[120px] h-[120px]" src="cell-12-3-q2.png" /></View>
+    <View class="absolute left-[1440px] top-[420px] animate-agh"><Image class="w-[120px] h-[120px]" src="cell-12-3-q1.png" /></View>
+    <View class="absolute left-[1440px] top-[420px] animate-agj"><Image class="w-[120px] h-[120px]" src="cell-12-3-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[420px] w-[120px] h-[120px] origin-center animate-agm"><Image class="w-[120px] h-[120px]" src="cell-12-3-q0.png" /></View>
+    <View class="absolute left-[360px] top-[540px] animate-ago"><Image class="w-[120px] h-[120px]" src="cell-3-4-q0.png" /></View>
+    <View class="absolute left-[360px] top-[540px] animate-agq"><Image class="w-[120px] h-[120px]" src="cell-3-4-q3.png" /></View>
+    <View class="absolute left-[360px] top-[540px] animate-ags"><Image class="w-[120px] h-[120px]" src="cell-3-4-q2.png" /></View>
+    <View class="absolute left-[360px] top-[540px] animate-agu"><Image class="w-[120px] h-[120px]" src="cell-3-4-q1.png" /></View>
+    <View class="absolute left-[360px] top-[540px] animate-agw"><Image class="w-[120px] h-[120px]" src="cell-3-4-q0.png" /></View>
+    <View class="absolute left-[360px] top-[540px] w-[120px] h-[120px] origin-center animate-agz"><Image class="w-[120px] h-[120px]" src="cell-3-4-q0.png" /></View>
+    <View class="absolute left-[480px] top-[540px] animate-ah1"><Image class="w-[120px] h-[120px]" src="cell-4-4-q0.png" /></View>
+    <View class="absolute left-[480px] top-[540px] animate-ah3"><Image class="w-[120px] h-[120px]" src="cell-4-4-q1.png" /></View>
+    <View class="absolute left-[480px] top-[540px] animate-ah5"><Image class="w-[120px] h-[120px]" src="cell-4-4-q2.png" /></View>
+    <View class="absolute left-[480px] top-[540px] animate-ah7"><Image class="w-[120px] h-[120px]" src="cell-4-4-q3.png" /></View>
+    <View class="absolute left-[480px] top-[540px] animate-ah9"><Image class="w-[120px] h-[120px]" src="cell-4-4-q0.png" /></View>
+    <View class="absolute left-[480px] top-[540px] w-[120px] h-[120px] origin-center animate-ahc"><Image class="w-[120px] h-[120px]" src="cell-4-4-q0.png" /></View>
+    <View class="absolute left-[600px] top-[540px] animate-ahe"><Image class="w-[120px] h-[120px]" src="cell-5-4-q0.png" /></View>
+    <View class="absolute left-[600px] top-[540px] animate-ahg"><Image class="w-[120px] h-[120px]" src="cell-5-4-q3.png" /></View>
+    <View class="absolute left-[600px] top-[540px] animate-ahi"><Image class="w-[120px] h-[120px]" src="cell-5-4-q2.png" /></View>
+    <View class="absolute left-[600px] top-[540px] animate-ahk"><Image class="w-[120px] h-[120px]" src="cell-5-4-q1.png" /></View>
+    <View class="absolute left-[600px] top-[540px] animate-ahm"><Image class="w-[120px] h-[120px]" src="cell-5-4-q0.png" /></View>
+    <View class="absolute left-[600px] top-[540px] w-[120px] h-[120px] origin-center animate-ahp"><Image class="w-[120px] h-[120px]" src="cell-5-4-q0.png" /></View>
+    <View class="absolute left-[720px] top-[540px] animate-ahr"><Image class="w-[120px] h-[120px]" src="cell-6-4-q0.png" /></View>
+    <View class="absolute left-[720px] top-[540px] animate-aht"><Image class="w-[120px] h-[120px]" src="cell-6-4-q1.png" /></View>
+    <View class="absolute left-[720px] top-[540px] animate-ahv"><Image class="w-[120px] h-[120px]" src="cell-6-4-q2.png" /></View>
+    <View class="absolute left-[720px] top-[540px] animate-ahx"><Image class="w-[120px] h-[120px]" src="cell-6-4-q3.png" /></View>
+    <View class="absolute left-[720px] top-[540px] animate-ahz"><Image class="w-[120px] h-[120px]" src="cell-6-4-q0.png" /></View>
+    <View class="absolute left-[720px] top-[540px] w-[120px] h-[120px] origin-center animate-ai2"><Image class="w-[120px] h-[120px]" src="cell-6-4-q0.png" /></View>
+    <View class="absolute left-[840px] top-[540px] animate-ai4"><Image class="w-[120px] h-[120px]" src="cell-7-4-q0.png" /></View>
+    <View class="absolute left-[840px] top-[540px] animate-ai6"><Image class="w-[120px] h-[120px]" src="cell-7-4-q3.png" /></View>
+    <View class="absolute left-[840px] top-[540px] animate-ai8"><Image class="w-[120px] h-[120px]" src="cell-7-4-q2.png" /></View>
+    <View class="absolute left-[840px] top-[540px] animate-aia"><Image class="w-[120px] h-[120px]" src="cell-7-4-q1.png" /></View>
+    <View class="absolute left-[840px] top-[540px] animate-aic"><Image class="w-[120px] h-[120px]" src="cell-7-4-q0.png" /></View>
+    <View class="absolute left-[840px] top-[540px] w-[120px] h-[120px] origin-center animate-aif"><Image class="w-[120px] h-[120px]" src="cell-7-4-q0.png" /></View>
+    <View class="absolute left-[960px] top-[540px] animate-aih"><Image class="w-[120px] h-[120px]" src="cell-8-4-q0.png" /></View>
+    <View class="absolute left-[960px] top-[540px] animate-aij"><Image class="w-[120px] h-[120px]" src="cell-8-4-q1.png" /></View>
+    <View class="absolute left-[960px] top-[540px] animate-ail"><Image class="w-[120px] h-[120px]" src="cell-8-4-q2.png" /></View>
+    <View class="absolute left-[960px] top-[540px] animate-ain"><Image class="w-[120px] h-[120px]" src="cell-8-4-q3.png" /></View>
+    <View class="absolute left-[960px] top-[540px] animate-aip"><Image class="w-[120px] h-[120px]" src="cell-8-4-q0.png" /></View>
+    <View class="absolute left-[960px] top-[540px] w-[120px] h-[120px] origin-center animate-ais"><Image class="w-[120px] h-[120px]" src="cell-8-4-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[540px] animate-aiu"><Image class="w-[120px] h-[120px]" src="cell-9-4-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[540px] animate-aiw"><Image class="w-[120px] h-[120px]" src="cell-9-4-q3.png" /></View>
+    <View class="absolute left-[1080px] top-[540px] animate-aiy"><Image class="w-[120px] h-[120px]" src="cell-9-4-q2.png" /></View>
+    <View class="absolute left-[1080px] top-[540px] animate-aj0"><Image class="w-[120px] h-[120px]" src="cell-9-4-q1.png" /></View>
+    <View class="absolute left-[1080px] top-[540px] animate-aj2"><Image class="w-[120px] h-[120px]" src="cell-9-4-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[540px] w-[120px] h-[120px] origin-center animate-aj5"><Image class="w-[120px] h-[120px]" src="cell-9-4-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[540px] animate-aj7"><Image class="w-[120px] h-[120px]" src="cell-10-4-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[540px] animate-aj9"><Image class="w-[120px] h-[120px]" src="cell-10-4-q1.png" /></View>
+    <View class="absolute left-[1200px] top-[540px] animate-ajb"><Image class="w-[120px] h-[120px]" src="cell-10-4-q2.png" /></View>
+    <View class="absolute left-[1200px] top-[540px] animate-ajd"><Image class="w-[120px] h-[120px]" src="cell-10-4-q3.png" /></View>
+    <View class="absolute left-[1200px] top-[540px] animate-ajf"><Image class="w-[120px] h-[120px]" src="cell-10-4-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[540px] w-[120px] h-[120px] origin-center animate-aji"><Image class="w-[120px] h-[120px]" src="cell-10-4-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[540px] animate-ajk"><Image class="w-[120px] h-[120px]" src="cell-11-4-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[540px] animate-ajm"><Image class="w-[120px] h-[120px]" src="cell-11-4-q3.png" /></View>
+    <View class="absolute left-[1320px] top-[540px] animate-ajo"><Image class="w-[120px] h-[120px]" src="cell-11-4-q2.png" /></View>
+    <View class="absolute left-[1320px] top-[540px] animate-ajq"><Image class="w-[120px] h-[120px]" src="cell-11-4-q1.png" /></View>
+    <View class="absolute left-[1320px] top-[540px] animate-ajs"><Image class="w-[120px] h-[120px]" src="cell-11-4-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[540px] w-[120px] h-[120px] origin-center animate-ajv"><Image class="w-[120px] h-[120px]" src="cell-11-4-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[540px] animate-ajx"><Image class="w-[120px] h-[120px]" src="cell-12-4-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[540px] animate-ajz"><Image class="w-[120px] h-[120px]" src="cell-12-4-q1.png" /></View>
+    <View class="absolute left-[1440px] top-[540px] animate-ak1"><Image class="w-[120px] h-[120px]" src="cell-12-4-q2.png" /></View>
+    <View class="absolute left-[1440px] top-[540px] animate-ak3"><Image class="w-[120px] h-[120px]" src="cell-12-4-q3.png" /></View>
+    <View class="absolute left-[1440px] top-[540px] animate-ak5"><Image class="w-[120px] h-[120px]" src="cell-12-4-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[540px] w-[120px] h-[120px] origin-center animate-ak8"><Image class="w-[120px] h-[120px]" src="cell-12-4-q0.png" /></View>
+    <View class="absolute left-[360px] top-[660px] animate-aka"><Image class="w-[120px] h-[120px]" src="cell-3-5-q0.png" /></View>
+    <View class="absolute left-[360px] top-[660px] animate-akc"><Image class="w-[120px] h-[120px]" src="cell-3-5-q1.png" /></View>
+    <View class="absolute left-[360px] top-[660px] animate-ake"><Image class="w-[120px] h-[120px]" src="cell-3-5-q2.png" /></View>
+    <View class="absolute left-[360px] top-[660px] animate-akg"><Image class="w-[120px] h-[120px]" src="cell-3-5-q3.png" /></View>
+    <View class="absolute left-[360px] top-[660px] animate-aki"><Image class="w-[120px] h-[120px]" src="cell-3-5-q0.png" /></View>
+    <View class="absolute left-[360px] top-[660px] w-[120px] h-[120px] origin-center animate-akl"><Image class="w-[120px] h-[120px]" src="cell-3-5-q0.png" /></View>
+    <View class="absolute left-[480px] top-[660px] animate-akn"><Image class="w-[120px] h-[120px]" src="cell-4-5-q0.png" /></View>
+    <View class="absolute left-[480px] top-[660px] animate-akp"><Image class="w-[120px] h-[120px]" src="cell-4-5-q3.png" /></View>
+    <View class="absolute left-[480px] top-[660px] animate-akr"><Image class="w-[120px] h-[120px]" src="cell-4-5-q2.png" /></View>
+    <View class="absolute left-[480px] top-[660px] animate-akt"><Image class="w-[120px] h-[120px]" src="cell-4-5-q1.png" /></View>
+    <View class="absolute left-[480px] top-[660px] animate-akv"><Image class="w-[120px] h-[120px]" src="cell-4-5-q0.png" /></View>
+    <View class="absolute left-[480px] top-[660px] w-[120px] h-[120px] origin-center animate-aky"><Image class="w-[120px] h-[120px]" src="cell-4-5-q0.png" /></View>
+    <View class="absolute left-[600px] top-[660px] animate-al0"><Image class="w-[120px] h-[120px]" src="cell-5-5-q0.png" /></View>
+    <View class="absolute left-[600px] top-[660px] animate-al2"><Image class="w-[120px] h-[120px]" src="cell-5-5-q1.png" /></View>
+    <View class="absolute left-[600px] top-[660px] animate-al4"><Image class="w-[120px] h-[120px]" src="cell-5-5-q2.png" /></View>
+    <View class="absolute left-[600px] top-[660px] animate-al6"><Image class="w-[120px] h-[120px]" src="cell-5-5-q3.png" /></View>
+    <View class="absolute left-[600px] top-[660px] animate-al8"><Image class="w-[120px] h-[120px]" src="cell-5-5-q0.png" /></View>
+    <View class="absolute left-[600px] top-[660px] w-[120px] h-[120px] origin-center animate-alb"><Image class="w-[120px] h-[120px]" src="cell-5-5-q0.png" /></View>
+    <View class="absolute left-[720px] top-[660px] animate-ald"><Image class="w-[120px] h-[120px]" src="cell-6-5-q0.png" /></View>
+    <View class="absolute left-[720px] top-[660px] animate-alf"><Image class="w-[120px] h-[120px]" src="cell-6-5-q3.png" /></View>
+    <View class="absolute left-[720px] top-[660px] animate-alh"><Image class="w-[120px] h-[120px]" src="cell-6-5-q2.png" /></View>
+    <View class="absolute left-[720px] top-[660px] animate-alj"><Image class="w-[120px] h-[120px]" src="cell-6-5-q1.png" /></View>
+    <View class="absolute left-[720px] top-[660px] animate-all"><Image class="w-[120px] h-[120px]" src="cell-6-5-q0.png" /></View>
+    <View class="absolute left-[720px] top-[660px] w-[120px] h-[120px] origin-center animate-alo"><Image class="w-[120px] h-[120px]" src="cell-6-5-q0.png" /></View>
+    <View class="absolute left-[840px] top-[660px] animate-alq"><Image class="w-[120px] h-[120px]" src="cell-7-5-q0.png" /></View>
+    <View class="absolute left-[840px] top-[660px] animate-als"><Image class="w-[120px] h-[120px]" src="cell-7-5-q1.png" /></View>
+    <View class="absolute left-[840px] top-[660px] animate-alu"><Image class="w-[120px] h-[120px]" src="cell-7-5-q2.png" /></View>
+    <View class="absolute left-[840px] top-[660px] animate-alw"><Image class="w-[120px] h-[120px]" src="cell-7-5-q3.png" /></View>
+    <View class="absolute left-[840px] top-[660px] animate-aly"><Image class="w-[120px] h-[120px]" src="cell-7-5-q0.png" /></View>
+    <View class="absolute left-[840px] top-[660px] w-[120px] h-[120px] origin-center animate-am1"><Image class="w-[120px] h-[120px]" src="cell-7-5-q0.png" /></View>
+    <View class="absolute left-[960px] top-[660px] animate-am3"><Image class="w-[120px] h-[120px]" src="cell-8-5-q0.png" /></View>
+    <View class="absolute left-[960px] top-[660px] animate-am5"><Image class="w-[120px] h-[120px]" src="cell-8-5-q3.png" /></View>
+    <View class="absolute left-[960px] top-[660px] animate-am7"><Image class="w-[120px] h-[120px]" src="cell-8-5-q2.png" /></View>
+    <View class="absolute left-[960px] top-[660px] animate-am9"><Image class="w-[120px] h-[120px]" src="cell-8-5-q1.png" /></View>
+    <View class="absolute left-[960px] top-[660px] animate-amb"><Image class="w-[120px] h-[120px]" src="cell-8-5-q0.png" /></View>
+    <View class="absolute left-[960px] top-[660px] w-[120px] h-[120px] origin-center animate-ame"><Image class="w-[120px] h-[120px]" src="cell-8-5-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[660px] animate-amg"><Image class="w-[120px] h-[120px]" src="cell-9-5-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[660px] animate-ami"><Image class="w-[120px] h-[120px]" src="cell-9-5-q1.png" /></View>
+    <View class="absolute left-[1080px] top-[660px] animate-amk"><Image class="w-[120px] h-[120px]" src="cell-9-5-q2.png" /></View>
+    <View class="absolute left-[1080px] top-[660px] animate-amm"><Image class="w-[120px] h-[120px]" src="cell-9-5-q3.png" /></View>
+    <View class="absolute left-[1080px] top-[660px] animate-amo"><Image class="w-[120px] h-[120px]" src="cell-9-5-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[660px] w-[120px] h-[120px] origin-center animate-amr"><Image class="w-[120px] h-[120px]" src="cell-9-5-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[660px] animate-amt"><Image class="w-[120px] h-[120px]" src="cell-10-5-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[660px] animate-amv"><Image class="w-[120px] h-[120px]" src="cell-10-5-q3.png" /></View>
+    <View class="absolute left-[1200px] top-[660px] animate-amx"><Image class="w-[120px] h-[120px]" src="cell-10-5-q2.png" /></View>
+    <View class="absolute left-[1200px] top-[660px] animate-amz"><Image class="w-[120px] h-[120px]" src="cell-10-5-q1.png" /></View>
+    <View class="absolute left-[1200px] top-[660px] animate-an1"><Image class="w-[120px] h-[120px]" src="cell-10-5-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[660px] w-[120px] h-[120px] origin-center animate-an4"><Image class="w-[120px] h-[120px]" src="cell-10-5-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[660px] animate-an6"><Image class="w-[120px] h-[120px]" src="cell-11-5-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[660px] animate-an8"><Image class="w-[120px] h-[120px]" src="cell-11-5-q1.png" /></View>
+    <View class="absolute left-[1320px] top-[660px] animate-ana"><Image class="w-[120px] h-[120px]" src="cell-11-5-q2.png" /></View>
+    <View class="absolute left-[1320px] top-[660px] animate-anc"><Image class="w-[120px] h-[120px]" src="cell-11-5-q3.png" /></View>
+    <View class="absolute left-[1320px] top-[660px] animate-ane"><Image class="w-[120px] h-[120px]" src="cell-11-5-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[660px] w-[120px] h-[120px] origin-center animate-anh"><Image class="w-[120px] h-[120px]" src="cell-11-5-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[660px] animate-anj"><Image class="w-[120px] h-[120px]" src="cell-12-5-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[660px] animate-anl"><Image class="w-[120px] h-[120px]" src="cell-12-5-q3.png" /></View>
+    <View class="absolute left-[1440px] top-[660px] animate-ann"><Image class="w-[120px] h-[120px]" src="cell-12-5-q2.png" /></View>
+    <View class="absolute left-[1440px] top-[660px] animate-anp"><Image class="w-[120px] h-[120px]" src="cell-12-5-q1.png" /></View>
+    <View class="absolute left-[1440px] top-[660px] animate-anr"><Image class="w-[120px] h-[120px]" src="cell-12-5-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[660px] w-[120px] h-[120px] origin-center animate-anu"><Image class="w-[120px] h-[120px]" src="cell-12-5-q0.png" /></View>
+    <View class="absolute left-[120px] top-[780px] animate-anw"><Image class="w-[120px] h-[120px]" src="cell-1-6-q0.png" /></View>
+    <View class="absolute left-[120px] top-[780px] animate-any"><Image class="w-[120px] h-[120px]" src="cell-1-6-q3.png" /></View>
+    <View class="absolute left-[120px] top-[780px] animate-ao0"><Image class="w-[120px] h-[120px]" src="cell-1-6-q2.png" /></View>
+    <View class="absolute left-[120px] top-[780px] animate-ao2"><Image class="w-[120px] h-[120px]" src="cell-1-6-q1.png" /></View>
+    <View class="absolute left-[120px] top-[780px] animate-ao4"><Image class="w-[120px] h-[120px]" src="cell-1-6-q0.png" /></View>
+    <View class="absolute left-[120px] top-[780px] w-[120px] h-[120px] origin-center animate-ao7"><Image class="w-[120px] h-[120px]" src="cell-1-6-q0.png" /></View>
+    <View class="absolute left-[240px] top-[780px] animate-ao9"><Image class="w-[120px] h-[120px]" src="cell-2-6-q0.png" /></View>
+    <View class="absolute left-[240px] top-[780px] animate-aob"><Image class="w-[120px] h-[120px]" src="cell-2-6-q1.png" /></View>
+    <View class="absolute left-[240px] top-[780px] animate-aod"><Image class="w-[120px] h-[120px]" src="cell-2-6-q2.png" /></View>
+    <View class="absolute left-[240px] top-[780px] animate-aof"><Image class="w-[120px] h-[120px]" src="cell-2-6-q3.png" /></View>
+    <View class="absolute left-[240px] top-[780px] animate-aoh"><Image class="w-[120px] h-[120px]" src="cell-2-6-q0.png" /></View>
+    <View class="absolute left-[240px] top-[780px] w-[120px] h-[120px] origin-center animate-aok"><Image class="w-[120px] h-[120px]" src="cell-2-6-q0.png" /></View>
+    <View class="absolute left-[480px] top-[780px] animate-aom"><Image class="w-[120px] h-[120px]" src="cell-4-6-q0.png" /></View>
+    <View class="absolute left-[480px] top-[780px] animate-aoo"><Image class="w-[120px] h-[120px]" src="cell-4-6-q1.png" /></View>
+    <View class="absolute left-[480px] top-[780px] animate-aoq"><Image class="w-[120px] h-[120px]" src="cell-4-6-q2.png" /></View>
+    <View class="absolute left-[480px] top-[780px] animate-aos"><Image class="w-[120px] h-[120px]" src="cell-4-6-q3.png" /></View>
+    <View class="absolute left-[480px] top-[780px] animate-aou"><Image class="w-[120px] h-[120px]" src="cell-4-6-q0.png" /></View>
+    <View class="absolute left-[480px] top-[780px] w-[120px] h-[120px] origin-center animate-aox"><Image class="w-[120px] h-[120px]" src="cell-4-6-q0.png" /></View>
+    <View class="absolute left-[600px] top-[780px] animate-aoz"><Image class="w-[120px] h-[120px]" src="cell-5-6-q0.png" /></View>
+    <View class="absolute left-[600px] top-[780px] animate-ap1"><Image class="w-[120px] h-[120px]" src="cell-5-6-q3.png" /></View>
+    <View class="absolute left-[600px] top-[780px] animate-ap3"><Image class="w-[120px] h-[120px]" src="cell-5-6-q2.png" /></View>
+    <View class="absolute left-[600px] top-[780px] animate-ap5"><Image class="w-[120px] h-[120px]" src="cell-5-6-q1.png" /></View>
+    <View class="absolute left-[600px] top-[780px] animate-ap7"><Image class="w-[120px] h-[120px]" src="cell-5-6-q0.png" /></View>
+    <View class="absolute left-[600px] top-[780px] w-[120px] h-[120px] origin-center animate-apa"><Image class="w-[120px] h-[120px]" src="cell-5-6-q0.png" /></View>
+    <View class="absolute left-[120px] top-[900px] animate-apc"><Image class="w-[120px] h-[120px]" src="cell-1-7-q0.png" /></View>
+    <View class="absolute left-[120px] top-[900px] animate-ape"><Image class="w-[120px] h-[120px]" src="cell-1-7-q1.png" /></View>
+    <View class="absolute left-[120px] top-[900px] animate-apg"><Image class="w-[120px] h-[120px]" src="cell-1-7-q2.png" /></View>
+    <View class="absolute left-[120px] top-[900px] animate-api"><Image class="w-[120px] h-[120px]" src="cell-1-7-q3.png" /></View>
+    <View class="absolute left-[120px] top-[900px] animate-apk"><Image class="w-[120px] h-[120px]" src="cell-1-7-q0.png" /></View>
+    <View class="absolute left-[120px] top-[900px] w-[120px] h-[120px] origin-center animate-apn"><Image class="w-[120px] h-[120px]" src="cell-1-7-q0.png" /></View>
+    <View class="absolute left-[240px] top-[900px] animate-app"><Image class="w-[120px] h-[120px]" src="cell-2-7-q0.png" /></View>
+    <View class="absolute left-[240px] top-[900px] animate-apr"><Image class="w-[120px] h-[120px]" src="cell-2-7-q3.png" /></View>
+    <View class="absolute left-[240px] top-[900px] animate-apt"><Image class="w-[120px] h-[120px]" src="cell-2-7-q2.png" /></View>
+    <View class="absolute left-[240px] top-[900px] animate-apv"><Image class="w-[120px] h-[120px]" src="cell-2-7-q1.png" /></View>
+    <View class="absolute left-[240px] top-[900px] animate-apx"><Image class="w-[120px] h-[120px]" src="cell-2-7-q0.png" /></View>
+    <View class="absolute left-[240px] top-[900px] w-[120px] h-[120px] origin-center animate-aq0"><Image class="w-[120px] h-[120px]" src="cell-2-7-q0.png" /></View>
+    <View class="absolute left-[720px] top-[900px] animate-aq2"><Image class="w-[120px] h-[120px]" src="cell-6-7-q0.png" /></View>
+    <View class="absolute left-[720px] top-[900px] animate-aq4"><Image class="w-[120px] h-[120px]" src="cell-6-7-q3.png" /></View>
+    <View class="absolute left-[720px] top-[900px] animate-aq6"><Image class="w-[120px] h-[120px]" src="cell-6-7-q2.png" /></View>
+    <View class="absolute left-[720px] top-[900px] animate-aq8"><Image class="w-[120px] h-[120px]" src="cell-6-7-q1.png" /></View>
+    <View class="absolute left-[720px] top-[900px] animate-aqa"><Image class="w-[120px] h-[120px]" src="cell-6-7-q0.png" /></View>
+    <View class="absolute left-[720px] top-[900px] w-[120px] h-[120px] origin-center animate-aqd"><Image class="w-[120px] h-[120px]" src="cell-6-7-q0.png" /></View>
+    <View class="absolute left-[840px] top-[900px] animate-aqf"><Image class="w-[120px] h-[120px]" src="cell-7-7-q0.png" /></View>
+    <View class="absolute left-[840px] top-[900px] animate-aqh"><Image class="w-[120px] h-[120px]" src="cell-7-7-q1.png" /></View>
+    <View class="absolute left-[840px] top-[900px] animate-aqj"><Image class="w-[120px] h-[120px]" src="cell-7-7-q2.png" /></View>
+    <View class="absolute left-[840px] top-[900px] animate-aql"><Image class="w-[120px] h-[120px]" src="cell-7-7-q3.png" /></View>
+    <View class="absolute left-[840px] top-[900px] animate-aqn"><Image class="w-[120px] h-[120px]" src="cell-7-7-q0.png" /></View>
+    <View class="absolute left-[840px] top-[900px] w-[120px] h-[120px] origin-center animate-aqq"><Image class="w-[120px] h-[120px]" src="cell-7-7-q0.png" /></View>
+    <View class="absolute left-[960px] top-[900px] animate-aqs"><Image class="w-[120px] h-[120px]" src="cell-8-7-q0.png" /></View>
+    <View class="absolute left-[960px] top-[900px] animate-aqu"><Image class="w-[120px] h-[120px]" src="cell-8-7-q3.png" /></View>
+    <View class="absolute left-[960px] top-[900px] animate-aqw"><Image class="w-[120px] h-[120px]" src="cell-8-7-q2.png" /></View>
+    <View class="absolute left-[960px] top-[900px] animate-aqy"><Image class="w-[120px] h-[120px]" src="cell-8-7-q1.png" /></View>
+    <View class="absolute left-[960px] top-[900px] animate-ar0"><Image class="w-[120px] h-[120px]" src="cell-8-7-q0.png" /></View>
+    <View class="absolute left-[960px] top-[900px] w-[120px] h-[120px] origin-center animate-ar3"><Image class="w-[120px] h-[120px]" src="cell-8-7-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[900px] animate-ar5"><Image class="w-[120px] h-[120px]" src="cell-9-7-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[900px] animate-ar7"><Image class="w-[120px] h-[120px]" src="cell-9-7-q1.png" /></View>
+    <View class="absolute left-[1080px] top-[900px] animate-ar9"><Image class="w-[120px] h-[120px]" src="cell-9-7-q2.png" /></View>
+    <View class="absolute left-[1080px] top-[900px] animate-arb"><Image class="w-[120px] h-[120px]" src="cell-9-7-q3.png" /></View>
+    <View class="absolute left-[1080px] top-[900px] animate-ard"><Image class="w-[120px] h-[120px]" src="cell-9-7-q0.png" /></View>
+    <View class="absolute left-[1080px] top-[900px] w-[120px] h-[120px] origin-center animate-arg"><Image class="w-[120px] h-[120px]" src="cell-9-7-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[900px] animate-ari"><Image class="w-[120px] h-[120px]" src="cell-10-7-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[900px] animate-ark"><Image class="w-[120px] h-[120px]" src="cell-10-7-q3.png" /></View>
+    <View class="absolute left-[1200px] top-[900px] animate-arm"><Image class="w-[120px] h-[120px]" src="cell-10-7-q2.png" /></View>
+    <View class="absolute left-[1200px] top-[900px] animate-aro"><Image class="w-[120px] h-[120px]" src="cell-10-7-q1.png" /></View>
+    <View class="absolute left-[1200px] top-[900px] animate-arq"><Image class="w-[120px] h-[120px]" src="cell-10-7-q0.png" /></View>
+    <View class="absolute left-[1200px] top-[900px] w-[120px] h-[120px] origin-center animate-art"><Image class="w-[120px] h-[120px]" src="cell-10-7-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[900px] animate-arv"><Image class="w-[120px] h-[120px]" src="cell-11-7-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[900px] animate-arx"><Image class="w-[120px] h-[120px]" src="cell-11-7-q1.png" /></View>
+    <View class="absolute left-[1320px] top-[900px] animate-arz"><Image class="w-[120px] h-[120px]" src="cell-11-7-q2.png" /></View>
+    <View class="absolute left-[1320px] top-[900px] animate-as1"><Image class="w-[120px] h-[120px]" src="cell-11-7-q3.png" /></View>
+    <View class="absolute left-[1320px] top-[900px] animate-as3"><Image class="w-[120px] h-[120px]" src="cell-11-7-q0.png" /></View>
+    <View class="absolute left-[1320px] top-[900px] w-[120px] h-[120px] origin-center animate-as6"><Image class="w-[120px] h-[120px]" src="cell-11-7-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[900px] animate-as8"><Image class="w-[120px] h-[120px]" src="cell-12-7-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[900px] animate-asa"><Image class="w-[120px] h-[120px]" src="cell-12-7-q3.png" /></View>
+    <View class="absolute left-[1440px] top-[900px] animate-asc"><Image class="w-[120px] h-[120px]" src="cell-12-7-q2.png" /></View>
+    <View class="absolute left-[1440px] top-[900px] animate-ase"><Image class="w-[120px] h-[120px]" src="cell-12-7-q1.png" /></View>
+    <View class="absolute left-[1440px] top-[900px] animate-asg"><Image class="w-[120px] h-[120px]" src="cell-12-7-q0.png" /></View>
+    <View class="absolute left-[1440px] top-[900px] w-[120px] h-[120px] origin-center animate-asj"><Image class="w-[120px] h-[120px]" src="cell-12-7-q0.png" /></View>
+    <View class="absolute left-[1560px] top-[900px] animate-asl"><Image class="w-[120px] h-[120px]" src="cell-13-7-q0.png" /></View>
+    <View class="absolute left-[1560px] top-[900px] animate-asn"><Image class="w-[120px] h-[120px]" src="cell-13-7-q1.png" /></View>
+    <View class="absolute left-[1560px] top-[900px] animate-asp"><Image class="w-[120px] h-[120px]" src="cell-13-7-q2.png" /></View>
+    <View class="absolute left-[1560px] top-[900px] animate-asr"><Image class="w-[120px] h-[120px]" src="cell-13-7-q3.png" /></View>
+    <View class="absolute left-[1560px] top-[900px] animate-ast"><Image class="w-[120px] h-[120px]" src="cell-13-7-q0.png" /></View>
+    <View class="absolute left-[1560px] top-[900px] w-[120px] h-[120px] origin-center animate-asw"><Image class="w-[120px] h-[120px]" src="cell-13-7-q0.png" /></View>
+    <View class="absolute left-[1711px] top-[875px] animate-asy"><Image class="w-[60px] h-[114px]" src="word-0-B.png" /></View>
+    <View class="absolute left-[1711px] top-[740px] animate-at0"><Image class="w-[60px] h-[135px]" src="word-1-A.png" /></View>
+    <View class="absolute left-[1711px] top-[609px] animate-at2"><Image class="w-[60px] h-[131px]" src="word-2-U.png" /></View>
+    <View class="absolute left-[1711px] top-[474px] animate-at4"><Image class="w-[60px] h-[135px]" src="word-3-H.png" /></View>
+    <View class="absolute left-[1711px] top-[336px] animate-at6"><Image class="w-[60px] h-[138px]" src="word-4-A.png" /></View>
+    <View class="absolute left-[1711px] top-[207px] animate-at8"><Image class="w-[60px] h-[129px]" src="word-5-U.png" /></View>
+    <View class="absolute left-[1711px] top-[89px] animate-ata"><Image class="w-[60px] h-[118px]" src="word-6-S.png" /></View>
+    <View class="absolute left-[728px] top-[920px] w-[480px] h-[80px] origin-center  animate-ate"><View class="flex-col gap-[14px]"><Text class="font-bold text-[24px] text-[#111111] animate-atc">{"FORM · FARBE · FUNKTION"}</Text><View class="flex-row items-center gap-[14px]"><Text class="font-[cjk] font-bold text-[22px] text-[#111111]">{"形式"}</Text><Text class="font-bold text-[24px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[22px] text-[#111111]">{"色彩"}</Text><Text class="font-bold text-[24px] text-[#111111]">{"·"}</Text><Text class="font-[cjk] font-bold text-[22px] text-[#111111]">{"功能"}</Text></View></View></View>
+    <View class="absolute left-[120px] top-[46px] animate-atj"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[127px] top-[34px] animate-atj"><Text class="font-bold text-[11px] text-[#3A342C]">{"02"}</Text></View>
+    <View class="absolute left-[240px] top-[46px] animate-atl"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[247px] top-[34px] animate-atl"><Text class="font-bold text-[11px] text-[#3A342C]">{"03"}</Text></View>
+    <View class="absolute left-[360px] top-[46px] animate-atn"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[367px] top-[34px] animate-atn"><Text class="font-bold text-[11px] text-[#3A342C]">{"04"}</Text></View>
+    <View class="absolute left-[480px] top-[46px] animate-atp"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[487px] top-[34px] animate-atp"><Text class="font-bold text-[11px] text-[#3A342C]">{"05"}</Text></View>
+    <View class="absolute left-[600px] top-[46px] animate-atr"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[607px] top-[34px] animate-atr"><Text class="font-bold text-[11px] text-[#3A342C]">{"06"}</Text></View>
+    <View class="absolute left-[720px] top-[46px] animate-att"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[727px] top-[34px] animate-att"><Text class="font-bold text-[11px] text-[#3A342C]">{"07"}</Text></View>
+    <View class="absolute left-[840px] top-[46px] animate-atv"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[847px] top-[34px] animate-atv"><Text class="font-bold text-[11px] text-[#3A342C]">{"08"}</Text></View>
+    <View class="absolute left-[960px] top-[46px] animate-atx"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[967px] top-[34px] animate-atx"><Text class="font-bold text-[11px] text-[#3A342C]">{"09"}</Text></View>
+    <View class="absolute left-[1080px] top-[46px] animate-atz"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[1087px] top-[34px] animate-atz"><Text class="font-bold text-[11px] text-[#3A342C]">{"10"}</Text></View>
+    <View class="absolute left-[1200px] top-[46px] animate-au1"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[1207px] top-[34px] animate-au1"><Text class="font-bold text-[11px] text-[#3A342C]">{"11"}</Text></View>
+    <View class="absolute left-[1320px] top-[46px] animate-au3"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[1327px] top-[34px] animate-au3"><Text class="font-bold text-[11px] text-[#3A342C]">{"12"}</Text></View>
+    <View class="absolute left-[1440px] top-[46px] animate-au5"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[1447px] top-[34px] animate-au5"><Text class="font-bold text-[11px] text-[#3A342C]">{"13"}</Text></View>
+    <View class="absolute left-[1560px] top-[46px] animate-au7"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[1567px] top-[34px] animate-au7"><Text class="font-bold text-[11px] text-[#3A342C]">{"14"}</Text></View>
+    <View class="absolute left-[1680px] top-[46px] animate-au9"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[1687px] top-[34px] animate-au9"><Text class="font-bold text-[11px] text-[#3A342C]">{"15"}</Text></View>
+    <View class="absolute left-[1800px] top-[46px] animate-aub"><View class="w-[2px] h-[14px] bg-[#3A342C]" /></View>
+    <View class="absolute left-[1807px] top-[34px] animate-aub"><Text class="font-bold text-[11px] text-[#3A342C]">{"16"}</Text></View>
+    <View class="absolute left-[730px] top-[1038px] animate-aud"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[0px] top-[4px] w-[12px] h-[12px] bg-[#B9AE9C]" /><View class="absolute left-[10px] top-[14px] w-[4px] h-[4px] bg-[#B9AE9C]" /><View class="absolute left-[14px] top-[4px] w-[12px] h-[12px] border-[#B9AE9C] border" /></View><Text class="font-bold text-[12px] text-[#B9AE9C]">{"ROLL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#B9AE9C]">{"滚"}</Text></View></View>
+    <View class="absolute left-[730px] top-[1038px] animate-auf"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[0px] top-[4px] w-[12px] h-[12px] bg-[#3A342C]" /><View class="absolute left-[10px] top-[14px] w-[4px] h-[4px] bg-[#3A342C]" /><View class="absolute left-[14px] top-[4px] w-[12px] h-[12px] border-[#3A342C] border" /></View><Text class="font-bold text-[12px] text-[#3A342C]">{"ROLL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"滚"}</Text></View></View>
+    <View class="absolute left-[850px] top-[1038px] animate-auh"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[6px] top-[2px] w-[14px] h-[14px] border-[#B9AE9C] border" /><View class="absolute left-[8px] top-[4px] w-[10px] h-[10px] bg-[#B9AE9C] rotate-45 origin-center" /></View><Text class="font-bold text-[12px] text-[#B9AE9C]">{"TURN"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#B9AE9C]">{"转"}</Text></View></View>
+    <View class="absolute left-[850px] top-[1038px] animate-auj"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[6px] top-[2px] w-[14px] h-[14px] border-[#3A342C] border" /><View class="absolute left-[8px] top-[4px] w-[10px] h-[10px] bg-[#3A342C] rotate-45 origin-center" /></View><Text class="font-bold text-[12px] text-[#3A342C]">{"TURN"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"转"}</Text></View></View>
+    <View class="absolute left-[970px] top-[1038px] animate-aul"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[0px] top-[4px] w-[12px] h-[12px] border-[#B9AE9C] border" /><View class="absolute left-[13px] top-[9px] w-[8px] h-[2px] bg-[#B9AE9C]" /><View class="absolute left-[14px] top-[4px] w-[12px] h-[12px] bg-[#B9AE9C]" /></View><Text class="font-bold text-[12px] text-[#B9AE9C]">{"SLIDE"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#B9AE9C]">{"移"}</Text></View></View>
+    <View class="absolute left-[970px] top-[1038px] animate-aun"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[0px] top-[4px] w-[12px] h-[12px] border-[#3A342C] border" /><View class="absolute left-[13px] top-[9px] w-[8px] h-[2px] bg-[#3A342C]" /><View class="absolute left-[14px] top-[4px] w-[12px] h-[12px] bg-[#3A342C]" /></View><Text class="font-bold text-[12px] text-[#3A342C]">{"SLIDE"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"移"}</Text></View></View>
+    <View class="absolute left-[1090px] top-[1038px] animate-aup"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[2px] top-[0px] w-[20px] h-[20px] border-[#B9AE9C] border" /><View class="absolute left-[7px] top-[5px] w-[10px] h-[10px] bg-[#B9AE9C]" /></View><Text class="font-bold text-[12px] text-[#B9AE9C]">{"GROW"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#B9AE9C]">{"长"}</Text></View></View>
+    <View class="absolute left-[1090px] top-[1038px] animate-aur"><View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]"><View class="absolute left-[2px] top-[0px] w-[20px] h-[20px] border-[#3A342C] border" /><View class="absolute left-[7px] top-[5px] w-[10px] h-[10px] bg-[#3A342C]" /></View><Text class="font-bold text-[12px] text-[#3A342C]">{"GROW"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"长"}</Text></View></View>
+    <View class="absolute left-[60px] top-[1040px] flex-row items-center gap-[10px] animate-aut"><Text class="font-bold text-[13px] text-[#3A342C]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[12px] text-[#3A342C]">{"模数构成"}</Text></View>
+    <Image class="absolute left-[-40px] top-[-30px] w-[2000px] h-[1140px] mix-blend-overlay opacity-14 animate-ath" src="grain.png" />
   </View>
 ));

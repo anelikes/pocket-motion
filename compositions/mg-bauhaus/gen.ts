@@ -30,7 +30,7 @@ import { El, Reg, inOut, jsxText as jsx, stateAt } from "../../src/anim/sampled.
 import * as print from "../../src/image/print.ts";
 import { encodePlate, turnPlate, type Plate } from "../../src/image/raster.ts";
 import { loadFace, setWord } from "../../src/text/outline.ts";
-import { GY, INK, M, MISREG, POSTER, gx, gy, type Form, type Ink } from "./poster.ts";
+import { BAND, FLOOR_PIVOT, GY, INK, M, MISREG, POSTER, gx, gy, type Form, type Ink } from "./poster.ts";
 
 const OUT = fileURLToPath(new URL(".", import.meta.url));
 const STATIC = process.env.POSTER_ONLY === "1";
@@ -99,18 +99,28 @@ function verticalWord(text: string, capH: number, length: number, color: string)
 const T_TURN = b(6);
 const T_DROP = b(12);
 const T_POSTER = b(16); // 8.0 s: the finished poster
+const T_STAND = T_POSTER + 14; // the floor has stood up into the band
 const T_TYPE = b(16);
 
 // ── grid: horizontals on the eighths, verticals on the sixteenths between, from the centre out ──
 
-/** When each grid line is drawn: rows in pairs about the centre row on 8ths, columns in pairs about the centre column on the 16ths between. */
-const rowAt = (r: number) => 2 + 15 * Math.abs(r - 4);
-const colAt = (c: number) => 8 + 15 * Math.abs(c - 8);
+/**
+ * When each grid line starts to draw: rows in pairs about the centre row on 8ths, columns in pairs about the
+ * centre column on the 16ths between. The centre cross is already drawn on the first frame, so the film never
+ * opens on blank paper.
+ */
+const rowAt = (r: number) => -12 + 15 * Math.abs(r - 4);
+const colAt = (c: number) => -6 + 15 * Math.abs(c - 8);
 function grid(): string {
   const out: string[] = [];
   const line = (v: boolean, at: number, t0: number) => {
-    const draw = reg.prop(v ? "scaleY" : "scaleX", [[0, "0"], [t0, "0"], [t0 + 10, "1"]], "cubic-bezier(0.45,0,0.55,1)");
-    const settle = reg.prop("backgroundColor", [[0, INK.black], [t0 + 40, INK.black], [t0 + 70, "#DACDB5"]]);
+    // a line whose draw would have started before tick 0 opens part-way or whole
+    const u0 = Math.max(0, Math.min(1, -t0 / 10));
+    const draw =
+      t0 + 10 <= 0
+        ? reg.prop(v ? "scaleY" : "scaleX", [[0, "1"]])
+        : reg.prop(v ? "scaleY" : "scaleX", [[0, u0.toFixed(3)], [Math.max(0, t0), u0.toFixed(3)], [t0 + 10, "1"]], "cubic-bezier(0.45,0,0.55,1)");
+    const settle = reg.prop("backgroundColor", [[0, INK.black], [Math.max(1, t0 + 40), INK.black], [t0 + 70, "#DACDB5"]]);
     // the finished print: the construction fades to a third
     const recede = reg.prop("opacity", [[0, "1"], [T_POSTER, "1"], [T_POSTER + 20, "0.35"]]);
     const cls = v ? `left-[${at - 1}px] top-[0px] w-[2px] h-[${H}px]` : `left-[0px] top-[${at - 1}px] w-[${W}px] h-[2px]`;
@@ -154,62 +164,78 @@ function forms(): string {
     const t1 = b(2 + k);
     mod.orbit(t1 - 12, t1, gx(4 + 2 * k) + 2 * M, ROW_Y + 2 * M, 90);
   }
-  // the three stamps it prints as it lifts off, each its poster form at the cell's size
-  const stamp = (id: string, k: number, scale: number, rot: number) => {
-    const el = new El(reg, P[id]!, { ...cell(k), sx: scale, sy: scale, rot, op: 0 });
+  // the three stamps it prints as it lifts off, each its poster form at the cell's size; the half sits in the
+  // cell's top row, so its flat edge is on a grid line rather than half a module down
+  const stamp = (id: string, k: number, scale: number, cy?: number) => {
+    const el = new El(reg, P[id]!, { ...cell(k), ...(cy === undefined ? {} : { cy }), sx: scale, sy: scale, op: 0 });
     el.set(b(2 + k) - 12, { op: 1 });
     return el;
   };
   // the quarter's picture carries its poster turn, so its angle here is measured from that (0 at rest)
-  const quarter = stamp("quarter", 0, 1, 0);
-  const half = stamp("half", 1, 1, 0);
-  const tri = stamp("tri", 2, 0.5, 0);
+  const quarter = stamp("quarter", 0, 1);
+  const half = stamp("half", 1, 1, ROW_Y + M / 2);
+  const tri = stamp("tri", 2, 0.5);
   const row = [quarter, half, tri, mod];
 
   // b4½..b5¼ · a ripple along the row: each cell hops one whole module, three frames up and three down,
   //   landing on its sixteenth rounded to a whole frame
-  row.forEach((el, k) => {
+  row.forEach((el) => {
+    const k = row.indexOf(el);
     const land = 2 * Math.round((b(4.5) + 7.5 * k) / 2);
-    const y0 = cell(k).cy;
+    const y0 = el.s.cy;
     el.to(land - 12, land - 6, { cy: y0 - M }, inOut).to(land - 6, land, { cy: y0 }, inOut);
   });
 
   // b6 · the row turns a quarter about the frame centre
   for (const el of row) el.orbit(T_TURN - 16, T_TURN, CX, CY, 90);
-  // after the turn the column at x = 1080 holds, top to bottom: quarter, half, triangle, module
+  // after the turn, down column 8–9: quarter (rows 0–1), half (column 9, rows 2–3), triangle (rows 4–5), module (rows 6–7)
 
-  // b7 · the module leaves in an L — right along row 7 to column 13 while it halves and spins,
-  //      then straight up to the corner it signs
-  const mc = centre(P.module!);
-  // it spins a turn and a half, landing upside down; a square module looks the same, and setting the angle back
-  // to 0 the tick after it lands keeps it off the core's turned-picture path, whose triangles leave a diagonal seam
-  mod.to(b(7) - 14, b(7) - 7, { cx: mc.cx, sx: 1, sy: 1, rot: 540 }, inOut).to(b(7) - 7, b(7), { cy: mc.cy }, inOut).set(b(7) + 1, { rot: 0 });
-  // the row's three stamps come out of the turn at +90°; each is set square again as soon as it has turned back
-  // b8 · the quarter turns back a quarter in place, then an L along row 1 and down column 1
-  const q = centre(P.quarter!);
-  quarter.to(b(8) - 18, b(8) - 12, { rot: 0 }, inOut).to(b(8) - 12, b(8) - 5, { cx: q.cx }, inOut).to(b(8) - 5, b(8), { cy: q.cy }, inOut);
-  // b9 · the half goes round through empty modules: left two, down to the foot, flat side up, right to its place
-  const hf = centre(P.half!);
-  half.to(b(9) - 26, b(9) - 20, { cx: 840 }, inOut).to(b(9) - 20, b(9) - 13, { cy: hf.cy }, inOut).to(b(9) - 13, b(9) - 8, { rot: 0 }, inOut).to(b(9) - 8, b(9), { cx: hf.cx }, inOut);
-  // b9½ · the triangle turns upright about its own centre, then doubles into its place
-  tri.to(b(9) + 2, b(9) + 8, { rot: 0 }, inOut).to(b(9) + 9, b(9.5) + 6, { ...centre(P.tri!), sx: 1, sy: 1 }, inOut);
-  // b10 · the disc arrives as two halves, from above and below the frame, meeting on its diameter
+  // Each form now takes its place by moves along the grid, one per half beat, on paths that cross nothing
+  // already standing: a slide, a turn about its own centre or a corner, a growth about a corner.
+  // Targets come from the poster itself, misregistration included, so each form lands on the pixel the
+  // drop's cells will show; the moves between are whole modules.
+  const Q = centre(P.quarter!);
+  const T = centre(P.tri!);
+  const Md = centre(P.module!);
+  const Hf = P.half!;
+  // b7 · the module (still doubled) slides four modules right along the bottom rows, its top-right corner
+  //      landing on the corner its own cell has
+  mod.to(b(7) - 16, b(7), { cx: Md.cx - M / 2 }, inOut);
+  // b7½ · the quarter slides seven modules left along the top rows
+  quarter.to(b(7.5) - 24, b(7.5), { cx: Q.cx }, inOut);
+  // b8 · the triangle turns upright about its own centre; b8½ it slides a module right, clear of the disc to come
+  tri.to(b(8) - 8, b(8), { rot: 0 }, inOut);
+  tri.to(b(8.5) - 10, b(8.5), { cx: T.cx - M }, inOut);
+  // b9 · the module halves about its top-right corner; b9½ it rises six modules to the corner it signs,
+  //      while the quarter drops six to the foot
+  mod.to(b(9) - 8, b(9), { cx: Md.cx, cy: mod.s.cy - M / 2, sx: 1, sy: 1 }, inOut);
+  mod.to(b(9.5) - 14, b(9.5), { cy: Md.cy }, inOut);
+  quarter.to(b(9.5) - 14, b(9.5), { cy: Q.cy }, inOut);
+  // b10 · the half goes left three modules and down three, still on its side, to where a quarter turn
+  //       about its bottom-left corner lays it flat in its place
+  const pivot = { x: Hf.x + Hf.w, y: Hf.y + Hf.h };
+  half.to(b(10) - 14, b(10) - 7, { cx: pivot.x + M / 2 }, inOut).to(b(10) - 7, b(10), { cy: pivot.y - M }, inOut);
+  // b10½ · it turns flat about that corner into place, while the quarter squares about its own centre
+  half.orbit(b(10.5) - 9, b(10.5), pivot.x, pivot.y, -90);
+  quarter.to(b(10.5) - 9, b(10.5), { rot: 0 }, inOut);
+  // b11 · the disc closes: its top half from above the frame, its bottom half in from the left;
+  //       the triangle doubles about its bottom-left corner into the space the half has left
   const D = P.disc!;
   const dc = centre(D);
   const halfBox = { x: D.x, y: D.y, w: D.w, h: D.h / 2 };
   const top = new El(reg, halfBox, { cx: dc.cx, cy: D.y + D.h / 4 - 3 * D.h / 4 - 60, op: 0 });
-  top.set(b(10) - 12, { op: 1 }).to(b(10) - 12, b(10), { cy: D.y + D.h / 4 }, inOut);
-  const bottom = new El(reg, halfBox, { cx: dc.cx, cy: H + D.h / 4 + 60, op: 0 });
-  bottom.set(b(10) - 12, { op: 1 }).to(b(10) - 12, b(10), { cy: D.y + (3 * D.h) / 4 }, inOut);
-  top.set(b(10) + 1, { op: 0 });
-  bottom.set(b(10) + 1, { op: 0 });
+  top.set(b(11) - 12, { op: 1 }).to(b(11) - 12, b(11), { cy: D.y + D.h / 4 }, inOut);
+  const bottom = new El(reg, halfBox, { cx: -D.w / 2 - 60, cy: D.y + (3 * D.h) / 4, op: 0 });
+  bottom.set(b(11) - 12, { op: 1 }).to(b(11) - 12, b(11), { cx: dc.cx }, inOut);
+  top.set(b(11) + 1, { op: 0 });
+  bottom.set(b(11) + 1, { op: 0 });
   const disc = new El(reg, D, { op: 0 });
-  disc.set(b(10) + 1, { op: 1 });
-  // b11 · the floor slides in from the right edge, under the triangle, clear of the quarter
+  disc.set(b(11) + 1, { op: 1 });
+  tri.to(b(11) - 12, b(11), { cx: T.cx, cy: T.cy, sx: 1, sy: 1 }, inOut);
+  // b11½ · the floor slides in from the right edge along the bottom row, and the blue square drops into its corner
   const br = centre(P.bar!);
   const bar = new El(reg, P.bar!, { cx: W + P.bar!.w / 2, cy: br.cy, op: 0 });
-  bar.set(b(11) - 12, { op: 1 }).to(b(11) - 12, b(11), { cx: br.cx }, inOut);
-  // b11½ · the blue square drops into the top corner beside the module
+  bar.set(b(11.5) - 12, { op: 1 }).to(b(11.5) - 12, b(11.5), { cx: br.cx }, inOut);
   const bs = centre(P.bluesq!);
   const bsq = new El(reg, P.bluesq!, { cx: bs.cx, cy: bs.cy - 3 * M, op: 0 });
   bsq.set(b(11.5) - 10, { op: 1 }).to(b(11.5) - 10, b(11.5), { cy: bs.cy }, inOut);
@@ -217,9 +243,18 @@ function forms(): string {
   // the drop hands the poster to the cells; the finished poster takes it back on b16
   const live = [disc, bar, tri, bsq, half, quarter, mod];
   for (const el of live) el.set(T_DROP, { op: 0 }).set(T_POSTER, { op: 1 });
+
+  // b16 · the payoff: the floor stands up about its right corner and becomes the band down column 14.
+  //   It turns as a picture for seven frames, then rests as a picture already turned in pixels.
+  bar.orbit(T_POSTER, T_STAND, FLOOR_PIVOT.x + MISREG.black[0], FLOOR_PIVOT.y + MISREG.black[1], 90);
+  bar.set(T_STAND + 1, { op: 0 });
+  const bandForm: Form = { id: "bar", kind: "box", ink: "black", x: BAND.x + MISREG.black[0], y: BAND.y + MISREG.black[1], w: BAND.w, h: BAND.h };
+  const band = new El(reg, bandForm, { op: 0 });
+  band.set(T_STAND + 1, { op: 1 });
+
   // b18 · the press shifts its colour plates a few pixels and they snap back into register; black does not move
   const plate: Record<string, [number, number]> = { red: [3, -2], yellow: [-3, 1], blue: [2, 3] };
-  const live2: [El, string][] = [[disc, "disc"], [bar, "bar"], [tri, "tri"], [bsq, "bluesq"], [half, "half"], [quarter, "quarter"], [mod, "module"]];
+  const live2: [El, string][] = [[disc, "disc"], [tri, "tri"], [bsq, "bluesq"], [half, "half"], [mod, "module"]];
   for (const [el, id] of live2) {
     const off = plate[P[id]!.ink];
     if (!off) continue;
@@ -234,12 +269,13 @@ function forms(): string {
     node(top, "disc", topForm),
     node(bottom, "disc", halfForm),
     node(disc, "disc"),
-    node(bar, "bar"),
     node(tri, "tri"),
     node(bsq, "bluesq"),
     node(half, "half"),
     node(quarter, "quarter"),
     node(mod, "module"),
+    node(bar, "bar"),
+    band.node(img(formFile({ kind: "box", ink: "black", w: P.bar!.w, h: P.bar!.h }, seedOf("bar"), 1), BAND.w, BAND.h)),
   ].join("\n    ");
 }
 
@@ -318,28 +354,32 @@ function cells(): string {
 // ── type ───────────────────────────────────────────────────────────────────
 
 function type(): string {
-  const word = verticalWord("BAUHAUS", M, 8 * M, INK.black);
-  // a quarter module clear of the red module it stands beside
-  const x = gx(14) + M / 4;
-  const y = gy(0);
+  // BAUHAUS knocked out of the band the floor becomes: paper-coloured letters, inset a quarter module on
+  // every side, so the band reads as black around them
+  const inset = M / 4;
+  const word = verticalWord("BAUHAUS", BAND.w - 2 * inset, BAND.h - 2 * inset, INK.paper);
+  const x = BAND.x + MISREG.black[0] + inset;
+  const y = BAND.y + MISREG.black[1] + inset;
   const out: string[] = [];
-  // one letter per sixteenth, the first at the foot: each one is stamped, not slid
+  // one letter per sixteenth once the band stands, the first at the foot: each is stamped, not slid
   word.letters.forEach((l, i) => {
-    const t = T_TYPE + 2 * Math.round((7.5 * i) / 2);
+    const t = T_STAND + 2 + 2 * Math.round((7.5 * i) / 2);
     const a = STATIC ? "" : `animate-${reg.anim(reg.window(t))}`;
     out.push(`<View class="absolute left-[${x}px] top-[${y + l.top}px] ${a}">${img(l.file, word.w, l.h)}</View>`);
   });
-  // the tagline, tracked, its cap top on a grid line; it slides in one module on b17½
-  // both lines take their middle dot from the Latin face, so the separators match in size and weight
+  // the tagline takes the bottom row the floor has left, sliding in a module from the right on b17½;
+  // both lines take their middle dot from the Latin face, spaced evenly, so the separators match
   const track = (px: number) => reg.anim(reg.prop("letterSpacing", [[0, `${px}px`], [TICKS, `${px}px`]]));
-  const dot = `<Text class="font-bold text-[26px] text-[${INK.black}]">{"·"}</Text>`;
-  const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[24px] text-[${INK.black}] animate-${track(4)}">${jsx(w)}</Text>`;
-  const tag = `<View class="flex-col gap-[10px]"><Text class="font-bold text-[26px] text-[${INK.black}] animate-${track(6)}">{"FORM · FARBE · FUNKTION"}</Text><View class="flex-row items-center gap-[12px]">${zh("形式")}${dot}${zh("色彩")}${dot}${zh("功能")}</View></View>`;
-  const tx = gx(3) + 4;
-  const ty = gy(7) + 12;
+  const dot = `<Text class="font-bold text-[24px] text-[${INK.black}]">{"·"}</Text>`;
+  // no tracking on the Chinese words: letter spacing also follows a word's last glyph, which pushed each dot
+  // off-centre between its neighbours; their two characters sit close, and the gaps alone space the dots
+  const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[22px] text-[${INK.black}]">${jsx(w)}</Text>`;
+  const tag = `<View class="flex-col gap-[14px]"><Text class="font-bold text-[24px] text-[${INK.black}] animate-${track(7)}">{"FORM · FARBE · FUNKTION"}</Text><View class="flex-row items-center gap-[14px]">${zh("形式")}${dot}${zh("色彩")}${dot}${zh("功能")}</View></View>`;
+  const tx = gx(6) + 8;
+  const ty = gy(7) + 20;
   if (STATIC) out.push(`<View class="absolute left-[${tx}px] top-[${ty}px]">${tag}</View>`);
   else {
-    const el = new El(reg, { x: tx, y: ty, w: 480, h: 80 }, { cx: tx + 240 - M, op: 0 });
+    const el = new El(reg, { x: tx, y: ty, w: 480, h: 80 }, { cx: tx + 240 + M, op: 0 });
     el.set(b(17.5) - 8, { op: 1 }).to(b(17.5) - 8, b(17.5), { cx: tx + 240 }, inOut);
     out.push(el.node(tag));
   }
@@ -377,7 +417,8 @@ function furniture(): string {
   OPS.forEach((op, i) => {
     const x = x0 + i * 120;
     const item = (col: string) => `<View class="flex-row items-center gap-[8px]"><View class="w-[26px] h-[20px]">${icon(op.icon, col)}</View><Text class="font-bold text-[12px] text-[${col}]">${jsx(op.en)}</Text><Text class="font-[cjk] font-bold text-[12px] text-[${col}]">${jsx(op.zh)}</Text></View>`;
-    const show = STATIC ? "" : `animate-${reg.anim(reg.window(24 + i * 6))}`;
+    // construction, not poster: the legend goes when the poster lands
+    const show = STATIC ? "" : `animate-${reg.anim(reg.window(24 + i * 6, T_POSTER))}`;
     out.push(`<View class="absolute left-[${x}px] top-[1038px] ${show}">${item("#B9AE9C")}</View>`);
     if (!STATIC) {
       const ch: [number, string][] = [[0, "0"]];

@@ -24,7 +24,7 @@ export const MISREG: Record<Ink, [number, number]> = {
   red: [2, -1],
   yellow: [1, 1],
   blue: [-1, 2],
-  black: [0, 0],
+  black: [1, -1],
 };
 
 export interface Form {
@@ -40,16 +40,24 @@ export interface Form {
 }
 
 /**
- * Sixteen by eight modules. One dominant disc, one heavy horizontal, one
- * diagonal, a blue counterweight above and below, the module itself in the
- * corner it signs. BAUHAUS stands on the right edge.
+ * Sixteen by eight modules. One dominant disc with the blue half under it,
+ * the triangle beside it, a blue counterweight above and the module itself
+ * in the corner it signs; the floor lies along the bottom row, eight modules
+ * from column 6 to column 13. On b16 the floor stands up about its right
+ * corner — the grid point (14, 8) — and becomes the band down column 14 that
+ * BAUHAUS is knocked out of; the bottom row it leaves takes the tagline.
  */
 export const POSTER: Form[] = [
   { id: "disc", kind: "disc", ink: "red", x: gx(3), y: gy(0), w: 6 * M, h: 6 * M },
-  { id: "bar", kind: "box", ink: "black", x: gx(3), y: gy(6), w: 10 * M, h: M },
+  { id: "bar", kind: "box", ink: "black", x: gx(6), y: gy(7), w: 8 * M, h: M },
   { id: "tri", kind: "tri", ink: "yellow", x: gx(9), y: gy(2), w: 4 * M, h: 4 * M },
   { id: "bluesq", kind: "box", ink: "blue", x: gx(11), y: gy(0), w: 2 * M, h: 2 * M },
-  { id: "half", kind: "half", ink: "blue", x: gx(10), y: gy(7), w: 2 * M, h: M },
+  { id: "half", kind: "half", ink: "blue", x: gx(4), y: gy(6), w: 2 * M, h: M },
   { id: "quarter", kind: "quarter", ink: "black", x: gx(1), y: gy(6), w: 2 * M, h: 2 * M, rot: 1 },
   { id: "module", kind: "box", ink: "red", x: gx(13), y: gy(0), w: M, h: M },
 ];
+
+/** Where the floor ends up: the band down column 14, the full height of the grid. */
+export const BAND = { x: gx(14), y: gy(0), w: M, h: 8 * M } as const;
+/** The floor's pivot as it stands up: its bottom-right corner, the grid point (14, 8). */
+export const FLOOR_PIVOT = { x: gx(14), y: gy(8) } as const;
