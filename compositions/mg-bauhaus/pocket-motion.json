@@ -3,6 +3,10 @@
   "durationFrames": 300,
   "fps": 30,
   "supersample": 1,
+  "shutter": {
+    "angle": 144,
+    "samples": 8
+  },
   "fonts": {
     "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
     "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf",

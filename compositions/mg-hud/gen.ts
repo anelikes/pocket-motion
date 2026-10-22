@@ -1376,6 +1376,9 @@ await Bun.write(
       durationFrames: (DUR_MS / 1000) * FPS,
       fps: FPS,
       supersample: 1,
+      // motion blur: each frame an exposure of 6 renders over 120° of the frame's duration (patches/0034); only transform
+      //   timelines are sampled between ticks, so cuts, gates and fades stay where they are
+      ...(process.env.SHUTTER === "0" ? {} : { shutter: { angle: 120, samples: 6 } }),
       fonts: {
         regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf",
         bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf",
