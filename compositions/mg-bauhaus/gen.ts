@@ -163,6 +163,7 @@ function forms(): string {
     const [i, j] = PATH[k]!;
     if (a === "S") turn(k, () => mod.to(actEnd(k) - ROLL, actEnd(k), { rot: 90 }, inOut));
     else if (a === "F") return; // the fold is the picture's own: foldWrap
+    else if (a === "C") turn(k, () => mod.orbit(actEnd(k) - ROLL, actEnd(k), CX + mdx, CY + mdy, 90, inOut));
     else {
       const [fx, fy] = PIVOT[a];
       turn(k, () => mod.orbit(actEnd(k) - ROLL, actEnd(k), cellX(i) + fx * MOD + mdx, cellY(j) + fy * MOD + mdy, ROLL_TURN[a], tip));
@@ -192,7 +193,16 @@ function forms(): string {
     circleEl.node(formInner(circle, seedOf("circle"))),
     ...left.map((l) => l.el.node(formInner(l.f, seedOf(l.f.id)))),
     mod.node(foldWrap(formInner(home, seedOf("module")))),
+    swingPivot(),
   ].join("\n    ");
+}
+
+/** The frame centre, marked while the module swings about it: a cross on the pivot. */
+function swingPivot(): string {
+  const k = ACTS.indexOf("C");
+  if (k < 0 || STATIC) return "";
+  const a = `animate-${reg.anim(reg.window(actEnd(k) - ROLL - 4, actEnd(k) + 4))}`;
+  return `<View class="absolute left-[${CX - 16}px] top-[${CY - 2}px] w-[32px] h-[4px] bg-[${INK.black}] ${a}" /><View class="absolute left-[${CX - 2}px] top-[${CY - 16}px] w-[4px] h-[32px] bg-[${INK.black}] ${a}" />`;
 }
 
 /**
@@ -296,7 +306,9 @@ function cells(): string {
       rot.push([t, `${dir * 90 * k}deg`], [t + TURN, `${dir * 90 * (k + 1)}deg`]);
       vis.push([t, "1"], [t + TURN, "0"]);
     }
-    return view(g.x, g.y, file, [reg.prop("rotate", rot, ease), reg.step("opacity", vis)]);
+    // clipped to its own cell (a scissor, axis-aligned): a turning square is wider than its cell, and two
+    //   neighbours turning opposite ways fused into hourglass blobs
+    return `<View class="absolute left-[${g.x}px] top-[${g.y}px] w-[${MOD}px] h-[${MOD}px] overflow-hidden"><View class="absolute left-[${-BLEED}px] top-[${-BLEED}px] w-[${MOD + 2 * BLEED}px] h-[${MOD + 2 * BLEED}px] origin-center animate-${reg.anim([reg.prop("rotate", rot, ease), reg.step("opacity", vis)])}">${pic(file)}</View></View>`;
   };
   for (const g of grid) {
     const [cx, cy] = centreOf(g.x, g.y);
@@ -324,9 +336,11 @@ function cells(): string {
     const q0 = (((homeTurn(g.px, g.py) - 2 * dir) % 4) + 4) % 4;
     const turned = (k: number) => files[(((q0 + dir * k) % 4) + 4) % 4]!;
     const steps = Math.abs((g.i < 0 ? -1 : g.i) - MOD_CELL[0]) + Math.abs(g.j - MOD_CELL[1]);
-    const tin = T_DROP + 2 * steps;
+    // the field lands on the downbeat: the four steps nearest the module finish their flip on frame 180, power-in;
+    //   the far ones follow a frame a step
+    const tin = T_DROP - FLIP + 2 * Math.max(0, steps - 4);
     const [s1, s2] = [starts[1]!, starts[2]!];
-    out.push(view(g.x, g.y, turned(0), [reg.window(tin, s1), reg.prop("scaleX", [[tin, "0"], [tin + FLIP, "1"]], ease)]));
+    out.push(view(g.x, g.y, turned(0), [reg.window(tin + 1, s1), reg.prop("scaleX", [[tin, "0"], [tin + FLIP, "1"]], "cubic-bezier(0.55,0,1,0.45)")]));
     out.push(view(g.x, g.y, turned(1), [reg.window(s1 + TURN, s2)]));
     if (g.circle) {
       const n = (g.py === 0 ? (g.px === 0 ? 0 : 1) : g.px === 1 ? 2 : 3);
@@ -376,14 +390,14 @@ function type(): string {
 
   // the tagline under a rule across the bottom right, drawn on b18
   const S = INK.black;
-  const tx = cellX(2);
+  const tx = cellX(2) + M;
   const ty = gy(6);
-  const RW = 3.5 * MOD; // the rule runs from column 8 to the grid's last line but one, x 1800
+  const RW = 3 * MOD; // the rule runs from column 9 to the grid's last line but one, x 1800
   const rule = (a: string) => `<View class="absolute left-[${tx}px] top-[${ty}px] w-[${RW}px] h-[3px] bg-[${S}] origin-left ${a}" />`;
   const track = (px: number) => reg.anim(reg.prop("letterSpacing", [[0, `${px}px`], [TICKS, `${px}px`]]));
   const dot = `<Text class="font-bold text-[30px] text-[${S}]">{"·"}</Text>`;
   const zh = (w: string) => `<Text class="font-[cjk] font-bold text-[30px] text-[${S}]">${jsx(w)}</Text>`;
-  const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}] animate-${track(6)}">${jsx(w)}</Text>`;
+  const en = (w: string) => `<Text class="font-bold text-[32px] text-[${S}]">${jsx(w)}</Text>`;
   const lines = [
     `<View class="flex-row items-center gap-[16px]">${en("FORM")}${dot}${en("FARBE")}${dot}${en("FUNKTION")}</View>`,
     `<View class="flex-row items-center gap-[16px]">${zh("形式")}${dot}${zh("色彩")}${dot}${zh("功能")}</View>`,
@@ -408,7 +422,7 @@ function type(): string {
 function furniture(): string {
   const S = "#3A342C";
   const t = STATIC ? "" : `animate-${reg.anim(reg.window(40))}`;
-  return `<View class="absolute left-[${M}px] top-[1034px] flex-row items-center gap-[12px] ${t}"><Text class="font-bold text-[18px] text-[${S}]">{"EIN MODUL"}</Text><Text class="font-[cjk] font-bold text-[17px] text-[${S}]">{"模数构成"}</Text><Text class="font-bold text-[18px] text-[${S}]">{"· 120 PX · 2026"}</Text></View>`;
+  return `<View class="absolute left-[${M}px] top-[1034px] flex-row items-center gap-[12px] ${t}"><Text class="font-bold text-[18px] text-[${S}]">{"EIN MODUL"}</Text><Text class="font-bold text-[18px] text-[${S}]">{"·"}</Text><Text class="font-[cjk] font-bold text-[19px] text-[${S}]">{"模数构成"}</Text></View>`;
 }
 
 /** The paper: a ground under the inks, at the spec colour, its mottle and a fine grain over all boiling at 10 fps. */
