@@ -1,0 +1,594 @@
+0041 — a token that does not parse, in a literal that is the whole value of
+a `class=` attribute, is a build error naming every such token, where it
+dropped the literal and the node's every other utility with it.
+
+`parseClassLiteral` returns null at the first token that does not parse, and
+null drops the literal: the node gets none of the utilities in it. That is
+upstream's prose rule — every string literal in a module is offered as a
+candidate, so a sentence must compile to nothing without a word — and it
+stays the rule wherever there is no other evidence. 0012 records the other
+evidence: the literals that are, on some execution, the whole value of a
+`class=` attribute (`fromClassAttribute`). Such a literal IS a class. With
+it, the parser now gathers every token that does not parse and refuses the
+literal naming all of them, together with the `animate-*` faults 0011
+reports for the same literal; `compileClasses` gathers the refusals of one
+compile into one `UncompiledClassError`, so one build names every refused
+literal; and `tools/build.ts` puts each at its file, line and column in the
+format `--strict-classes` already printed:
+
+  error: main.tsx:5:15: class "absolute left-[1e-14px] w-[100px] rotate--18" does not compile: unknown utilities left-[1e-14px], rotate--18
+    `left-[1e-14px]`: a number in exponent notation is not read — `left-[0.00000000000001px]` compiles.
+    `rotate--18`: `rotate-N` takes N >= 0 degrees with no brackets or unit, and 342 is the same angle as -18 — `rotate-342` compiles.
+
+Measured on the vendored compiler before the change, every literal beside
+`absolute w-[100px]` and with `fromClassAttribute`: `left-[1e-14px]`,
+`left-[1.2e3px]`, `opacity-[1e-7]`, `translate-x-[1e-3px]`,
+`rotate-[-18deg]`, `rotate--18`, `-rotate-18`, `rotate-[342deg]`,
+`-left-[12px]`, `-translate-x-4`, `text-[#12345]` and `fooo` each dropped
+the literal and threw nothing; `left-[12.5px]`, `left-[-12px]`,
+`translate-x-[-16px]`, `rotate-342` and `rotate-400` compiled. On the motion
+repository's host, which is strict, such a node was not silent but was
+misdiagnosed: mount threw `unknown class "…" - not in the compiled style
+table (dynamic classes must be ternaries of full literals)`, which names
+neither the token nor the cause, and only for a literal mount reaches — a
+ternary arm a mount-only film never takes was reported by nothing. A native
+host keeps no style for the node and counts a miss.
+
+What a message says about a token it says from the token alone, and a form
+it offers is one it has parsed: three rewrites are tried in order — a
+number in exponent notation written out in decimal, Tailwind's leading `-`
+moved inside the brackets, a negative or bracketed `rotate-` as `rotate-N`
+with N in [0, 360), which is the only rotate form this compiler reads
+(`rotate-[342deg]` does not parse) — and the result is named as compiling
+only when `unknownUtilities` finds nothing in it; otherwise the message says
+it does not compile either (`opacity-[1e-7]`: `opacity-N` takes no
+brackets). A hex colour that is not 3, 6 or 8 digits and a variant prefix
+other than `focus:`/`active:` are named without a rewrite. A refusal over a
+number in exponent notation adds that a JS number prints that way through
+`String(n)` or a template literal below 1e-6 and from 1e21 in magnitude.
+
+Upstream behaviour that changes. A whole-value class literal that did not
+compile was a warning and a bundle unless `--strict-classes`; it now fails
+every build. `tests/class-diagnostics.test.ts`'s default-mode case pinned
+the warning and the bundle, and is rewritten to pin the same three located
+lines as errors and no bundle; the constant beside them is still a warning.
+The left operand of `&&` is never the value, so it keeps upstream's warning
+and `--strict-classes` error, and a new case pins both. The strict case is
+unchanged and green. `site/content/docs/styling.md` and `--strict-classes`'s
+help say which literals fail either way. Prose without provenance compiles
+to nothing as before (`animate-imagination`, "Tap to start").
+
+Swept before it landed: every `.tsx` under the motion repository's
+`compositions/`, `src/`, `skills/` and `tests/` (69 files, 8,140 class=
+literals) and under this tree at 66caf4e5 (120 files, 1,066 literals; the
+other 48, AOT-model fixtures, carry no `class`), through `transformFile`
+and then `parseClassLiteral` with `fromClassAttribute` — none is refused. On the
+motion side that follows from the strict host: a literal mount reaches and
+that does not compile had already failed every command that boots.
+
+Red cases, each watched and reverted. Here, on the code before this patch:
+`tests/tailwind.test.ts`'s two new cases and `tests/class-diagnostics.test.ts`'s
+rewritten default-mode case; the `&&` case pins behaviour this patch keeps
+and is green on both. In the motion repository, `tests/catalog.test.ts`:
+with this patch left out of `patches/`, G6 fails 22 probes — the 11
+refusals of row `class.unparsed-token` and 11 of the overflow, shutter and
+paint rows that asserted `dropsLiteral` under `fromClassAttribute` and now
+assert the refusal. With the two `if (!attribute) return null;` replaced by
+`return null;`, the same 22 and G6b. With `tokenFault` naming a rewrite as
+compiling without asking `unknownUtilities`, G6's `opacity-[1e-7]` probe.
+With `compileClasses` rethrowing the first refusal, G6's two-literal probe.
+With the `tools/build.ts` hunks reverse-applied, G6b: the build still exits
+1, on an uncaught `UncompiledClassError` whose stack names no line of
+`main.tsx`.
+
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index fde357d1..d4b549db 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -3,8 +3,9 @@
+ // A candidate string literal compiles to a style record IFF every
+ // whitespace-separated token parses as a supported utility [R]; otherwise the
+ // literal is ignored (it was ordinary text, not a class string). The build
+-// knows which literals sit in a `class` attribute, so it reports those that
+-// did not compile: `unknownUtilities` names the tokens at fault.
++// knows which literals sit in a `class` attribute: one that is the attribute's
++// whole value is refused, naming every token that does not parse
++// (`fromClassAttribute`), and the rest are reported with `unknownUtilities`.
+ // The ONE exception: `rounded-full` in an otherwise-valid literal that does
+ // not pin both `w-N` and `h-N` is a HARD compile error [R] (the radius must
+ // be build-time bakeable).
+@@ -1099,16 +1100,160 @@ export function suspectClassLiteral(literal: string): string[] | null {
+   return unknown.length > 0 && tokens.length - unknown.length > unknown.length ? unknown : null;
+ }
+ 
++/** A `class=` attribute literal refused because tokens in it do not parse. */
++export interface UncompiledClass {
++  readonly literal: string;
++  /** The tokens that do not parse, in source order. */
++  readonly tokens: readonly string[];
++  /** One sentence each: what can be said about a token from the token alone,
++   *  and the literal's `animate-*` faults, so one message names all of them. */
++  readonly notes: readonly string[];
++}
++
++/** Why a refused literal is refused rather than dropped, as the build states it. */
++export const UNCOMPILED_CLASS_WHY =
++  "A literal that is the whole value of a class= attribute is refused rather than dropped: a literal " +
++  "compiles whole or not at all, and a drop leaves its node with none of the utilities in it.";
++
++/**
++ * Thrown by `parseClassLiteral` for one literal and by `compileClasses` for
++ * every refused literal of a compile, so one build names all of them.
++ * `tools/build.ts` reads `refused` to put each at its file, line and column.
++ */
++export class UncompiledClassError extends Error {
++  constructor(readonly refused: readonly UncompiledClass[]) {
++    super(
++      (refused.length > 1 ? `PocketJS tailwind: ${refused.length} class= attribute literals do not compile.\n` : "") +
++        refused
++          .map((r) =>
++            [
++              `PocketJS tailwind: ${quoteTokens(r.tokens)} in class "${r.literal}" ` +
++                `${r.tokens.length === 1 ? "is not a supported utility" : "are not supported utilities"}.`,
++              ...r.notes.map((n) => `  ${n}`),
++            ].join("\n"),
++          )
++          .join("\n") +
++        `\n${UNCOMPILED_CLASS_WHY}`,
++    );
++  }
++}
++
++/** A number in exponent notation, not inside a `#hex` run or a word. */
++const EXPONENT_NUMBER = /(?<![0-9A-Za-z#.])\d+(?:\.\d+)?[eE][+-]?\d+(?![0-9.])/;
++
++/** `n` written out in decimal: `1e-14` -> `0.00000000000001`, `1.2e3` -> `1200`.
++ *  An exponent past 100 either way is left as written. */
++function writtenOut(num: string): string {
++  const m = /^(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(num);
++  if (!m || Math.abs(Number(m[3])) > 100) return num;
++  const digits = m[1]! + (m[2] ?? "");
++  const point = m[1]!.length + Number(m[3]);
++  const whole = point <= 0 ? "0" : digits.slice(0, point).padEnd(point, "0").replace(/^0+(?=\d)/, "");
++  const frac = (point <= 0 ? "0".repeat(-point) + digits : digits.slice(point)).replace(/0+$/, "");
++  return frac.length > 0 ? `${whole}.${frac}` : whole;
++}
++
++/** Degrees in [0, 360) at six places, trailing zeros dropped. */
++function angleOf(deg: number): string {
++  return (((deg % 360) + 360) % 360).toFixed(6).replace(/\.?0+$/, "");
++}
++
++/**
++ * Why `tok` (variant prefix included) does not parse, when that can be said
++ * from the token alone; null otherwise.
++ *
++ * Three rewrites are tried in order — a number in exponent notation written
++ * out, Tailwind's leading `-` moved inside the brackets, a negative or
++ * bracketed `rotate-` turned into `rotate-N` with N in [0, 360) — and their
++ * result is named only when it parses: the message never offers a form this
++ * compiler would refuse. Two more causes are grammar facts and are stated
++ * without a rewrite: a hex colour's digit count, and a variant prefix that is
++ * not `focus:` or `active:`.
++ */
++function tokenFault(tok: string): string | null {
++  const colon = tok.indexOf(":");
++  const prefix = colon > 0 ? tok.slice(0, colon + 1) : "";
++  if (prefix !== "" && prefix !== "focus:" && prefix !== "active:" && prefix !== "hover:") {
++    return `\`${tok}\`: \`${prefix}\` is not a variant; the variants are \`focus:\` and \`active:\``;
++  }
++  const why: string[] = [];
++  let body = tok.slice(prefix.length);
++  const expanded = body.replace(new RegExp(EXPONENT_NUMBER.source, "g"), writtenOut);
++  if (expanded !== body) {
++    why.push("a number in exponent notation is not read");
++    body = expanded;
++  }
++  const signed = /^-([a-z][a-z0-9-]*)-\[(\d+(?:\.\d+)?[a-z%]*)\]$/.exec(body);
++  if (signed && !signed[1]!.startsWith("rotate")) {
++    why.push("a leading `-` is not read, the sign goes inside the brackets");
++    body = `${signed[1]}-[-${signed[2]}]`;
++  }
++  const rot = /^(-?)rotate-(?:\[(-?\d+(?:\.\d+)?)(?:deg)?\]|(-?\d+(?:\.\d+)?))$/.exec(body);
++  if (rot) {
++    const deg = (rot[1] === "-" ? -1 : 1) * parseFloat(rot[2] ?? rot[3]!);
++    const angle = angleOf(deg);
++    why.push(
++      `\`rotate-N\` takes N >= 0 degrees with no brackets or unit` +
++        (String(deg) === angle ? "" : `, and ${angle} is the same angle as ${deg}`),
++    );
++    body = `rotate-${angle}`;
++  }
++  if (why.length > 0) {
++    const rewritten = prefix + body;
++    return unknownUtilities(rewritten).length === 0
++      ? `\`${tok}\`: ${why.join("; ")} — \`${rewritten}\` compiles`
++      : `\`${tok}\`: ${why.join("; ")}, and \`${rewritten}\` does not compile either`;
++  }
++  const hex = /\[#([0-9a-fA-F]+)\]/.exec(body);
++  if (hex && ![3, 6, 8].includes(hex[1]!.length)) {
++    return `\`${tok}\`: a hex colour has 3, 6 or 8 digits, this one has ${hex[1]!.length}`;
++  }
++  return null;
++}
++
++/**
++ * The refusal for a `class=` literal some of whose tokens do not parse:
++ * every such token, what can be said about each, and the `animate-*` faults
++ * the same literal carries.
++ */
++function uncompiledClass(literal: string, tokens: readonly string[], anim: AnimAcc): UncompiledClass {
++  const notes: string[] = [];
++  for (const tok of tokens) {
++    const fault = tokenFault(tok);
++    if (fault !== null) notes.push(`${fault}.`);
++  }
++  if (anim.unknownName.length > 0) {
++    const declared = declaredAnimationNames();
++    notes.push(
++      `${quoteTokens(anim.unknownName)} names no animation; theme.animation declares ` +
++        `${declared.length > 0 ? declared.join(", ") : "(nothing)"} (framework built-ins included).`,
++    );
++  }
++  if (anim.badLoop.length > 0) {
++    notes.push(`${quoteTokens(anim.badLoop)} is not a loop period — write \`animate-loop-[4s]\` or \`animate-loop-[4000ms]\`.`);
++  }
++  if (tokens.some((tok) => EXPONENT_NUMBER.test(tok))) {
++    notes.push(
++      "A JS number prints in exponent notation through String(n) or a template literal " +
++        "when its magnitude is below 1e-6 or at least 1e21; a generator rounds it first (n.toFixed(k)).",
++    );
++  }
++  return { literal, tokens, notes };
++}
++
+ /**
+  * Parse one candidate class literal.
+  * Returns the StyleRecord, or null when the literal is NOT a class string
+- * (any unsupported token). Throws only for the `rounded-full` [R] rule (and
+- * `hover:`, which DESIGN pins as a loud error) in otherwise-valid literals.
++ * (any unsupported token) and nothing says it is one. Throws for the
++ * `rounded-full` [R] rule (and `hover:`, which DESIGN pins as a loud error)
++ * in otherwise-valid literals, and — with `fromClassAttribute` — for any
++ * token that does not parse.
+  */
+ export interface ParseOptions {
+   /**
+-   * This literal was the value of a JSX `class=` attribute, so it IS a class
+-   * and an `animate-*` in it that names nothing is a typo rather than prose.
++   * This literal was the value of a JSX `class=` attribute, so it IS a class:
++   * an `animate-*` in it that names nothing is a typo rather than prose, and
++   * so is any other token that does not parse.
+    *
+    * Without it the only evidence available is "every other token parsed", and
+    * a literal whose ONLY token is the animation has none — which is the
+@@ -1136,17 +1281,36 @@ export function parseClassLiteral(
+   /** Tokens that parsed as something other than `animate-*`. See the unknown-
+    *  name error below: it is the evidence that this literal is a class. */
+   let utilityTokens = 0;
++  /**
++   * Tokens that do not parse, gathered only for a `class=` literal. Without
++   * that provenance the first one ends the parse: the literal may be prose,
++   * and prose is dropped without a word (upstream's rule). With it the
++   * literal IS a class, and a drop costs its node every other utility in it
++   * — beside `left-[1e-14px]`, `absolute` and `w-[100px]` as well — so every
++   * such token is named and the literal refused.
++   */
++  const unparsed: string[] = [];
++  const attribute = options.fromClassAttribute === true;
+ 
+   for (const tok of tokens) {
+     const split = splitVariant(tok);
+-    if (split === null) return null; // not a utility (arbitrary text with a colon)
++    if (split === null) { // not a utility (arbitrary text with a colon)
++      if (!attribute) return null;
++      unparsed.push(tok);
++      continue;
++    }
+     const { variant, body } = split;
+     if (split.hover) sawHover = true; // decided after the rest of the literal parses
+     if (variant === "base" && parseMotion(body, tr)) { sawMotion = true; utilityTokens++; continue; }
+     if (variant === "base" && parseAnimation(body, anim)) continue;
+-    if (!parseUtility(body, acc[variant])) return null;
++    if (!parseUtility(body, acc[variant])) {
++      if (!attribute) return null;
++      unparsed.push(tok);
++      continue;
++    }
+     utilityTokens++;
+   }
++  if (unparsed.length > 0) throw new UncompiledClassError([uncompiledClass(literal, unparsed, anim)]);
+ 
+   // Every token parsed => this IS a class literal; unsupported-by-design
+   // pieces now error loudly instead of silently dropping [R].
+@@ -1310,11 +1474,21 @@ export function compileClasses(
+   const byCanon = new Map<string, number>();
+   const slots = new Set<number>([DEFAULT_FONT_SLOT]);
+ 
++  /** `class=` literals refused for tokens that do not parse, in candidate order. */
++  const refused: UncompiledClass[] = [];
++
+   for (const lit of literals) {
+     if (lit in ids) continue;
+-    const rec = parseClassLiteral(lit, {
+-      fromClassAttribute: options.fromClassAttribute?.has(lit) === true,
+-    });
++    let rec: StyleRecord | null;
++    try {
++      rec = parseClassLiteral(lit, {
++        fromClassAttribute: options.fromClassAttribute?.has(lit) === true,
++      });
++    } catch (e) {
++      if (!(e instanceof UncompiledClassError)) throw e;
++      refused.push(...e.refused);
++      continue;
++    }
+     if (rec === null) continue;
+     const canon = JSON.stringify(rec);
+     let id = byCanon.get(canon);
+@@ -1329,6 +1503,7 @@ export function compileClasses(
+       for (const p of v) if (p.prop === PROP.fontSlot) slots.add(p.value);
+     }
+   }
++  if (refused.length > 0) throw new UncompiledClassError(refused);
+ 
+   const anims = bakedTimelines();
+   return {
+diff --git a/site/content/docs/styling.md b/site/content/docs/styling.md
+index 616b6edf..862e755b 100644
+--- a/site/content/docs/styling.md
++++ b/site/content/docs/styling.md
+@@ -62,8 +62,16 @@ class string:
+ - **In a `class` attribute** (the attribute's string, or a branch of the
+   ternaries and `&&` / `||` / `??` chains in its expression): every
+   unsupported token is reported with **file, line, column and the token**.
+-  `bun tools/build.ts` prints it as a warning; **`--strict-classes` makes it an
+-  error** and writes no bundle.
++  A literal that is the attribute's **whole value** — its string, a backtick
++  with nothing interpolated, a ternary arm, either side of `||` / `??`, the
++  right of `&&` — **fails every build** and writes no bundle: it is a class,
++  and dropping it would leave the node with none of its utilities. Where the
++  token alone says why (a number in exponent notation, a negative or bracketed
++  `rotate-`, Tailwind's leading `-`, a hex colour that is not 3, 6 or 8
++  digits, a variant other than `focus:` / `active:`) the error says so, and
++  names a form only when that form compiles. The left operand of `&&` is never
++  the value; `bun tools/build.ts` prints it as a warning and
++  **`--strict-classes` makes it an error**.
+ - **Anywhere else** (a constant, a function that returns the class): reported
+   as a warning in both modes, and only when the literal has **at least two
+   tokens, every token has the shape of a utility, and more of them are
+diff --git a/tests/class-diagnostics.test.ts b/tests/class-diagnostics.test.ts
+index b2ba79f0..53189d93 100644
+--- a/tests/class-diagnostics.test.ts
++++ b/tests/class-diagnostics.test.ts
+@@ -68,17 +68,36 @@ describe("class literals the compiler leaves out", () => {
+     ]);
+   });
+ 
+-  test("a build prints each one as a warning and still succeeds", () => {
++  // Each of the three is the WHOLE value of its class attribute, so it is a
++  // class and the build refuses it without being asked: a literal compiles
++  // whole or not at all, and the node would have lost every utility in it.
++  // It used to be a warning and a bundle; the constant still is a warning.
++  test("a build refuses the ones a class attribute holds whole and writes no bundle", () => {
++    rmSync(join(broken, "out"), { recursive: true, force: true });
+     const result = build(broken);
+-    expect(result.code).toBe(0);
++    expect(result.code).toBe(1);
++    const errors = result.err.split("\n").filter((line) => line.startsWith("error: "));
++    expect(errors).toEqual([
++      'error: main.tsx:6:15: class "flex-col items-centre gap-2" does not compile: unknown utility items-centre',
++      'error: main.tsx:7:49: class "text-smal font-bold" does not compile: unknown utility text-smal',
++      'error: main.tsx:9:17: class "hiden" does not compile: unknown utility hiden',
++    ]);
+     const warnings = result.err.split("\n").filter((line) => line.includes("warning:")).map((line) => line.trim());
+     expect(warnings).toEqual([
+       'warning: layout.ts:1:22: "text-xl font-bold txt-center" reads as a class string and does not compile: unknown utility txt-center',
+-      'warning: main.tsx:6:15: class "flex-col items-centre gap-2" does not compile: unknown utility items-centre',
+-      'warning: main.tsx:7:49: class "text-smal font-bold" does not compile: unknown utility text-smal',
+-      'warning: main.tsx:9:17: class "hiden" does not compile: unknown utility hiden',
+     ]);
+-    expect(existsSync(join(broken, "out/main.js"))).toBe(true);
++    expect(existsSync(join(broken, "out/main.js"))).toBe(false);
++  }, 60000);
++
++  test("the left operand of && is never the value, so it stays a warning unless --strict-classes", () => {
++    const guarded = project({
++      "main.tsx": MAIN('<Text class={big() && "never-mind p-2" && "p-2"}>one</Text>'),
++      "layout.ts": 'export const title = "Tap to start";\n',
++    });
++    const result = build(guarded);
++    expect(result.code).toBe(0);
++    expect(result.err).toContain('warning: main.tsx:5:36: class "never-mind p-2" does not compile: unknown utility never-mind');
++    expect(build(guarded, "--strict-classes").code).toBe(1);
+   }, 60000);
+ 
+   test("--strict-classes fails on the ones in a class attribute and writes no bundle", () => {
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index 9ecc7b50..fce557ce 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -640,6 +640,60 @@ describe("literals that do not compile", () => {
+     // As many unsupported tokens as supported ones reads as text, not as a class string.
+     expect(suspectClassLiteral("flex wrong-one")).toBeNull();
+   });
++
++  /**
++   * The whole value of a `class=` attribute is a class, so a token in it that
++   * does not parse is refused rather than dropping the literal — a drop left
++   * `absolute w-[100px]` beside `left-[1e-14px]` with neither. Without that
++   * provenance the literal may be prose and still compiles to nothing.
++   */
++  test("a class= literal with a token that does not parse is refused, naming every such token", () => {
++    const lit = "absolute fooo left-[1e-14px] w-[100px] rotate--18";
++    expect(parseClassLiteral(lit)).toBeNull();
++    expect(() => parseClassLiteral(lit, { fromClassAttribute: true })).toThrow(
++      "`fooo`, `left-[1e-14px]`, `rotate--18` in class",
++    );
++    // A misspelt animation in the same literal is named in the same message.
++    expect(() => parseClassLiteral("animate-spni txt-lg", { fromClassAttribute: true })).toThrow(
++      /`txt-lg` in class[\s\S]*`animate-spni` names no animation/,
++    );
++    // One build names every refused literal, not the first.
++    const both = ["absolute fooo", "w-[1e-9px] h-2"];
++    expect(() => compileClasses(both, { fromClassAttribute: new Set(both) })).toThrow(
++      /2 class= attribute literals do not compile[\s\S]*`fooo`[\s\S]*`w-\[1e-9px\]`/,
++    );
++    // Prose is untouched, and so is a literal outside a class= attribute.
++    expect(compileClasses(["Tap to start", "absolute fooo"]).records).toHaveLength(0);
++  });
++
++  test("the refusal names a form that compiles only when it does", () => {
++    const fault = (lit: string): string => {
++      try {
++        parseClassLiteral(lit, { fromClassAttribute: true });
++      } catch (e) {
++        return (e as Error).message;
++      }
++      return "(compiled)";
++    };
++    expect(fault("left-[1e-14px]")).toContain("`left-[0.00000000000001px]` compiles");
++    expect(fault("w-[1.2e3px]")).toContain("`w-[1200px]` compiles");
++    expect(fault("left-[-1e-3px]")).toContain("`left-[-0.001px]` compiles");
++    expect(fault("-left-[12px]")).toContain("`left-[-12px]` compiles");
++    expect(fault("rotate--18")).toContain("342 is the same angle as -18 — `rotate-342` compiles");
++    expect(fault("-rotate-18")).toContain("`rotate-342` compiles");
++    expect(fault("rotate-[-18deg]")).toContain("`rotate-342` compiles");
++    expect(fault("focus:rotate-[342deg]")).toContain("`focus:rotate-342` compiles");
++    // Written out, this one still does not parse (opacity-N takes no brackets), and says so.
++    expect(fault("opacity-[1e-7]")).toContain("`opacity-[0.0000001]` does not compile either");
++    expect(fault("text-[#12345]")).toContain("a hex colour has 3, 6 or 8 digits, this one has 5");
++    // `#1e3a5` is a colour, not a number in exponent notation.
++    expect(fault("bg-[#1e3a5]")).not.toContain("exponent");
++    expect(fault("sm:p-2")).toContain("`sm:` is not a variant");
++    // Every form the messages offer compiles.
++    for (const ok of ["left-[0.00000000000001px]", "w-[1200px]", "left-[-12px]", "rotate-342", "focus:rotate-342"]) {
++      expect(fault(ok)).toBe("(compiled)");
++    }
++  });
+ });
+ 
+ describe("named font faces (font-[name])", () => {
+diff --git a/tools/build.ts b/tools/build.ts
+index 125c56a6..f06ce467 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -38,7 +38,9 @@ import { BuildInputs } from "../framework/compiler/build-inputs.ts";
+ //                                vendored PocketJS and keep outputs local)
+ //   --strict-classes             fail when a `class` attribute holds a literal
+ //                                that does not compile; without it the build
+-//                                prints the same finding as a warning
++//                                prints the same finding as a warning. A
++//                                literal that is the attribute's whole value
++//                                fails the build either way
+ 
+ import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+ import { resolve as resolvePath, join, dirname } from "node:path";
+@@ -57,7 +59,15 @@ import {
+ import type { PocketConfig } from "../framework/src/config.ts";
+ import { verifyPlanHash, type ResolvedBuildPlan } from "../framework/src/manifest/plan.ts";
+ import { registerAnimationTheme, setAnimationTickRate } from "../framework/compiler/animation.ts";
+-import { compileClasses, generateStylesModule, suspectClassLiteral, unknownUtilities } from "../framework/compiler/tailwind.ts";
++import {
++  compileClasses,
++  generateStylesModule,
++  suspectClassLiteral,
++  UNCOMPILED_CLASS_WHY,
++  UncompiledClassError,
++  unknownUtilities,
++  type UncompiledClass,
++} from "../framework/compiler/tailwind.ts";
+ import { bakeAtlases } from "../framework/compiler/bake-font.ts";
+ import { readFontConfig } from "../framework/compiler/font-config.ts";
+ import { bakeSvg } from "../framework/compiler/bake-svg.ts";
+@@ -368,8 +378,21 @@ registerAnimationTheme(config.theme);
+ // Keyframe timelines are frame-baked; they must count frames at the same
+ // rate the realm ticks (transition-* stays in ms and converts at runtime).
+ setAnimationTickRate(tickHz);
+-const styles = compileClasses(classStrings, { fromClassAttribute: classAttrStrings });
+-if (styles.records.length === 0) {
++// The whole value of a class attribute IS a class, so compileClasses refuses
++// one holding a token that does not parse instead of dropping it, and names
++// every such literal at once (UncompiledClassError). The block below puts
++// each one where the source wrote it.
++let refused: readonly UncompiledClass[] = [];
++const styles = (() => {
++  try {
++    return compileClasses(classStrings, { fromClassAttribute: classAttrStrings });
++  } catch (e) {
++    if (!(e instanceof UncompiledClassError)) throw e;
++    refused = e.refused;
++    return null;
++  }
++})();
++if (styles !== null && styles.records.length === 0) {
+   console.warn("  tailwind: no class literals compiled — is the app unstyled?");
+ }
+ // A literal the compiler left out gives its node no style, and nothing at run
+@@ -378,6 +401,11 @@ if (styles.records.length === 0) {
+ // unsupported token is a finding. Anywhere else (a constant, a function that
+ // returns the class) it is reported only when it reads as a class string
+ // with a mistake in it, and it never fails the build.
++//
++// A finding in a literal that is the attribute's WHOLE value is an error in
++// either mode: compileClasses refused it. What a class attribute leaves for
++// `--strict-classes` to decide is the left operand of `&&`, which a non-empty
++// string never lets be the value.
+ {
+   const shown = (file: string, site: LiteralSite): string => {
+     const base = projectRoot.endsWith("/") ? projectRoot : projectRoot + "/";
+@@ -385,26 +413,49 @@ if (styles.records.length === 0) {
+   };
+   const utilities = (unknown: string[]): string =>
+     `unknown ${unknown.length === 1 ? "utility" : "utilities"} ${unknown.join(", ")}`;
++  const refusedBy = new Map(refused.map((r) => [r.literal, r]));
++  const located = new Set<string>();
++  const errors: string[] = [];
+   const findings: string[] = [];
+   const suspects: string[] = [];
+   for (const { file, site } of literalSites) {
+-    if (site.literal in styles.ids) continue;
++    if (styles !== null && site.literal in styles.ids) continue;
+     if (site.inClass) {
+       const unknown = unknownUtilities(site.literal);
+-      if (unknown.length > 0) findings.push(`${shown(file, site)}: class "${site.literal}" does not compile: ${utilities(unknown)}`);
++      const line = `${shown(file, site)}: class "${site.literal}" does not compile: ${utilities(unknown)}`;
++      const r = refusedBy.get(site.literal);
++      if (r !== undefined) {
++        errors.push(line, ...(located.has(r.literal) ? [] : r.notes.map((n) => `  ${n}`)));
++        located.add(r.literal);
++      } else if (unknown.length > 0) findings.push(line);
+     } else {
+       const unknown = suspectClassLiteral(site.literal);
+       if (unknown) suspects.push(`${shown(file, site)}: "${site.literal}" reads as a class string and does not compile: ${utilities(unknown)}`);
+     }
+   }
++  // A literal no site carries (a framework module, or a module a lowering
++  // rewrote, whose positions are not the file's) is still named.
++  for (const r of refused) {
++    if (located.has(r.literal)) continue;
++    errors.push(`class "${r.literal}" does not compile: ${utilities(unknownUtilities(r.literal))}`, ...r.notes.map((n) => `  ${n}`));
++  }
+   for (const line of suspects) console.warn(`  warning: ${line}`);
+-  if (strictClasses && findings.length > 0) {
+-    for (const line of findings) console.error(`error: ${line}`);
+-    console.error(`PocketJS build: ${findings.length} class literal(s) do not compile. The supported utilities are listed in the styling reference.`);
++  if (errors.length > 0 || (strictClasses && findings.length > 0)) {
++    if (!strictClasses) for (const line of findings) console.warn(`  warning: ${line}`);
++    const lines = [...errors, ...(strictClasses ? findings : [])];
++    for (const line of lines) console.error(line.startsWith("  ") ? line : `error: ${line}`);
++    const count = lines.filter((line) => !line.startsWith("  ")).length;
++    console.error(
++      `PocketJS build: ${count} class literal(s) do not compile.` +
++        (errors.length > 0 ? ` ${UNCOMPILED_CLASS_WHY}` : "") +
++        " The supported utilities are listed in the styling reference.",
++    );
+     process.exit(1);
+   }
+   for (const line of findings) console.warn(`  warning: ${line}`);
+ }
++// A refusal exited above, having said why; this narrows `styles` for the type checker.
++if (styles === null) process.exit(1);
+ 
+ const generatedStyles = generateStylesModule(styles);
+ // Pass 2 receives this build's style table through jsxPlugin. The copy beside

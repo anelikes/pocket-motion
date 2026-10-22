@@ -108,6 +108,7 @@ patch's own header carries the full note.
 | 0033 | motion | `glow-mode-luma` (PROP `glowMode` 185, `glowThreshold` 186): a glow made from the layer's bright pixels' own colour above a brightness threshold and added over the content — a bloom — where `glow-*` is CSS's drop shadow, made from alpha and drawn under, which lightens a dark translucent plate. Carried in LAYER_PUSH's blend word; an alpha glow's words are unchanged | never; the header says why | new at this pin |
 | 0034 | motion | a shutter: `ui_render_exposure` renders a frame as the integer average of N renders whose transform timelines are evaluated between ticks (`engine/core/src/shutter.rs`), never across a keyframe jump, centred on the frame's tick; `shutter-hold` (prop 198) keeps one node's own timelines at the tick. The sidecar's `shutter` key is what asks for it; design in `docs/shutter.design.md` | never; the header says why | new at this pin, after `0024`–`0033`; prop 198, past `glowThreshold` 186 |
 | 0040 | upstream | the build's SVG baker covers by scanline instead of testing every subsample against every edge — the same 4x4 samples, the same crossing arithmetic, so every pixel's count is the integer it was (`tests/fixtures/bake-svg-reference.ts` is the old baker, kept as the oracle) and a 952-cell hex grid takes 63 ms instead of 23 minutes of CPU — and draws strokes (width, miter/round/bevel joins, butt/round/square caps, miter limit, stroke-opacity), `<g>` with transform, inherited paint and group opacity, `A` arcs, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>` and `rect` `rx`; what would paint and is not drawn is refused instead of dropped | unsubmitted | written on 66caf4e5 |
+| 0041 | upstream | a token that does not parse, in a literal that is the whole value of a `class=` attribute (0012's record), is a build error naming every such token at the literal's file, line and column, where the literal compiled to nothing and its node lost every utility in it; the message names a rewrite only when the rewrite parses (exponent notation written out, `-left-[12px]` as `left-[-12px]`, `rotate--18` as `rotate-342`). Prose with no provenance still compiles to nothing, and the left of `&&` stays upstream's warning | unsubmitted; reverses main's default for whole-value class literals (a warning unless `--strict-classes`) | written on 66caf4e5 |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
 #591 since 586428b2, so the pin needs no backport. The two places the
@@ -128,10 +129,11 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Twenty patches are class `upstream` and thirteen `motion`. Of the twenty,
-seventeen are unsubmitted declaration- or build-layer changes, `0040`, the
-build-time SVG baker every target's pak goes through, among them; `0008` is
-#301, and `0021` and `0030` are rasteriser changes with no target-side cost.
+Twenty-one patches are class `upstream` and thirteen `motion`. Of the
+twenty-one, eighteen are unsubmitted declaration- or build-layer changes,
+`0040`, the build-time SVG baker every target's pak goes through, and
+`0041`, the class-literal refusal, among them; `0008` is #301, and `0021`
+and `0030` are rasteriser changes with no target-side cost.
 
 ## Known gaps the rebase left
 

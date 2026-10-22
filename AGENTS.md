@@ -806,6 +806,26 @@ mechanisms with the file or test beside them.
   set exactly. G6 hands `fromClassAttribute` to the parser by hand, so it
   could only ever say what the parser does with the evidence, never where the
   evidence comes from.
+- **The same evidence now refuses any token that does not parse, not only an
+  animation name** (`patches/0041-loud-unparseable-class-token.patch`, class
+  `upstream`). A class literal compiles whole or not at all, so one token —
+  `left-[1e-14px]` from a generator that printed a float through `String(n)`,
+  `rotate--18` where the compiler reads only `rotate-N` with N >= 0 — took
+  every other utility of the literal with it. On this host that was not
+  silent but misattributed: mount threw `unknown class "…" (dynamic classes
+  must be ternaries of full literals)`, naming neither the token nor the
+  cause, and an arm mount never took was reported by nothing. A literal in
+  `classAttrStrings` now has every such token gathered and is refused, and
+  `tools/build.ts` names each at the literal's file, line and column. A
+  message names a rewrite (`left-[0.00000000000001px]`, `rotate-342`,
+  `left-[-12px]`) only when that rewrite parses, and says so when it does not
+  (`opacity-[1e-7]`). Prose with no provenance still compiles to nothing, and
+  the left of `&&` keeps upstream's warning. When it landed no literal in the
+  tree was refused — 8,140 `class=` literals over 69 files. **G6** holds the
+  refusal and its messages (row `class.unparsed-token`, plus eleven overflow,
+  shutter and paint probes that had asserted the drop) and **G6b** the located
+  build error, both in `tests/catalog.test.ts`; the patch header lists the
+  edit that turns each red.
 - **The transform cache needs no shape marker.** `hashKey` already mixes in
   `compilerImplementationHash()`, which walks the local imports out of
   `jsx-plugin.ts` and digests every source it reaches — and `CacheEntry` is

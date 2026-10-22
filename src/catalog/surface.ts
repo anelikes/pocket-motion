@@ -73,7 +73,10 @@ export type BakeOutcome =
   /**
    * Throws nothing and produces no style record for the first literal. The
    * token failed to parse, so the whole literal stopped being a class string —
-   * the one refusal in this vocabulary that says nothing.
+   * the one refusal in this vocabulary that says nothing. It is reachable only
+   * WITHOUT `fromClassAttribute`: a class= literal with a token that does not
+   * parse is refused instead (patches/0041), and G6 fails a probe that pairs
+   * the two on the throw.
    */
   | { readonly dropsLiteral: true }
   /** Compiles to a record carrying an animation. Marks the accepted side of a
@@ -1588,6 +1591,111 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
   {
+    id: "class.unparsed-token",
+    group: "animation",
+    declaredIn: "class literal",
+    key: "any token of a class= literal",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "a class literal compiles whole or not at all. One that is the whole value of a JSX class= attribute (the collector's record, patches/0012) and holds a token that does not parse is refused by the build, every such token named at the literal's file, line and column, where it used to compile to nothing and leave its node with none of its utilities (patches/0041). Where the token alone says why, the message says so, and names a rewrite only when the rewrite compiles: a number in exponent notation written out (`left-[1e-14px]` is `left-[0.00000000000001px]`), Tailwind's leading `-` moved inside the brackets (`-left-[12px]` is `left-[-12px]`), a negative or bracketed rotate as `rotate-N` with N in [0, 360), the one rotate form this compiler reads (`rotate--18`, `-rotate-18`, `rotate-[-18deg]` are `rotate-342`); a hex colour that is not 3, 6 or 8 digits and a variant other than focus:/active: are named without one. A literal with no class= provenance — a constant, a helper's return, the left of && — still compiles to nothing and fails no build, because every string literal in a module is a candidate and prose must stay prose",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "a number a generator printed in exponent notation",
+        literals: ["absolute left-[1e-14px] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`left-[1e-14px]`: a number in exponent notation is not read — `left-[0.00000000000001px]` compiles" },
+      },
+      {
+        what: "a positive exponent, written out",
+        literals: ["absolute left-[1.2e3px] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`left-[1200px]` compiles" },
+      },
+      {
+        what: "a rewrite that still does not parse is said not to, not offered",
+        literals: ["absolute opacity-[1e-7] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`opacity-[0.0000001]` does not compile either" },
+      },
+      {
+        what: "a negative rotate in the dash form",
+        literals: ["absolute rotate--18 w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "342 is the same angle as -18 — `rotate-342` compiles" },
+      },
+      {
+        what: "Tailwind's negative rotate",
+        literals: ["absolute -rotate-18 w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`-rotate-18`: `rotate-N` takes N >= 0 degrees" },
+      },
+      {
+        what: "a bracketed rotate in degrees",
+        literals: ["absolute rotate-[-18deg] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`rotate-342` compiles" },
+      },
+      {
+        what: "Tailwind's leading minus on an offset",
+        literals: ["absolute w-[100px] -left-[12px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`left-[-12px]` compiles" },
+      },
+      {
+        what: "a plain typo, named with its literal",
+        literals: ["absolute fooo w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: '`fooo` in class "absolute fooo w-[100px]" is not a supported utility' },
+      },
+      {
+        what: "a five-digit hex colour",
+        literals: ["absolute w-[100px] text-[#12345]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "a hex colour has 3, 6 or 8 digits, this one has 5" },
+      },
+      {
+        what: "every token that does not parse is named in one message",
+        literals: ["absolute fooo left-[1e-14px] w-[100px] rotate--18"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`fooo`, `left-[1e-14px]`, `rotate--18` in class" },
+      },
+      {
+        what: "every refused literal of a compile is named in one error",
+        literals: ["absolute fooo", "absolute w-[1e-9px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "2 class= attribute literals do not compile" },
+      },
+      {
+        what: "the forms the messages offer compile to the numbers asked for",
+        literals: ["absolute rotate-342 left-[0.00000000000001px] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "rotate", value: 1135280128 } },
+      },
+      {
+        what: "and the written-out exponent is the same f32",
+        literals: ["absolute rotate-342 left-[0.00000000000001px] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "insetL", value: 674505948 } },
+      },
+      {
+        what: "the same typo with no class= provenance still compiles to nothing",
+        literals: ["absolute fooo w-[100px]"],
+        outcome: { dropsLiteral: true },
+      },
+      {
+        what: "prose naming a bad token is prose",
+        literals: ["use rotate--18 on the card"],
+        outcome: { dropsLiteral: true },
+      },
+    ],
+  },
+  {
     id: "animation.builtin",
     group: "animation",
     declaredIn: "class literal",
@@ -1639,10 +1747,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "overflow", value: 1 } },
       },
       {
-        what: "a misspelling drops the literal like any unknown utility",
+        what: "a misspelling is refused like any token that does not parse",
         literals: ["overflow-masked w-[200px] h-[200px]"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`overflow-masked` in class" },
       },
     ],
   },
@@ -1668,10 +1776,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "shutterHold", value: 1 } },
       },
       {
-        what: "a misspelling drops the literal like any unknown utility",
+        what: "a misspelling is refused like any token that does not parse",
         literals: ["absolute left-[10px] shutter-held"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`shutter-held` in class" },
       },
     ],
   },
@@ -2037,10 +2145,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "fontSlot", value: 21 } },
       },
       {
-        what: "a face name with an upper-case letter is not a utility and drops the literal",
+        what: "a face name with an upper-case letter is not a utility and is refused",
         literals: ["text-[40px] font-[Display]"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`font-[Display]` in class" },
       },
     ],
   },
@@ -2079,10 +2187,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "textStrokeColor", value: 4278190335 } },
       },
       {
-        what: "a width past 64 px is not a utility and drops the literal",
+        what: "a width past 64 px is not a utility and is refused",
         literals: ["text-stroke-[65px] text-stroke-red-500"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`text-stroke-[65px]` in class" },
       },
     ],
   },
@@ -2115,10 +2223,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "blur", value: 1075838976 } },
       },
       {
-        what: "a deviation past 128 px is not a utility and drops the literal",
+        what: "a deviation past 128 px is not a utility and is refused",
         literals: ["blur-[129px] w-[100px]"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`blur-[129px]` in class" },
       },
     ],
   },
@@ -2156,10 +2264,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "dropShadowGain", value: 1073741824 } },
       },
       {
-        what: "one length is not a shadow and drops the literal",
+        what: "one length is not a shadow and is refused",
         literals: ["drop-shadow-[4px] w-[10px]"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`drop-shadow-[4px]` in class" },
       },
     ],
   },
@@ -2191,10 +2299,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "glowThreshold", value: 1061158912 } },
       },
       {
-        what: "a threshold above 1 drops the literal",
+        what: "a threshold above 1 is refused",
         literals: ["glow-[24px] glow-white glow-mode-luma glow-threshold-[2]"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`glow-threshold-[2]` in class" },
       },
     ],
   },
@@ -2226,10 +2334,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "blendMode", value: 4 } },
       },
       {
-        what: "a mode the rasteriser does not draw drops the literal",
+        what: "a mode the rasteriser does not draw is refused",
         literals: ["mix-blend-difference w-[10px]"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`mix-blend-difference` in class" },
       },
     ],
   },
@@ -2242,7 +2350,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "legacy two-stop gradient",
     constraint:
-      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial about the box centre: the farthest-corner ellipse by default, `bg-radial-circle` the farthest-corner circle, and `bg-radial-[<shape>_<size>]` or `radial-gradient(<shape> <size>, …)` any of CSS's `circle`/`ellipse` with `closest-side`/`farthest-side`/`closest-corner`/`farthest-corner` (patches/0029; about the centre that is five shapes). A length, a percentage or `at <position>` drops the literal: there is no other centre. Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does. A gradient upstream draws itself — `bg-gradient-to-*` with from, at most one via and to — compiles as upstream compiles it: `via-<color>` is `gradVia` at `gradViaPos` 0.5 (`via-N%` moves it), drawn on the legacy path as two GRAD_RECTs split at the stop (99af2166), and a literal with no via keeps the two-stop path word for word. Anything more takes the paint, where a via is `gradVia1`, at 50% unless positioned; no literal carries both. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
+      "a gradient ground with up to six stops (from, four vias, to), at any angle in CSS's convention (0deg = to top, 90deg = to right) or radial about the box centre: the farthest-corner ellipse by default, `bg-radial-circle` the farthest-corner circle, and `bg-radial-[<shape>_<size>]` or `radial-gradient(<shape> <size>, …)` any of CSS's `circle`/`ellipse` with `closest-side`/`farthest-side`/`closest-corner`/`farthest-corner` (patches/0029; about the centre that is five shapes). A length, a percentage or `at <position>` does not parse, which a class= attribute refuses (patches/0041): there is no other centre. Stops in an arbitrary gradient are `#hex` or palette names with an optional `N%`, `_` for a space, positions fixed up as CSS does. A gradient upstream draws itself — `bg-gradient-to-*` with from, at most one via and to — compiles as upstream compiles it: `via-<color>` is `gradVia` at `gradViaPos` 0.5 (`via-N%` moves it), drawn on the legacy path as two GRAD_RECTs split at the stop (99af2166), and a literal with no via keeps the two-stop path word for word. Anything more takes the paint, where a via is `gradVia1`, at 50% unless positioned; no literal carries both. Interpolated premultiplied, so a stop fading to transparent keeps its colour. The gradient follows the node's transform, and fills the inside of a rounded border. Angle, stop colours and stop positions animate as `gradAngle`, `gradFrom`, `gradTo`, `gradVia1..4`, `gradFromPos`, `gradToPos`, `gradVia1Pos..4Pos`. patches/0019, class motion, ops 69/70",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -2298,10 +2406,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "gradShape", value: 3 } },
       },
       {
-        what: "a radial centre the paint cannot place drops the literal",
+        what: "a radial centre the paint cannot place is refused",
         literals: ["bg-radial-[circle_at_top] from-white to-black"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`bg-radial-[circle_at_top]` in class" },
       },
       {
         what: "an arbitrary gradient's unpositioned middle stop is spread by CSS's rule",
@@ -2310,10 +2418,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "gradVia1Pos", value: 1053609165 } },
       },
       {
-        what: "seven stops are one more than the paint carries and drop the literal",
+        what: "seven stops are one more than the paint carries and are refused",
         literals: ["bg-[linear-gradient(#000,#111,#222,#333,#444,#555,#666)]"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`bg-[linear-gradient(#000,#111,#222,#333,#444,#555,#666)]` in class" },
       },
     ],
   },
@@ -2385,7 +2493,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "round",
     constraint:
-      "how an arc's ends finish. `arc-cap-round` puts a half-disc of the stroke's width on each end; `arc-cap-butt` ends the band on the radii through `arc-start` and `arc-start + arc-sweep`, so an arc as wide as its radius is a pie sector — a radar wedge, a pie chart. Any other cap word drops the literal. Not animatable (an enum, PROP `arcCap` 183). patches/0027, class upstream",
+      "how an arc's ends finish. `arc-cap-round` puts a half-disc of the stroke's width on each end; `arc-cap-butt` ends the band on the radii through `arc-start` and `arc-start + arc-sweep`, so an arc as wide as its radius is a pie sector — a radar wedge, a pie chart. Any other cap word does not parse, which a class= attribute refuses (patches/0041). Not animatable (an enum, PROP `arcCap` 183). patches/0027, class upstream",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -2405,10 +2513,10 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { declares: { prop: "arcCap", value: 0 } },
       },
       {
-        what: "a cap the core does not draw drops the literal",
+        what: "a cap the core does not draw is refused",
         literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-square"],
         fromClassAttribute: true,
-        outcome: { dropsLiteral: true },
+        outcome: { refuses: "`arc-cap-square` in class" },
       },
     ],
   },
