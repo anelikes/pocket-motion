@@ -23,7 +23,7 @@ to declare; every digest recorded before this reproduces unchanged.
   it traces `smoke` to its ledger digest.
 - **A Dockerfile** that builds the repository from nothing on linux/amd64
   with CI's pins and runs the digest ledger. Under emulation on an M4, all
-  36 digests reproduced with the image's own wasm, in 593 s.
+  38 digests reproduced with the image's own wasm.
 - `bun scripts/assets.ts --kind fonts,synthetic` fetches and verifies only
   the named manifests.
 

@@ -22,7 +22,8 @@ composition in the ledger rebuilt and traced, its frame digest compared with
 [`baselines/digests.json`](./baselines/digests.json), which was recorded on
 macOS/ARM. Exit 0 means every one reproduced; a mismatch is named. On an
 Apple M4, where Docker runs the x86-64 image under emulation and warns that
-the platform differs, all 36 reproduced in 593 s once the image was built.
+the platform differs, all 38 reproduced at the current pin (36 in 593 s at
+the previous one, on an otherwise idle machine).
 The [`Dockerfile`](./Dockerfile) says what each pin is and why;
 `tests/docker.test.ts` holds those pins equal to the CI workflow's.
 

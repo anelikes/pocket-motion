@@ -903,11 +903,14 @@ mechanisms with the file or test beside them.
   fonts,synthetic` — the frame hash never opens audio, so the Mixkit tracks
   stay out of an image that might be pushed — and runs `git init` over the
   copied source, because composition discovery asks git and a build context
-  carries no `.git`. Measured 2026-10-22 on an M4 under Rosetta, from a
-  context with no `vendor/`, `node_modules/` or `dist/`: all 36 ledger digests
-  reproduced, `reel` and both footage compositions among them, in 593 s for
-  the run. The README's form, which builds from the repository's URL, has not
-  been run — it needs this on the default branch of a reachable repository.
+  carries no `.git`. Measured on an M4 under Rosetta, from a context with no
+  `vendor/`, `node_modules/` or `dist/`: at e0b37e20 on 2026-10-22, all 36
+  ledger digests reproduced in 593 s for the run; at 66caf4e5 on 2026-10-23,
+  all 38, `reel` and both footage compositions among them, in 1708 s on a
+  machine other jobs held at a load average between 60 and 220, so that time
+  says nothing about the image. The README's form, which builds from the
+  repository's URL, has not been run — it needs this on the default branch of
+  a reachable repository.
 
 ## What does not reach them yet
 
@@ -1089,11 +1092,17 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   not give the same wasm.** `vendor/prebuilt.json` pins the wasm's bytes;
   `scripts/vendor.ts` compiles it with whatever rustup runs and writes no
   note, so a version recorded at pack time would describe a compile nothing
-  saw. Measured: rustc 1.97.1 (`8bab26f4f`) produced 513,402 bytes on
-  macOS/arm64 and 513,135 bytes in the linux/amd64 image, and that image
-  reproduced all 36 digests. So the core's bytes are a property of the host
-  that compiled it, not of the pins, and the frames do not depend on the
-  difference — which is the observation identity's omission of the wasm rests
+  saw. Measured at 66caf4e5 with rustc 1.97.1 (`8bab26f4f`) throughout:
+  914,481 and 914,321 bytes from two checkouts on one Mac, and 913,329 bytes
+  in the linux/amd64 image, which reproduced all 38 digests (at e0b37e20:
+  513,402 on the Mac, 513,135 in the image). Two checkouts on one machine
+  already differ, so where the checkout sits is enough to move the bytes:
+  the wasm keeps panic locations as absolute paths, 23 of them in the packed
+  wasm — 17 into the checkout and 6 into `~/.cargo/registry` — and **a
+  packed tarball names the packing user's home directory**.
+  `--remap-path-prefix` in the wasm build would make the bytes
+  path-independent; nothing passes it. The frames do not depend on the
+  difference, which is the observation identity's omission of the wasm rests
   on, and why the package ships one wasm instead of a compile per machine.
   The Dockerfile pins 1.97.1; the workflow takes stable.
 

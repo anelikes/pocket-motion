@@ -108,9 +108,10 @@ carries, and under which terms:
   `vendor/pocketjs/bun.lock`. Each keeps its own licence, and
   `vendor/third-party.json` lists every one with the licence its
   package.json declares and the licence file it ships. The licences among
-  them are MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0 (one package,
-  baseline-browser-mapping) and CC-BY-4.0 (one package, caniuse-lite, whose
-  data is attributed in its own LICENSE). Three MIT packages publish no
+  them are MIT, ISC, BSD-2-Clause, BSD-3-Clause, Apache-2.0 (two packages,
+  baseline-browser-mapping and typescript, which the builder loads at
+  66caf4e5) and CC-BY-4.0 (one package, caniuse-lite, whose data is
+  attributed in its own LICENSE). Three MIT packages publish no
   licence file of their own — @vue-jsx-vapor/compiler-rs, is-reference and
   ts-macro — and travel as npm distributes them.
 
