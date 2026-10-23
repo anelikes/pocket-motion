@@ -18,6 +18,8 @@ import { SURFACE } from "../src/catalog/surface.ts";
 import { active, findingsFor, type FindingNode } from "../src/render/findings.ts";
 import {
   ASSERTION_KEYS,
+  BED_DUCK_KEYS,
+  ENVELOPE_POINT_KEYS,
   FONT_FACE_KEYS,
   IMG_MAX_DIM,
   FONT_KEYS,
@@ -29,6 +31,7 @@ import {
   SOUND_CUE_KEYS,
   SOUND_DIALOGUE_KEYS,
   SHUTTER_KEYS,
+  SOUND_ELEMENT_KEYS,
   SOUND_KEYS,
   SOUND_NARRATION_KEYS,
   SOUND_SRC_ROLES,
@@ -250,16 +253,35 @@ describe("catalog gates", () => {
       const declared = sets[group];
       const rows = rowsByGroup[group];
       const rowKeys = new Set(rows.map((row) => row.key));
+      // Sound also has keys below its root that earn a row of their own: one
+      // every element of every role accepts (`<element>.envelope`), and a
+      // bed key with its own vocabulary (`bed.ducks`). Each is checked
+      // against the set it lives in, and every element key must have a row.
+      const below =
+        group === "sound"
+          ? new Set([
+              ...[...SOUND_ELEMENT_KEYS].map((k) => `<element>.${k}`),
+              ...[...SOUND_BED_KEYS].filter((k) => !SOUND_ELEMENT_KEYS.has(k)).map((k) => `bed.${k}`),
+            ])
+          : new Set<string>();
 
       for (const key of declared) {
         if (!rowKeys.has(key)) {
           parts.push(`${setName} member ${JSON.stringify(key)} is in no ${group} row`);
         }
       }
+      if (group === "sound") {
+        for (const key of SOUND_ELEMENT_KEYS) {
+          if (!rowKeys.has(`<element>.${key}`)) {
+            parts.push(`SOUND_ELEMENT_KEYS member ${JSON.stringify(key)} is in no sound row`);
+          }
+        }
+      }
       for (const row of rows) {
-        if (!declared.has(row.key)) {
+        if (!declared.has(row.key) && !below.has(row.key)) {
           parts.push(
-            `${group} row ${row.id} key ${JSON.stringify(row.key)} is not in ${setName}`,
+            `${group} row ${row.id} key ${JSON.stringify(row.key)} is not in ${setName}` +
+              (group === "sound" ? ", SOUND_ELEMENT_KEYS or SOUND_BED_KEYS" : ""),
           );
         }
       }
@@ -735,6 +757,37 @@ describe("catalog gates", () => {
         keys: SOUND_CUE_KEYS,
         code: "sidecar.sound.cues.unknownKey",
       },
+      {
+        label: "sound.*.envelope[0]",
+        input: {
+          motion: 1,
+          durationFrames: 10,
+          fps: 30,
+          sound: {
+            cues: [
+              {
+                id: "hit-1",
+                src: "a.mp3",
+                atFrame: 0,
+                envelope: [{ frame: 0, gain: 1, nope: 1 }, { frame: 1, gain: 1 }],
+              },
+            ],
+          },
+        },
+        keys: ENVELOPE_POINT_KEYS,
+        code: "sidecar.sound.envelope.unknownKey",
+      },
+      {
+        label: "sound.bed.ducks[0]",
+        input: {
+          motion: 1,
+          durationFrames: 10,
+          fps: 30,
+          sound: { bed: { src: "a.mp3", ducks: [{ startFrame: 0, endFrame: 5, duck: 0.5, nope: 1 }] } },
+        },
+        keys: BED_DUCK_KEYS,
+        code: "sidecar.sound.bed.ducks.unknownKey",
+      },
     ] as const;
 
     const parts: string[] = [];
@@ -773,6 +826,8 @@ describe("catalog gates", () => {
           "sound.narration[0]": "SOUND_NARRATION_KEYS",
           "sound.dialogue[0]": "SOUND_DIALOGUE_KEYS",
           "sound.cues[0]": "SOUND_CUE_KEYS",
+          "sound.*.envelope[0]": "ENVELOPE_POINT_KEYS",
+          "sound.bed.ducks[0]": "BED_DUCK_KEYS",
         };
         parts.push(
           `${c.label}: message lists ${JSON.stringify(listed)}; ${setName[c.label]} is ${JSON.stringify(expected)}`,
