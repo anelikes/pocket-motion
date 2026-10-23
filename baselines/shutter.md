@@ -361,3 +361,142 @@ is the core's, not the shutter's. The same bundle traced through a core of
 key removed the two cores still disagree on all 90 unblurred frames: the
 ring's forms are rounded boxes under a rotation, which `0028` now draws with
 their corners.
+
+## Stage 3: presence checks under a shutter, 2026-10-23
+
+`layout`, `visibility` and `assert` ask whether a node is in the picture of
+the exposure, so a probe under a shutter is `samples` rasters. On
+`compositions/mg-hud` at 120° × 12, `assert` with three assertions and the
+default 24-frame grid was stopped after 28 CPU minutes without finishing.
+This section is what that run was spending, what the branch
+`claude/shutter-presence-checks` changed, and what it costs now.
+
+### Setup
+
+- Apple M4 (10 cores), 32 GB, macOS 26 (Darwin 25.5.0). Bun 1.3.11. Pin
+  `66caf4e5` plus `patches/0001`–`0041`, main at `f810a26`.
+- `mg-hud` declares no `debugName`, so three were added for the measurement
+  only and are not committed: the verdict's plate (`verdict-plate`), the
+  title (`hero-title`) and the hull's core line (`hull`, inside the moving
+  radar group), with `entersBy` 210, 210 and 236. Its tree is 11,510 nodes,
+  593 of them named or carrying text, and one raster at 1920×1080 is
+  0.15–0.47 s depending on the frame.
+- "1" in the tables is the sidecar with no `shutter` key (the parser refuses
+  `samples: 1`); 4 and 12 keep each composition's angle (`mg-hud` 120°,
+  `shutter-blur` 180°).
+- RASTERS are counted, not estimated: a preload wraps the wasm instance and
+  counts calls to `ui_render_scaled` (one each) and `ui_render_exposure`
+  (`samples` each). The counts do not depend on load. Main's runs on
+  `mg-hud` were counted with each raster replaced by a walk and a cached
+  framebuffer, because run for real they take hours; a verdict from such a
+  run means nothing, the call count is the same.
+- Main and this branch ran from two copies of the tree with their own `dist`
+  over the same built pak. Other sessions held the load average between 60
+  and 380 for most of the afternoon; the seconds below are wall time
+  re-taken at a load of 6–17, where wall and CPU time agree, except the two
+  marked †, which ran while it rose to 35 and 64.
+
+### Where the time went
+
+Per frame of `mg-hud`'s grid, main's `assert` (through `inspectLayout`):
+
+- one rect per named-or-text node and every ancestor of one — 1,330 ids —
+  each read by rasterising the whole frame, whether the node is laid out or
+  not;
+- one probe per named-or-text node with a box, up to 232 a frame, each an
+  exposure plus a tick raster for the ink box of a text node;
+- for three assertions about three nodes.
+
+The rects alone were 1,330 × 24 = 31,920 of its 35,265 rasters with no
+shutter.
+
+### Rasters and seconds
+
+`mg-hud`, 24 sampled frames, `layout` at frame 150; rasters, and wall seconds
+where the run was timed:
+
+| command | tree | 1 | 120° × 4 | 120° × 12 |
+| --- | --- | ---: | ---: | ---: |
+| `assert` | main | 35,265 | 48,567 | 75,327 |
+| | this branch | 102 — 64 s | 432 — 211 s | 1,248 — 526 s |
+| | `--read tick` | | | 102 — 69 s |
+| `visibility` | main | 17,554 | 27,520 | 54,096 |
+| | this branch | 3,322 | 13,288 | 39,864 |
+| | `--read tick` | | | 3,322 — 1,207 s |
+| `layout --at 150` | main | 1,496 — 916 s | 2,157 | 3,485 |
+| | this branch | 166 — 83 s † | 827 — 365 s † | 2,155 — 867 s |
+| | `--read tick` | | | 166 — 73 s |
+
+At the 0.4 s a raster these runs average on `mg-hud`, main's `assert` was
+about 4, 5½ and 8½ hours; the one main run timed for real, `layout` at one
+frame, took 916 s.
+
+`shutter-blur`, 24 sampled frames, `layout` at frame 45, rasters — seconds:
+
+| command | tree | 1 | 180° × 4 | 180° × 12 |
+| --- | --- | ---: | ---: | ---: |
+| `assert` | main | 792 — 5.7 | 2,040 — 20.7 | 5,112 — 40.2 |
+| | this branch | 216 — 1.1 | 888 — 6.3 | 2,616 — 26.5 |
+| | `--read tick` | | 216 — 1.2 | 216 — 1.1 |
+| `visibility` | main | 697 — 4.0 | 1,780 — 16.5 | 4,668 — 42.1 |
+| | this branch | 361 — 1.6 | 1,444 — 9.7 | 4,332 — 31.1 |
+| | `--read tick` | | 361 — 1.6 | 361 — 1.6 |
+| `layout --at 45` | main | 33 — 0.45 | 85 — 0.77 | 213 — 1.75 |
+| | this branch | 16 — 0.20 | 68 — 0.78 | 196 — 1.34 |
+| | `--read tick` | | 16 — 0.25 | 16 — 0.35 |
+
+`shutter-blur` is 14 nodes, eight of them asserted, so on it the two exact
+changes save the rect rasters and little else; the exposure's factor is the
+rest, and only the tick reading removes it.
+
+### What changed, and what each claims
+
+- **A rect is a walk.** `Ui::draw` fills the inspector latch and every render
+  runs it before rasterising; `ui_draw_hash` runs it alone. `rect()` now
+  calls that, about 7 ms on `mg-hud` against a raster's 330. Same latch, same
+  box: the test reads every node of `shutter-blur` both ways at five moving
+  frames.
+- **`assert` classifies what it asserts.** Each assertion's `node` and each
+  `before` target, with their ancestors still measured so `insideBox` reads
+  the same containers. On every composition that declares assertions
+  (filters, gradients, masked, faces, stroke, images, layout-codes,
+  shutter-blur) and on spanned, occluded and footage-tracks, `assert`,
+  `visibility` and `layout --json` are byte-identical to main's apart from
+  the new `read` key under a shutter.
+- **`--read tick`** on `layout`, `visibility`, `assert` and `verify` asks both
+  questions of the frame's own tick: one raster a probe at any sample count.
+  `--json` carries `read` beside `shutter` and the printed shutter lines say
+  which picture was read. Never the default.
+
+### What the tick reading does not see, pinned
+
+`shutter-blur`'s `peek` is a still bar under an opaque 150 × 30 blade that
+turns half a revolution a tick (`spin2` over 2 ticks). At every tick the
+blade lies at 0 or 180 degrees, the same rectangle, 15 px past each end of
+the bar; the samples either side turn it up to 79 degrees off. Over all 90
+frames, `assert` and `visibility` on the exposure show `peek` at every frame,
+and with `--read tick` it is covered at every frame and both fail on it. The
+other direction — a node the average fades below one level, in picture at
+the tick and absent from the delivered frame — follows from the same
+arithmetic and is not pinned.
+
+### Measured and not taken
+
+- **The tick raster as the exposure where nothing moves.** An exposure of
+  identical samples is that sample byte for byte (`exposure_resolve` sends
+  `(2·n·c + n) / 2n` to `c`), so where all N samples' draw lists hash equal
+  the tick's verdict IS the exposure's. Counted with `ui_shutter_sample` and
+  `ui_draw_hash` per sample: 0 of 24 grid frames on `mg-hud` at × 12 and 0
+  of 24 on `shutter-blur` at × 8. Something always moves.
+- **A coarser default grid under a shutter.** It narrows the claim every
+  default run makes, to buy what `--samples` already buys on request.
+
+### Guards, watched red
+
+Each with the change reverted, the named test failing and nothing else
+edited: `walk` made a no-op (the walk test and three existing rect readers
+in `tests/shutter.test.ts`); `rect()` rasterising again (the prober test,
+which counts calls); `openProber` ignoring `read`, and the exposure dropped
+by default (both `peek` tests); `assert`'s name filter removed, and a
+narrowed sweep's ancestors dropped (`tests/assert.test.ts`, on `escapee`);
+`verify` not passing `read` through (`tests/verify.test.ts`).

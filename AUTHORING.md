@@ -502,7 +502,13 @@ costs `samples` rasters plus about 1 ms a sample to average at 1080p
 apart, so a fast move wants more of them before the steps stop showing.
 `layout`, `visibility` and `assert` ask whether a node is in the picture of
 the exposure, and read rects and ink at the tick; `check` renders none and
-says so. `compositions/shutter-blur` is the fixture.
+says so. A probe of the exposure is `samples` renders, so `--read tick` asks
+the frame's own tick instead, at one render, and prints that it did and writes
+`read: "tick"` into `--json`. It is a different picture: a node only the blur
+shows reads covered — `shutter-blur`'s `peek`, under a blade that lies over it
+at every tick and turns off it in the samples either side — so the exposure
+stays the default. `assert` classifies only the nodes its assertions name.
+`compositions/shutter-blur` is the fixture.
 
 **What does not exist** (the checker will catch most of these, but knowing
 saves a round trip): per-frame callbacks (`onFrame`), timers (`after`),

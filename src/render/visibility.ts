@@ -91,7 +91,7 @@
  * level reads in picture although the delivered frame carries none of it.
  * `compositions/shutter-blur`'s `peek` is the first case, pinned: an opaque
  * blade turning half a revolution a tick lies over it at every frame's tick
- * and turns off it in every sample but the ones nearest the centre.
+ * and turns up to 79 degrees off it in the samples either side.
  *
  * A RECT IS A WALK, NOT A RASTER
  *

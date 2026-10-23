@@ -476,7 +476,47 @@ mechanisms with the file or test beside them.
   sizes before the first snapshot so a restore never reallocates it.
   `compositions/shutter-blur` is the fixture, in both ledgers; it traced to
   the stage-1 prototype's recorded digests at N = 1, 4 and 8 before its
-  `known` node was added.
+  `known` and `peek` nodes were added.
+
+  **What a presence check costs under it, measured** (2026-10-23, Apple M4,
+  10 cores, 32 GB, Bun 1.3.11; every row and how it was taken in
+  `baselines/shutter.md`, "Stage 3"). A probe of the exposure is `samples`
+  rasters, and on `compositions/mg-hud` — 11,510 nodes, 0.15–0.47 s a
+  raster — `assert` with three assertions was stopped after 28 CPU minutes
+  at 120° × 12. Most of what it was doing was not the shutter: it
+  rasterised the whole frame to read each rect, 1,330 rects a frame there,
+  and probed all 593 named or text nodes for verdicts about three. Rasters
+  over the default 24-frame grid, counted at the core's exports, and seconds
+  at a load average of 10–17:
+
+  | `mg-hud` `assert` | no shutter | 120° × 4 | 120° × 12 |
+  | --- | ---: | ---: | ---: |
+  | main | 35,265 | 48,567 | 75,327 |
+  | now | 102 — 64 s | 432 — 211 s | 1,248 — 526 s |
+  | now, `--read tick` | | | 102 — 69 s |
+
+  At the 0.4 s a raster those runs average, main's was 4 to 8½ hours. Two
+  changes take out work no line of output read and change no output: a rect
+  is read after a draw walk (`ui_draw_hash`, about 7 ms there), because the
+  walk is what fills the latch; and `assert` classifies only the names its
+  assertions mention, ancestors still measured so `insideBox` reads the same
+  container. `assert`, `layout` and `visibility --json` are byte-identical to
+  main's on all eight compositions that declare assertions and on
+  `spanned`, `occluded` and `footage-tracks`. What is left is the shutter's
+  own factor, and `--read tick` (`layout`, `visibility`, `assert`, `verify`)
+  removes it by classifying the frame's own tick, with `read: "tick"` in
+  `--json` and a printed line saying so. It is never the default because it
+  is a different picture: `shutter-blur`'s `peek` lies under a blade turning
+  half a revolution a tick, covered at every frame's tick and in the picture
+  of every exposure, and the tick reading fails it where the exposure passes
+  it (`tests/shutter.test.ts`, `tests/verify.test.ts`). The other direction,
+  a node the average fades below one level, is stated there and not pinned.
+  Two candidates were measured and not taken. Reusing the tick raster as the
+  exposure where no sample's draw list differs is exact — an exposure of
+  identical samples is that sample byte for byte — and holds at 0 of 24 grid
+  frames of `mg-hud` and of `shutter-blur`, where something always moves. A
+  coarser default grid under a shutter narrows the default claim to buy what
+  `--samples` already buys on request.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -848,10 +888,12 @@ mechanisms with the file or test beside them.
   node. `lint`'s two `shutter.*` warnings read the source text: ancestry is
   lexical within one file and the keyframes an `animate-*` names are not
   read, so a hold under an ancestor that only fades is warned about too, and
-  a hold placed by a component in another file is not seen. Every probe of
-  `layout`, `visibility` and `assert` costs `samples` renders under a
-  shutter; `reel` declares none, so what that does to a film-length sweep is
-  unmeasured.
+  a hold placed by a component in another file is not seen. A probe of the
+  exposure still costs `samples` rasters, and `visibility` probes every named
+  or text node, not only asserted ones: on `mg-hud` at 120° × 12 that is
+  39,864 rasters over the default grid, about 4½ hours at its raster cost,
+  against 3,322 and 20 minutes with `--read tick` — the reading that misses
+  `peek`. `reel` declares no shutter.
 
 Stated rather than smoothed. Each is a known hole, not an oversight.
 

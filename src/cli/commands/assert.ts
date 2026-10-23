@@ -25,8 +25,9 @@
  * `before` target — and no other. Every verdict is about one of those, so a
  * probe of anything else is a render no line of the output reads, and under a
  * shutter each one is `samples` renders. On `compositions/mg-hud`, three
- * assertions against 593 named-or-text nodes, that was the difference between
- * minutes and a run nobody let finish. `insideBox` reads the same codes it read
+ * assertions against 593 named-or-text nodes, the default grid with no shutter
+ * cost 35,265 rasters before and costs 102 now (`baselines/shutter.md`,
+ * "Stage 3"). `insideBox` reads the same codes it read
  * before: a kept node's ancestors are still measured, so its container is the
  * one it always had. The names the tree carries are still all read, for the
  * line that answers an assertion naming none of them.

@@ -119,7 +119,7 @@ export interface LayoutOptions {
   readonly at: number;
   /** Include nodes that carry neither text nor a debugName. */
   readonly all: boolean;
-  /** Under a declared shutter, the picture in-picture is asked of. Absent
+  /** Under a declared shutter, the picture `inPicture` is asked of. Absent
    *  means the exposure. */
   readonly read?: Reading;
   readonly flags: GlobalFlags;
