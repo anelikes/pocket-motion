@@ -1,0 +1,15 @@
+# The image builds from what a fresh clone has. Everything below is either
+# rebuilt inside it (vendor/, node_modules/, dist/) or fetched by sha256
+# (the Noto Sans SC pair), or is not the repository's (.git, worktrees).
+.git
+.claude
+node_modules
+vendor
+dist
+out
+renders
+frames
+scratchpad
+assets/audio/**/*.mp3
+assets/fonts/NotoSansSC-*.otf
+**/.DS_Store

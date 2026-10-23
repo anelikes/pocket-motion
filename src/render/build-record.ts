@@ -37,7 +37,9 @@
  * build: `~/code/motion/dist/compositions/smoke` and
  * `/srv/ci/motion/dist/compositions/smoke` are the same build, and hashing
  * them raw would make input identity disagree across machines for the one
- * reason it exists to rule out.
+ * reason it exists to rule out. "Repo" is two directories when this runs as
+ * an installed package — this package for the compiler, the project that
+ * installed it for the composition — and `relativise` says how both are used.
  */
 
 import { existsSync } from "node:fs";
@@ -73,15 +75,34 @@ export function buildRecordPath(bundlePath: string): string {
   return join(dirname(bundlePath), BUILD_RECORD_FILE);
 }
 
-/** Repo-relative form of one argv token; absolute paths outside stay whole. */
-function relativise(token: string): string {
+/**
+ * Relative form of one argv token against the first root that contains it;
+ * absolute paths under neither stay whole.
+ *
+ * TWO ROOTS, because an installed package splits what one checkout holds.
+ * The compiler is under THIS package's root (`vendor/pocketjs/tools/build.ts`),
+ * and the composition, its `--outdir` and its faces are under the
+ * composition's own repository — the directory `buildSpawn` builds from,
+ * which in a project that installed pocket-motion is that project, not
+ * `node_modules/pocket-motion`. Against this root alone every one of those
+ * stayed absolute, so the toolchain component of a consumer's identity hashed
+ * where the project sat on that machine. In this repository the two roots are
+ * the same directory and the record is the bytes it always was.
+ *
+ * The package root is tried first so the compiler's token reads the same
+ * however the package was installed — hoisted, nested or global.
+ */
+function relativise(token: string, roots: readonly string[]): string {
   const eq = token.indexOf("=");
   if (token.startsWith("--") && eq > 0) {
-    return `${token.slice(0, eq)}=${relativise(token.slice(eq + 1))}`;
+    return `${token.slice(0, eq)}=${relativise(token.slice(eq + 1), roots)}`;
   }
   if (!isAbsolute(token)) return token;
-  const rel = relative(ROOT, token);
-  return rel.startsWith("..") ? token : rel;
+  for (const root of roots) {
+    const rel = relative(root, token);
+    if (!rel.startsWith("..") && !isAbsolute(rel)) return rel;
+  }
+  return token;
 }
 
 /** Every `patches/*.patch`, sorted, by sha256. */
@@ -101,13 +122,21 @@ export async function patchDigests(): Promise<PatchDigest[]> {
   return out;
 }
 
-/** What a build running right now would record. */
-export async function currentBuildRecord(argv: readonly string[]): Promise<BuildRecord> {
+/**
+ * What a build running right now would record. `projectRoot` is the
+ * composition's repository — the cwd the build runs in — and defaults to this
+ * package's root, which is the same directory inside this repository.
+ */
+export async function currentBuildRecord(
+  argv: readonly string[],
+  projectRoot: string = ROOT,
+): Promise<BuildRecord> {
+  const roots = [ROOT, resolve(projectRoot)];
   return {
     bun: Bun.version,
     upstream: UPSTREAM.commit,
     patches: await patchDigests(),
-    argv: argv.map(relativise),
+    argv: argv.map((token) => relativise(token, roots)),
   };
 }
 
@@ -115,8 +144,9 @@ export async function currentBuildRecord(argv: readonly string[]): Promise<Build
 export async function writeBuildRecord(
   outDir: string,
   argv: readonly string[],
+  projectRoot: string = ROOT,
 ): Promise<BuildRecord> {
-  const record = await currentBuildRecord(argv);
+  const record = await currentBuildRecord(argv, projectRoot);
   await Bun.write(join(outDir, BUILD_RECORD_FILE), JSON.stringify(record, null, 2) + "\n");
   return record;
 }

@@ -74,6 +74,28 @@ the tracked clips and safe to delete (`find dist -name '*.rgba' -delete`).
 If a digest or a visibility row moves and the change was intended, re-record
 with `--write` and say in the commit message what moved and why.
 
+## The package and the image
+
+```bash
+bun scripts/pack.ts --dry-run   # what npm would put in the package, and whether it dropped anything
+bun scripts/pack.ts             # dist/pack/pocket-motion-<version>.tgz; never publishes
+docker build -t pocket-motion . && docker run --rm pocket-motion
+```
+
+`npm pack` at the repository root refuses: upstream's `.gitignore` inside
+`vendor/pocketjs` would drop the wasm and the compiler's `node_modules`, so
+`scripts/pack.ts` stages the package from an explicit list and its header
+says what is in it and why it is prebuilt. `tests/package.test.ts` holds npm's
+own file list and installs the tarball into an empty project, so it needs
+`npm` on PATH and, the first time, the registry for the compiler's native
+binding. A change to what `src/` reads from `vendor/pocketjs` at run time is a
+change to `VENDOR_ENTRIES` or `VENDOR_FILES` there.
+
+The image runs the whole digest ledger on linux/amd64 from a context with no
+`vendor/`, `node_modules/` or `dist/`. A pin that moves in
+`.github/workflows/determinism.yml` moves in the `Dockerfile` too;
+`tests/docker.test.ts` fails until it does.
+
 ## Rules that are not style preferences
 
 **Never edit `vendor/`.** It is rebuilt from `patches/NNNN-*.patch` applied in

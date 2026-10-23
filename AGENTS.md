@@ -836,6 +836,81 @@ mechanisms with the file or test beside them.
   back `undefined` and turn the diagnostic off quietly; both halves were
   wrong — the hit is unreachable, and `build.ts` iterates the field, so an
   `undefined` would throw rather than go quiet.
+- **The API is the CLI's `--json`, returned.** `src/api.ts` exports `build`,
+  `trace`, `render`, `verify` and `doctor`. Each turns its options into the
+  argv the command would be typed with, runs it through `dispatch`
+  (`src/cli/main.ts` — the parser, the command, and the conversion of a
+  thrown error into `{ ok: false, error, exitCode }` that `main` used to hold
+  inline), and returns it through `jsonPayload` and `envelope`, which are
+  what `--json` writes through. So an API result is redacted and carries
+  `runId` exactly as the printed object does, and nothing re-derives a
+  verdict. `tests/api.test.ts` runs the CLI as a separate process with a
+  hand-typed argv and requires equal objects; `render` may differ in
+  `elapsedMs` and `msPerFrame` and nothing else. Red with `envelope()`
+  skipped: six of eight cases.
+- **`render --json` carries `trace`'s identity**, from one function
+  (`compositionIdentity`, `src/cli/commands/trace.ts`), so a delivery holds
+  the pair another machine checks with `trace`. A `--spec` job carries none,
+  measured: one job staged twice moved both the `toolchain` and the `bundle`
+  components, because the staged directory's random name is in
+  `build.json`'s argv and in the bundle's module comments.
+- **The npm package is staged, never packed from the checkout.**
+  `scripts/pack.ts` assembles `dist/pack/pocket-motion` from an explicit
+  list, because npm honours `vendor/pocketjs`'s own `.gitignore`, which
+  ignores `node_modules` and `hosts/web/pocketjs.wasm` — measured, and naming
+  them in `files` does not override it; the root `prepack` refuses with the
+  command that packs. The vendored tree ships prebuilt rather than through a
+  `postinstall`: Bun runs no dependency's lifecycle script unless the
+  consumer trusts it, nothing hosts an artifact a fetch could verify, and the
+  compiler's 119 npm packages are copied as `bun install --frozen-lockfile`
+  laid them out, so the JSX transform that writes a bundle cannot float with a
+  consumer's resolver. `framework/src` and `contracts` ship whole; of the
+  compiler, `tools/` and `microts/`, only what the import graph reaches from
+  the five entries `src/` loads. That graph includes `typescript` at 66caf4e5,
+  23 MB of the package's 77 MiB unpacked: `tools/build.ts` imports microts'
+  AOT compiler at module scope and its first line imports `typescript`, so
+  every build loads it. The one platform-native package, the
+  JSX-vapor compiler's binding, is declared as an exact-version
+  `optionalDependency` instead of copied, so the tarball does not depend on
+  where it was packed. `vendor/prebuilt.json` stands in for git: upstream,
+  every patch and every file by sha256, which `doctor` hashes in an install
+  (`src/package/prebuilt.ts`) before loading the compiler in a child process —
+  the load is where a platform with no binding shows up.
+  `tests/package.test.ts` reads `npm pack --dry-run`'s own list, and installs
+  the real tarball into an empty project where `smoke` traces to its ledger
+  digest through the package's bin. Red, measured at 66caf4e5: shipping
+  upstream's `.gitignore` drops 4054 of 4410 files; staging with no
+  `optionalDependencies` fails `doctor` with `Cannot find native binding`.
+- **A consumer's `build.json` is relative to the consumer.** `relativise`
+  (`src/render/build-record.ts`) tries this package's root and then the
+  composition's repository root — the cwd `buildSpawn` builds from — so a
+  project that installed the package records `compositions/card/main.tsx`,
+  not where the project sits. In this repository the two roots are one
+  directory and every record is the bytes it was. `tests/identity.test.ts`
+  records one build from two project locations; red with the package root
+  alone.
+- **The Docker image is the workflow's run.** `Dockerfile` builds the
+  repository from nothing on linux/amd64 and runs `bun scripts/digests.ts`.
+  Bun is pinned by image digest, ffmpeg is the workflow's asset by the
+  workflow's sha256, Rust is 1.97.1, and `tests/docker.test.ts` holds the Bun
+  and ffmpeg pins equal to `.github/workflows/determinism.yml` and to the
+  ledger's recorded Bun (red on one changed digit). Upstream is fetched as the
+  one pinned commit, depth 1, over HTTP/1.1 and retried, rather than cloned
+  whole by `scripts/vendor.ts` — which reuses a present tree and checks the
+  pin out itself — because the full clone failed mid-transfer at 707 s on a
+  slow link; the fetch needs the full sha, which the same test holds to
+  `UPSTREAM.commit`. It fetches `bun scripts/assets.ts --kind
+  fonts,synthetic` — the frame hash never opens audio, so the Mixkit tracks
+  stay out of an image that might be pushed — and runs `git init` over the
+  copied source, because composition discovery asks git and a build context
+  carries no `.git`. Measured on an M4 under Rosetta, from a context with no
+  `vendor/`, `node_modules/` or `dist/`: at e0b37e20 on 2026-10-22, all 36
+  ledger digests reproduced in 593 s for the run; at 66caf4e5 on 2026-10-23,
+  all 38, `reel` and both footage compositions among them, in 1708 s on a
+  machine other jobs held at a load average between 60 and 220, so that time
+  says nothing about the image. The README's form, which builds from the
+  repository's URL, has not been run — it needs this on the default branch of
+  a reachable repository.
 
 ## What does not reach them yet
 
@@ -984,6 +1059,52 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   to order the writers and never the readers; `scripts/digests.ts`'s
   mtime/size check is what makes a moved artefact impossible to pass silently,
   and it covers a ledger run and nothing outside one.
+- **An installed package's bundle is not this checkout's bundle, and
+  identity says so while the picture does not.** Measured on `smoke`, built
+  here and built in a project that installed the tarball, at e0b37e20 and
+  again at 66caf4e5: the frame digest,
+  `pak`, `params`, `sidecar` and `toolchain` agree, and `bundle` does not.
+  Bun's bundler writes each module's path relative to the build's cwd into a
+  comment, and the framework sits at `vendor/pocketjs/framework/src/…` here
+  and at `node_modules/pocket-motion/vendor/pocketjs/framework/src/…` there —
+  and at a third path under a linker that does not hoist. So two installs with
+  one layout share an identity, and an install and a checkout do not. Hashing
+  the bundle with those comments normalised, or building from a cwd that makes
+  the framework's path independent of the install, would close it; neither is
+  done.
+- **An installed package still speaks as a checkout in places.** Refusals
+  print `bun src/cli/main.ts build <dir>` and `bun scripts/assets.ts`, which a
+  consumer does not have (`bunx pocket-motion build <dir>` is the command
+  there), and `--json` redacts `$REPO` as the PACKAGE directory, so a
+  consumer's own paths come back as `$HOME/…`. `init` copies its fixtures
+  out of this repository's `compositions/`, which the package does not carry,
+  and refuses a target outside that tree, so a consumer cannot use it at all.
+  And a build writes into the package: `buildEnv` (`src/vendor/cache.ts`)
+  points upstream's transform cache at
+  `node_modules/pocket-motion/vendor/pocketjs/.cache`, so an install on a
+  read-only filesystem cannot build.
+- **What the package was checked on is one platform.** The install test has
+  run on darwin-arm64 only, at the time of writing; it is in the suite CI runs
+  on linux-x64, which is where the second platform will be measured. The
+  binding is declared for the fourteen platforms its compiler lists; Windows
+  has not been tried, and `doctor`'s disk check reads `df`.
+- **Nothing records the rustc that compiled the wasm, and the same rustc does
+  not give the same wasm.** `vendor/prebuilt.json` pins the wasm's bytes;
+  `scripts/vendor.ts` compiles it with whatever rustup runs and writes no
+  note, so a version recorded at pack time would describe a compile nothing
+  saw. Measured at 66caf4e5 with rustc 1.97.1 (`8bab26f4f`) throughout:
+  914,481 and 914,321 bytes from two checkouts on one Mac, and 913,329 bytes
+  in the linux/amd64 image, which reproduced all 38 digests (at e0b37e20:
+  513,402 on the Mac, 513,135 in the image). Two checkouts on one machine
+  already differ, so where the checkout sits is enough to move the bytes:
+  the wasm keeps panic locations as absolute paths, 23 of them in the packed
+  wasm — 17 into the checkout and 6 into `~/.cargo/registry` — and **a
+  packed tarball names the packing user's home directory**.
+  `--remap-path-prefix` in the wasm build would make the bytes
+  path-independent; nothing passes it. The frames do not depend on the
+  difference, which is the observation identity's omission of the wasm rests
+  on, and why the package ships one wasm instead of a compile per machine.
+  The Dockerfile pins 1.97.1; the workflow takes stable.
 
 ## Working rules
 

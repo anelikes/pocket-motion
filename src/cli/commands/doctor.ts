@@ -30,6 +30,14 @@
  * the first the moment either moved, and the disagreement would be between
  * this command and the gate it is supposed to be predicting.
  *
+ * IN AN INSTALLED PACKAGE the same seven checks answer for a different tree.
+ * There is no clone to ask git about and no Rust to need: `vendor/prebuilt.json`
+ * is present, `vendor` hashes every prebuilt file against it and loads the
+ * compiler in a child process — its native binding is an optional dependency,
+ * so this is where a platform the package does not cover shows up — while
+ * `rustup` and `assets` say they do not apply rather than fail on tools and
+ * files a consumer was never meant to have (`src/package/prebuilt.ts`).
+ *
  * WHAT IT DOES NOT CLAIM: nothing here renders. A green `doctor` says the
  * tools are present and the pins agree; it says nothing about whether any
  * composition in the tree builds, which is what `lint`, `build` and `check`
@@ -39,6 +47,13 @@
 import { existsSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
+import {
+  PREBUILT_FILE,
+  compilerLoadError,
+  isPrebuilt,
+  prebuiltProblems,
+  readPrebuilt,
+} from "../../package/prebuilt.ts";
 import { readBuildRecord } from "../../render/build-record.ts";
 import { vendorProblems, vendorStatus } from "../../vendor/status.ts";
 import { parseArgs } from "../args.ts";
@@ -185,6 +200,16 @@ export async function checkBun(): Promise<DoctorCheck> {
  * and the plausible invocation fails with "can't find crate for `core`".
  */
 export async function checkRust(): Promise<DoctorCheck> {
+  if (isPrebuilt(ROOT)) {
+    return {
+      name: "rustup",
+      ok: true,
+      detail:
+        "not needed: this is an installed package, and hosts/web/pocketjs.wasm ships " +
+        `prebuilt with its sha256 in ${PREBUILT_FILE}`,
+      fix: null,
+    };
+  }
   const which = await sh(["rustup", "which", "cargo"]);
   if (!which.ok) {
     return {
@@ -241,8 +266,46 @@ async function checkFfTool(tool: "ffmpeg" | "ffprobe"): Promise<DoctorCheck> {
   return { name: tool, ok: true, detail: firstLine(ran.stdout), fix: null };
 }
 
-/** The vendored tree, through the one module that reports on it. */
+/**
+ * The vendored tree, through the one module that reports on it — or, in an
+ * installed package, through the manifest that stands in for git there
+ * (`src/package/prebuilt.ts`), plus whether the compiler loads on this
+ * platform, which is the first thing a package can get wrong that a checkout
+ * cannot: its native binding is an optional dependency, not a shipped file.
+ */
 export async function checkVendor(): Promise<DoctorCheck> {
+  const manifest = isPrebuilt(ROOT) ? await readPrebuilt(ROOT) : null;
+  if (isPrebuilt(ROOT)) {
+    const problems = manifest
+      ? await prebuiltProblems(manifest, ROOT)
+      : [`${PREBUILT_FILE} is present but is not a manifest this version can read`];
+    const loadError = await compilerLoadError(ROOT);
+    if (loadError !== null) {
+      problems.push(
+        `the vendored compiler does not load on ${process.platform}-${process.arch}: ${loadError}`,
+      );
+    }
+    if (problems.length > 0) {
+      return {
+        name: "vendor",
+        ok: false,
+        detail: problems.join("; "),
+        fix:
+          loadError !== null
+            ? "reinstall pocket-motion with optional dependencies, on a platform its package.json lists"
+            : "reinstall pocket-motion",
+      };
+    }
+    return {
+      name: "vendor",
+      ok: true,
+      detail:
+        `prebuilt at ${manifest!.upstream} + ${manifest!.patches.length} patch(es); ` +
+        `${Object.keys(manifest!.files).length} file(s) match ${PREBUILT_FILE}, ` +
+        "and the compiler loads on this platform",
+      fix: null,
+    };
+  }
   const status = await vendorStatus();
   const problems = vendorProblems(status);
   if (problems.length > 0) {
@@ -274,6 +337,17 @@ export async function checkVendor(): Promise<DoctorCheck> {
  * touches the network.
  */
 export async function checkAssets(): Promise<DoctorCheck> {
+  if (isPrebuilt(ROOT)) {
+    return {
+      name: "assets",
+      ok: true,
+      detail:
+        "not applicable: an installed package carries none of this repository's fetched " +
+        "assets; a composition's fonts and sound are files in its own project, and lint " +
+        "and check refuse a declared one that is missing",
+      fix: null,
+    };
+  }
   const ran = await sh(["bun", "scripts/assets.ts", "--check"]);
   if (!ran.ok) {
     return {
