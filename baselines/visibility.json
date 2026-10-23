@@ -240,8 +240,8 @@
     },
     "compositions/shutter-blur": {
       "failures": [],
-      "nodes": 13,
-      "named": 10,
+      "nodes": 14,
+      "named": 11,
       "neverShown": 0,
       "buriedAfterShown": 0
     },
