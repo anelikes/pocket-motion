@@ -157,6 +157,13 @@
       "neverShown": 1,
       "buriedAfterShown": 0
     },
+    "compositions/long-track": {
+      "failures": [],
+      "nodes": 11,
+      "named": 11,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/lower-third": {
       "failures": [],
       "nodes": 2,

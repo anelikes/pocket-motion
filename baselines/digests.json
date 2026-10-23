@@ -74,6 +74,10 @@
       "frames": 900,
       "digest": "e09bb4f07eb27006a89842191b2516b5f3a39a7b0cb48080d63226fe701292f4"
     },
+    "compositions/long-track": {
+      "frames": 2100,
+      "digest": "4a753d76b3a5123846fa8aeba987a71699bdd2dd8cce346207d1f1cf1abc93b8"
+    },
     "compositions/lower-third": {
       "frames": 1,
       "digest": "0459571a0be4d133c569fa0a6ac243ed3898e4455b804a13c846650399f34295"

@@ -1,0 +1,22 @@
+{
+  "motion": 1,
+  "durationFrames": 2100,
+  "fps": 30,
+  "supersample": 1,
+  "assertions": [
+    {
+      "node": "counter",
+      "inPicture": [
+        0,
+        2099
+      ]
+    },
+    {
+      "node": "last-station",
+      "inPicture": [
+        2050,
+        2099
+      ]
+    }
+  ]
+}
