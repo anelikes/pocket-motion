@@ -802,12 +802,16 @@ whose cases are the defects that reached a film first:
   opacity on the 60 Hz tick with the easing applied there, and writes linear
   keyframes, so a turn about any pivot is an exact arc and a landing is where
   it was computed to be. `Reg` collects keyframe sets and named animations
-  for `pocket.config.ts`; `El` is one element over the film. It refuses what
-  would otherwise surface later or not at all: more than 250 keys in a track
-  (the baker holds 255 segments), a `step` whose changes do not strictly
-  increase (its `t − 1` and `t` keys cross and bake as a ramp from tick 0),
-  and an empty `window`. `El.path` after `set` on the same tick keeps the
-  state before the change. `tests/sampled.test.ts`.
+  for `pocket.config.ts`; `El` is one element over the film. A track of any
+  length is one keyframe set: since `patches/0050` a track holds up to 65,535
+  segments, which no film the format can time outgrows
+  (`compositions/long-track` carries a camera of 2,003 and a counter of 841).
+  It refuses what would otherwise surface later or not at all: a film longer
+  than a timeline's u16 period (65,535 ticks, 18 min 12 s at 60 Hz), a
+  `step` whose changes do not strictly increase (its `t − 1` and `t` keys
+  cross and bake as a ramp from tick 0), and an empty `window`. `El.path`
+  after `set` on the same tick keeps the state before the change.
+  `tests/sampled.test.ts`, `tests/long-track.test.ts`.
 - **`src/image/raster.ts`** paints line art and imagery analytically into
   plates — rings, discs, wedges, hex grids, traces, polylines with a soft
   edge, speed lines, a synthetic SAR chip — at a cost of the pixel count,
