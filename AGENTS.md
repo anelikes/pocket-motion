@@ -477,6 +477,35 @@ mechanisms with the file or test beside them.
   `compositions/shutter-blur` is the fixture, in both ledgers; it traced to
   the stage-1 prototype's recorded digests at N = 1, 4 and 8 before its
   `known` node was added.
+- **A vector outline is baked data a style prop selects, drawn by one op**
+  (`patches/0042`, `0043`, class `motion`; the design and every place the
+  landing departs from its prototype in `patches/0042-vector-paths.design.md`,
+  the numbers in `baselines/vector-paths.md`). `<Path d viewBox>` is a View
+  whose `d` the build normalises to move, line, cubic and close and writes
+  into a PATH TABLE after the ANIM TABLE in `styles.bin`, counted by the
+  header's formerly reserved u16 — so a composition with no `<Path>` writes
+  the bytes it did, and no recorded digest moved. Per frame the core morphs
+  an entry's keys, flattens its cubics in local space, trims and strokes it,
+  maps it through the world affine and emits PATH (71), whose coverage is
+  POLY's 4x4 lattice with a top-left rule: two paths sharing an edge split
+  its samples. Because it is a draw-list op, `ui_draw_hash`, `visibility`,
+  `layout` and `check` read it as they read any other, and a path trimmed to
+  nothing is invisible by declaration, not covered. Two things are refused
+  rather than drawn wrong: morph keys whose commands differ after
+  normalisation (at the build, at the line that wrote them — a resampled
+  correspondence is a picture nobody declared), and an outline the build
+  could not read where it was written (at mount, naming it — not a node
+  that silently draws nothing). An arc becomes cubics with no
+  transcendental: unit-vector bisection and square roots, so a pak's bytes
+  do not depend on the host's `Math.sin`; `tests/vector-paths.test.ts` pins
+  two arcs' bits and runs on Linux/x86-64 in the determinism workflow. The
+  core's guards are `engine/core/src/path_tests.rs` (a brute-force
+  reference over 480 random ops, the seam partition, the stroke union, 16
+  scene digests), each watched red by `baselines/vector-paths/redcheck.py`;
+  the host's are `tests/vector-paths.test.ts` and catalogue gates G6 and G9,
+  watched red by `redcheck-ts.ts` beside it. `compositions/vector-paths` is
+  the fixture, in both ledgers, its sidecar asserting that the caption is up
+  before the signature is drawn — which a draw-on ignoring its trim fails.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -852,6 +881,23 @@ mechanisms with the file or test beside them.
   `layout`, `visibility` and `assert` costs `samples` renders under a
   shutter; `reel` declares none, so what that does to a film-length sweep is
   unmeasured.
+- **A path's trim and morph do not blur, and nothing caches its geometry.**
+  The shutter integrates transform tracks only, so a moving `<Path>` blurs
+  and a draw-on's tip does not. The geometry is rebuilt every frame — and
+  under a shutter every sample — from the table: stage 1 measured a 1080p
+  frame of 300 paths of 67 cubics at 20-70 ms of wasm, against 1.19 ms for a
+  frame of the reel, so a dense illustration is a cost no ledger composition
+  carries yet.
+- **Abutting paths are still two blends.** The partition gives each seam
+  sample to one path, but a pixel half-covered by each is blended twice, so
+  a seam between two shapes of one colour lets `(1 - h_a/16)(1 - h_b/16)` of
+  the ground through; stage 1's fan of 24 wedges shows faint radial lines. A
+  coverage-merging op would close it and is not built.
+- **The collector reads a module's own literals.** A `d` imported from
+  another module, or computed at run time, is refused at mount rather than
+  baked; generators write literals, which is what every composition here
+  does, but a hand-written film that keeps its outlines in a shared module
+  meets the refusal.
 
 Stated rather than smoothed. Each is a known hole, not an oversight.
 

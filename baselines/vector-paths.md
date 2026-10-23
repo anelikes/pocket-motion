@@ -1,7 +1,10 @@
-# Vector paths: the prototype, measured, 2026-10-22
+# Vector paths: the prototype, measured, 2026-10-22; the landing, 2026-10-23
 
 These are the measurements behind
-[`docs/vector-paths.design.md`](../docs/vector-paths.design.md). The prototype
+[`patches/0042-vector-paths.design.md`](../patches/0042-vector-paths.design.md).
+Everything down to "Found along the way" is stage 1, the prototype, as it was
+recorded; [the landing](#the-landing-2026-10-23) at the end is what the
+patches `0042` and `0043` measured on the pin they apply to. The prototype
 is [`vector-paths/prototype.diff`](vector-paths/prototype.diff): a PATH op
 (71), a path table in `styles.bin`, thirteen style props, and the geometry
 (morph, flatten, trim, stroke) in a new `engine/core/src/path.rs`, with 24
@@ -225,3 +228,118 @@ That is SVG's position for the other order. The reproduction is
 guarantee across hosts. Neither is in this repository's path, unless a
 composition bakes an SVG image with a rotate. A path importer must not reuse
 either.
+
+## The landing, 2026-10-23
+
+`patches/0042-vector-path-op.patch` (the core) and
+`patches/0043-path-component.patch` (the declaration), applied after
+`0001`-`0041` to 66caf4e5. Machine as above; the timing below was not re-run.
+During this work the machine carried other sessions' builds at load averages
+of 70 to over 300, which is why nothing here is a time.
+
+### Reproducing
+
+```
+bun scripts/vendor.ts                                     # 66caf4e5 + every patch, wasm built
+cd vendor/pocketjs/engine/core && cargo test --release    # the core suite, the path tests among it
+python3 -I baselines/vector-paths/redcheck.py <a scratch copy of vendor/pocketjs>/engine/core
+bun baselines/vector-paths/redcheck-ts.ts                 # rebuilds vendor/ from edited patches, restores it
+bun test tests/vector-paths.test.ts tests/catalog.test.ts
+bun scripts/digests.ts --only vector-paths && bun scripts/visibility.ts --only vector-paths
+```
+
+`redcheck.py` edits the tree it is given, so give it a copy, never `vendor/`.
+
+### What the rebase moved
+
+Measured, each by running it rather than by reading the diff:
+
+- **Ids.** PROP 183-186 and 198 were taken by `0027`, `0029`, `0033` and
+  `0034`; the props are 199-211. Main's `skewX` (anim bit 38) moved the
+  paint bits by one, so the seven animatable ones are bits 58-64. The op is
+  still 71; `styles.bin`'s offset 10 was still reserved.
+- **Scene 10 and the masked-path test** wrote MASK_PUSH in the format `0024`
+  replaced (`N` packed whole-pixel words, now `2 + 2N` f32 words). On the
+  rebased core the stream stopped at the mask: scene 10's framebuffer digest
+  moved, and `path_under_a_mask_is_the_rect_under_that_mask_where_it_covers`
+  stayed green while comparing two grounds. Both now write the mask through
+  `path_scenes::mask_push`, and the test asserts the mask let paint through
+  (red with the old format, below).
+- **Scene 10's pixels, attributed.** With the mask written correctly, the
+  scene's framebuffer is `0x0462be5553bf994d`, not stage 1's
+  `0xbb5836a02e7cc858`. With `0032`'s exact divisor reverted in both of its
+  places (`RgbaTarget::blend` and `composite_layer`), it is
+  `0xbb5836a02e7cc858` byte for byte: the move is `0032`'s, in the layer's
+  content-over-shadow composite. The words digest moved with the mask's
+  words, `0x552d4f0333178c57` to `0xc460f9c5923e4dab`. Re-pinned; the other
+  fifteen scenes reproduce stage 1's thirty digests unchanged.
+- **Two more draw-list walkers.** Upstream added `compositor::draw_op_len`
+  and `Ui::compositor_surface_frames`, each with its own op-length table and
+  each ending its walk at an op it does not know. Both learn PATH, and
+  `every_draw_list_walker_steps_over_a_path` holds them.
+- **`fmath::sqrtf`** is on the pin; `path.rs` calls it behind a NaN guard.
+- **Arcs** are 45-degree cubics, not stage 1's 90: a quarter-turn cubic
+  through `M100 50 A50 50 0 1 1 0 50 …` is 0.0136 px off its circle at
+  r = 50 (2.7e-4 r), an eighth 0.00021 px (4.2e-6 r), measured by sampling
+  each cubic at 101 points against the circle.
+
+### The core suite and the scenes
+
+`cargo test --release` in `engine/core` of 66caf4e5 + 0001-0043: **291
+tests pass**, the 25 path tests among them — stage 1's 24 and
+`every_draw_list_walker_steps_over_a_path`. The four printed measurements
+(`runs/core-test-prints-0042.txt`) are stage 1's to the digit: POLY against
+PATH, 3,429 of 960,934 covered pixels differing by 4,664 on-edge samples;
+the stroke union, 119 of 24,473,600 samples within 0.737/256 px of a piece
+edge; one pixel losing a sample over a 40-step draw-on; one chord count,
+537, over 360 angles.
+
+The sixteen pinned scenes: fifteen reproduce stage 1's thirty digests;
+scene 10 is re-pinned at `(0xc460f9c5923e4dab, 0x0462be5553bf994d)` for the
+two reasons above. The darwin/arm64 wasm row was re-run with stage 1's
+harness (`pathwasm`, unchanged, built against the landed core with the
+shipping flags): **16 of 16 scenes equal the pinned native digests**
+(`runs/wasm-darwin-arm64-0042.txt`). The two x86-64 rows, which stage 1 ran
+under translation, were not re-run; the fixture below is what the
+determinism workflow reproduces on x86-64 hardware.
+
+### Guards
+
+Both harnesses run each defect's test on the unedited tree first and stop
+if it is red, so a RED below cannot be a test that fails anyway.
+
+- **The core**, `redcheck.py` (`runs/redcheck-0042.txt`): stage 1's 33
+  defects with their anchors moved to the rebased code, and five added at
+  the landing — the compositor's op table and the surface-frame walk each
+  not knowing PATH, the table's count read and its entries skipped, the
+  scenes' mask written in the format 0024 replaced, and a gradient fill
+  painted without its PAINT_PUSH. **38 of 38 red.**
+- **The host**, `redcheck-ts.ts` (`runs/redcheck-0043.txt`): an edit to one
+  `+` line of `0043`, the vendored tree rebuilt from the edited patch and
+  restored afterwards, or an edit to `src/vendor/draw-ops.ts`. **15 of 15
+  red**, against `tests/catalog.test.ts` (G6, G9), `tests/vector-paths.test.ts`
+  and `tests/patches.test.ts`. Two things the first pass found are in the
+  record rather than smoothed over: the reverse-order promotion branch had
+  no probe (its edit stayed green until the catalogue gained one), and
+  `tan(alpha/4)` through `Math.tan` stays green on this host — the same bits
+  — so the pinned arcs are a cross-host check and not a one-host guard.
+- **A baseline that was red for a reason outside the code.** The host
+  harness's first baseline found the control test red: the harness was
+  started with `POCKETJS_ROOT` naming the main checkout's vendored tree (for
+  `vendor.ts`'s clone), and `src/runtime/boot.ts` takes its core from that
+  variable, so the test booted a core with no PATH op and drew nothing. The
+  test now pins it, as `tests/shutter.test.ts` does, and the harness keeps it
+  out of every test it runs.
+
+### The fixture
+
+`compositions/vector-paths`, 1920×1080, 120 frames at 30 fps: a signature
+drawn on by `trimEnd`, a blob morphing between a circle and a star under a
+gradient fill, six wedges sharing their edges, a wireframe turning in a
+viewBox with a trimmed ring orbiting it, and a wave morphing under an
+`overflow-mask` window (its `NOTES.md` says what each took). Eleven outlines
+baked. Recorded in `baselines/digests.json` as
+`2039a98fdcc6679572c599626c5c589badd942bd96ed4a1cb2f1b7e030601015` and
+reproduced by a fresh build and trace; in `baselines/visibility.json` with 17
+named nodes, none never shown, none buried. `verify`: 0 errors, 0 warnings,
+nine assertions holding; `check`: 0 ops after mount over 30 frames.
