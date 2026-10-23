@@ -153,6 +153,10 @@
     "compositions/typography": {
       "frames": 30,
       "digest": "84a75e5f096f3273909b3cf2d201360dd52e0a92e126727c8d47debf7246aab9"
+    },
+    "compositions/vector-paths": {
+      "frames": 120,
+      "digest": "2039a98fdcc6679572c599626c5c589badd942bd96ed4a1cb2f1b7e030601015"
     }
   }
 }

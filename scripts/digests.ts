@@ -174,6 +174,13 @@ const ENTRIES = [
   // and one label under `shutter-hold`. A change to where a sample sits, to
   // the jump rule or to the integer average moves this digest and no other.
   "compositions/shutter-blur",
+  // vector-paths. patches/0042-0043 over 120 frames: a signature drawn on by
+  // trimEnd, a blob morphing under a gradient fill, six wedges sharing their
+  // edges, a wireframe turning in a viewBox with a trimmed ring orbiting it,
+  // and a wave morphing under an overflow-mask window. A change to the
+  // flattening, the stroke outline, the trim, the morph, the arc conversion
+  // or the PATH coverage moves this digest and no other.
+  "compositions/vector-paths",
 ] as const;
 
 /**

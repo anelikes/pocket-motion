@@ -1,0 +1,20 @@
+{
+  "motion": 1,
+  "durationFrames": 120,
+  "fps": 30,
+  "supersample": 1,
+  "layoutAllow": [
+    {"node": "signature", "allow": "occlusion", "reason": "trimmed to nothing until the draw starts at frame 9: no geometry is the declaration, not a burial"}
+  ],
+  "assertions": [
+    {"node": "signature", "entersBy": 12},
+    {"node": "signature", "dwellFrames": 100},
+    {"node": "signature-caption", "before": "signature"},
+    {"node": "blob", "inPicture": [0, 119]},
+    {"node": "wedge-0", "inPicture": [0, 119]},
+    {"node": "wedge-3", "inPicture": [0, 119]},
+    {"node": "globe", "inPicture": [0, 119]},
+    {"node": "orbit", "inPicture": [0, 119]},
+    {"node": "wave", "inPicture": [0, 119]}
+  ]
+}
