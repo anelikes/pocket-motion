@@ -9,10 +9,10 @@
  *
  * - NPM PACKS EXACTLY WHAT WAS STAGED. npm honours a `.gitignore` anywhere
  *   under a directory `files` names, and upstream's ignores both
- *   `node_modules` and `hosts/web/pocketjs.wasm`. Red, measured: adding
- *   upstream's `.gitignore` to `VENDOR_FILES` makes npm drop 3438 of the
- *   3657 staged files — all 3435 under `node_modules`, the wasm, the style
- *   mirror and the ignore file itself — while the stage still holds them.
+ *   `node_modules` and `hosts/web/pocketjs.wasm`. Red, measured at
+ *   66caf4e5: adding upstream's `.gitignore` to `VENDOR_FILES` makes npm drop
+ *   4054 of the 4410 staged files — all 4052 under `node_modules`, the wasm
+ *   and the ignore file itself — while the stage still holds them.
  * - What a build and a render read is in it, by name.
  * - What must not ship is not: this repository's compositions, tests,
  *   scripts, ledgers and assets — the HarmonyOS faces, the Noto Sans SC pair,
@@ -35,9 +35,8 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { PREBUILT_FILE, PREBUILT_MUTABLE, prebuiltProblems } from "../src/package/prebuilt.ts";
+import { PREBUILT_FILE, prebuiltProblems } from "../src/package/prebuilt.ts";
 import { patchDigests } from "../src/render/build-record.ts";
-import { MIRROR_SEED } from "../src/vendor/mirror.ts";
 import { UPSTREAM } from "../src/vendor/upstream.ts";
 import {
   THIRD_PARTY_FILE,
@@ -49,6 +48,8 @@ import {
 } from "../scripts/pack.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
+/** The framework module a build substitutes its own table for (`jsxPlugin`). */
+const STYLE_TABLE = "vendor/pocketjs/framework/src/styles.generated.ts";
 
 let staged: Staged;
 let listed: Packed;
@@ -83,11 +84,11 @@ describe("npm pack --dry-run over the staged package", () => {
       "vendor/pocketjs/tools/build.ts",
       "vendor/pocketjs/hosts/web/pocketjs.wasm",
       "vendor/pocketjs/hosts/web/wasm-ops.js",
-      "vendor/pocketjs/tests/png.ts",
+      "vendor/pocketjs/tools/png.ts",
       "vendor/pocketjs/framework/compiler/jsx-plugin.ts",
       "vendor/pocketjs/framework/compiler/bake-font.ts",
       "vendor/pocketjs/framework/src/components.ts",
-      PREBUILT_MUTABLE,
+      STYLE_TABLE,
       "vendor/pocketjs/contracts/spec/spec.ts",
       "vendor/pocketjs/assets/fonts/Inter-Regular.ttf",
       "vendor/pocketjs/assets/fonts/LICENSE.txt",
@@ -97,6 +98,10 @@ describe("npm pack --dry-run over the staged package", () => {
       "vendor/pocketjs/node_modules/solid-js/package.json",
       "vendor/pocketjs/node_modules/opentype.js/package.json",
       "vendor/pocketjs/node_modules/@vue-jsx-vapor/compiler-rs/index.js",
+      // The builder imports microts' AOT compiler at module scope, and that
+      // imports `typescript`: every build loads it, so it has to be here.
+      "vendor/pocketjs/microts/compiler/aot-solid-browser.ts",
+      "vendor/pocketjs/node_modules/typescript/package.json",
     ];
     const files = new Set(listed.files);
     expect(required.filter((f) => !files.has(f))).toEqual([]);
@@ -116,7 +121,6 @@ describe("npm pack --dry-run over the staged package", () => {
       ["the HarmonyOS and Noto Sans SC faces", /(HarmonyOS|NotoSansSC)/],
       ["a native binary built for the packing machine", /\.node$/],
       ["upstream's engine, apps, site and history", /^vendor\/pocketjs\/(engine|apps|site|docs|\.git)\//],
-      ["typescript, which no build loads", /^vendor\/pocketjs\/node_modules\/typescript\//],
       ["an ignore file npm would act on", /(^|\/)\.(git|npm)ignore$/],
     ];
     const hits = forbidden.flatMap(([why, re]) =>
@@ -125,8 +129,14 @@ describe("npm pack --dry-run over the staged package", () => {
     expect(hits).toEqual([]);
   });
 
-  test("the style mirror ships as the placeholder seed, not a table a build left", async () => {
-    expect(await Bun.file(join(staged.dir, PREBUILT_MUTABLE)).text()).toBe(MIRROR_SEED);
+  test("the framework's style table ships as upstream committed it, not a table a build left", async () => {
+    // No build writes it since upstream #591 — a build's table goes into its
+    // own --outdir — so the staged bytes are the pinned commit's.
+    const committed = Bun.spawnSync(["git", "show", "HEAD:framework/src/styles.generated.ts"], {
+      cwd: join(ROOT, "vendor/pocketjs"),
+    });
+    expect(committed.exitCode).toBe(0);
+    expect(await Bun.file(join(staged.dir, STYLE_TABLE)).text()).toBe(committed.stdout.toString());
   });
 });
 
@@ -166,10 +176,8 @@ describe("package.json as it ships", () => {
 });
 
 describe("the manifest and the inventory describe the tarball they are in", () => {
-  test("every vendored file is in the manifest by sha256, except the mirror", () => {
-    const vendored = listed.files.filter(
-      (f) => f.startsWith("vendor/pocketjs/") && f !== PREBUILT_MUTABLE,
-    );
+  test("every vendored file is in the manifest by sha256", () => {
+    const vendored = listed.files.filter((f) => f.startsWith("vendor/pocketjs/"));
     expect(Object.keys(staged.manifest.files).sort()).toEqual(vendored);
     expect(staged.manifest.upstream).toBe(UPSTREAM.commit);
   });

@@ -22,9 +22,10 @@
  *   on disk with those bytes. The wasm is one of them: it is not in input
  *   identity, and this is the record of which bytes rasterise.
  *
- * ONE FILE IS LEFT OUT ON PURPOSE: `framework/src/styles.generated.ts`. Every
- * build rewrites it (`src/vendor/mirror.ts`), so its bytes after the first
- * build are a build's, not the package's. It ships as the placeholder seed.
+ * No file is exempt. `framework/src/styles.generated.ts` once was, because
+ * every build rewrote it; since upstream #591 a build writes its style table
+ * inside its own `--outdir` and the framework's file is upstream's committed
+ * empty table, which no build touches, so it is hashed like the rest.
  *
  * What the manifest does NOT record is the rustc that compiled the wasm.
  * `scripts/vendor.ts` builds it with whatever toolchain rustup runs and keeps
@@ -45,9 +46,6 @@ const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 /** Package-relative path of the manifest. */
 export const PREBUILT_FILE = "vendor/prebuilt.json";
 
-/** Package-relative path of the one staged file whose bytes a build replaces. */
-export const PREBUILT_MUTABLE = "vendor/pocketjs/framework/src/styles.generated.ts";
-
 export interface PrebuiltManifest {
   readonly prebuilt: 1;
   /** `UPSTREAM.commit` the vendored tree was cloned at. */
@@ -61,7 +59,7 @@ export interface PrebuiltManifest {
    * `optionalDependencies` instead of shipping: name to exact version.
    */
   readonly platformPackages: Readonly<Record<string, string>>;
-  /** Every staged file under `vendor/` but `PREBUILT_MUTABLE`, package-relative, by sha256. */
+  /** Every staged file under `vendor/`, package-relative, by sha256. */
   readonly files: Readonly<Record<string, string>>;
 }
 

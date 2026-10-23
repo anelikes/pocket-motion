@@ -18,8 +18,9 @@ to declare; every digest recorded before this reproduces unchanged.
   `scripts/pack.ts` and not yet published: the CLI as the `pocket-motion`
   bin, the API as the package's export, and the patched compiler,
   framework and wasm rasteriser prebuilt inside it, so a consumer needs
-  neither Rust nor git. 10.7 MiB packed. An empty project that installs it
-  traces `smoke` to its ledger digest.
+  neither Rust nor git. 16.9 MiB packed, 77 MiB unpacked, `typescript`
+  included because the builder imports it. An empty project that installs
+  it traces `smoke` to its ledger digest.
 - **A Dockerfile** that builds the repository from nothing on linux/amd64
   with CI's pins and runs the digest ledger. Under emulation on an M4, all
   36 digests reproduced with the image's own wasm, in 593 s.

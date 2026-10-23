@@ -60,14 +60,8 @@ import { existsSync, statSync } from "node:fs";
 import { copyFile, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 
-import {
-  PREBUILT_FILE,
-  PREBUILT_MUTABLE,
-  fileSha256,
-  type PrebuiltManifest,
-} from "../src/package/prebuilt.ts";
+import { PREBUILT_FILE, fileSha256, type PrebuiltManifest } from "../src/package/prebuilt.ts";
 import { patchDigests } from "../src/render/build-record.ts";
-import { MIRROR_SEED } from "../src/vendor/mirror.ts";
 import { UPSTREAM } from "../src/vendor/upstream.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -95,14 +89,17 @@ const OWN_TREES = ["src", "patches"] as const;
  *
  * ENTRIES are the vendored modules this repository's `src/` loads or spawns.
  * Each is shipped with every local module its imports reach, and nothing else
- * of `framework/compiler` or `tools/`: upstream's `app-check.ts` imports
- * `typescript` (23 MB) and nothing a build loads imports `app-check.ts`.
+ * of `framework/compiler`, `tools/` or `microts/`. The graph is what decides,
+ * not a list: at 66caf4e5 `tools/build.ts` and `jsx-plugin.ts` import
+ * microts' AOT compiler at module scope and it imports `typescript`, so every
+ * build loads `typescript` (23 MB) and it ships; upstream's `app-check.ts`,
+ * which nothing a build loads imports, does not.
  *
  *   tools/build.ts                the builder `buildSpawn` runs
  *   framework/compiler/pak.ts     `keyframes` reads the anim table through it
  *   framework/compiler/bake-font.ts  `src/text/measure.ts` keys its cache on it
  *   hosts/web/wasm-ops.js         the op table the harness boots the wasm with
- *   tests/png.ts                  the PNG encoder `frame`, `snapshot` and png-seq use
+ *   tools/png.ts                  the PNG encoder `frame`, `snapshot` and png-seq use
  *
  * FILES are the rest, which are not modules:
  *
@@ -119,7 +116,7 @@ const VENDOR_ENTRIES = [
   "framework/compiler/pak.ts",
   "framework/compiler/bake-font.ts",
   "hosts/web/wasm-ops.js",
-  "tests/png.ts",
+  "tools/png.ts",
 ] as const;
 const VENDOR_FILES = [
   "hosts/web/pocketjs.wasm",
@@ -300,8 +297,9 @@ export interface ThirdParty {
  * Roots are the bare specifiers in the shipped files themselves rather than a
  * list kept here, so a framework file that starts importing a new package
  * brings it in. `dependencies` and installed `optionalDependencies` are
- * followed; `peerDependencies` are not — measured on a smoke build, following
- * peers added `typescript` (23 MB) and nothing the build loaded.
+ * followed; `peerDependencies` are not — a peer is the importer's to provide,
+ * and one a shipped file needs is a root here already. Measured at 66caf4e5,
+ * following them as well stages the same 119 packages.
  */
 export async function closure(vendorFiles: readonly string[]): Promise<Closure> {
   const roots = new Set<string>();
@@ -451,16 +449,10 @@ export async function stage(): Promise<Staged> {
   for (const rel of vendorRel) {
     await copyInto(join(VENDOR, rel), join(STAGE, "vendor", "pocketjs", rel));
   }
-  // The style mirror ships as the placeholder seed, never as whatever table
-  // the last build on this machine left behind.
-  const mirror = join(STAGE, PREBUILT_MUTABLE);
-  await mkdir(dirname(mirror), { recursive: true });
-  await Bun.write(mirror, MIRROR_SEED);
 
   const hashed: Record<string, string> = {};
   for (const rel of vendorRel) {
     const pkgRel = join("vendor", "pocketjs", rel);
-    if (pkgRel === PREBUILT_MUTABLE) continue;
     hashed[pkgRel] = await fileSha256(join(STAGE, pkgRel));
   }
   const manifest: PrebuiltManifest = {
@@ -500,9 +492,6 @@ export async function stage(): Promise<Staged> {
     THIRD_PARTY_FILE,
     ...vendorRel.map((rel) => join("vendor", "pocketjs", rel)),
   );
-  if (!vendorRel.includes(relative(join("vendor", "pocketjs"), PREBUILT_MUTABLE))) {
-    files.push(PREBUILT_MUTABLE);
-  }
   return { dir: STAGE, files: [...new Set(files)].sort(), manifest, packageJson, closure: found };
 }
 

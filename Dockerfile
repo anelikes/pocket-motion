@@ -77,8 +77,8 @@ RUN bun install --frozen-lockfile
 # link: the full clone over HTTP/2 failed at 707 s with `curl 92 ... stream
 # was not closed cleanly`, so the fetch is HTTP/1.1 and retried.
 # tests/docker.test.ts holds POCKETJS_COMMIT to `UPSTREAM.commit`.
-ARG POCKETJS_REPO=https://github.com/pocket-stack/pocketjs.git
-ARG POCKETJS_COMMIT=e0b37e20dbfaeb10a4fa2aac6564c75023afe53e
+ARG POCKETJS_REPO=https://github.com/pocket-nexus/pocketjs.git
+ARG POCKETJS_COMMIT=66caf4e51ca80ecfd8fd8395eb8643f243034686
 RUN git config --global http.version HTTP/1.1 \
  && for attempt in 1 2 3 4 5; do \
       rm -rf vendor/pocketjs && git init -q vendor/pocketjs \

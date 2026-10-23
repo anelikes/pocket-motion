@@ -862,12 +862,14 @@ mechanisms with the file or test beside them.
   command that packs. The vendored tree ships prebuilt rather than through a
   `postinstall`: Bun runs no dependency's lifecycle script unless the
   consumer trusts it, nothing hosts an artifact a fetch could verify, and the
-  compiler's 105 npm packages are copied as `bun install --frozen-lockfile`
+  compiler's 119 npm packages are copied as `bun install --frozen-lockfile`
   laid them out, so the JSX transform that writes a bundle cannot float with a
   consumer's resolver. `framework/src` and `contracts` ship whole; of the
-  compiler and `tools/`, only what the import graph reaches from the five
-  entries `src/` loads (upstream's `app-check.ts` pulls in 23 MB of
-  `typescript` and no build reaches it). The one platform-native package, the
+  compiler, `tools/` and `microts/`, only what the import graph reaches from
+  the five entries `src/` loads. That graph includes `typescript` at 66caf4e5,
+  23 MB of the package's 77 MiB unpacked: `tools/build.ts` imports microts'
+  AOT compiler at module scope and its first line imports `typescript`, so
+  every build loads it. The one platform-native package, the
   JSX-vapor compiler's binding, is declared as an exact-version
   `optionalDependency` instead of copied, so the tarball does not depend on
   where it was packed. `vendor/prebuilt.json` stands in for git: upstream,
@@ -876,9 +878,9 @@ mechanisms with the file or test beside them.
   the load is where a platform with no binding shows up.
   `tests/package.test.ts` reads `npm pack --dry-run`'s own list, and installs
   the real tarball into an empty project where `smoke` traces to its ledger
-  digest through the package's bin. Red: shipping upstream's `.gitignore`
-  drops 3438 of 3657 files; staging with no `optionalDependencies` fails
-  `doctor` with `Cannot find native binding`.
+  digest through the package's bin. Red, measured at 66caf4e5: shipping
+  upstream's `.gitignore` drops 4054 of 4410 files; staging with no
+  `optionalDependencies` fails `doctor` with `Cannot find native binding`.
 - **A consumer's `build.json` is relative to the consumer.** `relativise`
   (`src/render/build-record.ts`) tries this package's root and then the
   composition's repository root — the cwd `buildSpawn` builds from — so a
@@ -1056,7 +1058,8 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   and it covers a ledger run and nothing outside one.
 - **An installed package's bundle is not this checkout's bundle, and
   identity says so while the picture does not.** Measured on `smoke`, built
-  here and built in a project that installed the tarball: the frame digest,
+  here and built in a project that installed the tarball, at e0b37e20 and
+  again at 66caf4e5: the frame digest,
   `pak`, `params`, `sidecar` and `toolchain` agree, and `bundle` does not.
   Bun's bundler writes each module's path relative to the build's cwd into a
   comment, and the framework sits at `vendor/pocketjs/framework/src/…` here
@@ -1073,9 +1076,10 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   consumer's own paths come back as `$HOME/…`. `init` copies its fixtures
   out of this repository's `compositions/`, which the package does not carry,
   and refuses a target outside that tree, so a consumer cannot use it at all.
-  And a build writes into the package — the style mirror, the build lock and
-  the transform cache under `node_modules/pocket-motion/vendor/pocketjs` — so
-  an install on a read-only filesystem cannot build.
+  And a build writes into the package: `buildEnv` (`src/vendor/cache.ts`)
+  points upstream's transform cache at
+  `node_modules/pocket-motion/vendor/pocketjs/.cache`, so an install on a
+  read-only filesystem cannot build.
 - **What the package was checked on is one platform.** The install test has
   run on darwin-arm64 only, at the time of writing; it is in the suite CI runs
   on linux-x64, which is where the second platform will be measured. The
