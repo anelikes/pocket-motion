@@ -40,10 +40,13 @@
  * WHAT IT COSTS. Every section that boots, boots: `check`, `visibility`,
  * `assert`, and one per sampled layout frame. On a fixture that is seconds. On
  * a composition at film length it is minutes, and lowering `--samples` is the
- * only lever this command has.
+ * lever for the layout frames. Under a shutter `--read tick` is the other: it
+ * reaches `visibility`, `layout` and `assert` alike, each section's `read`
+ * says so, and so does the envelope beside `shutter`.
  */
 
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
+import type { Reading } from "../../render/visibility.ts";
 import { describeShutter } from "../../runtime/boot.ts";
 import { RUN_ID_ENV } from "../emit.ts";
 import { errMsg, resolveComposition } from "../resolve.ts";
@@ -57,6 +60,7 @@ import * as assertCmd from "./assert.ts";
 import * as checkCmd from "./check.ts";
 import * as keyframesCmd from "./keyframes.ts";
 import * as layoutCmd from "./layout.ts";
+import { parseRead, shutterJson } from "./layout.ts";
 import * as lintCmd from "./lint.ts";
 import { parseFrameList } from "./snapshot.ts";
 import { parseSamples, sampleFrames } from "./visibility.ts";
@@ -79,6 +83,9 @@ export interface VerifyOptions {
   readonly samples?: number;
   /** Count warnings towards the exit code. */
   readonly strict: boolean;
+  /** Under a declared shutter, the picture the pixel sections classify.
+   *  Absent means the exposure. */
+  readonly read?: Reading;
   readonly flags: GlobalFlags;
 }
 
@@ -144,6 +151,7 @@ export async function run(options: VerifyOptions): Promise<CommandResult> {
 
   const flags = options.flags;
   const dir = options.dir;
+  const read = options.read ? { read: options.read } : {};
 
   const lint = await section("lint", () => lintCmd.run({ dir, flags }));
   const realm = await section("realm", () => checkCmd.run({ dir, flags }));
@@ -151,20 +159,20 @@ export async function run(options: VerifyOptions): Promise<CommandResult> {
     keyframesCmd.run({ dir, flags, all: false }),
   );
   const visibility = await section("visibility", () =>
-    visibilityCmd.run({ dir, all: false, flags }),
+    visibilityCmd.run({ dir, all: false, ...read, flags }),
   );
 
   const layouts: unknown[] = [];
   let layoutOk = true;
   for (const at of layoutFrames) {
     const one = await section(`layout@${at}`, () =>
-      layoutCmd.run({ dir, at, all: false, flags }),
+      layoutCmd.run({ dir, at, all: false, ...read, flags }),
     );
     layouts.push(one.json);
     if (!one.ok) layoutOk = false;
   }
 
-  const assertions = await section("assertions", () => assertCmd.run({ dir, flags }));
+  const assertions = await section("assertions", () => assertCmd.run({ dir, ...read, flags }));
 
   const sections: Section[] = [
     lint,
@@ -198,7 +206,7 @@ export async function run(options: VerifyOptions): Promise<CommandResult> {
       layoutFrames,
       // The envelope names the shutter once; each section that reads pixels
       // names it again in its own JSON, verbatim.
-      ...(shutter ? { shutter } : {}),
+      ...shutterJson(shutter, options.read),
       lint: lint.json,
       realm: realm.json,
       keyframes: keyframes.json,
@@ -220,7 +228,11 @@ export async function run(options: VerifyOptions): Promise<CommandResult> {
       "are the same objects those commands print on their own.",
       "A warning is an active layout finding; --strict counts them.",
       ...(shutter
-        ? [`Shutter ${describeShutter(shutter)}: the pixel sections read exposures; \`realm\` renders none.`]
+        ? [
+            options.read === "tick"
+              ? `Shutter ${describeShutter(shutter)}: the pixel sections read the frame's own TICK (--read tick), not the exposure; \`realm\` renders none.`
+              : `Shutter ${describeShutter(shutter)}: the pixel sections read exposures; \`realm\` renders none.`,
+          ]
         : []),
     ],
     stderrLines: errors.map((name) => `verify: ${name} failed`),
@@ -256,11 +268,13 @@ export async function runFromArgv(argv: readonly string[]): Promise<CommandResul
   const dir = requirePositional(parsed.positionals, 0, "composition-dir");
   const at = parsed.flags.at;
   const samples = parseSamples(parsed.flags.samples);
+  const read = parseRead(parsed.flags.read);
   return run({
     dir,
     ...(at === undefined ? {} : { at: parseFrameList(String(at)) }),
     ...(samples === undefined ? {} : { samples }),
     strict: parsed.flags.strict === true,
+    ...(read ? { read } : {}),
     flags: parsed.global,
   });
 }

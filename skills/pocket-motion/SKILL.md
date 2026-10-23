@@ -100,7 +100,11 @@ scale, rotate and skew move between samples — opacity and colour keep the
 frame's tick, and no sample crosses a keyframe jump, so gates and cuts stay
 sharp. `shutter-hold` keeps one node's own timelines at the tick; it is not
 inherited, so hold the moving group, not the caption inside it. It is part of
-identity and costs `samples` rasters a frame.
+identity and costs `samples` rasters a frame — and `samples` rasters a probe in
+`layout`, `visibility` and `assert`, which classify the exposure. `--read tick`
+classifies the frame's own tick at one raster a probe and says so in its
+output; it misses a node only the blur reveals, so use it to iterate and the
+default for the verdict.
 
 **What does not exist**: backdrop blur, conic gradients, footage effects at
 render time (grading and filtering belong to the ingest).

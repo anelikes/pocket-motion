@@ -21,6 +21,22 @@
  * printed line says which grid it used and `--samples` is the lever; the exact
  * case is `--samples <durationFrames>` and costs what it costs.
  *
+ * WHAT IT CLASSIFIES: the nodes its assertions mention — each `node`, and each
+ * `before` target — and no other. Every verdict is about one of those, so a
+ * probe of anything else is a render no line of the output reads, and under a
+ * shutter each one is `samples` renders. On `compositions/mg-hud`, three
+ * assertions against 593 named-or-text nodes, the default grid with no shutter
+ * cost 35,265 rasters before and costs 102 now (`baselines/shutter.md`,
+ * "Stage 3"). `insideBox` reads the same codes it read
+ * before: a kept node's ancestors are still measured, so its container is the
+ * one it always had. The names the tree carries are still all read, for the
+ * line that answers an assertion naming none of them.
+ *
+ * UNDER A SHUTTER the classification is of the exposure. `--read tick` asks
+ * the frame's own tick instead, at one render a probe instead of `samples`,
+ * and the JSON's `read` and the printed shutter lines say which was read —
+ * `src/render/visibility.ts` says what the tick does not see.
+ *
  * AN ASSERTION MOVES NO PIXEL. `identityProjection` drops the key, so writing
  * one does not change a recorded digest — that is asserted in
  * `tests/identity.test.ts` rather than promised here.
@@ -34,6 +50,8 @@ import {
   type SweptNode,
 } from "../../render/assertions.ts";
 import { active } from "../../render/findings.ts";
+import { openProber, rect, type Reading } from "../../render/visibility.ts";
+import type { SidecarAssertion } from "../../manifest/sidecar.ts";
 import { hardenedBootWorld } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage } from "../footage.ts";
@@ -44,12 +62,15 @@ import {
   type CommandResult,
   type GlobalFlags,
 } from "../types.ts";
-import { inspectLayout, shutterLines } from "./layout.ts";
+import { flattenTree, inspectLayout, parseRead, shutterJson, shutterLines } from "./layout.ts";
 import { DEFAULT_SAMPLES, parseSamples, sampleFrames } from "./visibility.ts";
 
 export interface AssertOptions {
   readonly dir: string;
   readonly samples?: number;
+  /** Under a declared shutter, the picture each node is classified in.
+   *  Absent means the exposure. */
+  readonly read?: Reading;
   readonly flags: GlobalFlags;
 }
 
@@ -98,10 +119,14 @@ export async function run(options: AssertOptions): Promise<CommandResult> {
   }
 
   try {
-    const nodes = await sweepNamedNodes(c, frames);
+    const sweep = await sweepNamedNodes(c, frames, {
+      names: mentionedNames(c.sidecar.assertions),
+      ...(options.read ? { read: options.read } : {}),
+    });
     const verdicts = evaluateAssertions({
       assertions: c.sidecar.assertions,
-      nodes,
+      nodes: sweep.nodes,
+      named: sweep.named,
       frames,
     });
     const failures = verdicts.filter((v) => !v.ok);
@@ -114,7 +139,7 @@ export async function run(options: AssertOptions): Promise<CommandResult> {
         durationFrames: c.durationFrames,
         assertions: verdicts,
         failures: failures.map((v) => `${v.node} ${v.predicate}`),
-        ...(c.shutter ? { shutter: c.shutter } : {}),
+        ...shutterJson(c.shutter, options.read),
       },
       stdoutLines: [
         `assert over ${frames.length} of ${c.durationFrames} frame(s) — ` +
@@ -126,7 +151,7 @@ export async function run(options: AssertOptions): Promise<CommandResult> {
           frames.length === 1 ? frames[0] : `${frames[0]}…${frames[frames.length - 1]}`
         } (--samples ${requested}). Every verdict is about those frames and`,
         "nothing between them; --samples <durationFrames> is the exact case.",
-        ...shutterLines(c.shutter),
+        ...shutterLines(c.shutter, options.read),
       ],
       stderrLines: failures.map(
         (v) => `assert: ${v.node} ${v.predicate} ${JSON.stringify(v.expected)} — ${v.detail}`,
@@ -143,6 +168,32 @@ export async function run(options: AssertOptions): Promise<CommandResult> {
   }
 }
 
+/** Every debugName an assertion reads: its own node, and a `before` target. */
+export function mentionedNames(assertions: readonly SidecarAssertion[]): Set<string> {
+  const out = new Set<string>();
+  for (const a of assertions) {
+    out.add(a.node);
+    if ("before" in a) out.add(a.before);
+  }
+  return out;
+}
+
+export interface SweepOptions {
+  /** Classify only nodes carrying one of these debugNames. Absent means
+   *  every named node. */
+  readonly names?: ReadonlySet<string>;
+  /** Under a declared shutter, the picture classified. Absent: the exposure. */
+  readonly read?: Reading;
+}
+
+export interface Sweep {
+  /** By debugName: each name classified that had a box at a sampled frame. */
+  readonly nodes: Map<string, SweptNode>;
+  /** Every debugName with a box at a sampled frame, first seen first, whether
+   *  or not it was classified. */
+  readonly named: readonly string[];
+}
+
 /**
  * The sweep every predicate reads, by `debugName`.
  *
@@ -155,7 +206,8 @@ export async function run(options: AssertOptions): Promise<CommandResult> {
 export async function sweepNamedNodes(
   c: ResolvedComposition,
   frames: readonly number[],
-): Promise<Map<string, SweptNode>> {
+  options: SweepOptions = {},
+): Promise<Sweep> {
   let footage: Awaited<ReturnType<typeof openFootage>> = null;
   try {
     const world = await hardenedBootWorld({
@@ -177,6 +229,14 @@ export async function sweepNamedNodes(
       string,
       { onScreen: number[]; covered: number[]; outsideBox: number[]; hasBox: number[] }
     >();
+    // Every named node, for `named`: a rect each, which is one draw walk and
+    // no raster, and only until the name has been seen with a box once.
+    const namedNodes = flattenTree(tree as Parameters<typeof flattenTree>[0], false).filter(
+      (k) => k.node.n !== undefined,
+    );
+    const walker = openProber(world, { classify: false });
+    const named: string[] = [];
+    const seen = new Set<string>();
     let at = 0;
     for (const frame of frames) {
       for (; at < frame; at++) {
@@ -187,6 +247,8 @@ export async function sweepNamedNodes(
       const { nodes } = inspectLayout(world, tree, {
         keepAll: false,
         classify: true,
+        ...(options.names ? { names: options.names } : {}),
+        ...(options.read ? { read: options.read } : {}),
         findings: {
           viewport: { x: 0, y: 0, w: c.width, h: c.height },
           allow: c.sidecar.layoutAllow,
@@ -209,8 +271,15 @@ export async function sweepNamedNodes(
         }
         swept.set(node.name, entry);
       }
+      for (const { node } of namedNodes) {
+        const name = node.n!;
+        if (seen.has(name) || rect(walker, node.i).xy === -1) continue;
+        seen.add(name);
+        named.push(name);
+      }
+      walker.inspect(0);
     }
-    return new Map<string, SweptNode>(swept);
+    return { nodes: new Map<string, SweptNode>(swept), named };
   } finally {
     await footage?.close();
   }
@@ -228,9 +297,11 @@ export async function runFromArgv(argv: readonly string[]): Promise<CommandResul
   const parsed = parseArgs(["assert", ...argv]);
   const dir = requirePositional(parsed.positionals, 0, "composition-dir");
   const samples = parseSamples(parsed.flags.samples);
+  const read = parseRead(parsed.flags.read);
   return run({
     dir,
     ...(samples === undefined ? {} : { samples }),
+    ...(read ? { read } : {}),
     flags: parsed.global,
   });
 }

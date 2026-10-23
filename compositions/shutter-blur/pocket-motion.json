@@ -22,6 +22,7 @@
     { "node": "label-blur", "inPicture": [0, 89] },
     { "node": "flick", "inPicture": [0, 89] },
     { "node": "known", "inPicture": [0, 89] },
+    { "node": "peek", "inPicture": [0, 89] },
     { "node": "gated", "entersBy": 31 },
     { "node": "gated", "exitsBy": 61 }
   ]

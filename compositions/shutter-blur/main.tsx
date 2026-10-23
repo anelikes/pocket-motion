@@ -14,6 +14,9 @@
 //   label-crisp  the same whip under `shutter-hold`: sharp in every frame
 //   known        a white square at 4 px a tick, whose 2-sample exposure
 //                `tests/shutter.test.ts` computes by hand
+//   peek         a still bar under an opaque blade that turns half a
+//                revolution a tick: covered at every frame's tick, in the
+//                picture of every exposure — the node `--read tick` misses
 //
 // Mount-only. In both ledgers; `tests/shutter.test.ts` reads it.
 
@@ -34,6 +37,8 @@ mount(() => (
       <View class="absolute left-[585px] top-[117px] w-[140px] h-[56px] rounded-[14px] bg-[#14b8a6]" />
     </View>
     <View debugName="hub" class="absolute left-[510px] top-[500px] w-[100px] h-[100px] rounded-[50px] bg-[#334155] animate-pop" />
+    <View debugName="peek" class="absolute left-[500px] top-[355px] w-[120px] h-[10px] bg-[#f8fafc]" />
+    <View class="absolute left-[485px] top-[345px] w-[150px] h-[30px] bg-[#1e293b] origin-center animate-blade" />
     <View debugName="sweep" class="absolute left-[200px] top-[960px] w-[48px] h-[100px] rounded-[8px] bg-[#f59e0b] animate-sweep" />
     <View debugName="tele" class="absolute left-[1080px] top-[150px] w-[100px] h-[100px] rounded-[16px] bg-[#22d3ee] animate-tele" />
     <View debugName="flick" class="absolute left-[1080px] top-[290px] w-[100px] h-[60px] rounded-[12px] bg-[#e879f9] animate-flick" />

@@ -152,6 +152,25 @@ describe("verify — the envelope", () => {
     expect(env.layoutFrames).toEqual([0, 29]);
     expect(env.layout.length).toBe(2);
   }, 600_000);
+
+  test("--read tick reaches every pixel section, and each says it read the tick", async () => {
+    // `compositions/shutter-blur` declares a shutter, and its `peek` is in every
+    // exposure and covered at every tick — so a section that ignored `read`
+    // would come back green where a tick reading is red.
+    const dir = join(ROOT, "compositions", "shutter-blur");
+    await build(dir);
+    const env = (await runVerify({ dir, at: [45], strict: false, read: "tick", flags }))
+      .json as Envelope & { read?: string };
+    const readOf = (section: unknown) => (section as { read?: string }).read;
+    expect(env.read).toBe("tick");
+    expect([readOf(env.visibility), readOf(env.layout[0]), readOf(env.assertions)]).toEqual([
+      "tick",
+      "tick",
+      "tick",
+    ]);
+    expect(env.errors).toEqual(["visibility", "assertions"]);
+    expect((env.assertions as { failures: string[] }).failures).toEqual(["peek inPicture"]);
+  }, 600_000);
 });
 
 describe("verify — the --json write survives a reader that does not drain", () => {

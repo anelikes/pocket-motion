@@ -158,6 +158,8 @@ export function helpText(): string {
     "  --format <name>     render: mp4 | webm | mov | png-seq (default mp4)",
     "  --alpha             render: ask the codec for an alpha channel (not mp4)",
     "  --samples N         visibility/snapshot: how many frames to look at (default 24)",
+    "  --read exposure|tick layout/visibility/assert/verify, under a shutter: classify",
+    "                      the delivered exposure (default) or the frame's own tick",
     "  --annotate          snapshot: also write a copy with layout's boxes drawn on it",
     "  --zoom <debugName>  snapshot: also write a crop around that node",
     "  --strict            verify: count warnings towards the exit code",
