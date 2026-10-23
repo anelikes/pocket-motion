@@ -1,0 +1,1472 @@
+pocket-motion-only: `<Path>` and its utilities declare an outline that only 0042's PATH op draws; on an upstream target the props would select a table entry no backend renders, so the declaration ships with the op or not at all.
+
+0043 — vector paths, the declaration: `<Path d viewBox>`, the build that
+bakes its outline into 0042's PATH TABLE, the utilities and the keyframe
+names. The design is `patches/0042-vector-paths.design.md`.
+
+What the patch adds, by file:
+
+- `framework/compiler/path-data.ts` (new): the whole SVG path grammar —
+  implicit repeats, exponents, arc flags with no separator, a number after
+  `Z` refused rather than read — normalised to move, line, cubic and close:
+  relative to absolute, `H`/`V` to lines, `S`/`T` by reflection, `Q` by exact
+  degree elevation, every subpath after a close reopened by a move. An arc
+  becomes cubics of at most 45 degrees without a transcendental: SVG's
+  centre construction, then unit-vector bisection and square roots, with the
+  handle length `4/3 tan(a/4)` from two half-angle steps; the x-axis rotation
+  the author wrote goes through `cosSinDeg`, exact at multiples of 90 and a
+  Taylor series in f64 elsewhere. `compilePathEntry` aligns morph keys — a
+  line against a cubic is promoted with controls at 1/3 and 2/3, any other
+  difference is refused naming the first differing command and the source
+  command each came from — and parses a viewBox.
+- `framework/compiler/jsx-plugin.ts`: the collector records `pathDecls`, the
+  `d` of every JSX element (any element, so a component forwarding it to a
+  `<Path>` is baked from its call site) whose value it can read — a string,
+  a backtick with nothing interpolated, a `+` of two, an array of them, a
+  `const` of any of those, an element of a `const` array by literal index,
+  the parameter of a `.map` callback over one, and the arms of a ternary,
+  `||`, `??` and the right of `&&` — paired with the `viewBox` on the same
+  element. A `d` it cannot read records nothing. The field rides in the
+  transform cache entry, whose file is in the cache key.
+- `tools/build.ts`: one PATH TABLE entry per distinct `d` and viewBox,
+  baked before the styles; a refusal is `file:line:col: <Path> d does not
+  bake: …` and exit 1.
+- `framework/compiler/tailwind.ts`: `fill-<color>`, `fill-[#hex]`,
+  `fill-none`, `fill-nonzero|evenodd`, `stroke-<color>`, `stroke-none`,
+  `stroke-N`, `stroke-[Npx]`, `stroke-join-*`, `stroke-cap-*`,
+  `stroke-miter-[N]` (N >= 1), `trim-start-[f]`, `trim-end-[f]`,
+  `trim-offset-[f]`, `trim-each|whole`, `morph-[f]` (f >= 0) and
+  `bg-clip-path`, which takes the paint path over a legacy two-stop gradient
+  as `bg-clip-text` does; `compileClasses` writes the entries into
+  styles.bin and `generateStylesModule` writes `PATH_IDS`.
+- `framework/compiler/animation.ts`: keyframe names `fillColor`, `fill`,
+  `strokeColor`, `stroke`, `strokeWidth` (and `stroke-width`), `trimStart`,
+  `trimEnd`, `trimOffset`, `morph`. `stroke-dashoffset` is not one: it is a
+  length, and trim a fraction.
+- `framework/src/path-key.ts` (new), `primitives.ts`, `components.ts`:
+  `Path` is a View that hands the host one attribute, `path`, the key
+  `pathKey(d, viewBox)` — the one function the build also keys by — so the
+  order `d` and `viewBox` arrive in cannot matter. `native-tree.ts` resolves
+  it through `styles.ts`'s `resolvePath` and sets PROP.path; on a strict host
+  an unknown key throws naming the outline, on a native host it counts
+  `missCounters.unknownPath`. `styles.generated.ts` carries an empty
+  `PATH_IDS`, and `index.ts`, `index-octane.ts` and `index-vue-vapor.ts`
+  register it at mount as they register `STYLE_IDS`.
+
+Red cases, run by `baselines/vector-paths/redcheck-ts.ts`, each an edit to
+one `+` line of this patch (the harness rebuilds the vendored tree from the
+edited patch and restores it) — except the op's range, an edit to this
+repository's `src/vendor/draw-ops.ts` — each turning the named test of this
+repository red:
+- collector does not fold a `+` of literals -> tests/catalog.test.ts -t G9
+- collector reads `d` only on an element named Path -> tests/vector-paths.test.ts -t the same d written as a literal
+- arc pieces of a quarter turn instead of an eighth -> tests/vector-paths.test.ts -t M10 50 A40 25 30 1 0 90 50
+- a quarter turn's -0 kept -> tests/vector-paths.test.ts -t degrees are exact
+- path tokens not parsed -> tests/catalog.test.ts -t G6 —
+- trimEnd is not a keyframe name -> tests/catalog.test.ts -t G6 —
+- build lets a PathDataError escape unlocated -> tests/vector-paths.test.ts -t morph keys that part
+- mount counts an unbaked outline instead of refusing it -> tests/vector-paths.test.ts -t a d computed at run time
+- the component never hands the key to the host -> tests/vector-paths.test.ts -t the same d written as a literal
+- the op is not in this repository's range list -> tests/patches.test.ts -t reserved draw-list op range
+- collector does not follow a const -> tests/catalog.test.ts -t G9
+- collector does not read a .map callback's parameter -> tests/catalog.test.ts -t G9
+- a later key's line against key 0's cubic not promoted -> tests/catalog.test.ts -t G9
+- key 0's line against a later key's cubic not promoted -> tests/catalog.test.ts -t G9
+- mount never registers the path table -> tests/vector-paths.test.ts -t the same d written as a literal
+
+All 15 red, each against its test run green first
+(`baselines/vector-paths/runs/redcheck-0043.txt`). One edit is recorded
+GREEN on purpose: `tan(alpha/4)` through `Math.tan` gives the same bits on
+this host, so the pinned arcs guard the bits across hosts — the determinism
+workflow re-runs them on Linux/x86-64 — and not the choice of function on one.
+
+The fixture is `compositions/vector-paths`, in both ledgers (its sidecar's
+`assertions[]` say what each path is for). With 0042 and 0043 applied, every
+composition recorded before reproduces its digest unchanged, the fixture
+included 39 of 39, and the visibility ledger 46 of 46; `bunx tsc --noEmit -p .`
+is clean.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
+index 76a48017..21016d06 100644
+--- a/framework/compiler/animation.ts
++++ b/framework/compiler/animation.ts
+@@ -286,6 +286,18 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   gradVia3Pos: [[PROP.gradVia3Pos], scalarBits],
+   gradVia4: [[PROP.gradVia4], colorBits],
+   gradVia4Pos: [[PROP.gradVia4Pos], scalarBits],
++  // pocket-motion `<Path>`: the prop names, and CSS's `fill`, `stroke` and
++  // `stroke-width` (camel-cased to strokeWidth). Not `stroke-dashoffset`: a
++  // length, where trim is a fraction of one nobody wrote.
++  fillColor: [[PROP.fillColor], colorBits],
++  fill: [[PROP.fillColor], colorBits],
++  strokeColor: [[PROP.strokeColor], colorBits],
++  stroke: [[PROP.strokeColor], colorBits],
++  strokeWidth: [[PROP.strokeWidth], pxBits],
++  trimStart: [[PROP.trimStart], scalarBits],
++  trimEnd: [[PROP.trimEnd], scalarBits],
++  trimOffset: [[PROP.trimOffset], scalarBits],
++  morph: [[PROP.morph], scalarBits],
+ };
+ 
+ /**
+diff --git a/framework/compiler/jsx-plugin.ts b/framework/compiler/jsx-plugin.ts
+index ccb037c5..abcde81f 100644
+--- a/framework/compiler/jsx-plugin.ts
++++ b/framework/compiler/jsx-plugin.ts
+@@ -225,6 +225,19 @@ export interface LiteralSite {
+   inClass: boolean;
+ }
+ 
++/**
++ * A `<Path>` outline the source wrote as literals (pocket-motion): the `d`
++ * of one JSX element — its morph keys — and the element's `viewBox`, with
++ * where the `d` attribute sits (1-based). tools/build.ts bakes one PATH
++ * TABLE entry per distinct pair.
++ */
++export interface PathDecl {
++  d: string[];
++  viewBox?: string;
++  line: number;
++  column: number;
++}
++
+ export interface TransformResult {
+   /** ESM JS: JSX compiled for the selected framework. */
+   code: string;
+@@ -253,6 +266,8 @@ export interface TransformResult {
+    * the file's.
+    */
+   literalSites: LiteralSite[];
++  /** Every `d` attribute whose value resolves to literals (see `pathValues`). */
++  pathDecls: PathDecl[];
+ }
+ 
+ interface Collected {
+@@ -260,6 +275,143 @@ interface Collected {
+   classAttrStrings: string[];
+   textCodepoints: Set<number>;
+   literalSites: LiteralSite[];
++  pathDecls: PathDecl[];
++}
++
++type BabelPath = {
++  node: { type: string } & Record<string, unknown>;
++  parentPath: BabelPath | null;
++  listKey?: string;
++  key?: string | number | null;
++  get(key: string): BabelPath | BabelPath[];
++  scope: { getBinding(name: string): { kind: string; constantViolations: unknown[]; path: BabelPath } | undefined };
++};
++
++/**
++ * The values an attribute expression can take, each a list of strings, or
++ * null when one cannot be read where it was written. A string literal, a
++ * backtick with nothing interpolated, a `+` of two of those (a long `d`
++ * written across lines), an array of those (the morph keys), a `const`
++ * binding whose initialiser is any of them, an element of such an array by a
++ * literal index, the parameter of a `.map` callback over one (each element
++ * is a value — how a set of shapes is drawn), and the arms of a ternary or
++ * of `&&` (the right only: its left is never the value of a string-valued
++ * attribute that draws), `||` and `??`.
++ */
++function pathValues(p: BabelPath, depth = 0): string[][] | null {
++  if (depth > 16) return null;
++  const n = p.node;
++  const one = (q: BabelPath | BabelPath[]): BabelPath => q as BabelPath;
++  switch (n.type) {
++    case "StringLiteral":
++      return [[n.value as string]];
++    case "TemplateLiteral": {
++      const quasis = n.quasis as Array<{ value: { cooked?: string; raw: string } }>;
++      if ((n.expressions as unknown[]).length > 0 || quasis.length !== 1) return null;
++      return [[quasis[0]!.value.cooked ?? quasis[0]!.value.raw]];
++    }
++    case "JSXExpressionContainer":
++    case "ParenthesizedExpression":
++    case "TSAsExpression":
++    case "TSSatisfiesExpression":
++    case "TSNonNullExpression":
++      return pathValues(one(p.get("expression")), depth + 1);
++    case "BinaryExpression": {
++      if (n.operator !== "+") return null;
++      const l = pathValues(one(p.get("left")), depth + 1);
++      const r = pathValues(one(p.get("right")), depth + 1);
++      if (l === null || r === null || l.length !== 1 || r.length !== 1 || l[0]!.length !== 1 || r[0]!.length !== 1) return null;
++      return [[l[0]![0]! + r[0]![0]!]];
++    }
++    case "ArrayExpression": {
++      const keys: string[] = [];
++      for (const el of p.get("elements") as BabelPath[]) {
++        if (!el?.node) return null;
++        const v = pathValues(el, depth + 1);
++        if (v === null || v.length !== 1 || v[0]!.length !== 1) return null;
++        keys.push(v[0]![0]!);
++      }
++      return keys.length > 0 ? [keys] : null;
++    }
++    case "ConditionalExpression": {
++      const a = pathValues(one(p.get("consequent")), depth + 1);
++      const b = pathValues(one(p.get("alternate")), depth + 1);
++      return a && b ? [...a, ...b] : null;
++    }
++    case "LogicalExpression": {
++      const right = pathValues(one(p.get("right")), depth + 1);
++      if (n.operator === "&&") return right;
++      const left = pathValues(one(p.get("left")), depth + 1);
++      return left && right ? [...left, ...right] : null;
++    }
++    case "Identifier": {
++      const b = p.scope.getBinding(n.name as string);
++      if (!b || b.constantViolations.length > 0) return null;
++      if (b.kind === "param") return mapParamValues(b.path, depth);
++      if (b.kind !== "const" || b.path.node.type !== "VariableDeclarator") return null;
++      const init = b.path.get("init") as BabelPath;
++      return init?.node ? pathValues(init, depth + 1) : null;
++    }
++    case "MemberExpression": {
++      const prop = n.property as { type: string; value?: unknown };
++      if (!n.computed || prop.type !== "NumericLiteral") return null;
++      const v = arrayElements(one(p.get("object")), depth)?.[prop.value as number];
++      return v === undefined ? null : [v];
++    }
++  }
++  return null;
++}
++
++/**
++ * The elements of an array literal, reached directly or through a `const`,
++ * each read as one `d` — a string, or an array of them (morph keys) — or null
++ * when any element cannot be read.
++ */
++function arrayElements(p: BabelPath, depth: number): string[][] | null {
++  if (depth > 16) return null;
++  const n = p.node;
++  switch (n.type) {
++    case "ParenthesizedExpression":
++    case "TSAsExpression":
++    case "TSSatisfiesExpression":
++    case "TSNonNullExpression":
++      return arrayElements(p.get("expression") as BabelPath, depth + 1);
++    case "Identifier": {
++      const b = p.scope.getBinding(n.name as string);
++      if (!b || b.kind !== "const" || b.constantViolations.length > 0 || b.path.node.type !== "VariableDeclarator") return null;
++      const init = b.path.get("init") as BabelPath;
++      return init?.node ? arrayElements(init, depth + 1) : null;
++    }
++    case "ArrayExpression": {
++      const out: string[][] = [];
++      for (const el of p.get("elements") as BabelPath[]) {
++        if (!el?.node) return null;
++        const v = pathValues(el, depth + 1);
++        if (v === null || v.length !== 1) return null;
++        out.push(v[0]!);
++      }
++      return out;
++    }
++  }
++  return null;
++}
++
++/**
++ * A parameter that is the first one of a callback passed to `.map` on an
++ * array literal takes each of its elements: `{ICONS.map((d) => <Path d={d} />)}`,
++ * or with arrays of keys, a set of morphs. Only a plain identifier parameter
++ * of the callback itself; a destructured one is not read.
++ */
++function mapParamValues(param: BabelPath, depth: number): string[][] | null {
++  const fn = param.parentPath;
++  if (!fn || (fn.node.type !== "ArrowFunctionExpression" && fn.node.type !== "FunctionExpression")) return null;
++  if (param.listKey !== "params" || param.key !== 0 || param.node.type !== "Identifier") return null;
++  const call = fn.parentPath;
++  if (!call || call.node.type !== "CallExpression" || fn.listKey !== "arguments" || fn.key !== 0) return null;
++  const callee = call.get("callee") as BabelPath;
++  const prop = callee.node.property as { type: string; name?: string } | undefined;
++  if (callee.node.type !== "MemberExpression" || callee.node.computed || prop?.type !== "Identifier" || prop.name !== "map") return null;
++  return arrayElements(callee.get("object") as BabelPath, depth);
+ }
+ 
+ export type BuildFeatures = Readonly<Record<string, boolean>>;
+@@ -367,6 +519,33 @@ function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
+             JSXAttribute(path) {
+               const name = path.node.name;
+               if (name.type === "JSXIdentifier" && name.name === "class") markClass(path.node.value);
++              // A `d` (pocket-motion `<Path>`), with the viewBox written on
++              // the same element. One whose value cannot be read here — a
++              // prop passed through a component, say — is left to mount,
++              // which refuses an outline the build did not bake.
++              if (name.type === "JSXIdentifier" && name.name === "d" && path.node.value) {
++                const ds = pathValues(path.get("value") as unknown as BabelPath);
++                if (ds === null) return;
++                const opening = path.parentPath.node as { attributes: Array<{ type: string; name?: { type: string; name: string }; value?: unknown }> };
++                const vbIndex = opening.attributes.findIndex((a) => a.type === "JSXAttribute" && a.name?.type === "JSXIdentifier" && a.name.name === "viewBox");
++                let vbs: Array<string | undefined> = [undefined];
++                if (vbIndex >= 0) {
++                  const vb = pathValues((path.parentPath.get("attributes") as unknown as BabelPath[])[vbIndex]!.get("value") as BabelPath);
++                  if (vb === null || vb.some((v) => v.length !== 1)) return;
++                  vbs = vb.map((v) => v[0]);
++                }
++                const loc = path.node.loc;
++                for (const d of ds) {
++                  for (const viewBox of vbs) {
++                    out.pathDecls.push({
++                      d,
++                      ...(viewBox !== undefined ? { viewBox } : {}),
++                      line: loc?.start.line ?? 0,
++                      column: (loc?.start.column ?? -1) + 1,
++                    });
++                  }
++                }
++              }
+             },
+           });
+           program.traverse({
+@@ -505,6 +684,7 @@ interface CacheEntry {
+   classAttrStrings: string[];
+   textCodepoints: number[];
+   literalSites: LiteralSite[];
++  pathDecls: PathDecl[];
+ }
+ 
+ function resolvePackageSubpath(spec: string): string | null {
+@@ -604,12 +784,13 @@ export async function transformFile(
+       classAttrStrings: cached.classAttrStrings,
+       textCodepoints: new Set(cached.textCodepoints),
+       literalSites: cached.literalSites ?? [],
++      pathDecls: cached.pathDecls,
+     };
+   }
+ 
+   if (isVueSfc) {
+     const result = compileVueSfc(src, path, { stripTypes: true, checkedAot: true });
+-    const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [] };
++    const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [], pathDecls: [] };
+     const transformed = await transformAsync(result.code, {
+       filename: path,
+       presets: [],
+@@ -632,6 +813,7 @@ export async function transformFile(
+       textCodepoints: [...collected.textCodepoints],
+       // The collector read compiled SFC output: its positions are not the file's.
+       literalSites: [],
++      pathDecls: collected.pathDecls,
+     };
+     await Bun.write(cacheFile, JSON.stringify(entry));
+     return {
+@@ -640,10 +822,11 @@ export async function transformFile(
+       classAttrStrings: entry.classAttrStrings,
+       textCodepoints: new Set(entry.textCodepoints),
+       literalSites: [],
++      pathDecls: entry.pathDecls,
+     };
+   }
+ 
+-  const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [] };
++  const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [], pathDecls: [] };
+   const opts = transformOptions(framework);
+   const plugins = [
+     ...(options.features === undefined ? [] : [makeFeatureFolder(options.features)]),
+@@ -721,6 +904,7 @@ export async function transformFile(
+     classAttrStrings: collected.classAttrStrings,
+     textCodepoints: [...collected.textCodepoints],
+     literalSites: positionsHold ? collected.literalSites : [],
++    pathDecls: collected.pathDecls,
+   };
+   await Bun.write(cacheFile, JSON.stringify(entry));
+   return {
+@@ -729,6 +913,7 @@ export async function transformFile(
+     classAttrStrings: entry.classAttrStrings,
+     textCodepoints: collected.textCodepoints,
+     literalSites: entry.literalSites,
++    pathDecls: entry.pathDecls,
+   };
+ }
+ 
+diff --git a/framework/compiler/path-data.ts b/framework/compiler/path-data.ts
+new file mode 100644
+index 00000000..84c13bc7
+--- /dev/null
++++ b/framework/compiler/path-data.ts
+@@ -0,0 +1,464 @@
++// SVG path data -> PATH TABLE entries (pocket-motion patch 0043).
++//
++// `<Path d="…">` names an outline the build bakes: this module parses the
++// whole SVG path grammar (implicit repeats, exponents, arc flags written
++// without separators), normalises it to the four verbs the core draws —
++// move, line, cubic, close — and aligns the morph keys of one `<Path>` to
++// one verb list. The core then morphs, flattens, trims and strokes the entry
++// per frame (engine/core/src/path.rs); nothing here depends on a target.
++//
++// Determinism: a pak's bytes must not depend on the machine that built it,
++// and JavaScriptCore's Math.sin/cos/atan2 are implementation-defined. So an
++// arc is converted with + - * / and Math.sqrt alone, which IEEE 754 rounds
++// correctly on every host: its sweep is split by bisection of unit vectors,
++// never by an angle, and each piece's control length comes from half-angle
++// identities. The one transcendental is the arc's x-axis rotation, an angle
++// the author wrote in degrees; it goes through `sinDeg`/`cosDeg` below, a
++// Taylor series evaluated in f64 after an exact reduction, so 0, 90, 180 and
++// 270 degrees are exact and every other angle is the same bits everywhere.
++
++import { PATH_MAX_SHAPES, PATH_VERB, type PathEntry } from "../../contracts/spec/spec.ts";
++
++/** A refusal, with the source position (0-based character offset) when there is one. */
++export class PathDataError extends Error {}
++
++const ARG_COUNT: Record<string, number> = { m: 2, l: 2, h: 1, v: 1, c: 6, s: 4, q: 4, t: 2, a: 7, z: 0 };
++
++interface Command {
++  /** The letter as written (case carries relative/absolute). */
++  letter: string;
++  args: number[];
++  /** Ordinal of the command in the source, counting implicit repeats. */
++  index: number;
++}
++
++const WSP = /[\x20\x09\x0a\x0c\x0d]/;
++const NUMBER = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y;
++
++/** Parse `d` into commands, each with exactly its argument count. */
++export function parsePathData(d: string): Command[] {
++  const out: Command[] = [];
++  let i = 0;
++  const n = d.length;
++  const skip = (): void => {
++    while (i < n && WSP.test(d[i]!)) i++;
++  };
++  const skipComma = (): void => {
++    skip();
++    if (d[i] === ",") {
++      i++;
++      skip();
++    }
++  };
++  const fail = (what: string): never => {
++    throw new PathDataError(`${what} at character ${i} of ${JSON.stringify(d.length > 60 ? d.slice(0, 57) + "..." : d)}`);
++  };
++  const number = (): number => {
++    NUMBER.lastIndex = i;
++    const m = NUMBER.exec(d);
++    if (!m) fail("expected a number");
++    i += m![0].length;
++    const v = Number(m![0]);
++    if (!Number.isFinite(v)) fail(`${m![0]} is not finite`);
++    return v;
++  };
++  const flag = (): number => {
++    const c = d[i];
++    if (c !== "0" && c !== "1") fail("expected an arc flag (0 or 1)");
++    i++;
++    return c === "1" ? 1 : 0;
++  };
++  const startsNumber = (): boolean => i < n && /[+\-.\d]/.test(d[i]!);
++  skip();
++  let index = 0;
++  while (i < n) {
++    const letter = d[i]!;
++    const lower = letter.toLowerCase();
++    if (!(lower in ARG_COUNT)) fail(`unknown command ${JSON.stringify(letter)}`);
++    if (out.length === 0 && lower !== "m") fail("path data starts with a moveto");
++    i++;
++    skip();
++    const count = ARG_COUNT[lower]!;
++    if (count === 0) {
++      out.push({ letter, args: [], index: index++ });
++      skip();
++      continue;
++    }
++    // One argument group, then as many more as follow; after a moveto the
++    // further pairs are linetos of the same case (SVG 1.1, 8.3.2).
++    let first = true;
++    do {
++      const args: number[] = [];
++      for (let k = 0; k < count; k++) {
++        if (k > 0) skipComma();
++        args.push(lower === "a" && (k === 3 || k === 4) ? flag() : number());
++      }
++      const name = first ? letter : lower === "m" ? (letter === "m" ? "l" : "L") : letter;
++      out.push({ letter: name, args, index: index++ });
++      first = false;
++      skipComma();
++    } while (startsNumber());
++  }
++  if (out.length === 0) fail("empty path data");
++  return out;
++}
++
++// ---- deterministic degree trigonometry ------------------------------------------------
++
++/** sin(x) for |x| <= pi/4, Taylor to x^21 (error below 1e-22). */
++function sinSeries(x: number): number {
++  const x2 = x * x;
++  let t = 1;
++  for (let k = 21; k >= 3; k -= 2) t = 1 - (x2 / (k * (k - 1))) * t;
++  return x * t;
++}
++
++/** cos(x) for |x| <= pi/4, Taylor to x^22. */
++function cosSeries(x: number): number {
++  const x2 = x * x;
++  let t = 1;
++  for (let k = 22; k >= 2; k -= 2) t = 1 - (x2 / (k * (k - 1))) * t;
++  return t;
++}
++
++/** [cos, sin] of an angle in degrees: exact at multiples of 90, a fixed f64 sequence elsewhere. */
++export function cosSinDeg(deg: number): [number, number] {
++  let r = deg - 360 * Math.floor(deg / 360); // [0, 360)
++  if (r >= 360) r -= 360;
++  // Quadrant, then the octant within it, by exact comparisons.
++  const q = Math.floor(r / 90);
++  const a = r - 90 * q; // [0, 90)
++  let c: number;
++  let s: number;
++  if (a === 0) {
++    c = 1;
++    s = 0;
++  } else if (a <= 45) {
++    const x = a * (Math.PI / 180);
++    c = cosSeries(x);
++    s = sinSeries(x);
++  } else {
++    const x = (90 - a) * (Math.PI / 180);
++    c = sinSeries(x);
++    s = cosSeries(x);
++  }
++  // Rotate the first-quadrant pair by q quarter turns, exactly.
++  for (let k = 0; k < q; k++) [c, s] = [-s, c];
++  // + 0 turns a -0 from the rotation into 0, so a zero is one bit pattern.
++  return [c + 0, s + 0];
++}
++
++// ---- normalisation ------------------------------------------------------------------------
++
++/** One normalised path: PATH_VERB verbs, their points (f64 pairs), and each verb's source command. */
++export interface NormalPath {
++  verbs: number[];
++  pts: number[];
++  src: number[];
++}
++
++/** The four-verb form of `d`: absolute, H/V/S/T/Q/A gone, every subpath after a close reopened by a move. */
++export function normalizePathData(d: string): NormalPath {
++  const cmds = parsePathData(d);
++  const verbs: number[] = [];
++  const pts: number[] = [];
++  const src: number[] = [];
++  let cx = 0, cy = 0; // current point
++  let sx = 0, sy = 0; // subpath start
++  let closed = false; // the last verb was a close
++  // The previous command's second control point, for S and T reflections.
++  let lastCubic: [number, number] | null = null;
++  let lastQuad: [number, number] | null = null;
++  const reopen = (index: number): void => {
++    if (!closed) return;
++    verbs.push(PATH_VERB.move);
++    pts.push(sx, sy);
++    src.push(index);
++    closed = false;
++  };
++  const line = (x: number, y: number, index: number): void => {
++    reopen(index);
++    verbs.push(PATH_VERB.line);
++    pts.push(x, y);
++    src.push(index);
++    cx = x;
++    cy = y;
++  };
++  const cubic = (x1: number, y1: number, x2: number, y2: number, x: number, y: number, index: number): void => {
++    reopen(index);
++    verbs.push(PATH_VERB.cubic);
++    pts.push(x1, y1, x2, y2, x, y);
++    src.push(index);
++    cx = x;
++    cy = y;
++  };
++  for (const cmd of cmds) {
++    const rel = cmd.letter === cmd.letter.toLowerCase();
++    const a = cmd.args;
++    const ox = rel ? cx : 0;
++    const oy = rel ? cy : 0;
++    let nextCubic: [number, number] | null = null;
++    let nextQuad: [number, number] | null = null;
++    switch (cmd.letter.toLowerCase()) {
++      case "m": {
++        const x = a[0]! + ox, y = a[1]! + oy;
++        verbs.push(PATH_VERB.move);
++        pts.push(x, y);
++        src.push(cmd.index);
++        cx = sx = x;
++        cy = sy = y;
++        closed = false;
++        break;
++      }
++      case "l":
++        line(a[0]! + ox, a[1]! + oy, cmd.index);
++        break;
++      case "h":
++        line(a[0]! + ox, cy, cmd.index);
++        break;
++      case "v":
++        line(cx, a[0]! + oy, cmd.index);
++        break;
++      case "c": {
++        const x2 = a[2]! + ox, y2 = a[3]! + oy;
++        cubic(a[0]! + ox, a[1]! + oy, x2, y2, a[4]! + ox, a[5]! + oy, cmd.index);
++        nextCubic = [x2, y2];
++        break;
++      }
++      case "s": {
++        const [x1, y1] = lastCubic ? [2 * cx - lastCubic[0], 2 * cy - lastCubic[1]] : [cx, cy];
++        const x2 = a[0]! + ox, y2 = a[1]! + oy;
++        cubic(x1, y1, x2, y2, a[2]! + ox, a[3]! + oy, cmd.index);
++        nextCubic = [x2, y2];
++        break;
++      }
++      case "q":
++      case "t": {
++        const isQ = cmd.letter.toLowerCase() === "q";
++        let qx = cx, qy = cy;
++        if (isQ) {
++          qx = a[0]! + ox;
++          qy = a[1]! + oy;
++        } else if (lastQuad !== null) {
++          qx = 2 * cx - lastQuad[0];
++          qy = 2 * cy - lastQuad[1];
++        }
++        const x = (isQ ? a[2]! : a[0]!) + ox, y = (isQ ? a[3]! : a[1]!) + oy;
++        // Degree elevation, exact for a quadratic: controls 2/3 of the way to q.
++        cubic(cx + (2 * (qx - cx)) / 3, cy + (2 * (qy - cy)) / 3, x + (2 * (qx - x)) / 3, y + (2 * (qy - y)) / 3, x, y, cmd.index);
++        nextQuad = [qx, qy];
++        break;
++      }
++      case "a":
++        arc(cx, cy, a[0]!, a[1]!, a[2]!, a[3] === 1, a[4] === 1, a[5]! + ox, a[6]! + oy, cmd.index, line, cubic);
++        break;
++      case "z":
++        if (!closed) {
++          verbs.push(PATH_VERB.close);
++          src.push(cmd.index);
++          closed = true;
++        }
++        cx = sx;
++        cy = sy;
++        break;
++    }
++    lastCubic = nextCubic;
++    lastQuad = nextQuad;
++  }
++  return { verbs, pts, src };
++}
++
++/**
++ * An elliptical arc as cubics of at most an eighth of a turn each (SVG 1.1
++ * F.6.5 for the centre). The sweep is never an angle: the arc is cut in
++ * halves by unit-vector bisection until every piece is within 45 degrees,
++ * so it is 1, 2, 4 or 8 pieces, and each piece's handle length
++ * 4/3 tan(alpha/4) comes from its cosine and sine by two half-angle steps.
++ * The end point is the written one, copied. A quarter-turn piece sits up
++ * to 2.7e-4 r off the true ellipse (0.27 px at r = 1000); an eighth, under
++ * 4.3e-6 r.
++ */
++function arc(
++  x1: number,
++  y1: number,
++  rxIn: number,
++  ryIn: number,
++  phi: number,
++  large: boolean,
++  sweep: boolean,
++  x2: number,
++  y2: number,
++  index: number,
++  line: (x: number, y: number, index: number) => void,
++  cubic: (x1: number, y1: number, x2: number, y2: number, x: number, y: number, index: number) => void,
++): void {
++  if (x1 === x2 && y1 === y2) return; // an arc to its own start draws nothing (SVG)
++  let rx = Math.abs(rxIn);
++  let ry = Math.abs(ryIn);
++  if (rx === 0 || ry === 0) {
++    line(x2, y2, index);
++    return;
++  }
++  const [cp, sp] = cosSinDeg(phi);
++  const dx = (x1 - x2) / 2, dy = (y1 - y2) / 2;
++  const x1p = cp * dx + sp * dy;
++  const y1p = -sp * dx + cp * dy;
++  const lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry);
++  // Radii too small for the chord grow until it is a diameter: a half ellipse.
++  const half = lambda >= 1;
++  if (half) {
++    const k = Math.sqrt(lambda);
++    rx *= k;
++    ry *= k;
++  }
++  const num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p;
++  const den = rx * rx * y1p * y1p + ry * ry * x1p * x1p;
++  const coef = half || !(num > 0) ? 0 : (large === sweep ? -1 : 1) * Math.sqrt(num / den);
++  const cxp = (coef * rx * y1p) / ry;
++  const cyp = (-coef * ry * x1p) / rx;
++  const ccx = cp * cxp - sp * cyp + (x1 + x2) / 2;
++  const ccy = sp * cxp + cp * cyp + (y1 + y2) / 2;
++  const unit = (x: number, y: number): [number, number] => {
++    const l = Math.sqrt(x * x + y * y);
++    return [x / l, y / l];
++  };
++  const u = unit((x1p - cxp) / rx, (y1p - cyp) / ry);
++  const v = unit((-x1p - cxp) / rx, (-y1p - cyp) / ry);
++  const s = sweep ? 1 : -1;
++  // The direction halfway from a to b going the arc's way. Near a full
++  // turn's ends (a and b close) a + b is stable; near a half turn their
++  // difference is, rotated back a quarter turn against the sweep.
++  const mid = (a: [number, number], b: [number, number], big: boolean): [number, number] => {
++    const dot = a[0] * b[0] + a[1] * b[1];
++    if (dot > 0) {
++      const m = unit(a[0] + b[0], a[1] + b[1]);
++      return big ? [-m[0], -m[1]] : m;
++    }
++    const wx = b[0] - a[0], wy = b[1] - a[1];
++    return s > 0 ? unit(wy, -wx) : unit(-wy, wx);
++  };
++  // At least a half turn is cut once knowing it is large, since a + b
++  // alone cannot tell a sweep from its complement; every piece is then
++  // under a half turn and halved while it is past an eighth.
++  const pieces: Array<[number, number]> = [u];
++  const halve = (a: [number, number], b: [number, number]): void => {
++    if (a[0] * b[0] + a[1] * b[1] < EIGHTH_COS) {
++      const m = mid(a, b, false);
++      halve(a, m);
++      halve(m, b);
++      return;
++    }
++    pieces.push(b);
++  };
++  if (large || half) {
++    const m = half ? (s > 0 ? [-u[1], u[0]] as [number, number] : [u[1], -u[0]] as [number, number]) : mid(u, v, true);
++    halve(u, m);
++    halve(m, v);
++  } else {
++    halve(u, v);
++  }
++  // Unit-circle point -> the ellipse in path coordinates.
++  const map = (x: number, y: number): [number, number] => {
++    const ex = rx * x, ey = ry * y;
++    return [cp * ex - sp * ey + ccx, sp * ex + cp * ey + ccy];
++  };
++  for (let k = 0; k + 1 < pieces.length; k++) {
++    const a = pieces[k]!, b = pieces[k + 1]!;
++    const cos = a[0] * b[0] + a[1] * b[1];
++    const sin = Math.abs(a[0] * b[1] - a[1] * b[0]);
++    const t2 = sin / (1 + cos); // tan(alpha/2)
++    const t4 = t2 / (1 + Math.sqrt(1 + t2 * t2)); // tan(alpha/4)
++    const h = (4 / 3) * t4;
++    // Tangents point along the sweep: a quarter turn of the radius, by s.
++    const ta: [number, number] = [-s * a[1], s * a[0]];
++    const tb: [number, number] = [-s * b[1], s * b[0]];
++    const [c1x, c1y] = map(a[0] + h * ta[0], a[1] + h * ta[1]);
++    const [c2x, c2y] = map(b[0] - h * tb[0], b[1] - h * tb[1]);
++    const last = k + 2 === pieces.length;
++    const [ex, ey] = last ? [x2, y2] : map(b[0], b[1]);
++    cubic(c1x, c1y, c2x, c2y, ex, ey, index);
++  }
++}
++
++/** cos 45 degrees, less a margin, so a piece of exactly an eighth is not halved by a rounding. */
++const EIGHTH_COS = Math.SQRT1_2 - 1e-9;
++
++// ---- morph keys and the entry ---------------------------------------------------------
++
++const VERB_NAME = ["move", "line", "cubic", "close"];
++
++/** Promote line `k` of a normalised path to a cubic with controls at 1/3 and 2/3 (exact). */
++function promote(p: NormalPath, k: number): void {
++  let at = 0;
++  for (let j = 0; j < k; j++) at += p.verbs[j] === PATH_VERB.cubic ? 6 : p.verbs[j] === PATH_VERB.close ? 0 : 2;
++  // The line's start is the previous verb's end point (a line never opens a subpath).
++  const x0 = p.pts[at - 2]!, y0 = p.pts[at - 1]!;
++  const x1 = p.pts[at]!, y1 = p.pts[at + 1]!;
++  const dx = x1 - x0, dy = y1 - y0;
++  p.pts.splice(at, 2, x0 + dx / 3, y0 + dy / 3, x0 + (2 * dx) / 3, y0 + (2 * dy) / 3, x1, y1);
++  p.verbs[k] = PATH_VERB.cubic;
++}
++
++/**
++ * The PATH TABLE entry for one `<Path>`: its morph keys (one or more `d`
++ * strings) aligned to one verb list, and its viewBox. A line in one key
++ * where another has a cubic is promoted; any other difference is refused,
++ * naming the first differing command of each key. Point counts are never
++ * equalised: a resampled correspondence is a picture nobody declared.
++ */
++export function compilePathEntry(keys: readonly string[], viewBox?: string): PathEntry {
++  if (keys.length === 0) throw new PathDataError("a <Path> needs at least one d");
++  if (keys.length > PATH_MAX_SHAPES) throw new PathDataError(`a <Path> morphs at most ${PATH_MAX_SHAPES} keys, got ${keys.length}`);
++  const paths = keys.map((d, i) => {
++    try {
++      return normalizePathData(d);
++    } catch (e) {
++      if (e instanceof PathDataError && keys.length > 1) throw new PathDataError(`morph key ${i}: ${e.message}`);
++      throw e;
++    }
++  });
++  const first = paths[0]!;
++  for (let i = 1; i < paths.length; i++) {
++    const p = paths[i]!;
++    const n = Math.max(first.verbs.length, p.verbs.length);
++    for (let k = 0; k < n; k++) {
++      const a = first.verbs[k], b = p.verbs[k];
++      if (a === b) continue;
++      if (a === PATH_VERB.line && b === PATH_VERB.cubic) {
++        for (const q of paths.slice(0, i)) if (q.verbs[k] === PATH_VERB.line) promote(q, k);
++        continue;
++      }
++      if (a === PATH_VERB.cubic && b === PATH_VERB.line) {
++        promote(p, k);
++        continue;
++      }
++      const name = (q: NormalPath, j: number): string =>
++        q.verbs[j] === undefined ? "nothing (it has ended)" : `a ${VERB_NAME[q.verbs[j]!]} (source command ${q.src[j]})`;
++      throw new PathDataError(
++        `morph keys 0 and ${i} differ at normalised command ${k}: key 0 has ${name(first, k)}, key ${i} has ${name(p, k)}. ` +
++          "Keys must share their commands (a line against a cubic is promoted); draw them with the same structure.",
++      );
++    }
++  }
++  const entry: PathEntry = {
++    verbs: first.verbs.slice(),
++    shapes: paths.map((p) => p.pts.map((v) => Math.fround(v))),
++  };
++  for (const [i, shape] of entry.shapes.entries()) {
++    const bad = shape.find((v) => !Number.isFinite(v));
++    if (bad !== undefined) throw new PathDataError(`${keys.length > 1 ? `morph key ${i}: ` : ""}a coordinate is not a finite f32 (${bad})`);
++  }
++  if (entry.verbs.length > 0xffff) throw new PathDataError(`a path normalises to ${entry.verbs.length} commands; the table holds 65535`);
++  if (viewBox !== undefined) entry.viewBox = parseViewBox(viewBox);
++  return entry;
++}
++
++/** `"x y w h"` (whitespace and/or commas) with w, h > 0, as f32. */
++export function parseViewBox(viewBox: string): [number, number, number, number] {
++  const parts = viewBox.trim().split(/[\s,]+/).filter((s) => s.length > 0);
++  const nums = parts.map((s) => (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(s) ? Math.fround(Number(s)) : NaN));
++  if (nums.length !== 4 || !nums.every(Number.isFinite) || !(nums[2]! > 0) || !(nums[3]! > 0)) {
++    throw new PathDataError(`viewBox ${JSON.stringify(viewBox)} is not "x y w h" with w and h above 0`);
++  }
++  return nums as [number, number, number, number];
++}
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index d4b549db..f545e06a 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -33,6 +33,7 @@ import {
+   encodeStyleTable,
+   f32Bits,
+   type AnimTimeline,
++  type PathEntry,
+   type PropName,
+   type StyleAnimation,
+   type StyleProp,
+@@ -430,6 +431,7 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+   }
+   if (tok in SHADOWS) { D.push([PROP.shadow, int(SHADOWS[tok])]); return true; }
+   if (parseFilterUtility(tok, D)) return true;
++  if (parsePathUtility(tok, D)) return true;
+   {
+     // `font-[display]`: a named face. The build refuses a name no
+     // `--font-face-*` flag declared (bake-font.ts), so a typo is loud there.
+@@ -695,6 +697,104 @@ function parseTextStroke(rest: string, D: Decl[]): boolean {
+   return true;
+ }
+ 
++/** `[0.5]` / `[-0.25]` / `[2]`: a plain bracketed number, or null. */
++function arbNumber(part: string): number | null {
++  const m = /^\[(-?\d+(?:\.\d+)?)\]$/.exec(part);
++  return m ? parseFloat(m[1]!) : null;
++}
++
++const STROKE_JOINS: Record<string, number> = {
++  miter: ENUMS.StrokeJoin.Miter, round: ENUMS.StrokeJoin.Round, bevel: ENUMS.StrokeJoin.Bevel,
++};
++const STROKE_CAPS: Record<string, number> = {
++  butt: ENUMS.StrokeCap.Butt, round: ENUMS.StrokeCap.Round, square: ENUMS.StrokeCap.Square,
++};
++
++/**
++ * `<Path>` paint and motion (pocket-motion): what a baked outline draws.
++ * Tailwind's own names where Tailwind has one.
++ *
++ *   fill-<color>, fill-[#hex], fill-none      fill colour (default: none)
++ *   fill-nonzero, fill-evenodd                fill rule (default nonzero)
++ *   stroke-<color>, stroke-[#hex], stroke-none stroke colour (default: none)
++ *   stroke-N, stroke-[N] / [Npx]              stroke width in the path's own
++ *                                             units (default 1)
++ *   stroke-join-miter|round|bevel             join (default miter)
++ *   stroke-cap-butt|round|square              cap (default butt)
++ *   stroke-miter-[N]                          miter limit, N >= 1 (default 4)
++ *   trim-start-[f], trim-end-[f]              the drawn window, fractions of
++ *                                             arc length (default 0 and 1)
++ *   trim-offset-[f]                           the window moved round, wrapping
++ *   trim-each, trim-whole                     each subpath trimmed alike, or
++ *                                             the subpaths as one sequence
++ *   morph-[f]                                 between morph keys k and k + 1
++ *                                             at f = k + t, f >= 0
++ *
++ * Every number is finite or the token does not parse; a negative width and
++ * a miter limit under 1 are refused rather than clamped.
++ */
++function parsePathUtility(tok: string, D: Decl[]): boolean {
++  if (tok === "fill-none") { D.push([PROP.fillColor, 0]); return true; }
++  if (tok === "fill-nonzero") { D.push([PROP.fillRule, int(ENUMS.FillRule.NonZero)]); return true; }
++  if (tok === "fill-evenodd") { D.push([PROP.fillRule, int(ENUMS.FillRule.EvenOdd)]); return true; }
++  if (tok === "stroke-none") { D.push([PROP.strokeColor, 0]); return true; }
++  if (tok === "trim-each") { D.push([PROP.trimMode, int(ENUMS.TrimMode.Each)]); return true; }
++  if (tok === "trim-whole") { D.push([PROP.trimMode, int(ENUMS.TrimMode.Whole)]); return true; }
++  if (tok.startsWith("fill-")) {
++    const c = colorValue(tok.slice("fill-".length));
++    if (c === null) return false;
++    D.push([PROP.fillColor, c]);
++    return true;
++  }
++  if (tok.startsWith("stroke-join-")) {
++    const j = STROKE_JOINS[tok.slice("stroke-join-".length)];
++    if (j === undefined) return false;
++    D.push([PROP.strokeJoin, int(j)]);
++    return true;
++  }
++  if (tok.startsWith("stroke-cap-")) {
++    const c = STROKE_CAPS[tok.slice("stroke-cap-".length)];
++    if (c === undefined) return false;
++    D.push([PROP.strokeCap, int(c)]);
++    return true;
++  }
++  if (tok.startsWith("stroke-miter-")) {
++    const v = arbNumber(tok.slice("stroke-miter-".length));
++    if (v === null || !(v >= 1)) return false;
++    D.push([PROP.strokeMiter, px(v)]);
++    return true;
++  }
++  if (tok.startsWith("stroke-")) {
++    const v = tok.slice("stroke-".length);
++    if (/^\d+$/.test(v)) { D.push([PROP.strokeWidth, px(parseInt(v, 10))]); return true; }
++    const w = /^\[(-?\d+(?:\.\d+)?)(?:px)?\]$/.exec(v);
++    if (w) {
++      const n = parseFloat(w[1]!);
++      if (n < 0) return false;
++      D.push([PROP.strokeWidth, px(n)]);
++      return true;
++    }
++    const c = colorValue(v);
++    if (c === null) return false;
++    D.push([PROP.strokeColor, c]);
++    return true;
++  }
++  for (const [prefix, prop] of [["trim-start-", PROP.trimStart], ["trim-end-", PROP.trimEnd], ["trim-offset-", PROP.trimOffset]] as const) {
++    if (!tok.startsWith(prefix)) continue;
++    const v = arbNumber(tok.slice(prefix.length));
++    if (v === null) return false;
++    D.push([prop, px(v)]);
++    return true;
++  }
++  if (tok.startsWith("morph-")) {
++    const v = arbNumber(tok.slice("morph-".length));
++    if (v === null || v < 0) return false;
++    D.push([PROP.morph, px(v)]);
++    return true;
++  }
++  return false;
++}
++
+ /** Tailwind v3 `blur-*` steps, px standard deviation. */
+ const BLUR_STEPS: Record<string, number> = {
+   "blur-none": 0, "blur-sm": 4, "blur": 8, "blur-md": 12, "blur-lg": 16,
+@@ -853,6 +953,7 @@ function radialShape(spec: string): number | null {
+  *                                   closest-side|farthest-side|closest-corner|
+  *                                   farthest-corner, either order
+  *   bg-clip-text / bg-clip-border   paint the ground into the glyphs / the box
++ *   bg-clip-path                    paint it into a `<Path>`'s fill (pocket-motion)
+  *   bg-[linear-gradient(45deg,#f00,#0f0_30%,#00f)]
+  *   bg-[radial-gradient(#fff,#fff0_70%)]
+  *   bg-[radial-gradient(circle_closest-side,#fff,#000)]
+@@ -875,6 +976,9 @@ function parseGradientPaint(rest: string, acc: VariantAcc): boolean {
+   }
+   if (rest === "clip-text") { acc.clipText = true; D.push([PROP.bgClip, int(ENUMS.BgClip.Text)]); return true; }
+   if (rest === "clip-border") { D.push([PROP.bgClip, int(ENUMS.BgClip.Border)]); return true; }
++  // Like `clip-text`, a legacy two-stop gradient takes the paint path here:
++  // only the paint reaches a path's fill.
++  if (rest === "clip-path") { acc.clipText = true; D.push([PROP.bgClip, int(ENUMS.BgClip.Path)]); return true; }
+   if (rest.startsWith("linear-")) {
+     const v = rest.slice("linear-".length);
+     let angle: number | null = null;
+@@ -1456,12 +1560,17 @@ export interface CompiledStyles {
+   bin: Uint8Array;
+   /** Font slots referenced by any record (always includes DEFAULT_FONT_SLOT). */
+   usedFontSlots: number[];
++  /** `<Path>` key -> PATH TABLE index + 1 (pocket-motion; styles.bin PATH TABLE order). */
++  paths: Record<string, number>;
+ }
+ 
+ /** Compile candidate literals: keep the ones that parse, dedupe identical records. */
+ export interface CompileOptions {
+   /** Literals the collector saw as the value of a JSX `class=` attribute. */
+   readonly fromClassAttribute?: ReadonlySet<string>;
++  /** Baked `<Path>` outlines (pocket-motion), keyed by framework/src/path-key.ts,
++   *  written after the ANIM TABLE in this order. */
++  readonly paths?: ReadonlyArray<{ readonly key: string; readonly entry: PathEntry }>;
+ }
+ 
+ export function compileClasses(
+@@ -1506,12 +1615,15 @@ export function compileClasses(
+   if (refused.length > 0) throw new UncompiledClassError(refused);
+ 
+   const anims = bakedTimelines();
++  const pathIds: Record<string, number> = {};
++  for (const [i, p] of (options.paths ?? []).entries()) pathIds[p.key] = i + 1;
+   return {
+     records,
+     anims,
+     ids,
+-    bin: encodeStyleTable(records, anims),
++    bin: encodeStyleTable(records, anims, (options.paths ?? []).map((p) => p.entry)),
+     usedFontSlots: [...slots].sort((a, b) => a - b),
++    paths: pathIds,
+   };
+ }
+ 
+@@ -1530,6 +1642,11 @@ export function generateStylesModule(c: CompiledStyles): string {
+   }
+   L.push("};");
+   L.push("");
++  L.push("/** `<Path>` key (framework/src/path-key.ts) -> PATH TABLE index + 1 (pocket-motion). */");
++  L.push("export const PATH_IDS: Record<string, number> = {");
++  for (const [key, id] of Object.entries(c.paths)) L.push(`  ${JSON.stringify(key)}: ${id},`);
++  L.push("};");
++  L.push("");
+   L.push("/** Number of records in styles.bin (valid styleIds are 0..COUNT-1). */");
+   L.push(`export const STYLE_COUNT = ${c.records.length};`);
+   L.push("");
+diff --git a/framework/src/components.ts b/framework/src/components.ts
+index 91cc97ed..807fa5b2 100644
+--- a/framework/src/components.ts
++++ b/framework/src/components.ts
+@@ -40,11 +40,13 @@ import { createCommentNode, setDebugName } from "./native-tree.ts";
+ 
+ export {
+   View,
++  Path,
+   Text,
+   Image,
+   Sprite,
+   CompositorSurface,
+   type ViewProps,
++  type PathProps,
+   type TextProps,
+   type ImageProps,
+   type SpriteProps,
+diff --git a/framework/src/index-octane.ts b/framework/src/index-octane.ts
+index 2e3112cf..e5bdf9d5 100644
+--- a/framework/src/index-octane.ts
++++ b/framework/src/index-octane.ts
+@@ -28,7 +28,7 @@ import {
+ } from "./renderer-octane.ts";
+ import { setOverlayRoot } from "./overlay.ts";
+ import { mountAuxiliarySurface, unmountAuxiliarySurface } from "./display.ts";
+-import { registerStyles, resolveStyle } from "./styles.ts";
++import { registerPaths, registerStyles, resolveStyle } from "./styles.ts";
+ import { handleFrame, setAuxiliaryHitRoot, setHitRoot, setInputRoot } from "./input.ts";
+ import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-octane.tsx";
+ import { __resetTouches, __setTouches } from "./touch.ts";
+@@ -36,7 +36,7 @@ import { __advanceClock, resetClock } from "./clock.ts";
+ import { __drainEffects, resetEffects } from "./effects.ts";
+ import { runServicePumps } from "./services.ts";
+ import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
+-import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
++import { PATH_IDS as DEFAULT_PATH_IDS, STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
+ import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
+ 
+ export interface RenderOptions {
+@@ -44,6 +44,8 @@ export interface RenderOptions {
+   ops?: HostOps;
+   /** STYLE_IDS table (styles.generated.ts) - class literal -> styleId. */
+   styles?: Record<string, number>;
++  /** PATH_IDS table (styles.generated.ts) — `<Path>` key → PATH TABLE index + 1. */
++  paths?: Record<string, number>;
+   /** App pack; defaults to globalThis.__pak when present. */
+   pak?: ArrayBuffer;
+ }
+@@ -138,6 +140,7 @@ export function render(code: OctaneRenderRoot, opts: RenderOptions = {}): () =>
+ 
+   setStyleResolver(resolveStyle);
+   if (opts.styles) registerStyles(opts.styles);
++  if (opts.paths) registerPaths(opts.paths);
+ 
+   const nativeTextureTable = host.kind === "native"
+     ? (host.ops as HostOps & { __textures?: Record<string, number> }).__textures
+@@ -262,6 +265,7 @@ export function mount(code: OctaneRenderRoot, opts: MountOptions = {}): () => vo
+   return render(code, {
+     ops,
+     styles: opts.styles ?? DEFAULT_STYLE_IDS,
++    paths: opts.paths ?? DEFAULT_PATH_IDS,
+     pak: opts.pak,
+   });
+ }
+diff --git a/framework/src/index-vue-vapor.ts b/framework/src/index-vue-vapor.ts
+index 5deeb60b..b493318c 100644
+--- a/framework/src/index-vue-vapor.ts
++++ b/framework/src/index-vue-vapor.ts
+@@ -27,7 +27,7 @@ import {
+ } from "./renderer-vue-vapor.ts";
+ import { setOverlayRoot } from "./overlay.ts";
+ import { mountAuxiliarySurface, unmountAuxiliarySurface } from "./display.ts";
+-import { registerStyles, resolveStyle } from "./styles.ts";
++import { registerPaths, registerStyles, resolveStyle } from "./styles.ts";
+ import { handleFrame, setAuxiliaryHitRoot, setHitRoot, setInputRoot, withDeferredPress, type DeferredPress } from "./input.ts";
+ import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame-vue-vapor.ts";
+ import { flushLifecycleHooks, flushUnmountedHooks, disposeRootModelRegions } from "./lifecycle-vue-aot.ts";
+@@ -40,7 +40,7 @@ import { __advanceClock, resetClock } from "./clock.ts";
+ import { __drainEffects, resetEffects } from "./effects.ts";
+ import { runServicePumps } from "./services.ts";
+ import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
+-import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
++import { PATH_IDS as DEFAULT_PATH_IDS, STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
+ import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
+ 
+ /** Gesture recognition for one frame's deferred presses; shared across frames. */
+@@ -51,6 +51,8 @@ export interface RenderOptions {
+   ops?: HostOps;
+   /** STYLE_IDS table (styles.generated.ts) - class literal -> styleId. */
+   styles?: Record<string, number>;
++  /** PATH_IDS table (styles.generated.ts) — `<Path>` key → PATH TABLE index + 1. */
++  paths?: Record<string, number>;
+   /** App pack; defaults to globalThis.__pak when present. */
+   pak?: ArrayBuffer;
+ }
+@@ -146,6 +148,7 @@ export function render(code: VaporRenderRoot, opts: RenderOptions = {}): () => v
+ 
+   setStyleResolver(resolveStyle);
+   if (opts.styles) registerStyles(opts.styles);
++  if (opts.paths) registerPaths(opts.paths);
+ 
+   const nativeTextureTable = host.kind === "native"
+     ? (host.ops as HostOps & { __textures?: Record<string, number> }).__textures
+@@ -285,6 +288,7 @@ export function mount(code: VaporRenderRoot, opts: MountOptions = {}): () => voi
+   return render(code, {
+     ops,
+     styles: opts.styles ?? DEFAULT_STYLE_IDS,
++    paths: opts.paths ?? DEFAULT_PATH_IDS,
+     pak: opts.pak,
+   });
+ }
+diff --git a/framework/src/index.ts b/framework/src/index.ts
+index aca571c2..5b352d39 100644
+--- a/framework/src/index.ts
++++ b/framework/src/index.ts
+@@ -40,7 +40,7 @@ import {
+ } from "./renderer.ts";
+ import { setOverlayRoot } from "./overlay.ts";
+ import { mountAuxiliarySurface, unmountAuxiliarySurface } from "./display.ts";
+-import { registerStyles, resolveStyle } from "./styles.ts";
++import { registerPaths, registerStyles, resolveStyle } from "./styles.ts";
+ import { handleFrame, setAuxiliaryHitRoot, setHitRoot, setInputRoot, withDeferredPress, type DeferredPress } from "./input.ts";
+ import { __runGestures, resetGestures } from "./gesture.ts";
+ import { installTouchActivation } from "./touch-activation.ts";
+@@ -57,7 +57,7 @@ import { __drainEffects, __effectDepth, resetEffects } from "./effects.ts";
+ import { __servicePumpCount, runServicePumps } from "./services.ts";
+ import { filterFrameInput, mountSystemLayers } from "./system-layers.ts";
+ import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
+-import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
++import { PATH_IDS as DEFAULT_PATH_IDS, STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
+ import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
+ 
+ export interface RenderOptions {
+@@ -65,6 +65,8 @@ export interface RenderOptions {
+   ops?: HostOps;
+   /** STYLE_IDS table (styles.generated.ts) — class literal → styleId. */
+   styles?: Record<string, number>;
++  /** PATH_IDS table (styles.generated.ts) — `<Path>` key → PATH TABLE index + 1. */
++  paths?: Record<string, number>;
+   /** App pack; defaults to globalThis.__pak when present. */
+   pak?: ArrayBuffer;
+ }
+@@ -256,6 +258,7 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
+ 
+   setStyleResolver(resolveStyle);
+   if (opts.styles) registerStyles(opts.styles);
++  if (opts.paths) registerPaths(opts.paths);
+ 
+   const nativeTextureTable = host.kind === "native"
+     ? (host.ops as HostOps & { __textures?: Record<string, number> }).__textures
+@@ -435,6 +438,7 @@ export function mount(code: () => unknown, opts: MountOptions = {}): () => void
+   const dispose = render(code, {
+     ops,
+     styles: opts.styles ?? DEFAULT_STYLE_IDS,
++    paths: opts.paths ?? DEFAULT_PATH_IDS,
+     pak: opts.pak,
+   });
+   return dispose;
+diff --git a/framework/src/native-tree.ts b/framework/src/native-tree.ts
+index bbc72025..f3c82ba9 100644
+--- a/framework/src/native-tree.ts
++++ b/framework/src/native-tree.ts
+@@ -5,6 +5,7 @@ import { NODE_TYPE, PROP, ROOT_ID, STYLE_ID_NONE, type PropName } from "../../co
+ import { encodePropValue, getHost, getOps } from "./host.ts";
+ import { __notifyTreeMutation, notifyDetached, registerFocusable, registerPress } from "./input.ts";
+ import { clearNodeReferences } from "./model-node-ref.ts";
++import { resolvePath } from "./styles.ts";
+ 
+ export interface NodeMirror {
+   /** Native generation-tagged node id. */
+@@ -321,7 +322,7 @@ export function setStyleResolver(fn: (cls: string) => number | undefined): void
+ }
+ 
+ /** Non-strict-host miss counters (PSP: don't crash, count). */
+-export const missCounters = { unknownClass: 0, unknownTexture: 0, unknownSurface: 0 };
++export const missCounters = { unknownClass: 0, unknownTexture: 0, unknownSurface: 0, unknownPath: 0 };
+ 
+ const textures = new Map<string, number>();
+ 
+@@ -618,6 +619,33 @@ function setClass(node: NodeMirror, value: unknown): void {
+   ops.setStyle(node.id, styleId);
+ }
+ 
++/** `path` (pocket-motion): the PATH TABLE entry a `<Path>`'s d and viewBox
++ *  baked, by the key the component computed (framework/src/path-key.ts). */
++function setPath(node: NodeMirror, value: unknown): void {
++  const ops = getOps();
++  treeMutated();
++  if (value == null || value === "") {
++    ops.setProp(node.id, PROP.path, encodePropValue("path", 0));
++    return;
++  }
++  if (typeof value !== "string") {
++    throw new Error("PocketJS: path must be a <Path> key string");
++  }
++  const id = resolvePath(value);
++  if (id === undefined) {
++    if (getHost().strict) {
++      throw new Error(
++        `PocketJS: <Path> outline ${value.length > 120 ? value.slice(0, 117) + "..." : value} was not baked - ` +
++          "the build bakes the d and viewBox written as string literals, arrays of them, or module consts of either, " +
++          "at the <Path> or at the component that passes them to it",
++      );
++    }
++    missCounters.unknownPath++;
++    return;
++  }
++  ops.setProp(node.id, PROP.path, encodePropValue("path", id));
++}
++
+ function setSrc(node: NodeMirror, value: unknown): void {
+   const ops = getOps();
+   if (value == null || value === "") {
+@@ -739,6 +767,9 @@ export function setProp<T>(node: NodeMirror, name: string, value: T, prev?: T):
+     case "src":
+       setSrc(node, value);
+       return value;
++    case "path":
++      setPath(node, value);
++      return value;
+     case "sprite":
+       setSpriteSrc(node, value);
+       return value;
+diff --git a/framework/src/path-key.ts b/framework/src/path-key.ts
+new file mode 100644
+index 00000000..0c5cf5d4
+--- /dev/null
++++ b/framework/src/path-key.ts
+@@ -0,0 +1,13 @@
++// The key a `<Path>` resolves through (pocket-motion patch 0043).
++//
++// A `<Path>`'s `d` (one string, or the morph keys as an array) and its
++// `viewBox` name ONE PATH TABLE entry. The build (tools/build.ts) bakes an
++// entry per distinct pair it finds written as literals and records each
++// pair's key in the generated styles module; at mount the component computes
++// the same key from the values it was given and the renderer looks it up.
++// Sharing this one function is what makes the two agree.
++
++/** The PATH_IDS key of a `<Path>`'s `d` and `viewBox`. */
++export function pathKey(d: string | readonly string[], viewBox?: string): string {
++  return JSON.stringify([typeof d === "string" ? [d] : [...d], viewBox ?? null]);
++}
+diff --git a/framework/src/primitives.ts b/framework/src/primitives.ts
+index 62b872ed..edef4474 100644
+--- a/framework/src/primitives.ts
++++ b/framework/src/primitives.ts
+@@ -6,13 +6,14 @@
+ // tests can import the public entry without a Solid transform step.
+ 
+ import type { JSX as SolidJSX } from "solid-js";
+-import { createRenderEffect, createSignal, onCleanup, untrack } from "solid-js";
++import { createRenderEffect, createSignal, mergeProps, onCleanup, splitProps, untrack } from "solid-js";
+ import { ResourceBoundary } from "./resource-boundary.ts";
+ import { pending, type ResourceState } from "./resource-state.ts";
+ import type { PreparedText, TextResource } from "./fonts.ts";
+ import { createElement, spread } from "./renderer.ts";
+ import type { NodeMirror } from "./renderer.ts";
+ import type { PropName } from "../../contracts/spec/spec.ts";
++import { pathKey } from "./path-key.ts";
+ 
+ /** Inline style: spec PROP names only, so a misspelt or CSS-style name is a type error. */
+ export type StyleObject = { [K in PropName]?: number | string };
+@@ -34,6 +35,19 @@ export interface ViewProps {
+   children?: SolidJSX.Element;
+ }
+ 
++export interface PathProps extends ViewProps {
++  /**
++   * SVG path data, or the morph keys as an array (`morph-[f]` moves between
++   * them). Written as string literals, arrays of them, or module consts of
++   * either: the build bakes what it can read there, and an outline it did
++   * not bake is refused at mount.
++   */
++  d: string | readonly string[];
++  /** `"x y w h"`: the frame `d` is drawn in, mapped onto the node's box
++   *  (xMidYMid meet). Without it `d` is in the node's own px. */
++  viewBox?: string;
++}
++
+ export interface TextProps {
+   /** A prepared whole-text lease. Its immutable text and font slot own content. */
+   resource?: TextResource;
+@@ -99,6 +113,23 @@ export function View(props: ViewProps): SolidJSX.Element {
+   return primitive("view", props as Record<string, unknown>);
+ }
+ 
++/**
++ * A vector outline (pocket-motion): a View that also draws a baked path —
++ * filled (`fill-*`), stroked (`stroke-*`), trimmed (`trim-*`) and morphed
++ * (`morph-[f]`), every one of them keyframe-animatable.
++ */
++export function Path(props: PathProps): SolidJSX.Element {
++  // d and viewBox name ONE table entry together, so the host sees one
++  // attribute — the key the build baked them under — and the order the two
++  // props arrive in cannot matter.
++  const [own, rest] = splitProps(props, ["d", "viewBox"]);
++  return primitive("view", mergeProps(rest, {
++    get path() {
++      return pathKey(own.d, own.viewBox);
++    },
++  }) as unknown as Record<string, unknown>);
++}
++
+ export function Text(props: TextProps): SolidJSX.Element {
+   // The presence of this prop selects the resource form for this component's lifetime.
+   if ("resource" in props) {
+diff --git a/framework/src/styles.generated.ts b/framework/src/styles.generated.ts
+index ce075e3b..8e987fcf 100644
+--- a/framework/src/styles.generated.ts
++++ b/framework/src/styles.generated.ts
+@@ -8,6 +8,9 @@
+ /** class literal -> styleId (record index in ui:styles / styles.bin). */
+ export const STYLE_IDS: Record<string, number> = {};
+ 
++/** `<Path>` key (framework/src/path-key.ts) -> PATH TABLE index + 1 (pocket-motion). */
++export const PATH_IDS: Record<string, number> = {};
++
+ /** Number of records in styles.bin (valid styleIds are 0..COUNT-1). */
+ export const STYLE_COUNT = 0;
+ 
+diff --git a/framework/src/styles.ts b/framework/src/styles.ts
+index c445c63b..be54b58f 100644
+--- a/framework/src/styles.ts
++++ b/framework/src/styles.ts
+@@ -53,6 +53,20 @@ export function resolveStyle(cls: string): number | undefined {
+   return alias === ALIAS_AMBIGUOUS ? undefined : alias;
+ }
+ 
++const paths = new Map<string, number>();
++
++/** Register a `<Path>` key -> PATH TABLE index + 1 table (styles.generated.ts
++ *  PATH_IDS, pocket-motion). Keys come from `pathKey` and are looked up
++ *  verbatim: there is no normalisation to alias. */
++export function registerPaths(table: Record<string, number>): void {
++  for (const key of Object.keys(table)) paths.set(key, table[key]!);
++}
++
++/** PROP.path value (index + 1) for a `<Path>` key, or undefined if the build never baked it. */
++export function resolvePath(key: string): number | undefined {
++  return paths.get(key);
++}
++
+ /** Number of registered class literals (diagnostics/tests). */
+ export function styleCount(): number {
+   return verbatim.size;
+diff --git a/tools/build.ts b/tools/build.ts
+index f06ce467..d41f9cda 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -54,6 +54,7 @@ import {
+   parseFramework,
+   transformFile,
+   type LiteralSite,
++  type PathDecl,
+   type PocketFramework,
+ } from "../framework/compiler/jsx-plugin.ts";
+ import type { PocketConfig } from "../framework/src/config.ts";
+@@ -71,6 +72,9 @@ import {
+ import { bakeAtlases } from "../framework/compiler/bake-font.ts";
+ import { readFontConfig } from "../framework/compiler/font-config.ts";
+ import { bakeSvg } from "../framework/compiler/bake-svg.ts";
++import { compilePathEntry, PathDataError } from "../framework/compiler/path-data.ts";
++import { pathKey } from "../framework/src/path-key.ts";
++import type { PathEntry } from "../contracts/spec/spec.ts";
+ import {
+   assertDensityVariantDimensions,
+   densityVariantPath,
+@@ -325,6 +329,8 @@ const seenClass = new Set<string>();
+ const classAttrStrings = new Set<string>();
+ const codepoints = new Set<number>();
+ const visited = new Set<string>();
++/** `<Path>` outlines written as literals (pocket-motion), in walk order. */
++const pathDecls: Array<{ file: string; decl: PathDecl }> = [];
+ 
+ async function walk(file: string): Promise<void> {
+   if (visited.has(file)) return;
+@@ -347,6 +353,7 @@ async function walk(file: string): Promise<void> {
+   }
+   for (const s of res.classAttrStrings) classAttrStrings.add(s);
+   for (const cp of res.textCodepoints) codepoints.add(cp);
++  for (const decl of res.pathDecls) pathDecls.push({ file, decl });
+   // The framework's own modules are not the app author's to fix.
+   if (!file.startsWith(ROOT + "/framework/")) for (const site of res.literalSites) literalSites.push({ file, site });
+   for (const spec of importSpecifiers(src)) {
+@@ -374,6 +381,33 @@ console.log(
+ // compile styles + fonts + images
+ // ---------------------------------------------------------------------------
+ 
++// `<Path>` outlines (pocket-motion): one PATH TABLE entry per distinct d and
++// viewBox, in the order the walk met them, baked before the styles so a
++// refusal names where the source wrote it.
++const bakedPaths: Array<{ key: string; entry: PathEntry }> = [];
++{
++  const seen = new Set<string>();
++  const errors: string[] = [];
++  const base = projectRoot.endsWith("/") ? projectRoot : projectRoot + "/";
++  for (const { file, decl } of pathDecls) {
++    const key = pathKey(decl.d, decl.viewBox);
++    if (seen.has(key)) continue;
++    seen.add(key);
++    try {
++      bakedPaths.push({ key, entry: compilePathEntry(decl.d, decl.viewBox) });
++    } catch (e) {
++      if (!(e instanceof PathDataError)) throw e;
++      errors.push(`${file.startsWith(base) ? file.slice(base.length) : file}:${decl.line}:${decl.column}: <Path> d does not bake: ${e.message}`);
++    }
++  }
++  if (errors.length > 0) {
++    for (const line of errors) console.error(`error: ${line}`);
++    console.error(`PocketJS build: ${errors.length} <Path> outline(s) do not bake.`);
++    process.exit(1);
++  }
++  if (bakedPaths.length > 0) console.log(`  paths: ${bakedPaths.length} outline(s) baked`);
++}
++
+ registerAnimationTheme(config.theme);
+ // Keyframe timelines are frame-baked; they must count frames at the same
+ // rate the realm ticks (transition-* stays in ms and converts at runtime).
+@@ -385,7 +419,7 @@ setAnimationTickRate(tickHz);
+ let refused: readonly UncompiledClass[] = [];
+ const styles = (() => {
+   try {
+-    return compileClasses(classStrings, { fromClassAttribute: classAttrStrings });
++    return compileClasses(classStrings, { fromClassAttribute: classAttrStrings, paths: bakedPaths });
+   } catch (e) {
+     if (!(e instanceof UncompiledClassError)) throw e;
+     refused = e.refused;

@@ -1,18 +1,17 @@
 # Vector paths — `<Path>`: baked outlines, filled, stroked, trimmed and morphed
 
-Design, before the patch. This is stage 1 of a `motion`-class patch that lands
-after the pin bump: the design, a prototype on a scratch copy of the vendored
-tree, its Rust tests, the measurements, and the list of what the compiler, the
-spec and the catalogue have to learn. The prototype is
-[`baselines/vector-paths/prototype.diff`](../baselines/vector-paths/prototype.diff),
-a diff against the tree `scripts/vendor.ts` builds today (e0b37e2 + patches
-0001-0022). Every number below is in
-[`baselines/vector-paths.md`](../baselines/vector-paths.md) with the command
-that produced it. `patches/0013-mask-op.design.md` is the template. Where a
-number is a choice, the text says so.
-
-When the patch lands, this file becomes `patches/0024-vector-paths.design.md`,
-and its "what building it changed" section records what the landing changed.
+The design of two `motion`-class patches: `0042-vector-path-op.patch`, the
+op, the table and the geometry in the core, and `0043-path-component.patch`,
+the `<Path>` declaration the build bakes. It was written as stage 1, before
+the pin moved, against a prototype on a scratch copy of the vendored tree
+([`baselines/vector-paths/prototype.diff`](../baselines/vector-paths/prototype.diff),
+e0b37e2 + patches 0001-0022); the patches are that prototype rebased onto
+66caf4e5 + 0001-0041 and the compiler half it did not have. Every number
+below is in [`baselines/vector-paths.md`](../baselines/vector-paths.md) with
+the command that produced it, and the last section, "What building it
+changed", records each place the landing departs from stage 1 and why.
+`patches/0013-mask-op.design.md` is the template. Where a number is a choice,
+the text says so.
 
 ## What it is for
 
@@ -50,28 +49,30 @@ the build did not bake is refused at mount, the way a dynamic class is.
 
 | prop | id | kind | animatable | default |
 |---|---:|---|---|---|
-| `path` | 183 | int: table index + 1 | no | 0 (none) |
-| `fillColor` | 184 | color | bit 57 | transparent |
-| `fillRule` | 185 | enum `FillRule` {NonZero, EvenOdd} | no | NonZero |
-| `strokeColor` | 186 | color | bit 58 | transparent |
-| `strokeWidth` | 187 | f32, in the path's own units | bit 59 | 1 |
-| `strokeJoin` | 188 | enum `StrokeJoin` {Miter, Round, Bevel} | no | Miter |
-| `strokeCap` | 189 | enum `StrokeCap` {Butt, Round, Square} | no | Butt |
-| `strokeMiter` | 190 | f32 miter limit | no | 4 |
-| `trimStart` | 191 | f32 fraction of arc length | bit 60 | 0 |
-| `trimEnd` | 192 | f32 fraction | bit 61 | 1 |
-| `trimOffset` | 193 | f32, wraps (1 = once round) | bit 62 | 0 |
-| `trimMode` | 194 | enum `TrimMode` {Each, Whole} | no | Each |
-| `morph` | 195 | f32 morph key, 0..keys-1 | bit 63 | 0 |
+| `path` | 199 | int: table index + 1 | no | 0 (none) |
+| `fillColor` | 200 | color | bit 58 | transparent |
+| `fillRule` | 201 | enum `FillRule` {NonZero, EvenOdd} | no | NonZero |
+| `strokeColor` | 202 | color | bit 59 | transparent |
+| `strokeWidth` | 203 | f32, in the path's own units | bit 60 | 1 |
+| `strokeJoin` | 204 | enum `StrokeJoin` {Miter, Round, Bevel} | no | Miter |
+| `strokeCap` | 205 | enum `StrokeCap` {Butt, Round, Square} | no | Butt |
+| `strokeMiter` | 206 | f32 miter limit | no | 4 |
+| `trimStart` | 207 | f32 fraction of arc length | bit 61 | 0 |
+| `trimEnd` | 208 | f32 fraction | bit 62 | 1 |
+| `trimOffset` | 209 | f32, wraps (1 = once round) | bit 63 | 0 |
+| `trimMode` | 210 | enum `TrimMode` {Each, Whole} | no | Each |
+| `morph` | 211 | f32 morph key, 0..keys-1 | bit 64 | 0 |
 
 The defaults are SVG's (width 1, miter join, limit 4, butt cap, nonzero),
 except colour: both colours default to transparent, so neither the fill nor
-the stroke draws until it is asked for. The ids continue the pocket-motion
-paint group after `bgClip` (182) and stay under 256, which the style record's
-`u8` propId requires. The anim bits continue after 56 and are timeline-only
-(above 31), like every paint prop since 0017. `BgClip` gains `Path` (2). The
-prototype carries all of this in `contracts/spec/spec.ts` and the regenerated
-`spec.rs`.
+the stroke draws until it is asked for. The ids are one block after
+`shutterHold` (198) and stay under 256, which the style record's `u8` propId
+requires; 187-197 were free too, but they are eleven ids and these are
+thirteen. The anim bits continue after `gradVia4Pos` (57) and are
+timeline-only (above 31), like every paint prop since 0017; an animated value
+is stored by prop id, so bit 64 needs no wider mask. `BgClip` gains `Path`
+(2). `contracts/spec/spec.ts` carries all of this and `gen-rust.ts`
+regenerates `spec.rs` and the microts copies from it.
 
 Class tokens use Tailwind's own names where Tailwind has one:
 
@@ -108,10 +109,13 @@ and the draw list stays the complete pixel truth.
 ## The table
 
 The table is appended to `styles.bin` after the ANIM TABLE and counted by the
-header's `u16` at offset 10, which is `reserved (0)` today. A composition with
-no `<Path>` therefore writes the same bytes it writes now, and no ledger digest
-moves. The prototype's `StyleTable::parse` reads the table there, and a
-truncated one makes `load_styles` refuse the blob (tested).
+header's `u16` at offset 10, which was `reserved (0)`. A composition with no
+`<Path>` therefore writes the bytes it wrote before, and no ledger digest moved
+(measured: every recorded digest reproduced with both patches applied).
+`StyleTable::parse` reads the table there, and a truncated one makes
+`load_styles` refuse the blob (tested). `encodeStyleTable` and
+`decodeStyleTable` in `contracts/spec/spec.ts` write and read it, and the
+encoder refuses what the core would.
 
     Path entry (little-endian, unaligned, like the style records):
       +0  u16  verbCount
@@ -125,17 +129,26 @@ The parser refuses an entry whose first verb is not a move, an unknown verb,
 zero or more than 8 shapes, shapes of different point counts, and any
 non-finite coordinate (all tested).
 
-The compiler normalises `d` to those four verbs: relative to absolute, `H`/`V`
-to `L`, `S`/`T` to `C` by reflection, `Q` to `C` by exact degree elevation, `A`
-to cubics of at most 90° each, and every subpath after a `Z` reopened by an
-explicit move. **The arc conversion is the one place a transcendental enters,
-and it must not use `Math.sin`.** JavaScriptCore's `Math.sin`, `cos` and
-`atan2` are implementation-defined and may call the host libm, so a pak's bytes
-would depend on the machine that built it. The compiler uses the core's own
-polynomials instead (the 5-term Taylor sine `draw.rs` uses, and an
-octant-reduced `atan2` like upstream's `fmath.rs`), evaluated through
-`Math.fround` at every step, plus `Math.sqrt`, which IEEE 754 requires to be
-correctly rounded.
+The compiler (`framework/compiler/path-data.ts`) normalises `d` to those four
+verbs: relative to absolute, `H`/`V` to `L`, `S`/`T` to `C` by reflection, `Q`
+to `C` by exact degree elevation, `A` to cubics of at most 45° each, and every
+subpath after a `Z` reopened by an explicit move. A number after a `Z` is
+refused, not read as a command. **The arc conversion must not use
+`Math.sin`.** JavaScriptCore's `Math.sin`, `cos` and `atan2` are
+implementation-defined and may call the host libm, so a pak's bytes would
+depend on the machine that built it. The arc never becomes an angle at all:
+from SVG's centre construction (F.6.5) it keeps the start and end as unit
+vectors, cuts the sweep in halves by bisecting them — `a + b` normalised near
+a full turn's ends, the difference turned back a quarter near a half turn,
+where the sum cancels — until every piece is within 45°, so an arc is 1, 2, 4
+or 8 cubics, and takes each piece's handle length `4/3 tan(α/4)` from its
+cosine and sine by two half-angle steps. That is `+ - * /` and `Math.sqrt`,
+which IEEE 754 rounds correctly on every host. The one angle left is the
+x-axis rotation the author wrote, in degrees: `cosSinDeg` reduces it exactly,
+is exact at multiples of 90°, and evaluates a Taylor series in f64 elsewhere.
+A quarter-turn cubic sits up to 2.7e-4 r off the true ellipse, 0.27 px at
+r = 1000; an eighth, under 4.3e-6 r. `tests/vector-paths.test.ts` pins two
+arcs' f32 bits, and the determinism workflow re-runs it on Linux/x86-64.
 
 Morph keys must share their verbs after normalisation. Where one key has a
 line and another a cubic at the same index, the line is promoted to a cubic
@@ -169,9 +182,20 @@ edge's stepping state fit `i32`. A contour wholly outside the band is dropped,
 not clipped. Code 71 is the next one in the reserved range, and
 `MOTION_DRAW_OPS` gains `"path"`.
 
+Five readers walk a draw list in the core and each takes an op's length from
+a table of its own: the rasteriser, the damage decoder, the tests'
+`validate_drawlist`, and — added upstream after stage 1 — the compositor's
+`draw_op_len` and `Ui::compositor_surface_frames`. An op none of them knows
+ends the walk, so every one learns PATH's `len`, and every one refuses a
+`len` shorter than the five header words, which would otherwise never
+advance (`every_draw_list_walker_steps_over_a_path` holds the two compositor
+walkers).
+
 A node emits at most two PATH ops, the fill and then the stroke (SVG's paint
-order). A gradient fill is the fill op between PAINT_PUSH and PAINT_POP,
-painted white, exactly as 0019 paints a ground or a glyph run.
+order), after its ground and before its children. A gradient fill is the fill
+op between PAINT_PUSH and PAINT_POP, painted white, exactly as 0019 paints a
+ground or a glyph run; a fill that the guard band leaves empty takes its
+PAINT_PUSH with it rather than leaving an empty bracket.
 
 ## Coverage
 
@@ -200,6 +224,14 @@ The test asserts both that every one of those differences is a sample exactly
 on a right or bottom edge, and that no sample anywhere else differs. So PATH is
 POLY's lattice, POLY's levels and POLY's blend, with a different answer on the
 boundary set and the same answer everywhere off it.
+
+Two patches since stage 1 sit beside this. `0024` moved `PolyScan`, which
+POLY and MASK_PUSH share, to sixteenths of a pixel with POLY byte-identical,
+so the lattice and the comparison above are unchanged (the count was
+re-measured equal). `0030` gave TRI and TEX_TRI the same idea for pixel
+centres: a centre exactly on an edge two triangles share is drawn by one of
+them. PATH's rule is that rule on the 4x4 lattice, and a PATH and a POLY that
+share an edge still both count its samples — POLY is unchanged by either.
 
 What PATH does **not** fix is conflation. Two abutting shapes are still two
 blends, so a seam pixel half-covered by each shows `(1 - h_a/16)(1 - h_b/16)`
@@ -291,8 +323,9 @@ Per frame, in the draw walk, the core turns an entry into ops:
 
 **Determinism** is the argument the rest of the core already makes, applied
 to more code. Every step is f32 `+ - * /`, comparisons, and a Newton square
-root (a bit-trick seed and three steps: `draw.rs`'s sequence, and upstream's
-`fmath::sqrtf`). Rust never contracts `a * b + c` into an FMA; wasm has no
+root: `fmath::sqrtf`, which the pin carries (a bit-trick seed and three
+steps), behind a guard that reads a NaN as 0 — fmath's own guard is
+`x <= 0`, which a NaN passes. Rust never contracts `a * b + c` into an FMA; wasm has no
 FMA outside relaxed-simd, which is not enabled; nothing calls libm. The one
 f32 result that differs between x86, ARM and wasm is the bit pattern of a NaN,
 so no NaN reaches an output:
@@ -326,6 +359,12 @@ argued: the scene digests below are equal on every target tried.
   byte-identical to a RECT under the same mask (tested), and the pinned scenes
   include a path under a mask, one under a gradient paint, and one in a
   blurred, shadowed layer.
+- A shutter (`0034`) re-evaluates transform timelines between ticks, and a
+  path's geometry is rebuilt from its node's world affine in every sample, so
+  a moving or turning path blurs. Its trim, morph, width and colours keep the
+  frame's tick in every sample — the shutter integrates transform tracks
+  only — so a draw-on's tip is not smeared and a morph is not ghosted. A path
+  under a shutter costs its geometry once per sample.
 
 ## What the gates see
 
@@ -338,8 +377,12 @@ argued: the scene digests below are equal on every target tried.
   removes both of its ops (tested), and its pixels decide `inPicture`. A path
   trimmed to nothing emits no geometry and reads as invisible by declaration;
   a path entirely under another reads as covered.
-- `keyframes` reads the new tracks like any other once the seven new
-  animatable props have names in its table.
+- `keyframes` reads the new tracks like any other and needed no change: it
+  takes prop names from the vendored spec.
+- `layout` calls a named node that emits nothing `text_not_painted`, whatever
+  its kind, so a signature before its draw-on is reported, by that name, as
+  invisible by declaration; `compositions/vector-paths` excuses it with a
+  `layoutAllow` entry saying so.
 - `damage.rs` takes the op's length from word 1 and its bounds from its
   vertices. An incremental render of a moving path equals the full render
   (tested, and red with the bound one pixel short).
@@ -364,6 +407,10 @@ wrappers, abutting tiles, and the three dense illustrations below at 1× and
 | darwin/arm64, wasm32 | Bun 1.3.11 / JSC |
 | linux/x86-64, native | `rust:1.97.1-slim-bookworm`, linux/amd64 |
 | linux/x86-64, wasm32 | `oven/bun:1.3.11`, linux/amd64 |
+
+At the landing scene 10 was re-pinned (see "What building it changed"), and
+the two darwin/arm64 rows were measured again on the landed core: 16 of 16
+scenes equal. The two x86-64 rows are stage 1's and were not re-run.
 
 The two x86-64 rows ran under Docker Desktop on Apple silicon, so their
 instructions were x86-64 translated, not run on x86 hardware. The x86-64
@@ -432,72 +479,68 @@ trim, painting the box under `bg-clip-path`, or drawing a hidden node. One
 guard did not guard on its first run: morph exactness was compared through
 quantised words, which hide one ulp. It now compares the points bit for bit.
 
-## What the compiler, the spec and the catalogue have to learn
+## The declaration, as built (0043)
 
-Prototyped, in the engine (`prototype.diff`, about 3,800 lines with tests):
-`contracts/spec/spec.ts` (props, anim bits, enums, `DRAW_OP.path`, both
-format comments) and the regenerated `spec.rs`; `engine/core/src/path.rs`
-(new: table, morph, flatten, trim, stroke, emission); `raster.rs` (the op);
-`draw.rs` (`emit_node_path`, `bg-clip-path`); `style.rs` (the fields and the
-table in `styles.bin`); and `damage.rs`.
+- **`framework/compiler/path-data.ts`** (new): the grammar, the four-verb
+  normalisation, the arc conversion above, morph-key alignment and its
+  refusals, and `parseViewBox`. A refusal is a `PathDataError` naming the
+  character offset, or the first normalised command at which two keys part
+  and the source command each came from.
+- **`framework/compiler/jsx-plugin.ts`**: the collector records, as
+  `pathDecls`, every `d` attribute whose value it can read — a string, a
+  backtick with nothing interpolated, a `+` of two (a long `d` written across
+  lines), an array of those, a `const` of any of them, an element of a
+  `const` array by literal index, the parameter of a `.map` callback over one
+  (each element, so `{ICONS.map((d) => <Path d={d} />)}` bakes every icon,
+  and an array of key arrays bakes a set of morphs), and the arms of a
+  ternary, `||` and `??` (of `&&` the right only) — paired with the
+  `viewBox` written on the same element, on ANY element, so a component that
+  forwards `d` to a `<Path>` is baked from its call site. A `d` it cannot
+  read — an import from another module, a string computed at run time, a
+  destructured `.map` parameter — records nothing and is left to mount. The literals stay ordinary
+  literals: a `const` used as path data and as text keeps its glyphs. The
+  field rides in the transform cache entry, whose file is in the cache key,
+  so no shape marker was needed.
+- **`tools/build.ts`**: one PATH TABLE entry per distinct `d` and `viewBox`,
+  in walk order, baked before the styles so a refusal is printed as
+  `file:line:column: <Path> d does not bake: …` and the build exits 1.
+- **`framework/compiler/tailwind.ts`**: `compileClasses` takes the entries and
+  writes them into `styles.bin`; `generateStylesModule` writes `PATH_IDS`,
+  key to index + 1, beside `STYLE_IDS`. The tokens are the table above, and
+  `bg-clip-path`; a negative width, a miter limit under 1, a negative morph
+  and a fraction that is not a number do not parse, which a class= attribute
+  refuses (`0041`).
+- **`framework/compiler/animation.ts`**: the seven prop names and `fill`,
+  `stroke`, `stroke-width`. `stroke-dashoffset` stays unsupported.
+- **`framework/src`**: `path-key.ts` (new) is the one function the build and
+  the runtime both key an outline by; `Path` (in `primitives.ts`, exported by
+  `components.ts`) is a View that hands the host ONE attribute, that key, so
+  the order `d` and `viewBox` arrive in cannot matter; `native-tree.ts`
+  resolves it through `styles.ts`'s `resolvePath` and sets `PROP.path`, and
+  on a strict host refuses a key the build did not bake; each `index*.ts`
+  registers `PATH_IDS` at mount as it registers `STYLE_IDS`.
 
-Not prototyped, in order of dependency:
+In this repository:
 
-1. **`framework/compiler/path-data.ts`** (new). The full SVG path grammar:
-   implicit repeats, exponents, and arc flags written without separators
-   (`a1 1 0 00 1 1`). Normalisation to the four verbs; arcs by the polynomial
-   trigonometry above; morph-key alignment and its refusals; viewBox parsing.
-   Output is `PathEntry` bytes. It has its own tests, including the arc
-   conversion pinned bit for bit against values recorded once.
-2. **`framework/compiler/jsx-plugin.ts`**. Record the literal values of `d`
-   and `viewBox` on `<Path>` elements, as 0012 records `classAttrStrings`:
-   whole values only, string literals, arrays of them, and module consts that
-   resolve to either. The new field rides in the transform cache entry; the
-   cache needs no shape marker, because `CacheEntry`'s file is in its key.
-3. **`tools/build.ts`**. Write the PATH TABLE after the ANIM TABLE with its
-   count at offset 10. Emit the `d`-to-index map into the generated styles
-   module that 0023 moves to `<outdir>/<output>.styles.ts`.
-4. **`framework/src/components.ts`**. `Path`: a `View` that resolves its `d`
-   through that map and `setProp`s `path`; an unknown `d` throws the way an
-   unknown class does.
-5. **`framework/compiler/tailwind.ts`**. The tokens in the table above;
-   `bg-clip-path` takes the paint path like `bg-clip-text`. Refuse a negative
-   width, a miter limit under 1 and a non-finite trim fraction.
-6. **`framework/compiler/animation.ts`**. The seven keyframe names and the
-   three CSS spellings.
-7. **`contracts/spec/spec.ts`**. `encodeStyleTable` and `decodeStyleTable`
-   learn the table, and `tests/tailwind.test.ts` gets the tokens.
-
-In this repository, once the patch exists:
-
-- `src/vendor/draw-ops.ts`: add `"path"` to `MOTION_DRAW_OPS`;
-  `tests/patches.test.ts` already holds the range and the collision.
-- `src/catalog/surface.ts` gets six rows, and `CAPABILITIES.md` is
-  regenerated:
-  - `paint.path`, with a collect probe that `d` literals are recorded and
-    refusals for a dynamic `d` and mismatched keys;
-  - `paint.fill`;
-  - `paint.stroke` (with join, cap and limit);
-  - `motion.trim`;
-  - `motion.morph`;
-  - `paint.bg-clip-path`.
-
-  Each is `probed` with BakeProbes in the shape text-stroke's rows have, e.g.
-  `trim-end-[0.5]` compiles to `trimEnd = 0x3f000000`. G6 executes them.
-- `src/cli/commands/keyframes.ts`: names for anim bits 57-63, if its header
-  prints names rather than ids.
-- A fixture, `compositions/vector-paths`, in both ledgers. It needs a
-  signature draw-on with `entersBy`/`dwellFrames` assertions, a morph, a
-  flat-vector cluster of abutting shapes, a stroked wireframe under a
-  rotation, and one path under `overflow-mask`. The digest ledger puts it on
-  ubuntu x86-64 hardware in `.github/workflows/determinism.yml` on every push.
-  That makes the x86 claim measured on hardware, the way every other op's is.
-- `AUTHORING.md` gets a section, "A line that draws itself", whose commands
-  `tests/authoring.test.ts` runs. `skills/pocket-motion/SKILL.md` gets one
-  line, `AGENTS.md` one bullet, and `patches/README.md` the 0024 row (class
-  `motion`).
-- `src/render/visibility.ts` needs no code. Its header comment should say
-  that a path trimmed to nothing is invisible by declaration.
+- `src/vendor/draw-ops.ts`: `"path"` in `MOTION_DRAW_OPS`, which
+  `tests/patches.test.ts` holds to the range.
+- `src/catalog/surface.ts`, and `CAPABILITIES.md` from it: six probed rows —
+  `paint.path`, `paint.fill`, `paint.stroke`, `paint.bg-clip-path`,
+  `animation.trim`, `animation.morph`. Tokens and keyframes are G6 bake
+  probes; the collector and the baker are a new probe kind, `pathProbes`, run
+  by gate G9 (`tests/catalog.test.ts`), which runs the real `transformFile`
+  and `compilePathEntry`.
+- `tests/vector-paths.test.ts`: the build's located refusals, mount's
+  refusal of an outline the build did not bake (and its control, a `d`
+  forwarded by a component), the two arcs' bits, and `cosSinDeg`.
+- `compositions/vector-paths`, in both ledgers: a signature drawn on by
+  `trimEnd`, a blob morphing between a circle and a star under a gradient
+  fill, a hexagon of six abutting wedges, a wireframe globe in a viewBox
+  turning with a trimmed ring orbiting it, and a wave morphing under an
+  `overflow-mask` window. Its sidecar's `assertions[]` state what each is
+  for, including that the caption is shown before the signature, which a
+  draw-on that ignored its trim would fail.
+- `src/render/visibility.ts` needed no code.
 
 ## SVG import
 
@@ -520,14 +563,15 @@ Importing a whole SVG document is something else:
 None of it touches the engine, the op or the table format, so it can land
 later as a compiler-only change without moving anything this patch pins.
 Upstream's `framework/compiler/bake-svg.ts` already tokenises `d`, but an
-importer cannot reuse its transform handling, for two reasons found while
-assessing it:
+importer cannot reuse its transform handling as it stands. Stage 1 found two
+reasons; `0040` fixed one:
 
-- it calls `Math.cos`/`Math.sin` for `rotate()`;
-- it applies a transform list leftmost-first, which is the reverse of SVG's
-  order. Run here: a square under `translate(10,0) rotate(90)` drew nothing on
-  a 16×16 canvas where SVG puts it at x 8-10, and `rotate(90)
-  translate(10,0)` drew it there.
+- it calls `Math.cos`/`Math.sin` for `rotate()`, and for an arc's x-axis
+  rotation, and still does after `0040` (kept for byte identity, and
+  recorded in `AGENTS.md` as unmeasured across hosts);
+- it applied a transform list leftmost-first, the reverse of SVG's order
+  (`bake-svg-transform-order.ts` in the baselines reproduces it on the old
+  pin). `0040` applies SVG's order.
 
 Gradients, clip paths, `<use>`, CSS `<style>` sheets, text and filters stay
 out of any import until there is a composition that needs them.
@@ -542,6 +586,14 @@ out of any import until there is a composition that needs them.
   coverage** (the conflation fix), **boolean operations, text on a path.**
 - **Point-count equalisation for morphs.** Mismatched keys are refused, not
   resampled (above).
+- **A `d` from another module.** The collector reads a module's own
+  literals; an imported `const` is looked up at mount and refused. A
+  generator writes the literals into the composition, which is how this
+  repository's compositions are written anyway.
+- **Trim and morph under a shutter.** They hold the frame's tick in every
+  sample (above); only the path's transform blurs.
+- **`<Path>` for Octane and Vue Vapor.** The component is Solid's, like every
+  composition here; the other frameworks' component modules do not export it.
 - **Caching.** Geometry is rebuilt every frame. A cache keyed by entry,
   morph and affine would make a static path's geometry free; it is an
   optimisation with its own invalidation questions, measured above as 4-11 ms
@@ -549,24 +601,59 @@ out of any import until there is a composition that needs them.
 - **Other backends.** PSP, ESP32, Symbian, Vita, gpui and wgpu are not taught
   PATH, and a stream carrying it stops there. That is the `motion` class.
 
-## Footprint and order
+## Footprint
 
-In the patch, as prototyped: about 1,900 lines of engine code (`path.rs` is
-1,300 of them, a seventh of that comments, plus the regenerated `spec.rs`) and
-about 1,800 lines of engine tests and scenes. Then the compiler: an estimated 600 lines for
-`path-data.ts` with its tests, and about 150 across `jsx-plugin.ts`,
-`build.ts`, `tailwind.ts`, `animation.ts` and `components.ts`. In this
-repository, the fixture, the catalogue rows and the documents.
+`0042`: about 1,950 lines of engine code (`path.rs` is 1,300 of them, a
+seventh of that comments; the rest is the op in `raster.rs`, the walk in
+`draw.rs`, the fields in `style.rs`, the five walkers' lengths, and the
+generated spec files) and about 1,900 lines of engine tests and scenes.
+`0043`: about 450 lines of `path-data.ts` and 250 across the collector, the
+build, the tokens, the keyframe names and the component. In this
+repository, the fixture, `tests/vector-paths.test.ts`, the catalogue rows
+and gate, and the documents.
 
-Order, each step green before the next:
+Separately, in this order of use: dashes (a periodic trim), gradient
+strokes, a coverage-merging op for flat illustration, SVG import.
 
-1. Rebase the prototype onto the new pin (op 71 and props 183-195 if they are
-   still free; `fmath.rs` replaces the local square root if the pin carries
-   it), with the 24 core tests and the 16 pinned digests.
-2. `path-data.ts` and its tests, then the collection, the build and the
-   component.
-3. Tokens, keyframe names, catalogue rows.
-4. The fixture in both ledgers. The determinism workflow then checks the
-   digests on x86-64 hardware.
-5. The documents, the README row, `MOTION_DRAW_OPS`.
-6. Separately: SVG import, dashes, gradient strokes, the conflation op.
+## What building it changed
+
+Stage 1 was measured against e0b37e2 + 0001-0022. Between it and the landing
+the pin moved to 66caf4e5 and `0023`-`0041` landed. What that moved, and what
+building the compiler half decided:
+
+- **Ids.** PROP 183-186 went to `arcCap` (`0027`), `gradShape` (`0029`) and
+  `glowMode`/`glowThreshold` (`0033`), and 198 to `shutterHold` (`0034`),
+  which skipped 187-197 for this patch; that gap is eleven ids. The props are
+  199-211 in one block. Main's `skewX` (bit 38) shifted the paint bits by
+  one, so the anim bits are 58-64, not 57-63; bit 64 needs nothing wider,
+  because an animated value is stored by prop id. The op is still 71 and
+  `styles.bin`'s offset 10 was still reserved.
+- **Square root.** The pin carries `fmath.rs`; `path.rs` calls its `sqrtf`
+  behind its own NaN guard instead of keeping a copy.
+- **MASK_PUSH's format.** `0024` made it `2 + 2N` words of f32 pairs. Scene
+  10 and the masked-path test wrote the old `N` packed words, so after the
+  rebase both streams stopped at the mask and the test compared two grounds
+  — it passed with nothing under test. Both now write the mask through
+  `mask_push`, and the test asserts the mask let paint through (red with the
+  old format: `redcheck.py`).
+- **Scene 10's pixels.** With the mask written correctly, scene 10's
+  framebuffer moved from stage 1's `0xbb5836a02e7cc858`; with `0032`'s exact
+  divisor reverted it is that value byte for byte, so the move is `0032`'s,
+  in the layer's content-over-shadow composite. It is re-pinned; the other
+  fifteen scenes' thirty digests are stage 1's.
+- **Walkers.** Upstream added `compositor::draw_op_len` and
+  `Ui::compositor_surface_frames`, each with its own op-length table; both
+  learn PATH, and a test holds them (above).
+- **Arcs.** Stage 1 planned cubics of up to 90° from the core's 5-term sine
+  and an octant `atan2` through `Math.fround`. Built, the arc never becomes
+  an angle (unit-vector bisection and square roots), and the pieces are 45°:
+  a 90° cubic is 0.27 px off a circle of radius 1000.
+- **The collector.** Stage 1 named literals, arrays and module consts. A long
+  `d` is naturally written as `"…" + "…"`, and a set of shapes as a `.map`
+  over a const array; both are read now. The `d` is read on any element, so a
+  component that forwards it is baked from its call site, and its literals
+  stay class candidates and charset like any other.
+- **The component.** `d` and `viewBox` reach the host as one attribute, the
+  key, because two attributes would be resolved in whatever order the
+  renderer set them, and the first lookup would miss.
+- **`keyframes`** needed no change: it reads prop names from the vendored spec.

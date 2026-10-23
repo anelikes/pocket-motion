@@ -65,7 +65,8 @@ the day #301 merges at 11 every POLY in a stream would change number. Keeping
 unchanged on 2026-10-22 (last activity 2026-09-28); if upstream gives 11 to
 something else first, the no-shared-number test goes red on that bump and
 POLY takes whatever #301 then says. `0013`'s MASK_PUSH and MASK_POP are 64
-and 65, and move with nothing.
+and 65, and move with nothing; `0042`'s PATH is 71, the next after `0019`'s
+paint ops.
 
 ## What each one does, and where it stands upstream
 
@@ -109,6 +110,8 @@ patch's own header carries the full note.
 | 0034 | motion | a shutter: `ui_render_exposure` renders a frame as the integer average of N renders whose transform timelines are evaluated between ticks (`engine/core/src/shutter.rs`), never across a keyframe jump, centred on the frame's tick; `shutter-hold` (prop 198) keeps one node's own timelines at the tick. The sidecar's `shutter` key is what asks for it; design in `docs/shutter.design.md` | never; the header says why | new at this pin, after `0024`–`0033`; prop 198, past `glowThreshold` 186 |
 | 0040 | upstream | the build's SVG baker covers by scanline instead of testing every subsample against every edge — the same 4x4 samples, the same crossing arithmetic, so every pixel's count is the integer it was (`tests/fixtures/bake-svg-reference.ts` is the old baker, kept as the oracle) and a 952-cell hex grid takes 63 ms instead of 23 minutes of CPU — and draws strokes (width, miter/round/bevel joins, butt/round/square caps, miter limit, stroke-opacity), `<g>` with transform, inherited paint and group opacity, `A` arcs, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>` and `rect` `rx`; what would paint and is not drawn is refused instead of dropped | unsubmitted | written on 66caf4e5 |
 | 0041 | upstream | a token that does not parse, in a literal that is the whole value of a `class=` attribute (0012's record), is a build error naming every such token at the literal's file, line and column, where the literal compiled to nothing and its node lost every utility in it; the message names a rewrite only when the rewrite parses (exponent notation written out, `-left-[12px]` as `left-[-12px]`, `rotate--18` as `rotate-342`). Prose with no provenance still compiles to nothing, and the left of `&&` stays upstream's warning | unsubmitted; reverses main's default for whole-value class literals (a warning unless `--strict-classes`) | written on 66caf4e5 |
+| 0042 | motion | vector paths, the op: PATH (71) fills any set of contours by sample winding on POLY's 4x4 lattice with a top-left rule, so abutting paths partition their seam; a PATH TABLE after the ANIM TABLE in `styles.bin`, counted by the header's reserved u16; and per frame in the core, an entry's morph keys mixed, its cubics flattened in local space, its stroke trimmed by arc length and outlined as positively wound cycles, mapped through the world affine and clipped to a 4 px guard band (`engine/core/src/path.rs`). Props `path` … `morph` are 199-211, bits 58-64; design in `0042-vector-paths.design.md` | never; the header says why | written on 66caf4e5, after `0041`; the stage-1 prototype was on e0b37e2 |
+| 0043 | motion | vector paths, the declaration: `<Path d viewBox>`, the whole SVG path grammar normalised to move, line, cubic and close at build time — arcs by unit-vector bisection and square roots, never `Math.sin` — morph keys aligned or refused, the `d` literals a `class=`-style collector reads, `fill-*`, `stroke-*`, `trim-*`, `morph-[f]` and `bg-clip-path`, and the keyframe names `trimEnd`, `morph`, `fill`, `stroke`, `stroke-width` and the rest | never; the header says why | written on 66caf4e5, after `0042` |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
 #591 since 586428b2, so the pin needs no backport. The two places the
@@ -129,7 +132,7 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Twenty-one patches are class `upstream` and thirteen `motion`. Of the
+Twenty-one patches are class `upstream` and fifteen `motion`. Of the
 twenty-one, eighteen are unsubmitted declaration- or build-layer changes,
 `0040`, the build-time SVG baker every target's pak goes through, and
 `0041`, the class-literal refusal, among them; `0008` is #301, and `0021`
