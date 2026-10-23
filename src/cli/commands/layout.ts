@@ -99,6 +99,7 @@ import {
   probe,
   rect,
   type ProbeWorld,
+  type Reading,
   type Visibility,
 } from "../../render/visibility.ts";
 import type { LayoutAllowance, SidecarShutter } from "../../manifest/sidecar.ts";
@@ -118,6 +119,9 @@ export interface LayoutOptions {
   readonly at: number;
   /** Include nodes that carry neither text nor a debugName. */
   readonly all: boolean;
+  /** Under a declared shutter, the picture in-picture is asked of. Absent
+   *  means the exposure. */
+  readonly read?: Reading;
   readonly flags: GlobalFlags;
 }
 
@@ -250,6 +254,18 @@ export interface InspectOptions {
    * classification renamed.
    */
   readonly findings?: FindingScope;
+  /** Under a declared shutter, the picture `inPicture` and `paints` are
+   *  asked of. Absent means the exposure. */
+  readonly read?: Reading;
+  /**
+   * Keep only nodes carrying one of these debugNames, instead of every named
+   * or text node. `assert` passes the names its assertions mention, because
+   * its verdicts are about those and nothing else; every other node's probe
+   * would be work no line of its output reads. Rects for their ancestors are
+   * still taken when findings are asked for, so a kept node's container is
+   * the one it has without the filter.
+   */
+  readonly names?: ReadonlySet<string>;
 }
 
 export interface FindingScope {
@@ -321,11 +337,17 @@ export function inspectLayout(
         "covered / declared-invisible classification under other names",
     );
   }
-  const prober = openProber(world, { classify: options.classify });
+  const prober = openProber(world, {
+    classify: options.classify,
+    ...(options.read ? { read: options.read } : {}),
+  });
 
   const base = baseline(prober, scope !== undefined);
   const index = indexTree(tree as TreeNode | undefined);
-  const kept = flattenTree(tree as TreeNode | undefined, options.keepAll);
+  const only = options.names;
+  const kept = flattenTree(tree as TreeNode | undefined, options.keepAll).filter(
+    (k) => only === undefined || (k.node.n !== undefined && only.has(k.node.n)),
+  );
 
   // Which nodes need a rect. Without findings that is the kept set. With them
   // it also holds every ancestor of a kept node, because `escaped_container`
@@ -444,13 +466,41 @@ export function inspectLayout(
  * What a declared shutter changes about a reading, in the words every
  * inspecting command prints. Nothing when there is none.
  */
-export function shutterLines(shutter: SidecarShutter | null): string[] {
+export function shutterLines(shutter: SidecarShutter | null, read: Reading = "exposure"): string[] {
   if (!shutter) return [];
+  if (read === "tick") {
+    return [
+      `Shutter ${describeShutter(shutter)}, read at the TICK (--read tick): in-picture and`,
+      "covered are the frame's own tick, not the exposure this composition delivers.",
+      "A node only the blur shows reads covered here, and one the average fades",
+      "below a level reads in picture. Rects and ink boxes are the tick as always.",
+    ];
+  }
   return [
     `Shutter ${describeShutter(shutter)}: in-picture and covered are read from the`,
     "exposure, every sample re-rendered with the node hidden; rects and ink",
     "boxes are the frame's own tick, the centre of the exposure.",
   ];
+}
+
+/**
+ * `--read` as a reading, or a usage error naming what was typed. Absent is
+ * the exposure; the commands that take it write `read` into `--json` beside
+ * `shutter` whenever one is declared, so a reading of the tick is never
+ * mistaken for one of the delivered picture.
+ */
+export function parseRead(raw: string | boolean | undefined): Reading | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === "exposure" || raw === "tick") return raw;
+  throw new UsageError(`--read ${String(raw)} must be exposure or tick`);
+}
+
+/** The `--json` keys that say what a reading under a shutter was of. */
+export function shutterJson(
+  shutter: SidecarShutter | null,
+  read: Reading | undefined,
+): { shutter?: SidecarShutter; read?: Reading } {
+  return shutter ? { shutter, read: read ?? "exposure" } : {};
 }
 
 export async function run(options: LayoutOptions): Promise<CommandResult> {
@@ -521,6 +571,7 @@ export async function run(options: LayoutOptions): Promise<CommandResult> {
     } = inspectLayout(world, tree, {
       keepAll: options.all,
       classify: true,
+      ...(options.read ? { read: options.read } : {}),
       findings: {
         viewport: { x: 0, y: 0, w: c.width, h: c.height },
         allow: c.sidecar.layoutAllow,
@@ -578,10 +629,11 @@ export async function run(options: LayoutOptions): Promise<CommandResult> {
         // evidence that an allowance is dead, which is why this is reported and
         // not failed on.
         unusedAllow,
-        // Present when the sidecar declares one. `inPicture` and `paints`
-        // then read the exposure; rects and ink read the frame's own tick
+        // Present when the sidecar declares one, with `read`: `inPicture`
+        // and `paints` are the exposure unless `--read tick` asked for the
+        // frame's own tick; rects and ink are the tick either way
         // (`src/render/visibility.ts`, "UNDER A SHUTTER").
-        ...(c.shutter ? { shutter: c.shutter } : {}),
+        ...shutterJson(c.shutter, options.read),
         nodes,
       },
       stdoutLines: [
@@ -599,7 +651,7 @@ export async function run(options: LayoutOptions): Promise<CommandResult> {
         "covered when it emitted geometry and none of that survived.",
         "Findings are reported, never failed on: `verify --strict` is what",
         "turns one into an exit code, and `layoutAllow` is what turns one off.",
-        ...shutterLines(c.shutter),
+        ...shutterLines(c.shutter, options.read),
       ],
     };
   } catch (e) {
@@ -653,10 +705,12 @@ export async function runFromArgv(argv: readonly string[]): Promise<CommandResul
   const dir = requirePositional(parsed.positionals, 0, "composition-dir");
   const at = parsed.flags.at;
   if (at === undefined) throw new UsageError("layout needs --at <frame>");
+  const read = parseRead(parsed.flags.read);
   return run({
     dir,
     at: Number(at),
     all: parsed.flags.all === true,
+    ...(read ? { read } : {}),
     flags: parsed.global,
   });
 }

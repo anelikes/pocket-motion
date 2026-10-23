@@ -82,10 +82,36 @@
  * the delivered picture is its. Rects and ink boxes are geometry and are read
  * at the frame's own tick, the centre of the exposure: a moving glyph run's
  * smear is not a run that overflows its box. Every probe costs N renders.
+ *
+ * `read: "tick"` asks both questions of the frame's own tick instead, at one
+ * render a probe, and is never the default. It is a different picture, so it
+ * is a different claim, and it misses in both directions: a node only the
+ * blur shows — covered at the tick and smeared out from under its cover in
+ * other samples — reads covered, and a node the average fades below one
+ * level reads in picture although the delivered frame carries none of it.
+ * `compositions/shutter-blur`'s `peek` is the first case, pinned: an opaque
+ * blade turning half a revolution a tick lies over it at every frame's tick
+ * and turns off it in every sample but the ones nearest the centre.
+ *
+ * A RECT IS A WALK, NOT A RASTER
+ *
+ * The inspector latch is filled by `Ui::draw`, the walk that builds the draw
+ * list, and every render runs that walk before it rasterises. `ui_draw_hash`
+ * runs the walk alone, so a rect read after it is the box a render would have
+ * left, without the raster: on `compositions/mg-hud`, 11,510 nodes, one walk
+ * is about 7 ms and one raster about 330 ms, and `layout` reads a rect for
+ * every named or text node and every ancestor of one — 1,330 a frame there.
  */
 
 import type { Exposure } from "../runtime/boot.ts";
 import { hashFrame, type FrameHash } from "./hash.ts";
+
+/**
+ * Which picture `inPicture` and `paints` are asked of under a declared
+ * shutter: the exposure the composition delivers, or the frame's own tick.
+ * Without a shutter the two are one picture.
+ */
+export type Reading = "exposure" | "tick";
 
 /** The exports this module drives, resolved once per world. */
 export interface Prober {
@@ -99,16 +125,23 @@ export interface Prober {
    *  `src/cli/commands/layout.ts` for why that is a scope choice and not a
    *  speed one — measured, the two cost the same. */
   readonly drawHash: (() => string) | null;
-  /** The delivered frame: the exposure under a shutter. */
+  /** The picture classified: the exposure under a shutter, unless the caller
+   *  asked for the tick. */
   readonly render: () => Uint8Array;
   /** The frame's own tick. `render` when there is no shutter. */
   readonly renderTick: () => Uint8Array;
+  /** One draw walk at the tick and no raster: what fills the rect latch. */
+  readonly walk: () => void;
+  /** The exposure `render` reads, or null when it reads the tick — no
+   *  shutter, or `read: "tick"`. */
   readonly exposure: Exposure | null;
 }
 
 export interface ProbeOptions {
   /** Resolve `ui_draw_hash` and fill `paints` / `visibility`. */
   readonly classify: boolean;
+  /** Absent means the exposure. Ignored without a shutter. */
+  readonly read?: Reading;
 }
 
 export interface ProbeWorld {
@@ -157,7 +190,9 @@ export function openProber(
     }
     return fn as T;
   };
-  const exposure = world.exposure ?? null;
+  const exposure = options.read === "tick" ? null : (world.exposure ?? null);
+  const renderTick = world.renderTick ?? world.render;
+  const tickHash = need<() => bigint | number>("ui_draw_hash", "upstream");
   let rawDrawHash: (() => bigint | number) | null = null;
   if (options.classify) {
     if (exposure) {
@@ -167,7 +202,7 @@ export function openProber(
       );
       rawDrawHash = () => folded(exposure.spanNum, exposure.spanDen, exposure.samples);
     } else {
-      rawDrawHash = need<() => bigint | number>("ui_draw_hash", "upstream");
+      rawDrawHash = tickHash;
     }
   }
   const hashOf = rawDrawHash;
@@ -179,8 +214,9 @@ export function openProber(
     // The wasm signature is i64, so this arrives as a BigInt on Bun and a
     // Number on hosts that lower it. Compared as a string either way.
     drawHash: hashOf === null ? null : () => String(hashOf()),
-    render: world.render,
-    renderTick: world.renderTick ?? world.render,
+    render: exposure ? world.render : renderTick,
+    renderTick,
+    walk: () => void tickHash(),
     exposure,
   };
 }
@@ -252,14 +288,15 @@ export function changedBox(
 
 /** The node's border-box world AABB, packed as layout reports it, or -1. */
 export function rect(p: Prober, id: number): { xy: number; wh: number } {
-  // The inspector latch is filled during the draw pass, so the render between
+  // The inspector latch is filled during the draw pass, so the walk between
   // asking and reading is required. hide must be clear: hiding a parent would
   // skip the child's walk and the rect would come back -1.
   p.hide(0);
   p.inspect(id);
   // The tick, not the exposure: a rect is the box at the centre of the
-  // exposure, and one raster fills the latch where an exposure would cost N.
-  p.renderTick();
+  // exposure. And a walk, not a render: the walk is what fills the latch,
+  // and the raster after it never reads it (see the header).
+  p.walk();
   return { xy: p.rectXY(), wh: p.rectWH() };
 }
 

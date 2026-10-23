@@ -14,6 +14,13 @@
  *
  * Each guard was watched red against a core built with the defect it names;
  * `baselines/shutter.md`, "Stage 2", records which edit turned which test red.
+ *
+ * "Presence under the shutter" holds the cost fix and its one open door: a
+ * rect is read off a draw walk rather than a raster (red with the prober's
+ * `walk` made a no-op: every rect comes back -1), and `--read tick` is a
+ * different picture from the exposure — `peek` is in every exposure and
+ * covered at every tick (red with `openProber` ignoring `read`, and red with
+ * the exposure ignored by default).
  */
 
 import { beforeAll, describe, expect, test } from "bun:test";
@@ -22,8 +29,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { SHUTTER_INTEGRATED, readTimelines } from "../src/anim/timelines.ts";
 import { runBuild } from "../src/cli/build.ts";
+import { run as runAssert } from "../src/cli/commands/assert.ts";
 import { run as runFrame } from "../src/cli/commands/frame.ts";
 import { run as runLayout } from "../src/cli/commands/layout.ts";
+import { run as runVisibility } from "../src/cli/commands/visibility.ts";
 import { resolveComposition, type ResolvedComposition } from "../src/cli/resolve.ts";
 import { EXIT_OK } from "../src/cli/types.ts";
 import { lintShutterSource } from "../src/lint/shutter.ts";
@@ -345,7 +354,7 @@ describe("the hosts around the exposure", () => {
     expect(known.inPicture).toBe(true);
   }, 60_000);
 
-  test("the prober asks the exposure's draw hash and renders the tick for a rect", () => {
+  test("the prober asks the exposure's draw hash, and walks the tick for a rect without a raster", () => {
     const calls: string[] = [];
     const exports = {
       ui_debug_inspect: () => {},
@@ -355,18 +364,26 @@ describe("the hosts around the exposure", () => {
       ui_draw_hash: () => (calls.push("tick-hash"), 1n),
       ui_draw_hash_exposure: (n: number, d: number, s: number) => (calls.push(`exposure-hash ${n}/${d}x${s}`), 2n),
     };
-    const p = openProber(
-      {
-        exports,
-        render: () => (calls.push("exposure"), new Uint8Array(4)),
-        renderTick: () => (calls.push("tick"), new Uint8Array(4)),
-        exposure: { angle: 180, samples: 8, spanNum: 360, spanDen: 360 },
-      } as never,
-      { classify: true },
-    );
+    const world = {
+      exports,
+      render: () => (calls.push("exposure"), new Uint8Array(4)),
+      renderTick: () => (calls.push("tick"), new Uint8Array(4)),
+      exposure: { angle: 180, samples: 8, spanNum: 360, spanDen: 360 },
+    } as never;
+    const p = openProber(world, { classify: true });
     p.drawHash!();
+    p.render();
     rect(p, 3);
-    expect(calls).toEqual(["exposure-hash 360/360x8", "tick"]);
+    expect(calls).toEqual(["exposure-hash 360/360x8", "exposure", "tick-hash"]);
+
+    // `read: "tick"` asks both questions of the tick: one walk, one raster.
+    calls.length = 0;
+    const t = openProber(world, { classify: true, read: "tick" });
+    t.drawHash!();
+    t.render();
+    rect(t, 3);
+    expect(calls).toEqual(["tick-hash", "tick", "tick-hash"]);
+    expect(t.exposure).toBeNull();
   });
 });
 
@@ -413,4 +430,71 @@ describe("what reports the shutter's edges", () => {
     const fixture = readFileSync(join(DIR, "main.tsx"), "utf8");
     expect(await lintShutterSource(fixture, "main.tsx", true)).toEqual([]);
   });
+});
+
+describe("presence under the shutter", () => {
+  test("a rect read after a draw walk is the rect a render leaves, for every node, at moving frames", async () => {
+    const world = await boot(c.shutter);
+    const tree = world.getTree() as { i: number; t: string; k?: unknown[] };
+    const ids: number[] = [];
+    const collect = (n: { i: number; t: string; k?: unknown[] } | undefined): void => {
+      if (!n || typeof n.i !== "number" || n.t === "#text") return;
+      ids.push(n.i);
+      for (const kid of n.k ?? []) collect(kid as typeof n);
+    };
+    collect(tree);
+    const prober = openProber(world, { classify: true });
+    const whip = findNamed(tree, "label-blur");
+    const whipAt: number[] = [];
+    let at = 1;
+    for (const frame of [0, 15, 24, 45, 60]) {
+      advance(world, at, frame);
+      at = frame + 1;
+      world.render(); // an exposure first, so the walk follows what a sweep does
+      for (const id of ids) {
+        const walked = rect(prober, id);
+        prober.inspect(id);
+        world.renderTick();
+        expect([walked.xy, walked.wh], `node ${id} at frame ${frame}`).toEqual([prober.rectXY(), prober.rectWH()]);
+        expect(walked.xy, `node ${id} at frame ${frame}`).not.toBe(-1);
+      }
+      prober.inspect(0);
+      whipAt.push(rect(prober, whip).xy);
+      prober.inspect(0);
+    }
+    // The whip moves between those frames, so equal rects are not one stale
+    // latch read five times.
+    expect(new Set(whipAt).size).toBeGreaterThan(1);
+  }, 120_000);
+
+  test("`layout` finds `peek` in the exposure, and covered at the tick when asked, and says which it read", async () => {
+    const exposure = await runLayout({ dir: DIR, at: 45, all: false, flags: { json: true } });
+    const tick = await runLayout({ dir: DIR, at: 45, all: false, read: "tick", flags: { json: true } });
+    type Json = { read?: string; nodes: Array<{ name?: string; x: number; visibility?: string }> };
+    const peek = (r: typeof exposure) => (r.json as Json).nodes.find((n) => n.name === "peek")!;
+    expect((exposure.json as Json).read).toBe("exposure");
+    expect(peek(exposure).visibility).toBe("on-screen");
+    expect((tick.json as Json).read).toBe("tick");
+    expect(peek(tick).visibility).toBe("covered");
+    expect(tick.stdoutLines?.join("\n")).toContain("read at the TICK (--read tick)");
+    // Rects are the tick in both readings.
+    expect(peek(tick).x).toBe(peek(exposure).x);
+  }, 120_000);
+
+  test("`assert` and `visibility` pass `peek` on the exposure and fail it at the tick", async () => {
+    type Assert = { ok: boolean; read?: string; failures: string[]; assertions: Array<{ node: string; ok: boolean; detail: string }> };
+    const onExposure = (await runAssert({ dir: DIR, flags: { json: true } })).json as Assert;
+    const atTick = (await runAssert({ dir: DIR, read: "tick", flags: { json: true } })).json as Assert;
+    expect(onExposure.read).toBe("exposure");
+    expect(onExposure.ok).toBe(true);
+    expect(atTick.read).toBe("tick");
+    expect(atTick.failures).toEqual(["peek inPicture"]);
+    expect(atTick.assertions.find((a) => a.node === "peek")!.detail).toContain("covered at");
+
+    type Vis = { ok: boolean; read?: string; failures: string[] };
+    const visExposure = (await runVisibility({ dir: DIR, all: false, flags: { json: true } })).json as Vis;
+    const visTick = (await runVisibility({ dir: DIR, all: false, read: "tick", flags: { json: true } })).json as Vis;
+    expect([visExposure.read, visExposure.failures]).toEqual(["exposure", []]);
+    expect([visTick.read, visTick.failures]).toEqual(["tick", ["peek"]]);
+  }, 600_000);
 });

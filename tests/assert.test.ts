@@ -20,7 +20,13 @@
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
 
-import { run as runAssert, sweepNamedNodes } from "../src/cli/commands/assert.ts";
+import {
+  mentionedNames,
+  run as runAssert,
+  runFromArgv as assertFromArgv,
+  sweepNamedNodes,
+} from "../src/cli/commands/assert.ts";
+import { UsageError } from "../src/cli/args.ts";
 import { sampleFrames } from "../src/cli/commands/visibility.ts";
 import { runBuild } from "../src/cli/build.ts";
 import { resolveComposition, type ResolvedComposition } from "../src/cli/resolve.ts";
@@ -53,7 +59,7 @@ async function sweepOnce(): Promise<Map<string, SweptNode>> {
   if (!resolved.ok) throw new Error(`spanned did not resolve: ${resolved.message}`);
   spanned = resolved.value;
   await runBuild(spanned);
-  swept = await sweepNamedNodes(spanned, FRAMES);
+  swept = (await sweepNamedNodes(spanned, FRAMES)).nodes;
   return swept;
 }
 
@@ -149,6 +155,53 @@ describe("the command", () => {
     expect(result.exitCode === EXIT_OK).toBe(json.ok);
     expect(EXIT_FAIL).toBe(1);
   }, 180_000);
+});
+
+describe("what the command classifies", () => {
+  // `compositions/layout-codes` carries one named node per finding code, so a
+  // narrowed sweep can be held to the full one on the codes `insideBox` reads:
+  // `escapee` escapes its container, `offscreen` collapses against the canvas
+  // edge, and `wing`'s escape is excused in the sidecar.
+  const names = new Set(["escapee", "offscreen", "wing", "overlap-a"]);
+
+  test("only the names the assertions mention, each entry the full sweep's", async () => {
+    const dir = join(ROOT, "compositions", "layout-codes");
+    const resolved = await resolveComposition({ dir, flags: { json: false }, requireBundle: false });
+    if (!resolved.ok) throw new Error("layout-codes did not resolve");
+    await runBuild(resolved.value);
+    const frames = sampleFrames(resolved.value.durationFrames, 6);
+    const full = await sweepNamedNodes(resolved.value, frames);
+    const narrow = await sweepNamedNodes(resolved.value, frames, { names });
+
+    // Red with the filter removed: every named node comes back classified.
+    expect([...narrow.nodes.keys()].sort()).toEqual([...names].sort());
+    expect(full.nodes.size).toBeGreaterThan(names.size);
+    // Red with the ancestors left out of a narrowed sweep: `escapee` loses its
+    // container and reads inside it.
+    for (const name of names) expect(narrow.nodes.get(name), name).toEqual(full.nodes.get(name));
+    expect(narrow.nodes.get("escapee")!.outsideBox.length).toBe(frames.length);
+    expect(narrow.nodes.get("offscreen")!.outsideBox.length).toBeGreaterThan(0);
+    expect(narrow.nodes.get("wing")!.outsideBox).toEqual([]);
+    // The list a failing name is answered with does not depend on the filter.
+    expect(narrow.named).toEqual([...full.nodes.keys()]);
+    expect(full.named).toEqual([...full.nodes.keys()]);
+  }, 180_000);
+
+  test("an assertion's own node and its `before` target are what is mentioned", () => {
+    expect(
+      [...mentionedNames([
+        { node: "a", entersBy: 3 },
+        { node: "b", before: "c" },
+        { node: "a", insideBox: true },
+      ])].sort(),
+    ).toEqual(["a", "b", "c"]);
+  });
+
+  test("`--read` takes exposure or tick, and refuses anything else before resolving", async () => {
+    await expect(
+      assertFromArgv(["compositions/no-such-composition", "--read", "blur"]),
+    ).rejects.toThrow(UsageError);
+  });
 });
 
 describe("dwellSpan", () => {
