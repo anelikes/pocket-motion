@@ -129,14 +129,19 @@ describe("npm pack --dry-run over the staged package", () => {
     expect(hits).toEqual([]);
   });
 
-  test("the framework's style table ships as upstream committed it, not a table a build left", async () => {
+  test("the framework's style table ships as the vendored tree has it, not a table a build left", async () => {
     // No build writes it since upstream #591 — a build's table goes into its
-    // own --outdir — so the staged bytes are the pinned commit's.
-    const committed = Bun.spawnSync(["git", "show", "HEAD:framework/src/styles.generated.ts"], {
-      cwd: join(ROOT, "vendor/pocketjs"),
-    });
-    expect(committed.exitCode).toBe(0);
-    expect(await Bun.file(join(staged.dir, STYLE_TABLE)).text()).toBe(committed.stdout.toString());
+    // own --outdir — so the staged bytes are the vendored file's: the pinned
+    // commit's plus what patches add to it (0043 adds an empty PATH_IDS), which
+    // is why this compares against the vendored copy and not `git show HEAD:`.
+    const vendored = await Bun.file(join(ROOT, STYLE_TABLE)).text();
+    expect(await Bun.file(join(staged.dir, STYLE_TABLE)).text()).toBe(vendored);
+    // A build that wrote here would have written the vendored copy too, so the
+    // comparison alone cannot see one: every table in it must still be empty.
+    const tables = [...vendored.matchAll(/export const (\w+): Record<[^>]+> = (\{[^;]*\});/g)];
+    expect(tables.length).toBeGreaterThan(0);
+    expect(tables.filter(([, , body]) => body !== "{}").map(([, name]) => name)).toEqual([]);
+    expect(vendored).toMatch(/export const STYLE_COUNT = 0;/);
   });
 });
 
