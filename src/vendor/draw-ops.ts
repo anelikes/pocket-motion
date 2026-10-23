@@ -27,7 +27,7 @@ export const MOTION_DRAW_OP_BASE = 64;
 /**
  * `DRAW_OP` keys in the vendored spec that a pocket-motion-only patch added.
  * `patches/README.md` says which patches are that class: 0013 (the mask
- * ops), 0017 (the text stroke op), 0018 (the filter layer ops) and 0019
- * (the gradient paint ops).
+ * ops), 0017 (the text stroke op), 0018 (the filter layer ops), 0019
+ * (the gradient paint ops) and 0042 (the vector path op).
  */
-export const MOTION_DRAW_OPS: readonly string[] = ["maskPush", "maskPop", "glyphStroke", "layerPush", "layerPop", "paintPush", "paintPop"];
+export const MOTION_DRAW_OPS: readonly string[] = ["maskPush", "maskPop", "glyphStroke", "layerPush", "layerPop", "paintPush", "paintPop", "path"];

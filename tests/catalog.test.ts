@@ -379,7 +379,13 @@ describe("catalog gates", () => {
         // same rule `bakes: true` gets.
         (row.findingProbes ?? []).filter((probe) => probe.expect.length > 0).length +
         // A job spec refused by `parseSpec` (G9 executes them).
-        (row.specProbes ?? []).length;
+        (row.specProbes ?? []).length +
+        // A path probe refuses when the baker throws, and when the collector
+        // must record nothing: an outline was written and the pass declined
+        // to vouch for it, leaving it to mount.
+        (row.pathProbes ?? []).filter(
+          (probe) => "refuses" in probe.outcome || ("records" in probe.outcome && probe.outcome.records.length === 0),
+        ).length;
       if (refusals === 0) {
         parts.push(`${row.id} claims probed with no refusal to execute`);
       }
@@ -661,6 +667,77 @@ describe("catalog gates", () => {
     }
     expect(parts, parts.join("\n") || "G8 clean").toEqual([]);
   });
+
+  /**
+   * `<Path>` outlines (pocket-motion patches 0042/0043). Two passes stand
+   * between what an author writes and the PATH TABLE, and a row can make a
+   * claim about either: the collector, which records a `d` only where it can
+   * read the literal and pairs it with the viewBox on the same element, and
+   * the baker, which normalises the keys to one verb list or refuses them.
+   * Each probe runs the real one, the way a build does, and is held exactly.
+   */
+  test("G10 — every path probe does what its row says", async () => {
+    const compilerDir = join(ROOT, "vendor/pocketjs/framework/compiler");
+    const { transformFile } = (await import(`${compilerDir}/jsx-plugin.ts`)) as {
+      transformFile(
+        path: string,
+        src: string,
+        framework: string,
+      ): Promise<{ pathDecls: Array<{ d: string[]; viewBox?: string }> }>;
+    };
+    const { compilePathEntry } = (await import(`${compilerDir}/path-data.ts`)) as {
+      compilePathEntry(keys: readonly string[], viewBox?: string): { verbs: number[] };
+    };
+    const canon = (r: { d: readonly string[]; viewBox?: string }): string => JSON.stringify([r.d, r.viewBox ?? null]);
+
+    const parts: string[] = [];
+    for (const row of SURFACE) {
+      for (const [i, probe] of (row.pathProbes ?? []).entries()) {
+        const where = `${row.id} / ${probe.what}`;
+        if ((probe.source === undefined) === (probe.d === undefined)) {
+          parts.push(`${where}: a probe names a module or a d, exactly one`);
+          continue;
+        }
+        if (probe.source !== undefined) {
+          if (!("records" in probe.outcome)) {
+            parts.push(`${where}: a module probe states what the collector records`);
+            continue;
+          }
+          const result = await transformFile(`/catalog-g9/${row.id}-${i}.tsx`, probe.source, "solid");
+          const got = result.pathDecls.map(canon).sort();
+          const want = probe.outcome.records.map(canon).sort();
+          if (JSON.stringify(got) !== JSON.stringify(want)) {
+            parts.push(`${where}\n  want: ${JSON.stringify(want)}\n  got:  ${JSON.stringify(got)}`);
+          }
+          continue;
+        }
+        let thrown: string | null = null;
+        let verbs: number[] | null = null;
+        try {
+          verbs = compilePathEntry(probe.d!, probe.viewBox).verbs;
+        } catch (e) {
+          thrown = e instanceof Error ? e.message : String(e);
+        }
+        if ("refuses" in probe.outcome) {
+          if (thrown === null) parts.push(`${where}: expected a refusal, the baker accepted it`);
+          else if (!thrown.includes(probe.outcome.refuses)) {
+            parts.push(`${where}: refused with a different message\n  want substring: ${probe.outcome.refuses}\n  got: ${thrown}`);
+          }
+          continue;
+        }
+        if (thrown !== null) {
+          parts.push(`${where}: expected no throw, got: ${thrown}`);
+          continue;
+        }
+        if ("verbs" in probe.outcome && JSON.stringify(verbs) !== JSON.stringify(probe.outcome.verbs)) {
+          parts.push(`${where}\n  want verbs: ${JSON.stringify(probe.outcome.verbs)}\n  got:        ${JSON.stringify(verbs)}`);
+        }
+      }
+    }
+    expect(parts, parts.join("\n") || "G10 clean").toEqual([]);
+    // Each module probe is a real Babel transform; at a load average past 150
+    // G7, the same work, has run past bun's 5 s default.
+  }, 60_000);
 
   test("G4 — the document is current", () => {
     const generated = renderCatalog();

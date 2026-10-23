@@ -1,0 +1,4 @@
+chords over 360 angles: {537}
+POLY vs PATH over 300 convex integer polygons: 3429 of 960934 covered pixels differ, by 4664 on-edge samples
+stroke union: 24473600 samples, 119 differ, the farthest 0.7370005553529438/256 px from a piece edge
+trim growth: 1 pixel decreases over 40 steps

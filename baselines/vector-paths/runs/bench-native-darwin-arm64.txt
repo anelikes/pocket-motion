@@ -1,0 +1,23 @@
+# Apple M4, load averages: 12.64 14.27 12.86
+digest  0 d03a0c3226e20ff9 2b13ba2c0869791d fill-nonzero-star
+digest  1 00bb3a9823157fa0 feba9c5429f168f1 fill-evenodd-star
+digest  2 77bc3337ec94df9b d831a592ad4e4e0d fill-donut-rules
+digest  3 274a11eaed142578 9865aa5da5da96f9 stroke-joins-caps
+digest  4 52604bf90d7b694e c9702e8bf9178b4d stroke-closed-round
+digest  5 329c490bf21551a0 2f1eedf8b975f2f2 stroke-tight-curvature
+digest  6 2bbe1a1ffab7be43 d323c06082d52f09 trim-each-sweep
+digest  7 f60ffa5d0fab5c45 536d786522c3af2f trim-whole-offset-wrap
+digest  8 7443890eb10b693f f2d0282db4b78595 morph-circle-flower
+digest  9 40b41642889c6ad9 2cca2c314654cb32 transform-rotate-skew
+digest 10 552d4f0333178c57 bb5836a02e7cc858 under-mask-paint-layer
+digest 11 ff569918a3ff7c02 496ee364eac1c599 abutting-tiles
+digest 12 0a439fe13bc1addc 6fa8f71daddca5b5 dense-300-fill-stroke-x1
+digest 13 6f61516deb6573e1 ca638f349590b4af dense-300-animated-x2
+digest 14 cb3ec3d685960abe b8682e1558ad2bc1 flat-300-smooth-x1
+digest 15 5c988ac343fd07db 4b3ef5c12af3e9ea lineart-300-animated-x1
+Spiky static: min (median) ms: emit 8.45 (8.90) | raster x1 61.62 (64.91) | raster x2 111.21 (123.88) | draw hash 8.02 (8.16) | words 1946008 | flattened points 268787 | contour vertices 1032728
+Spiky animated: min (median) ms: emit 6.74 (7.80) | raster x1 42.63 (46.13) | raster x2 82.87 (135.45) | draw hash 5.45 (6.58) | words 1158310 | flattened points 250832 | contour vertices 612788
+Smooth static: min (median) ms: emit 3.82 (5.42) | raster x1 23.23 (34.05) | raster x2 52.80 (77.13) | draw hash 3.08 (3.64) | words 686776 | flattened points 94616 | contour vertices 352366
+Smooth animated: min (median) ms: emit 2.90 (4.87) | raster x1 14.71 (20.17) | raster x2 29.08 (35.77) | draw hash 1.71 (2.66) | words 421066 | flattened points 90419 | contour vertices 215305
+LineArt static: min (median) ms: emit 4.10 (4.38) | raster x1 26.60 (30.67) | raster x2 53.40 (63.79) | draw hash 2.05 (2.29) | words 493912 | flattened points 136582 | contour vertices 323386
+LineArt animated: min (median) ms: emit 2.53 (3.01) | raster x1 13.32 (22.02) | raster x2 30.56 (46.29) | draw hash 1.25 (1.66) | words 264226 | flattened points 128984 | contour vertices 157708

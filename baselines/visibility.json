@@ -338,6 +338,13 @@
       "named": 0,
       "neverShown": 0,
       "buriedAfterShown": 0
+    },
+    "compositions/vector-paths": {
+      "failures": [],
+      "nodes": 17,
+      "named": 17,
+      "neverShown": 0,
+      "buriedAfterShown": 0
     }
   }
 }

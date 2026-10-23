@@ -1,0 +1,4658 @@
+pocket-motion-only: PATH is drawn by this software rasteriser alone, and every upstream backend parses the draw list by a closed op set — the PSP GE, the ESP32 and Symbian RGB565 hosts, Vita, gpui and wgpu would stop the frame at op 71; a path's coverage is a winding sum over any number of concave contours with 1/256 px vertices, which none of those targets has a primitive for.
+
+0042 — vector paths, the op: a PATH TABLE in styles.bin, the geometry in
+the core, and DRAW_OP.path (71). The design is
+`patches/0042-vector-paths.design.md` in this repository, and its last
+section records where the landing departs from the stage-1 prototype
+(`baselines/vector-paths/prototype.diff`, on e0b37e2 + 0001-0022); the
+numbers are `baselines/vector-paths.md`. `0043` is the declaration that
+fills the table.
+
+What the patch adds, by file:
+
+- `contracts/spec/spec.ts` and the generated `spec.rs`, microts `spec.rs`
+  and `component-types-microts.ts`: props `path` (199, int: table index + 1),
+  `fillColor` 200, `fillRule` 201, `strokeColor` 202, `strokeWidth` 203,
+  `strokeJoin` 204, `strokeCap` 205, `strokeMiter` 206, `trimStart` 207,
+  `trimEnd` 208, `trimOffset` 209, `trimMode` 210, `morph` 211 — one block
+  after `shutterHold` (198), because 187-197 are eleven ids and these are
+  thirteen; anim bits 58-64 for the seven animatable ones (main's `skewX`
+  moved the paint bits by one, so not stage 1's 57-63); enums `FillRule`,
+  `StrokeJoin`, `StrokeCap`, `TrimMode`, and `BgClip.Path` (2);
+  `DRAW_OP.path = 71` and its format comment; the PATH TABLE format, written
+  after the ANIM TABLE and counted by the header's u16 at offset 10, which
+  was reserved — so a table with no path is the bytes it was — with
+  `encodeStyleTable`/`decodeStyleTable` writing and reading it and the
+  encoder refusing what the core would.
+- `engine/core/src/path.rs` (new): the entry and its parser (a first verb
+  that is not a move, an unknown verb, 0 or more than 8 shapes, shapes of
+  different point counts and a non-finite coordinate are refused); morph as
+  `a * (1 - t) + b * t`, exact at every key; cubics flattened in local space
+  by Wang's bound with the tolerance over the transform's Frobenius norm, so
+  a turning path keeps its chord count; trim by arc length (each/whole, a
+  wrapping offset, the whole window short-circuited byte for byte); the
+  stroke as positively wound cycles whose nonzero fill is the union of its
+  quads, join wedges and caps, round joins and caps by bisection with no
+  trigonometry; and emission through the world affine (a viewBox composed
+  in front, xMidYMid meet), clipped to the viewport grown by 4 px and
+  quantised to 1/256 px. `fmath::sqrtf` behind a guard that reads a NaN as
+  0; no other math function.
+- `engine/core/src/raster.rs`: the op — a winding sum per sample on POLY's
+  4x4 lattice with a top-left rule (an edge counts at sample row Y when
+  ytop <= Y < ybot, a crossing at x for the samples with X >= x), in i64
+  integers; edges bucketed by first row and stepped exactly by quotient and
+  remainder; runs emitted, so an interior is one `fill_opaque`. `Clip`
+  is crate-visible for the tests.
+- `engine/core/src/draw.rs`: `emit_node_path` — after a node's ground and
+  before its children, the fill (or under `bg-clip-path` its ground, a 0019
+  gradient as PAINT_PUSH around a white fill), then the stroke; both carry
+  the subtree opacity. `bg-clip-path` leaves the box unpainted.
+- `engine/core/src/style.rs`: the table parsed after the ANIM TABLE; the
+  thirteen fields on `Resolved`.
+- `engine/core/src/damage.rs`, `compositor.rs`, `lib.rs`: the three other
+  walkers take PATH's length from its word 1 and refuse one shorter than its
+  header, which would never advance; damage bounds a PATH by its vertices.
+- `engine/core/src/path_scenes.rs` and `path_tests.rs` (new; the scenes are
+  also behind the `path-scenes` feature, for the wasm harness in
+  `baselines/vector-paths/pathwasm`), and `tests.rs`'s `validate_drawlist`,
+  which holds every PATH vertex inside the guard band.
+
+Red cases, each a one-line edit to the patch run by
+`baselines/vector-paths/redcheck.py`, each turning the named core test red:
+- first crossing rounded down -> `path_coverage_equals_the_brute_force_reference`
+- DDA carry on zero remainder -> `path_coverage_equals_the_brute_force_reference`
+- closed y range (Y <= ybot) -> `path_coverage_equals_the_brute_force_reference`
+- closed y range vs partition -> `abutting_paths_partition`
+- sweep: partial head miscounted -> `path_coverage_equals_the_brute_force_reference`
+- sweep: full run one pixel short -> `path_coverage_equals_the_brute_force_reference`
+- merge drops a tail -> `path_coverage_equals_the_brute_force_reference`
+- sample lattice offset 32 -> 16 -> `convex_path_counts_what_poly_counts`
+- scale ignored -> `convex_path_counts_what_poly_counts`
+- partial opaque pixel filled as opaque -> `path_blends_each_pixel`
+- outer join on the inner side -> `stroke_outline_fills_to_exactly_the_union`
+- inner meet regardless of length -> `stroke_outline_fills_to_exactly_the_union`
+- inner meet without the length margin -> `stroke_outline_fills_to_exactly_the_union`
+- round join merged too eagerly -> `stroke_outline_fills_to_exactly_the_union`
+- miter merged past its limit -> `miter_tip_sits`
+- round arcs: no bisection -> `round_stroke_is_the_true_offset`
+- round cap faces backward -> `round_stroke_is_the_true_offset`
+- bevelled miter drawn as a miter -> `miter_tip_sits`
+- full trim window not short-circuited -> `a_trim_window_of_the_whole_length`
+- wrapped closed piece split in two -> `trimmed_length_is_the_window`
+- trim cut not interpolated -> `trimmed_length_is_the_window`
+- morph lerp inexact at its end -> `morph_at_a_key`
+- morph key off by one -> `morph_at_a_key`
+- scale bound by row norm -> `chord_count_does_not_follow_rotation`
+- Wang bound quartered -> `flattened_curve_stays_within_tolerance`
+- no guard clip -> `emitted_coordinates_stay_inside_the_guard`
+- damage does not know PATH -> `damage_tracking_decodes_path`
+- damage bounds short by a pixel -> `damage_tracking_decodes_path`
+- table: first verb not checked -> `path_table_round_trips`
+- walk ignores the trim -> `trim_end_animates_through`
+- bg-clip-path paints the box too -> `bg_clip_path_paints`
+- hidden node still draws its path -> `debug_hide_removes_both`
+- table: shape count not bounded -> `path_table_round_trips`
+- compositor op table does not know PATH -> `every_draw_list_walker_steps_over_a_path`
+- surface-frame walk does not know PATH -> `every_draw_list_walker_steps_over_a_path`
+- table count read but entries skipped -> `a_style_table_without_paths_is_the_same_bytes_and_a_truncated_one_is_refused`
+- the scenes' mask in the format 0024 replaced -> `path_under_a_mask_is_the_rect_under_that_mask`
+- gradient fill painted without its PAINT_PUSH -> `bg_clip_path_paints`
+
+All 38 red, against a baseline in which every path test is green
+(`baselines/vector-paths/runs/redcheck-0042.txt`). The five after `table:
+shape count not bounded` were added at the landing.
+
+Measured at the landing, on 66caf4e5 + 0001-0043 (darwin/arm64, rustc 1.97.1):
+`cargo test --release` in `engine/core`, 291 tests pass, the 25 path
+tests among them (stage 1's 24 and `every_draw_list_walker_steps_over_a_path`);
+the printed measurements are stage 1's to the digit
+(`baselines/vector-paths/runs/core-test-prints-0042.txt`). Fifteen of the sixteen pinned scenes reproduce stage 1's thirty
+digests; scene 10 is re-pinned. Its MASK_PUSH was written in the format 0024
+replaced, so the stream stopped at the mask and `path_under_a_mask_…`
+compared two grounds — passing with nothing under test; both now go through
+`mask_push`, and the test asserts the mask let paint through. With the mask
+written correctly and 0032's exact divisor reverted, scene 10's framebuffer is
+stage 1's 0xbb5836a02e7cc858 byte for byte, so the move is 0032's.
+With 0042 and 0043 applied (`bun scripts/vendor.ts`: 66caf4e5 + 36
+patches), the digest ledger reproduces all 38 compositions it recorded
+before, unchanged — a styles.bin with no path is the bytes it was — and
+records `compositions/vector-paths`, 39 of 39; the visibility ledger 46 of
+46.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 15bb1654..f8494189 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -465,7 +465,8 @@ export const PROP = {
+   gradVia3: 178, gradVia3Pos: 179,
+   gradVia4: 180, gradVia4Pos: 181,
+   bgClip: 182, //          enum BgClip — Text paints the ground's colour or
+-  //                       gradient into the glyphs instead of the box
++  //                       gradient into the glyphs instead of the box; Path
++  //                       into the node's path fill
+   arcCap: 183, //         enum ArcCap — how an arc's ends finish: Round (the
+   //                    default) puts a half-disc of the stroke's width on
+   //                    each end; Butt ends the band on the radius through
+@@ -492,6 +493,22 @@ export const PROP = {
+   // rather than 187: the vector-paths design has pencilled thirteen props
+   // after the last one allocated.
+   shutterHold: 198, //     int 0/1 (`shutter-hold`)
++  // Vector path (pocket-motion): the PATH TABLE entry a node draws, through
++  // DRAW_OP.path. 199 onward rather than 187: these are thirteen ids, and
++  // 187-197 hold eleven.
++  path: 199, //            int PATH TABLE index + 1 (0 = none)
++  fillColor: 200, //       color u32 ABGR (alpha 0 = no fill)
++  fillRule: 201, //        enum FillRule
++  strokeColor: 202, //     color u32 ABGR (alpha 0 = no stroke)
++  strokeWidth: 203, //     f32, in the path's own units (default 1)
++  strokeJoin: 204, //      enum StrokeJoin
++  strokeCap: 205, //       enum StrokeCap
++  strokeMiter: 206, //     f32 miter limit (default 4)
++  trimStart: 207, //       f32 fraction of arc length (default 0)
++  trimEnd: 208, //         f32 fraction of arc length (default 1)
++  trimOffset: 209, //      f32, wraps (1 = once round)
++  trimMode: 210, //        enum TrimMode
++  morph: 211, //           f32 morph key, 0..keys-1
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -570,6 +587,13 @@ export const ANIMATABLE: readonly PropName[] = [
+   "gradVia3Pos", //   55
+   "gradVia4", //      56
+   "gradVia4Pos", //   57
++  "fillColor", //     58
++  "strokeColor", //   59
++  "strokeWidth", //   60
++  "trimStart", //     61
++  "trimEnd", //       62
++  "trimOffset", //    63
++  "morph", //         64
+ ];
+ 
+ /** Anim bit index for a prop, or -1 if not animatable. */
+@@ -663,6 +687,11 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   gradShape: VALUE_KIND.int,
+   glowMode: VALUE_KIND.int, glowThreshold: VALUE_KIND.f32,
+   shutterHold: VALUE_KIND.int,
++  path: VALUE_KIND.int, fillColor: VALUE_KIND.color, fillRule: VALUE_KIND.int,
++  strokeColor: VALUE_KIND.color, strokeWidth: VALUE_KIND.f32,
++  strokeJoin: VALUE_KIND.int, strokeCap: VALUE_KIND.int, strokeMiter: VALUE_KIND.f32,
++  trimStart: VALUE_KIND.f32, trimEnd: VALUE_KIND.f32, trimOffset: VALUE_KIND.f32,
++  trimMode: VALUE_KIND.int, morph: VALUE_KIND.f32,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -690,7 +719,7 @@ export const ENUMS = {
+   /** Gradient paint (pocket-motion). Legacy = the two-stop gradDir path. */
+   GradKind: { Legacy: 0, Linear: 1, Radial: 2 },
+   /** What the ground paints (`bg-clip-text`, pocket-motion). */
+-  BgClip: { Border: 0, Text: 1 },
++  BgClip: { Border: 0, Text: 1, Path: 2 },
+   /** A radial gradient's ending shape about the box centre (`bg-radial-circle`,
+    *  `radial-gradient(circle closest-side, …)`, pocket-motion). About the
+    *  centre the closest and farthest corner are one point, and an ellipse's
+@@ -700,6 +729,11 @@ export const ENUMS = {
+   GlowMode: { Alpha: 0, Luma: 1 },
+   /** How an arc's ends finish (`arc-cap-round|butt`). */
+   ArcCap: { Round: 0, Butt: 1 },
++  /** Vector path fill rule, stroke join and cap, and trim mode (pocket-motion). */
++  FillRule: { NonZero: 0, EvenOdd: 1 },
++  StrokeJoin: { Miter: 0, Round: 1, Bevel: 2 },
++  StrokeCap: { Butt: 0, Round: 1, Square: 2 },
++  TrimMode: { Each: 0, Whole: 1 },
+   /**
+    * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
+    * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
+@@ -1086,7 +1120,8 @@ export const MAX_FONT_SLOTS = 128;
+ //     off 4  u16  version    = 2
+ //     off 6  u16  styleCount
+ //     off 8  u16  animCount  baked animation timelines (ANIM TABLE below)
+-//     off 10 u16  reserved   (0)
++//     off 10 u16  pathCount  PATH TABLE entries after the ANIM TABLE
++//                            (pocket-motion; 0 writes the old bytes)
+ //
+ //   Then styleCount records, back-to-back. styleId = record index (0-based).
+ //
+@@ -1158,6 +1193,31 @@ export const MAX_FONT_SLOTS = 128;
+ // Segments are sorted by t0 and non-overlapping per track. Between segments
+ // the value holds at the previous segment's `to`; before the first segment it
+ // holds at segments[0].from; after the last it holds at last.to.
++//
++// ---------------------------------------------------------------------------
++// PATH TABLE — baked vector outlines (pocket-motion; appended after the ANIM
++// TABLE, counted by the header's pathCount at offset 10)
++// ---------------------------------------------------------------------------
++// The compiler normalises an SVG `d` to four verbs, and every morph key of
++// one entry to the same verbs (framework/compiler/path-data.ts). A node
++// selects an entry by PROP.path = index + 1; the core morphs, flattens,
++// trims, strokes and emits DRAW_OP.path per frame (engine/core/src/path.rs).
++// A table with no entry writes no byte here, so a composition with no path
++// is the bytes it was.
++//
++//   pathCount entries, back-to-back. pathId = entry index (0-based).
++//
++//   Path entry:
++//     +0  u16  verbCount   (>= 1; the first verb is a move)
++//     +2  u8   shapeCount  1..PATH_MAX_SHAPES morph keys
++//     +3  u8   flags       bit 0 PATH_FLAG_VIEW_BOX
++//     [if viewBox] 4 x f32  x, y, w, h (w, h > 0): the coordinates' frame,
++//                           mapped onto the node's box, xMidYMid meet
++//     verbCount x u8 verb  PATH_VERB ordinal
++//     shapeCount x npts x (f32 x, f32 y), shape-major, npts derived from
++//                           the verbs (move 1, line 1, cubic 3, close 0)
++//
++// Every coordinate is finite; the core refuses the whole table otherwise.
+ 
+ export const STYLE_MAGIC = 0x54534344; // 'DCST' LE
+ export const STYLE_VERSION = 2;
+@@ -1177,6 +1237,13 @@ export const ANIM_BEZIER_EXTRA_SIZE = 16;
+ export const ANIM_FILL_BACKWARDS = 1 << 0;
+ export const ANIM_FILL_FORWARDS = 1 << 1;
+ 
++/** PATH TABLE verbs (pocket-motion). */
++export const PATH_VERB = { move: 0, line: 1, cubic: 2, close: 3 } as const;
++/** Most morph keys one PATH TABLE entry carries. */
++export const PATH_MAX_SHAPES = 8;
++export const PATH_FLAG_VIEW_BOX = 1 << 0;
++export const PATH_ENTRY_HEADER_SIZE = 4;
++
+ // ---- style table TS encoder/decoder (used by compiler + tests) ------------
+ 
+ export interface StyleProp {
+@@ -1230,6 +1297,21 @@ export interface AnimTrack {
+   segments: AnimSegment[];
+ }
+ 
++/** One PATH TABLE entry (pocket-motion). */
++export interface PathEntry {
++  /** PATH_VERB ordinals; the first is a move. */
++  verbs: number[];
++  /** Morph keys, each the flat x, y list the verbs consume, as f32 values. */
++  shapes: number[][];
++  /** x, y, w, h — present when the `<Path>` declared a viewBox. */
++  viewBox?: [number, number, number, number];
++}
++
++/** Points a PATH TABLE verb consumes. */
++export function pathVerbPoints(verb: number): number {
++  return verb === PATH_VERB.cubic ? 3 : verb === PATH_VERB.close ? 0 : 1;
++}
++
+ /** One baked timeline (one CSS animation shorthand entry). */
+ export interface AnimTimeline {
+   delayFrames: number;
+@@ -1269,9 +1351,11 @@ function segmentSize(seg: AnimSegment): number {
+ export function encodeStyleTable(
+   styles: readonly StyleRecord[],
+   anims: readonly AnimTimeline[] = [],
++  paths: readonly PathEntry[] = [],
+ ): Uint8Array {
+   if (styles.length > 0xffff) throw new Error("styles.bin: too many styles");
+   if (anims.length > 0xffff) throw new Error("styles.bin: too many animations");
++  if (paths.length > 0xffff) throw new Error("styles.bin: too many paths");
+   // size pass
+   let size = STYLE_HEADER_SIZE;
+   for (const s of styles) {
+@@ -1300,13 +1384,17 @@ export function encodeStyleTable(
+       for (const seg of t.segments) size += segmentSize(seg);
+     }
+   }
++  for (const [i, p] of paths.entries()) {
++    const npts = checkPathEntry(p, i);
++    size += PATH_ENTRY_HEADER_SIZE + (p.viewBox ? 16 : 0) + p.verbs.length + p.shapes.length * npts * 8;
++  }
+   const out = new Uint8Array(size);
+   const dv = new DataView(out.buffer);
+   dv.setUint32(0, STYLE_MAGIC, true);
+   dv.setUint16(4, STYLE_VERSION, true);
+   dv.setUint16(6, styles.length, true);
+   dv.setUint16(8, anims.length, true);
+-  // off 10 reserved, already 0
++  dv.setUint16(10, paths.length, true);
+   let o = STYLE_HEADER_SIZE;
+   for (const s of styles) {
+     let flags = 0;
+@@ -1373,12 +1461,56 @@ export function encodeStyleTable(
+       }
+     }
+   }
++  for (const p of paths) {
++    dv.setUint16(o, p.verbs.length, true);
++    out[o + 2] = p.shapes.length;
++    out[o + 3] = p.viewBox ? PATH_FLAG_VIEW_BOX : 0;
++    o += PATH_ENTRY_HEADER_SIZE;
++    if (p.viewBox) {
++      for (const v of p.viewBox) {
++        dv.setFloat32(o, v, true);
++        o += 4;
++      }
++    }
++    for (const v of p.verbs) out[o++] = v;
++    for (const shape of p.shapes) {
++      for (const c of shape) {
++        dv.setFloat32(o, c, true);
++        o += 4;
++      }
++    }
++  }
+   return out;
+ }
+ 
++/** A PATH TABLE entry's point count, or a throw naming what the core would refuse. */
++function checkPathEntry(p: PathEntry, i: number): number {
++  const fail = (why: string): never => {
++    throw new Error(`styles.bin: path ${i}: ${why}`);
++  };
++  if (p.verbs.length === 0 || p.verbs.length > 0xffff) fail("needs 1..65535 verbs");
++  if (p.verbs[0] !== PATH_VERB.move) fail("the first verb is not a move");
++  let npts = 0;
++  for (const v of p.verbs) {
++    if (!Number.isInteger(v) || v < 0 || v > PATH_VERB.close) fail(`unknown verb ${v}`);
++    npts += pathVerbPoints(v);
++  }
++  if (p.shapes.length === 0 || p.shapes.length > PATH_MAX_SHAPES) fail(`needs 1..${PATH_MAX_SHAPES} shapes`);
++  for (const shape of p.shapes) {
++    if (shape.length !== npts * 2) fail(`a shape carries ${shape.length / 2} points where the verbs consume ${npts}`);
++    for (const c of shape) if (!Number.isFinite(Math.fround(c))) fail(`coordinate ${c} is not a finite f32`);
++  }
++  if (p.viewBox) {
++    const [x, y, w, h] = p.viewBox.map(Math.fround) as [number, number, number, number];
++    if (![x, y, w, h].every(Number.isFinite) || !(w > 0) || !(h > 0)) fail(`viewBox ${p.viewBox.join(" ")} is not x y w h with w, h > 0`);
++  }
++  return npts;
++}
++
+ export interface DecodedStyleTable {
+   styles: StyleRecord[];
+   anims: AnimTimeline[];
++  paths: PathEntry[];
+ }
+ 
+ /** Decode styles.bin (round-trips encodeStyleTable; used by tests). */
+@@ -1468,7 +1600,35 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
+     }
+     anims.push(a);
+   }
+-  return { styles, anims };
++  const paths: PathEntry[] = [];
++  const pathCount = dv.getUint16(10, true);
++  for (let i = 0; i < pathCount; i++) {
++    const verbCount = dv.getUint16(o, true);
++    const shapeCount = bytes[o + 2];
++    const flags = bytes[o + 3];
++    o += PATH_ENTRY_HEADER_SIZE;
++    const p: PathEntry = { verbs: [], shapes: [] };
++    if (flags & PATH_FLAG_VIEW_BOX) {
++      p.viewBox = [dv.getFloat32(o, true), dv.getFloat32(o + 4, true), dv.getFloat32(o + 8, true), dv.getFloat32(o + 12, true)];
++      o += 16;
++    }
++    let npts = 0;
++    for (let v = 0; v < verbCount; v++) {
++      p.verbs.push(bytes[o + v]);
++      npts += pathVerbPoints(bytes[o + v]);
++    }
++    o += verbCount;
++    for (let k = 0; k < shapeCount; k++) {
++      const shape: number[] = [];
++      for (let c = 0; c < npts * 2; c++) {
++        shape.push(dv.getFloat32(o, true));
++        o += 4;
++      }
++      p.shapes.push(shape);
++    }
++    paths.push(p);
++  }
++  return { styles, anims, paths };
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -1688,6 +1848,24 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+ //                           core emits it around a node's ground, or its
+ //                           glyph run under `bg-clip-text`, painted white.
+ //   PAINT_POP   (1 word):   op — end the paint.
++//   PATH        (len words): op, len (the op's total word count, so a reader
++//                           skips it without decoding), flags (bit 0: even-odd
++//                           fill rule, else nonzero), color, C (contour count),
++//                           then C x { n (>= 3), n x (x, y) } with x and y i32
++//                           in 1/256 LOGICAL px. Each contour is closed
++//                           implicitly. A node's vector path (PROP.path): its
++//                           fill, then its stroke outlined as contours filled
++//                           nonzero. Exempt from the i16 guarantee, as TEXT_RUN
++//                           is, but bounded: the core clips every contour to
++//                           the viewport grown by 4 logical px, so every
++//                           coordinate is within (W + 8) * 256. Coverage is
++//                           POLY's 4x4 sample lattice, a sample counting by
++//                           the winding of the contours over it with a
++//                           top-left rule (an edge counts at sample row Y when
++//                           ytop <= Y < ybot, a crossing at x for the samples
++//                           with X >= x), so two paths sharing an edge
++//                           partition its samples. The pixel blends at
++//                           `a * hits / 16`. Software rasteriser only.
+ //   TEXT_RUN    (8 + ceil(n/4) words):
+ //                           op,
+ //                           word1: bits 0-7 fontSlot,
+@@ -1745,6 +1923,7 @@ export const DRAW_OP = {
+   layerPop: 68,
+   paintPush: 69,
+   paintPop: 70,
++  path: 71,
+ } as const;
+ 
+ /** Most colour stops one gradient paint carries: from, four vias, to. */
+diff --git a/engine/core/Cargo.toml b/engine/core/Cargo.toml
+index ceb21d18..e041b4d2 100644
+--- a/engine/core/Cargo.toml
++++ b/engine/core/Cargo.toml
+@@ -26,3 +26,6 @@ default = []
+ # Layout work counters and the fresh-solver validation hook used by the
+ # differential tests. Ordinary builds compile neither.
+ counters = []
++# The vector-path test scenes, for the digest and cost harness in
++# pocket-motion's baselines/vector-paths/pathwasm.
++path-scenes = []
+diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
+index 2b58e156..667dae5d 100644
+--- a/engine/core/src/compositor.rs
++++ b/engine/core/src/compositor.rs
+@@ -35,6 +35,7 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+         crate::spec::draw_op::LAYER_POP => 1,
+         crate::spec::draw_op::PAINT_PUSH => 9 + 2 * *words.get(at + 2)? as usize,
+         crate::spec::draw_op::PAINT_POP => 1,
++        crate::spec::draw_op::PATH => Some(*words.get(at + 1)? as usize).filter(|&n| n >= raster::PATH_HEADER)?,
+         _ => return None,
+     })
+ }
+diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
+index 596dcae8..219f0adf 100644
+--- a/engine/core/src/damage.rs
++++ b/engine/core/src/damage.rs
+@@ -472,6 +472,14 @@ impl<'a> DamageDecoder<'a> {
+                 9 + 2 * n
+             }
+             spec::draw_op::PAINT_POP => 1,
++            spec::draw_op::PATH => {
++                let n = self.words.get(start + 1).copied().ok_or(())? as usize;
++                let op = self.words.get(start..start.checked_add(n).ok_or(())?).ok_or(())?;
++                if !crate::raster::path_op_valid(op) {
++                    return Err(());
++                }
++                n
++            }
+             _ => return Err(()),
+         };
+         let end = start.checked_add(len).ok_or(())?;
+@@ -541,6 +549,7 @@ impl<'a> DamageDecoder<'a> {
+             // scissor, so the current clip is a sound (conservative) bound.
+             spec::draw_op::TEXT_RUN => self.clip,
+             spec::draw_op::SURFACE_QUAD => logical_rect(words[6], words[7]).intersect(self.clip),
++            spec::draw_op::PATH => path_bounds(words, self.clip),
+             _ => return Err(()),
+         };
+         Ok(Some(DecodedOp {
+@@ -680,6 +689,32 @@ fn triangle_bounds(vertices: [u32; 3], clip: DamageRect) -> DamageRect {
+     .intersect(clip)
+ }
+ 
++/// Logical-px bounds of a PATH op's vertices (1/256 px, floor/ceil).
++fn path_bounds(words: &[u32], clip: DamageRect) -> DamageRect {
++    let mut min_x = i32::MAX;
++    let mut min_y = i32::MAX;
++    let mut max_x = i32::MIN;
++    let mut max_y = i32::MIN;
++    let mut k = crate::raster::PATH_HEADER;
++    for _ in 0..words[4] {
++        let n = words[k] as usize;
++        for v in 0..n {
++            // In i64, so a corrupt word cannot overflow the ceiling.
++            let x = words[k + 1 + 2 * v] as i32 as i64;
++            let y = words[k + 2 + 2 * v] as i32 as i64;
++            min_x = min_x.min(x.div_euclid(256) as i32);
++            min_y = min_y.min(y.div_euclid(256) as i32);
++            max_x = max_x.max((x + 255).div_euclid(256) as i32);
++            max_y = max_y.max((y + 255).div_euclid(256) as i32);
++        }
++        k += 1 + 2 * n;
++    }
++    if min_x > max_x {
++        return DamageRect::empty();
++    }
++    DamageRect::new(min_x, min_y, max_x, max_y).intersect(clip)
++}
++
+ fn polygon_bounds(vertices: &[u32], clip: DamageRect) -> DamageRect {
+     if vertices.is_empty() {
+         return DamageRect::empty();
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index c1a559b2..4713d470 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -1052,6 +1052,8 @@ struct Walker<'a> {
+     hide_slot: u32,
+     /// Open LAYER_PUSHes on the walk (pocket-motion filter layers).
+     layer_depth: u32,
++    /// Vector paths (pocket-motion): buffers reused across nodes.
++    path_scratch: crate::path::PathScratch,
+ }
+ 
+ /// Build the full DrawList for the current (laid-out) tree. `frame` is the
+@@ -1153,6 +1155,7 @@ pub fn build_root(
+         in_3d: false,
+         provider_stale: false,
+         layer_depth: 0,
++        path_scratch: crate::path::PathScratch::default(),
+     };
+     let Some(root_slot) = tree.resolve(root_id) else {
+         return (None, None, false);
+@@ -1336,8 +1339,10 @@ impl<'a> Walker<'a> {
+         // -- background + shadow --------------------------------------------
+         // Gradient paint (pocket-motion): a non-legacy gradKind replaces the
+         // two-stop path, and `bg-clip-text` moves the whole ground — colour or
+-        // gradient — into the glyphs (emit_text), leaving the box unpainted.
+-        let clip_text = r.bg_clip == spec::BgClip::Text as u8 && node.node_type == spec::NodeType::Text as u8;
++        // gradient — into the glyphs (emit_text), leaving the box unpainted;
++        // `bg-clip-path` moves it into the node's path fill the same way.
++        let clip_path = r.bg_clip == spec::BgClip::Path as u8 && r.path > 0;
++        let clip_text = (r.bg_clip == spec::BgClip::Text as u8 && node.node_type == spec::NodeType::Text as u8) || clip_path;
+         let paint_grad = r.grad_kind == spec::GradKind::Linear as u8 || r.grad_kind == spec::GradKind::Radial as u8;
+         let grad_ground = paint_grad && !clip_text;
+         let has_grad = !paint_grad
+@@ -1524,6 +1529,13 @@ impl<'a> Walker<'a> {
+             }
+         }
+ 
++        // -- vector path (pocket-motion): fill, then stroke ------------------
++        if r.path > 0 {
++            if let Some(entry) = self.styles.paths.entries.get(r.path as usize - 1) {
++                self.emit_node_path(dl, entry, &r, &world, op, l.w, l.h, clip_path);
++            }
++        }
++
+         // -- text run ----------------------------------------------------------
+         if node.node_type == spec::NodeType::Text as u8 {
+             self.emit_text(dl, slot, node, &r, &world, op, &clip, l.w, in_transform);
+@@ -3474,6 +3486,70 @@ impl<'a> Walker<'a> {
+     /// radial: the ending shape `grad_shape` names about the centre, the
+     /// farthest-corner ellipse by default) gives t. False, emitting nothing,
+     /// for a degenerate box or transform.
++    /// A node's path: its fill (or, under `bg-clip-path`, its ground — a
++    /// solid colour or a gradient paint around a white fill), then its
++    /// stroke. Both colours carry the subtree opacity.
++    #[allow(clippy::too_many_arguments)]
++    fn emit_node_path(
++        &mut self,
++        dl: &mut DrawList,
++        entry: &crate::path::PathEntry,
++        r: &style::Resolved,
++        world: &Affine,
++        op: f32,
++        w: f32,
++        h: f32,
++        clip_path: bool,
++    ) {
++        use crate::path;
++        let mut sc = core::mem::take(&mut self.path_scratch);
++        if let Some((xf, tol)) = path::prepare(entry, w, h, world, r.morph, &mut sc) {
++            let evenodd = r.fill_rule == spec::FillRule::EvenOdd as u8;
++            let grad = r.grad_kind == spec::GradKind::Linear as u8 || r.grad_kind == spec::GradKind::Radial as u8;
++            if clip_path && grad {
++                let head = dl.words.len();
++                if self.emit_paint_push(dl, world, w, h, r) {
++                    if path::emit_fill(&mut dl.words, &xf, scale_alpha(0xffff_ffff, op), evenodd, self.screen, &mut sc) {
++                        dl.words.push(spec::draw_op::PAINT_POP);
++                    } else {
++                        // Nothing survived the guard: no empty paint bracket.
++                        dl.words.truncate(head);
++                    }
++                }
++            } else {
++                let fill = if clip_path { scale_alpha(r.bg_color, op) } else { scale_alpha(r.fill_color, op) };
++                if alpha(fill) > 0 {
++                    path::emit_fill(&mut dl.words, &xf, fill, evenodd, self.screen, &mut sc);
++                }
++            }
++            let stroke = scale_alpha(r.stroke_color, op);
++            if alpha(stroke) > 0 {
++                let style = path::StrokeStyle {
++                    width: r.stroke_width,
++                    join: match r.stroke_join {
++                        1 => path::Join::Round,
++                        2 => path::Join::Bevel,
++                        _ => path::Join::Miter,
++                    },
++                    cap: match r.stroke_cap {
++                        1 => path::Cap::Round,
++                        2 => path::Cap::Square,
++                        _ => path::Cap::Butt,
++                    },
++                    miter_limit: r.stroke_miter,
++                };
++                let trim = path::Trim {
++                    start: r.trim_start,
++                    end: r.trim_end,
++                    offset: r.trim_offset,
++                    mode: if r.trim_mode == spec::TrimMode::Whole as u8 { path::TrimMode::Whole } else { path::TrimMode::Each },
++                };
++                path::emit_stroke(&mut dl.words, &xf, tol, stroke, &style, &trim, self.screen, &mut sc);
++            }
++        }
++        self.path_scratch = sc;
++    }
++
+     fn emit_paint_push(&self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, r: &style::Resolved) -> bool {
+         let det = world.a * world.d - world.b * world.c;
+         if det == 0.0 || !(w > 0.0) || !(h > 0.0) {
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 44d51277..8739a75b 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -53,6 +53,9 @@ mod fmath;
+ pub mod layout;
+ pub mod package;
+ pub mod pak;
++pub mod path;
++#[cfg(any(test, feature = "path-scenes"))]
++pub mod path_scenes;
+ pub mod physics;
+ pub mod plan_facts;
+ pub mod raster;
+@@ -1295,6 +1298,15 @@ impl Ui {
+                     9 + 2 * *n as usize
+                 }
+                 x if x == spec::draw_op::PAINT_POP => 1,
++                x if x == spec::draw_op::PATH => {
++                    // `len` counts the whole op; one shorter than its header
++                    // is corrupt, and a zero would never advance.
++                    let Some(&n) = words.get(i + 1) else { break };
++                    if (n as usize) < crate::raster::PATH_HEADER {
++                        break;
++                    }
++                    n as usize
++                }
+                 _ => break,
+             };
+             let Some(end) = i.checked_add(len) else { break };
+@@ -2628,6 +2640,8 @@ fn prop_bits(kind: u8, value: f64) -> u32 {
+ 
+ #[cfg(test)]
+ mod tests;
++#[cfg(test)]
++mod path_tests;
+ 
+ /// Little-endian Float64 fields of a physics wire record.
+ fn wire_f64s(bytes: &[u8]) -> Vec<f64> {
+diff --git a/engine/core/src/path.rs b/engine/core/src/path.rs
+new file mode 100644
+index 00000000..6de74581
+--- /dev/null
++++ b/engine/core/src/path.rs
+@@ -0,0 +1,1294 @@
++//! Vector paths (pocket-motion patch 0042; the design is
++//! patches/0042-vector-paths.design.md in the pocket-motion repository).
++//!
++//! A path is baked by the compiler into a PATH TABLE entry: verbs (move,
++//! line, cubic, close) and one or more SHAPES — the same verbs with
++//! different points, which `morph` interpolates. Per frame the core:
++//!
++//!   1. interpolates the control points (morph);
++//!   2. flattens cubics into chords in the path's LOCAL space, with a
++//!      tolerance divided by a bound on the transform's scale, so the chord
++//!      count does not depend on rotation;
++//!   3. trims the flattened subpaths by arc length (stroke only);
++//!   4. outlines the stroke as one cycle per open subpath (two per closed
++//!      one) whose winding is the SUM of positively wound segment quads and
++//!      join/cap wedges — so a nonzero fill of the cycle is their union,
++//!      whatever the curvature, with no boolean geometry;
++//!   5. maps the result through the node's world affine, clips it to a guard
++//!      rect around the viewport and quantises to 1/256 logical px;
++//!
++//! and emits PATH ops, which the rasteriser fills by sample winding
++//! (`raster.rs`, `path_fill`).
++//!
++//! Determinism: f32 add/sub/mul/div, comparisons, and `fmath`'s Newton
++//! square root — no libm, no transcendental, no FMA (Rust never contracts
++//! `a * b + c`).
++//! No NaN reaches an output: every divisor is checked first and a
++//! non-finite point drops the op, because NaN bit patterns are the one f32
++//! result that differs between x86, ARM and wasm.
++
++use alloc::vec::Vec;
++
++use crate::draw::Affine;
++use crate::spec;
++
++// ---- verbs and the baked entry -------------------------------------------------
++
++pub const VERB_MOVE: u8 = 0;
++pub const VERB_LINE: u8 = 1;
++pub const VERB_CUBIC: u8 = 2;
++pub const VERB_CLOSE: u8 = 3;
++
++/// Points a verb consumes.
++#[inline]
++pub fn verb_points(v: u8) -> usize {
++    match v {
++        VERB_MOVE | VERB_LINE => 1,
++        VERB_CUBIC => 3,
++        _ => 0,
++    }
++}
++
++/// Most shapes one entry may carry (morph keys).
++pub const PATH_MAX_SHAPES: usize = 8;
++
++/// Flattening tolerance in LOGICAL px: the largest distance a chord may sit
++/// from its curve, and a join or cap arc from its circle.
++pub const FLATTEN_TOL: f32 = 1.0 / 16.0;
++
++/// Most chords one cubic may become.
++pub const CUBIC_MAX_STEPS: usize = 256;
++
++/// Deepest bisection of a round join or a quarter cap: 2^7 chords.
++const ARC_MAX_LEVELS: u32 = 7;
++
++/// Guard band around the viewport, in logical px, outside which emitted
++/// geometry is clipped (Sutherland-Hodgman preserves winding inside).
++const GUARD: f32 = 4.0;
++
++/// One quantum of an emitted coordinate: 1/256 logical px.
++pub const PATH_UNITS: f32 = 256.0;
++
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub struct Pt {
++    pub x: f32,
++    pub y: f32,
++}
++
++#[inline]
++pub const fn pt(x: f32, y: f32) -> Pt {
++    Pt { x, y }
++}
++
++/// One PATH TABLE entry.
++#[derive(Clone, Debug)]
++pub struct PathEntry {
++    pub verbs: Vec<u8>,
++    /// Morph keys (>= 1).
++    pub shapes: usize,
++    /// Points per shape.
++    pub npts: usize,
++    /// shapes x npts x (x, y), shape-major.
++    pub coords: Vec<f32>,
++    /// (x, y, w, h): the coordinates' frame, mapped onto the node's box
++    /// (xMidYMid meet). None: coordinates are the node's local px.
++    pub view_box: Option<[f32; 4]>,
++}
++
++impl PathEntry {
++    /// Validates the verb stream against the shapes: starts with a move,
++    /// every shape carries exactly the points the verbs consume, every
++    /// coordinate finite.
++    pub fn new(verbs: Vec<u8>, shapes: &[Vec<Pt>], view_box: Option<[f32; 4]>) -> Option<PathEntry> {
++        if shapes.is_empty() || shapes.len() > PATH_MAX_SHAPES || verbs.first() != Some(&VERB_MOVE) {
++            return None;
++        }
++        let mut npts = 0usize;
++        for &v in &verbs {
++            if v > VERB_CLOSE {
++                return None;
++            }
++            npts += verb_points(v);
++        }
++        let mut coords = Vec::with_capacity(shapes.len() * npts * 2);
++        for s in shapes {
++            if s.len() != npts {
++                return None;
++            }
++            for p in s {
++                if !p.x.is_finite() || !p.y.is_finite() {
++                    return None;
++                }
++                coords.push(p.x);
++                coords.push(p.y);
++            }
++        }
++        if let Some(vb) = view_box {
++            if !(vb[2] > 0.0 && vb[3] > 0.0) || !vb[0].is_finite() || !vb[1].is_finite() || !vb[2].is_finite() || !vb[3].is_finite() {
++                return None;
++            }
++        }
++        Some(PathEntry { verbs, shapes: shapes.len(), npts, coords, view_box })
++    }
++
++    /// Control points at morph value `m` (0 = the first shape, k = shape k;
++    /// between two keys, the two-term lerp, which is EXACT at both ends:
++    /// `a * 0 + b * 1 == b` and `a * 1 + b * 0 == a` for finite a, b).
++    pub fn points_at(&self, m: f32, out: &mut Vec<Pt>) {
++        out.clear();
++        let n = self.npts;
++        if self.shapes == 1 || !(m > 0.0) {
++            for i in 0..n {
++                out.push(pt(self.coords[2 * i], self.coords[2 * i + 1]));
++            }
++            return;
++        }
++        let last = (self.shapes - 1) as f32;
++        let m = if m > last { last } else { m };
++        let mut k = m as usize; // m > 0: truncation is floor
++        if k > self.shapes - 2 {
++            k = self.shapes - 2;
++        }
++        let f = m - k as f32;
++        let a = &self.coords[2 * n * k..2 * n * (k + 1)];
++        let b = &self.coords[2 * n * (k + 1)..2 * n * (k + 2)];
++        if f == 0.0 {
++            for i in 0..n {
++                out.push(pt(a[2 * i], a[2 * i + 1]));
++            }
++            return;
++        }
++        let g = 1.0 - f;
++        for i in 0..n {
++            out.push(pt(a[2 * i] * g + b[2 * i] * f, a[2 * i + 1] * g + b[2 * i + 1] * f));
++        }
++    }
++}
++
++// ---- PATH TABLE binary format ----------------------------------------------------
++//
++// Appended to styles.bin after the ANIM TABLE, counted by the header's u16
++// at offset 10 (reserved, 0, before this patch — so a composition with no
++// path is byte-identical). Little-endian, unaligned, like the style records.
++//
++//   Path entry:
++//     +0  u16  verbCount
++//     +2  u8   shapeCount (1..=PATH_MAX_SHAPES)
++//     +3  u8   flags      bit 0: viewBox present
++//     [if viewBox] 4 x f32  x, y, w, h
++//     verbCount x u8 verb
++//     shapeCount x npts x (f32 x, f32 y), npts derived from the verbs
++
++#[derive(Clone, Debug, Default)]
++pub struct PathTable {
++    pub entries: Vec<PathEntry>,
++}
++
++fn rd_u16(b: &[u8], o: usize) -> Option<u16> {
++    Some(u16::from_le_bytes([*b.get(o)?, *b.get(o + 1)?]))
++}
++
++fn rd_f32(b: &[u8], o: usize) -> Option<f32> {
++    Some(f32::from_le_bytes([*b.get(o)?, *b.get(o + 1)?, *b.get(o + 2)?, *b.get(o + 3)?]))
++}
++
++impl PathTable {
++    /// Parse `count` entries starting at `off`. None on any malformed entry.
++    pub fn parse(bytes: &[u8], mut off: usize, count: usize) -> Option<(PathTable, usize)> {
++        let mut entries = Vec::with_capacity(count);
++        for _ in 0..count {
++            let nv = rd_u16(bytes, off)? as usize;
++            let shapes = *bytes.get(off + 2)? as usize;
++            let flags = *bytes.get(off + 3)?;
++            off += 4;
++            let view_box = if flags & 1 != 0 {
++                let vb = [rd_f32(bytes, off)?, rd_f32(bytes, off + 4)?, rd_f32(bytes, off + 8)?, rd_f32(bytes, off + 12)?];
++                off += 16;
++                Some(vb)
++            } else {
++                None
++            };
++            let verbs = bytes.get(off..off + nv)?.to_vec();
++            off += nv;
++            let npts: usize = verbs.iter().map(|&v| verb_points(v)).sum();
++            let mut shape_pts = Vec::with_capacity(shapes);
++            for _ in 0..shapes {
++                let mut s = Vec::with_capacity(npts);
++                for _ in 0..npts {
++                    s.push(pt(rd_f32(bytes, off)?, rd_f32(bytes, off + 4)?));
++                    off += 8;
++                }
++                shape_pts.push(s);
++            }
++            entries.push(PathEntry::new(verbs, &shape_pts, view_box)?);
++        }
++        Some((PathTable { entries }, off))
++    }
++
++    /// Encode (compiler-side mirror; used by tests).
++    pub fn encode(entries: &[PathEntry], out: &mut Vec<u8>) {
++        for e in entries {
++            out.extend_from_slice(&(e.verbs.len() as u16).to_le_bytes());
++            out.push(e.shapes as u8);
++            out.push(if e.view_box.is_some() { 1 } else { 0 });
++            if let Some(vb) = e.view_box {
++                for v in vb {
++                    out.extend_from_slice(&v.to_le_bytes());
++                }
++            }
++            out.extend_from_slice(&e.verbs);
++            for c in &e.coords {
++                out.extend_from_slice(&c.to_le_bytes());
++            }
++        }
++    }
++}
++
++// ---- small deterministic math ----------------------------------------------------
++
++/// `fmath::sqrtf` (a bit-trick seed and three Newton steps), with NaN read
++/// as zero: fmath's guard is `x <= 0`, which a NaN passes, and a NaN's bit
++/// pattern is the one f32 result that differs between hosts.
++#[inline]
++pub fn sqrtf(x: f32) -> f32 {
++    if !(x > 0.0) {
++        return 0.0;
++    }
++    crate::fmath::sqrtf(x)
++}
++
++/// floor to i32 for |x| < 2^24 (saturating outside; NaN -> 0).
++#[inline]
++pub fn floor_i32(x: f32) -> i32 {
++    let i = x as i32;
++    if (i as f32) > x {
++        i - 1
++    } else {
++        i
++    }
++}
++
++#[inline]
++fn ceil_usize(x: f32) -> usize {
++    let i = x as usize; // x >= 0 here
++    if (i as f32) < x {
++        i + 1
++    } else {
++        i
++    }
++}
++
++#[inline]
++fn lerp_pt(a: Pt, b: Pt, u: f32) -> Pt {
++    pt(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u)
++}
++
++#[inline]
++fn dist(a: Pt, b: Pt) -> f32 {
++    let (dx, dy) = (b.x - a.x, b.y - a.y);
++    sqrtf(dx * dx + dy * dy)
++}
++
++// ---- flattening --------------------------------------------------------------------
++
++/// A flattened subpath: `pts[start..end]`, closed or open.
++#[derive(Clone, Copy, Debug)]
++pub struct Sub {
++    pub start: usize,
++    pub end: usize,
++    pub closed: bool,
++}
++
++/// Flattened subpaths (polylines).
++#[derive(Clone, Debug, Default)]
++pub struct Flat {
++    pub pts: Vec<Pt>,
++    pub subs: Vec<Sub>,
++}
++
++impl Flat {
++    pub fn clear(&mut self) {
++        self.pts.clear();
++        self.subs.clear();
++    }
++
++    fn begin(&mut self, p: Pt) {
++        let s = self.pts.len();
++        self.pts.push(p);
++        self.subs.push(Sub { start: s, end: s + 1, closed: false });
++    }
++
++    fn push(&mut self, p: Pt) {
++        self.pts.push(p);
++        if let Some(s) = self.subs.last_mut() {
++            s.end = self.pts.len();
++        }
++    }
++}
++
++/// Chords for one cubic: Wang's bound, n = ceil(sqrt(3/4 * M / tol)) with
++/// M the larger second difference of the control polygon, computed as a
++/// fourth root of squares so no norm needs its own square root.
++pub fn cubic_steps(p0: Pt, p1: Pt, p2: Pt, p3: Pt, tol: f32) -> usize {
++    let ax = p0.x - 2.0 * p1.x + p2.x;
++    let ay = p0.y - 2.0 * p1.y + p2.y;
++    let bx = p1.x - 2.0 * p2.x + p3.x;
++    let by = p1.y - 2.0 * p2.y + p3.y;
++    let a2 = ax * ax + ay * ay;
++    let b2 = bx * bx + by * by;
++    let m2 = if a2 > b2 { a2 } else { b2 };
++    let q = 0.5625 * m2 / (tol * tol);
++    if !(q > 1.0) {
++        return 1;
++    }
++    let n = ceil_usize(sqrtf(sqrtf(q)));
++    if n > CUBIC_MAX_STEPS {
++        CUBIC_MAX_STEPS
++    } else if n < 1 {
++        1
++    } else {
++        n
++    }
++}
++
++/// Flatten verbs over `pts` (local space) with chord tolerance `tol`.
++pub fn flatten(verbs: &[u8], pts: &[Pt], tol: f32, out: &mut Flat) {
++    out.clear();
++    let mut k = 0usize;
++    let mut sub_start = pt(0.0, 0.0);
++    let mut open = false;
++    for &v in verbs {
++        match v {
++            VERB_MOVE => {
++                let p = pts[k];
++                k += 1;
++                out.begin(p);
++                sub_start = p;
++                open = true;
++            }
++            VERB_LINE => {
++                if !open {
++                    out.begin(sub_start);
++                    open = true;
++                }
++                out.push(pts[k]);
++                k += 1;
++            }
++            VERB_CUBIC => {
++                if !open {
++                    out.begin(sub_start);
++                    open = true;
++                }
++                let p0 = *out.pts.last().unwrap();
++                let (p1, p2, p3) = (pts[k], pts[k + 1], pts[k + 2]);
++                k += 3;
++                let n = cubic_steps(p0, p1, p2, p3, tol);
++                let inv = n as f32;
++                for i in 1..n {
++                    let t = i as f32 / inv;
++                    let mt = 1.0 - t;
++                    let a = mt * mt * mt;
++                    let b = 3.0 * mt * mt * t;
++                    let c = 3.0 * mt * t * t;
++                    let d = t * t * t;
++                    out.push(pt(
++                        a * p0.x + b * p1.x + c * p2.x + d * p3.x,
++                        a * p0.y + b * p1.y + c * p2.y + d * p3.y,
++                    ));
++                }
++                out.push(p3); // the end point exactly, so subpaths join exactly
++            }
++            VERB_CLOSE => {
++                if open {
++                    if let Some(s) = out.subs.last_mut() {
++                        s.closed = true;
++                    }
++                    open = false;
++                }
++            }
++            _ => {}
++        }
++    }
++}
++
++// ---- trim --------------------------------------------------------------------------
++
++/// Which arc length the trim fractions are of.
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub enum TrimMode {
++    /// Every subpath trimmed by the same fractions of its own length
++    /// (After Effects "Simultaneously").
++    Each,
++    /// The subpaths as one sequence, in order (After Effects "Individually").
++    Whole,
++}
++
++#[derive(Clone, Copy, Debug)]
++pub struct Trim {
++    pub start: f32,
++    pub end: f32,
++    pub offset: f32,
++    pub mode: TrimMode,
++}
++
++impl Trim {
++    pub const NONE: Trim = Trim { start: 0.0, end: 1.0, offset: 0.0, mode: TrimMode::Each };
++
++    /// The visible fractions after ordering, clamping and the offset: None
++    /// for nothing, Some(None) for everything, else one or two intervals in
++    /// [0, 1] (two when the offset wraps the window past the end).
++    fn intervals(&self) -> Option<Option<[(f32, f32); 2]>> {
++        let clamp01 = |v: f32| if v > 1.0 { 1.0 } else if v > 0.0 { v } else { 0.0 };
++        let (a, b) = if self.start <= self.end { (self.start, self.end) } else { (self.end, self.start) };
++        let (s, e) = (clamp01(a), clamp01(b));
++        if !(e > s) {
++            return None;
++        }
++        if e - s >= 1.0 {
++            return Some(None);
++        }
++        let o = if self.offset.is_finite() { self.offset - crate::layout::floorf(self.offset) } else { 0.0 };
++        let mut s2 = s + o;
++        let mut e2 = e + o;
++        if s2 >= 1.0 {
++            s2 -= 1.0;
++            e2 -= 1.0;
++        }
++        if e2 <= 1.0 {
++            Some(Some([(s2, e2), (0.0, 0.0)]))
++        } else {
++            Some(Some([(s2, 1.0), (0.0, e2 - 1.0)]))
++        }
++    }
++}
++
++/// Cumulative arc length at each vertex of `sub`, and the closing edge's
++/// end for a closed one (so `cum.len() == n + closed as usize`).
++fn sub_lengths(pts: &[Pt], sub: Sub, cum: &mut Vec<f32>) -> f32 {
++    cum.clear();
++    let mut acc = 0.0f32;
++    cum.push(0.0);
++    for i in sub.start + 1..sub.end {
++        acc += dist(pts[i - 1], pts[i]);
++        cum.push(acc);
++    }
++    if sub.closed && sub.end - sub.start > 1 {
++        acc += dist(pts[sub.end - 1], pts[sub.start]);
++        cum.push(acc);
++    }
++    acc
++}
++
++/// Vertex `j` of the sub walked as a ring when closed (j == n is the start).
++#[inline]
++fn ring(pts: &[Pt], sub: Sub, j: usize) -> Pt {
++    let n = sub.end - sub.start;
++    pts[sub.start + if j >= n { j - n } else { j }]
++}
++
++/// The point at arc length `pos` along the sub.
++fn point_at(pts: &[Pt], sub: Sub, cum: &[f32], pos: f32) -> (Pt, usize) {
++    // Segment j runs from vertex j to j+1, lengths cum[j]..cum[j+1].
++    let segs = cum.len() - 1;
++    let mut j = 0usize;
++    while j + 1 < segs && cum[j + 1] < pos {
++        j += 1;
++    }
++    let (l0, l1) = (cum[j], cum[j + 1]);
++    let a = ring(pts, sub, j);
++    let b = ring(pts, sub, j + 1);
++    let len = l1 - l0;
++    let u = if len > 0.0 {
++        let u = (pos - l0) / len;
++        if u < 0.0 {
++            0.0
++        } else if u > 1.0 {
++            1.0
++        } else {
++            u
++        }
++    } else {
++        0.0
++    };
++    (lerp_pt(a, b, u), j)
++}
++
++/// Append the piece [a, b] of the sub (0 <= a < b <= total) as an open
++/// polyline: the cut at a, every vertex strictly inside, the cut at b.
++fn piece(pts: &[Pt], sub: Sub, cum: &[f32], a: f32, b: f32, out: &mut Flat, continue_last: bool) {
++    let (pa, ja) = point_at(pts, sub, cum, a);
++    let (pb, jb) = point_at(pts, sub, cum, b);
++    if continue_last {
++        out.push(pa);
++    } else {
++        out.begin(pa);
++    }
++    for j in ja + 1..=jb {
++        if cum[j] > a && cum[j] < b {
++            out.push(ring(pts, sub, j));
++        }
++    }
++    out.push(pb);
++}
++
++/// Trim every subpath of `flat` into `out`. `trim` fractions are of arc
++/// length measured on the flattened local polyline.
++pub fn trim(flat: &Flat, t: &Trim, out: &mut Flat, cum: &mut Vec<f32>) {
++    out.clear();
++    let iv = match t.intervals() {
++        None => return,
++        Some(None) => {
++            out.pts.extend_from_slice(&flat.pts);
++            out.subs.extend_from_slice(&flat.subs);
++            return;
++        }
++        Some(Some(iv)) => iv,
++    };
++    let wraps = iv[1].1 > 0.0;
++    let each = t.mode == TrimMode::Each || flat.subs.len() == 1;
++    if each {
++        for &sub in &flat.subs {
++            let total = sub_lengths(&flat.pts, sub, cum);
++            if !(total > 0.0) {
++                continue;
++            }
++            if wraps && sub.closed {
++                // One piece across the closing vertex: [s, total] then [0, e].
++                let (s, e) = (iv[0].0 * total, iv[1].1 * total);
++                piece(&flat.pts, sub, cum, s, total, out, false);
++                if e > 0.0 {
++                    let last = out.pts.len();
++                    piece(&flat.pts, sub, cum, 0.0, e, out, true);
++                    // `continue_last` re-pushed the start vertex, which the
++                    // first half already ended on: drop the duplicate.
++                    if out.pts.len() > last {
++                        out.pts.remove(last);
++                        if let Some(s) = out.subs.last_mut() {
++                            s.end = out.pts.len();
++                        }
++                    }
++                }
++            } else {
++                for &(s, e) in iv.iter().take(if wraps { 2 } else { 1 }) {
++                    if e > s {
++                        piece(&flat.pts, sub, cum, s * total, e * total, out, false);
++                    }
++                }
++            }
++        }
++        return;
++    }
++    // Whole: global positions over the subpaths in order.
++    let mut totals: Vec<f32> = Vec::with_capacity(flat.subs.len());
++    let mut grand = 0.0f32;
++    for &sub in &flat.subs {
++        let l = sub_lengths(&flat.pts, sub, cum);
++        totals.push(l);
++        grand += l;
++    }
++    if !(grand > 0.0) {
++        return;
++    }
++    for &(s, e) in iv.iter().take(if wraps { 2 } else { 1 }) {
++        if !(e > s) {
++            continue;
++        }
++        let (gs, ge) = (s * grand, e * grand);
++        let mut base = 0.0f32;
++        for (k, &sub) in flat.subs.iter().enumerate() {
++            let l = totals[k];
++            let (a, b) = (gs - base, ge - base);
++            if b > 0.0 && a < l && l > 0.0 {
++                let a = if a > 0.0 { a } else { 0.0 };
++                let b = if b < l { b } else { l };
++                if a == 0.0 && b == l && sub.closed {
++                    // The whole of a closed subpath stays closed (joins, no caps).
++                    let st = out.pts.len();
++                    out.pts.extend_from_slice(&flat.pts[sub.start..sub.end]);
++                    out.subs.push(Sub { start: st, end: out.pts.len(), closed: true });
++                } else if b > a {
++                    sub_lengths(&flat.pts, sub, cum);
++                    piece(&flat.pts, sub, cum, a, b, out, false);
++                }
++            }
++            base += l;
++        }
++    }
++}
++
++// ---- stroke ------------------------------------------------------------------------
++
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub enum Join {
++    Miter,
++    Round,
++    Bevel,
++}
++
++#[derive(Clone, Copy, Debug, PartialEq)]
++pub enum Cap {
++    Butt,
++    Round,
++    Square,
++}
++
++/// Closed contours: `pts[ends[k-1]..ends[k]]`.
++#[derive(Clone, Debug, Default)]
++pub struct Contours {
++    pub pts: Vec<Pt>,
++    pub ends: Vec<usize>,
++}
++
++impl Contours {
++    pub fn clear(&mut self) {
++        self.pts.clear();
++        self.ends.clear();
++    }
++
++    fn close(&mut self) {
++        let start = self.ends.last().copied().unwrap_or(0);
++        if self.pts.len() - start < 3 {
++            self.pts.truncate(start); // encloses nothing
++        } else {
++            self.ends.push(self.pts.len());
++        }
++    }
++
++    pub fn len(&self) -> usize {
++        self.ends.len()
++    }
++
++    pub fn contour(&self, k: usize) -> &[Pt] {
++        let s = if k == 0 { 0 } else { self.ends[k - 1] };
++        &self.pts[s..self.ends[k]]
++    }
++}
++
++/// Stroke parameters in local units.
++#[derive(Clone, Copy, Debug)]
++pub struct StrokeStyle {
++    pub width: f32,
++    pub join: Join,
++    pub cap: Cap,
++    pub miter_limit: f32,
++}
++
++/// The outward bisector of unit vectors u and v: through u + v when the
++/// angle between them is under 90 degrees, through the perpendicular of
++/// v - u otherwise (u + v cancels as the angle nears 180), oriented away
++/// from the turn — `fwd` decides only for an exact reversal.
++#[inline]
++fn bisect(u: Pt, v: Pt, fwd: Pt) -> Pt {
++    let c = u.x * v.x + u.y * v.y;
++    if c >= 0.0 {
++        let s = pt(u.x + v.x, u.y + v.y);
++        let l = sqrtf(s.x * s.x + s.y * s.y);
++        return pt(s.x / l, s.y / l);
++    }
++    let w = pt(v.x - u.x, v.y - u.y);
++    let mut m = pt(-w.y, w.x);
++    let l = sqrtf(m.x * m.x + m.y * m.y);
++    m = pt(m.x / l, m.y / l);
++    let s = pt(u.x + v.x, u.y + v.y);
++    let toward = s.x * m.x + s.y * m.y;
++    let flip = if toward != 0.0 { toward < 0.0 } else { fwd.x * m.x + fwd.y * m.y < 0.0 };
++    if flip {
++        pt(-m.x, -m.y)
++    } else {
++        m
++    }
++}
++
++/// Bisection levels for an arc of cosine `c` and radius `r` so every chord's
++/// sagitta stays under `tol`: halve while r * (1 - cos(half chord angle))
++/// exceeds it. No trigonometry: cos(x/2) = sqrt((1 + cos x) / 2).
++fn arc_levels(c: f32, r: f32, tol: f32) -> u32 {
++    let mut ch = if c < -1.0 { -1.0 } else if c > 1.0 { 1.0 } else { c };
++    let mut levels = 0u32;
++    loop {
++        let half = sqrtf((1.0 + ch) * 0.5);
++        if r * (1.0 - half) <= tol || levels >= ARC_MAX_LEVELS {
++            return levels;
++        }
++        ch = half;
++        levels += 1;
++    }
++}
++
++/// Push the arc from direction u to v around `o` at radius r, exclusive of
++/// both ends, by recursive bisection.
++fn arc(out: &mut Vec<Pt>, o: Pt, r: f32, u: Pt, v: Pt, fwd: Pt, levels: u32) {
++    if levels == 0 {
++        return;
++    }
++    let m = bisect(u, v, fwd);
++    arc(out, o, r, u, m, fwd, levels - 1);
++    out.push(pt(o.x + m.x * r, o.y + m.y * r));
++    arc(out, o, r, m, v, fwd, levels - 1);
++}
++
++/// The outer side of a join at `v` from segment direction `d0` (normal n0)
++/// to `d1` (normal n1); `side` +1 for the A side (p + n*hw), -1 for B.
++/// Pushes the points strictly between the two offset ends.
++#[allow(clippy::too_many_arguments)]
++fn outer_join(out: &mut Vec<Pt>, v: Pt, n0: Pt, n1: Pt, d0: Pt, side: f32, hw: f32, s: &StrokeStyle, tol: f32) {
++    let u = pt(n0.x * side, n0.y * side);
++    let w = pt(n1.x * side, n1.y * side);
++    let c = n0.x * n1.x + n0.y * n1.y;
++    match s.join {
++        Join::Bevel => {}
++        Join::Miter => {
++            // Miter length / width = 1 / cos(theta/2) = 1 / sqrt((1+c)/2):
++            // within the limit iff (1 + c) >= 2 / limit^2. No root needed.
++            let lim = if s.miter_limit > 1.0 { s.miter_limit } else { 1.0 };
++            let k = 1.0 + c;
++            if k >= 2.0 / (lim * lim) && k > 0.0 {
++                let f = hw / k;
++                out.push(pt(v.x + (u.x + w.x) * f, v.y + (u.y + w.y) * f));
++            }
++        }
++        Join::Round => {
++            let levels = arc_levels(c, hw, tol);
++            arc(out, v, hw, u, w, d0, levels);
++        }
++    }
++}
++
++/// One segment of a stroked polyline: unit direction, its normal (the
++/// direction rotated +90 degrees), and its length.
++#[derive(Clone, Copy, Debug)]
++pub struct Seg {
++    d: Pt,
++    n: Pt,
++    len: f32,
++}
++
++/// What one side of a polyline does at a join.
++enum SideJoin {
++    /// The two offset lines meet at one point, which replaces both offset
++    /// ends: an outer miter within the limit (the ends are collinear with
++    /// it, so dropping them changes nothing), an outer round or bevel join
++    /// so gentle that the miter point overshoots it by less than 1/256 px,
++    /// or an inner side whose wedge lies inside both quads (where the
++    /// meeting point IS the union's boundary).
++    Meet(Pt),
++    /// Both offset ends, with the join's points (outer) or the vertex
++    /// itself, the pivot (inner), between them.
++    Ends,
++}
++
++/// The decision for `side` at the join of segments `s0` and `s1` at `v`.
++fn side_join(v: Pt, s0: &Seg, s1: &Seg, side: f32, hw: f32, st: &StrokeStyle, tol: f32) -> (SideJoin, bool) {
++    let cross = s0.d.x * s1.d.y - s0.d.y * s1.d.x;
++    let dot = s0.d.x * s1.d.x + s0.d.y * s1.d.y;
++    let a_outer = cross < 0.0 || (cross == 0.0 && dot < 0.0);
++    let outer = if side > 0.0 { a_outer } else { !a_outer };
++    let c = s0.n.x * s1.n.x + s0.n.y * s1.n.y; // = dot
++    let k = 1.0 + c;
++    let meet = |k: f32| {
++        let f = side * hw / k;
++        pt(v.x + (s0.n.x + s1.n.x) * f, v.y + (s0.n.y + s1.n.y) * f)
++    };
++    if outer {
++        let merge = match st.join {
++            Join::Miter => {
++                let lim = if st.miter_limit > 1.0 { st.miter_limit } else { 1.0 };
++                k >= 2.0 / (lim * lim) && k > 0.0
++            }
++            // The miter point overshoots a round join by hw (1/cos - 1) and
++            // a bevel by about twice that: merge while 2 / (1 + c) <=
++            // (1 + t / (2 hw))^2, t = tol / 16 (1/256 px on screen).
++            Join::Round | Join::Bevel => {
++                let g = 1.0 + tol / (32.0 * hw);
++                k > 0.0 && 2.0 <= k * g * g
++            }
++        };
++        (if merge { SideJoin::Meet(meet(k)) } else { SideJoin::Ends }, true)
++    } else {
++        let sin = if cross < 0.0 { -cross } else { cross };
++        let short = if s0.len < s1.len { s0.len } else { s1.len };
++        let inside = dot > 0.0 && hw * sin * 1.125 <= short;
++        (if inside { SideJoin::Meet(meet(k)) } else { SideJoin::Ends }, false)
++    }
++}
++
++/// One side of a polyline, walked forward: offsets by `side * n * hw`; at
++/// each join either the meeting point of the two offset lines, or both
++/// offset ends with the join's points between them (outer side) or the
++/// vertex itself, the pivot (inner side), so the cycle's winding is the sum
++/// of the segment quads and the outer wedges. `closed` adds the join at the
++/// closing vertex.
++#[allow(clippy::too_many_arguments)]
++fn side_walk(out: &mut Vec<Pt>, p: &[Pt], segs: &[Seg], closed: bool, side: f32, hw: f32, s: &StrokeStyle, tol: f32) {
++    let ns = segs.len();
++    let off = |q: Pt, n: Pt| pt(q.x + n.x * side * hw, q.y + n.y * side * hw);
++    // A closed side starts after the closing join: if that join meets, its
++    // point (pushed last) stands for the first segment's start.
++    let mut met = closed && matches!(side_join(p[0], &segs[ns - 1], &segs[0], side, hw, s, tol).0, SideJoin::Meet(_));
++    for i in 0..ns {
++        let n = segs[i].n;
++        let a = p[i];
++        let b = p[if i + 1 == p.len() { 0 } else { i + 1 }];
++        if !met {
++            out.push(off(a, n));
++        }
++        if !(closed || i + 1 < ns) {
++            out.push(off(b, n));
++            break;
++        }
++        let j = if i + 1 == ns { 0 } else { i + 1 };
++        let (s0, s1) = (segs[i], segs[j]);
++        match side_join(b, &s0, &s1, side, hw, s, tol) {
++            (SideJoin::Meet(m), _) => {
++                out.push(m);
++                met = true;
++            }
++            (SideJoin::Ends, outer) => {
++                out.push(off(b, n));
++                if outer {
++                    outer_join(out, b, s0.n, s1.n, s0.d, side, hw, s, tol);
++                } else {
++                    out.push(b); // the pivot: the inner offsets meet through the centre
++                }
++                met = false;
++            }
++        }
++    }
++}
++
++/// Outline one polyline's stroke into `out` (local space). Open: one cycle
++/// (side A forward, end cap, side B backward, start cap). Closed: two (side
++/// A forward, side B backward). Every segment contributes a positively
++/// wound quad and every join or cap a positively wound wedge to the
++/// cycles' winding, so their nonzero fill is the union of the pieces.
++pub fn stroke_polyline(pts: &[Pt], closed: bool, s: &StrokeStyle, tol: f32, out: &mut Contours, scratch: &mut StrokeScratch) {
++    let hw = s.width * 0.5;
++    if !(hw > 0.0) {
++        return;
++    }
++    // Drop repeated points: a zero-length segment has no direction.
++    let p = &mut scratch.p;
++    p.clear();
++    for &q in pts {
++        if let Some(&last) = p.last() {
++            let (dx, dy) = (q.x - last.x, q.y - last.y);
++            if !(dx * dx + dy * dy > 1e-12) {
++                continue;
++            }
++        }
++        p.push(q);
++    }
++    if closed && p.len() > 1 {
++        let (f, l) = (p[0], p[p.len() - 1]);
++        let (dx, dy) = (f.x - l.x, f.y - l.y);
++        if !(dx * dx + dy * dy > 1e-12) {
++            p.pop();
++        }
++    }
++    if p.len() < 2 {
++        return; // zero-length subpath: nothing (no dot for round caps yet)
++    }
++    let ns = if closed { p.len() } else { p.len() - 1 };
++    let segs = &mut scratch.segs;
++    segs.clear();
++    for i in 0..ns {
++        let a = p[i];
++        let b = p[if i + 1 == p.len() { 0 } else { i + 1 }];
++        let (dx, dy) = (b.x - a.x, b.y - a.y);
++        let len = sqrtf(dx * dx + dy * dy);
++        let d = pt(dx / len, dy / len);
++        segs.push(Seg { d, n: pt(-d.y, d.x), len });
++    }
++    if closed {
++        side_walk(&mut out.pts, p, segs, true, 1.0, hw, s, tol);
++        out.close();
++        let b = &mut scratch.b;
++        b.clear();
++        side_walk(b, p, segs, true, -1.0, hw, s, tol);
++        out.pts.extend(b.iter().rev());
++        out.close();
++        return;
++    }
++    side_walk(&mut out.pts, p, segs, false, 1.0, hw, s, tol);
++    // End cap: from A's last offset to B's, around the end point forward.
++    let Seg { d: de, n: ne, .. } = segs[ns - 1];
++    let pe = p[p.len() - 1];
++    cap(&mut out.pts, pe, ne, de, hw, s.cap, tol);
++    let b = &mut scratch.b;
++    b.clear();
++    side_walk(b, p, segs, false, -1.0, hw, s, tol);
++    out.pts.extend(b.iter().rev());
++    // Start cap: from B's first offset to A's, around the start backward.
++    let Seg { d: d0, n: n0, .. } = segs[0];
++    cap(&mut out.pts, p[0], pt(-n0.x, -n0.y), pt(-d0.x, -d0.y), hw, s.cap, tol);
++    out.close();
++}
++
++/// The points strictly between `o + n*hw` and `o - n*hw` around `o`
++/// through direction `d` (n is d rotated +90 degrees).
++fn cap(out: &mut Vec<Pt>, o: Pt, n: Pt, d: Pt, hw: f32, c: Cap, tol: f32) {
++    match c {
++        Cap::Butt => {}
++        Cap::Square => {
++            out.push(pt(o.x + (n.x + d.x) * hw, o.y + (n.y + d.y) * hw));
++            out.push(pt(o.x + (d.x - n.x) * hw, o.y + (d.y - n.y) * hw));
++        }
++        Cap::Round => {
++            let levels = arc_levels(0.0, hw, tol);
++            let neg = pt(-n.x, -n.y);
++            arc(out, o, hw, n, d, d, levels);
++            out.push(pt(o.x + d.x * hw, o.y + d.y * hw));
++            arc(out, o, hw, d, neg, d, levels);
++        }
++    }
++}
++
++#[derive(Default)]
++pub struct StrokeScratch {
++    p: Vec<Pt>,
++    segs: Vec<Seg>,
++    b: Vec<Pt>,
++}
++
++/// Stroke every subpath of `flat`.
++pub fn stroke(flat: &Flat, s: &StrokeStyle, tol: f32, out: &mut Contours, scratch: &mut StrokeScratch) {
++    for sub in &flat.subs {
++        stroke_polyline(&flat.pts[sub.start..sub.end], sub.closed, s, tol, out, scratch);
++    }
++}
++
++// ---- emission ----------------------------------------------------------------------
++
++/// Sutherland-Hodgman against one axis-aligned half-plane. Winding is
++/// preserved for every point strictly inside it: each excursion outside is
++/// replaced by a segment of the boundary, and the loop that excursion and
++/// segment form lies wholly outside.
++fn clip_half(src: &[Pt], dst: &mut Vec<Pt>, axis_x: bool, bound: f32, keep_less: bool) {
++    dst.clear();
++    let n = src.len();
++    if n == 0 {
++        return;
++    }
++    let inside = |p: Pt| {
++        let v = if axis_x { p.x } else { p.y };
++        if keep_less {
++            v <= bound
++        } else {
++            v >= bound
++        }
++    };
++    let mut prev = src[n - 1];
++    let mut prev_in = inside(prev);
++    for &cur in src {
++        let cur_in = inside(cur);
++        if cur_in != prev_in {
++            // Intersection with the boundary line; the divisor is non-zero
++            // because the two points lie on opposite sides of it.
++            let p = if axis_x {
++                let t = (bound - prev.x) / (cur.x - prev.x);
++                pt(bound, prev.y + (cur.y - prev.y) * t)
++            } else {
++                let t = (bound - prev.y) / (cur.y - prev.y);
++                pt(prev.x + (cur.x - prev.x) * t, bound)
++            };
++            dst.push(p);
++        }
++        if cur_in {
++            dst.push(cur);
++        }
++        prev = cur;
++        prev_in = cur_in;
++    }
++}
++
++#[derive(Default)]
++pub struct EmitScratch {
++    a: Vec<Pt>,
++    b: Vec<Pt>,
++}
++
++/// Append one PATH op (spec: op, len, flags, color, C, then C x { n, n x
++/// (x, y) i32 in 1/256 logical px }) for `contours` mapped through `xf`.
++/// Returns false (and emits nothing) when nothing survives or a point is
++/// not finite.
++pub fn emit_op(
++    words: &mut Vec<u32>,
++    contours: &Contours,
++    xf: &Affine,
++    color: u32,
++    evenodd: bool,
++    screen: (f32, f32),
++    scratch: &mut EmitScratch,
++) -> bool {
++    if color >> 24 == 0 || contours.len() == 0 {
++        return false;
++    }
++    let (x0, y0, x1, y1) = (-GUARD, -GUARD, screen.0 + GUARD, screen.1 + GUARD);
++    let head = words.len();
++    words.push(spec::draw_op::PATH);
++    words.push(0); // len, patched below
++    words.push(if evenodd { 1 } else { 0 });
++    words.push(color);
++    words.push(0); // contour count, patched below
++    let mut count = 0u32;
++    for k in 0..contours.len() {
++        let src = contours.contour(k);
++        let a = &mut scratch.a;
++        a.clear();
++        let (mut bx0, mut by0, mut bx1, mut by1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
++        for &q in src {
++            let p = pt(xf.a * q.x + xf.c * q.y + xf.tx, xf.b * q.x + xf.d * q.y + xf.ty);
++            if !p.x.is_finite() || !p.y.is_finite() {
++                words.truncate(head);
++                return false;
++            }
++            bx0 = if p.x < bx0 { p.x } else { bx0 };
++            by0 = if p.y < by0 { p.y } else { by0 };
++            bx1 = if p.x > bx1 { p.x } else { bx1 };
++            by1 = if p.y > by1 { p.y } else { by1 };
++            a.push(p);
++        }
++        if bx1 < x0 || by1 < y0 || bx0 > x1 || by0 > y1 {
++            // Wholly outside on one side: its winding is zero everywhere
++            // inside the guard rect, so it is dropped rather than clipped.
++            continue;
++        }
++        if bx0 < x0 || by0 < y0 || bx1 > x1 || by1 > y1 {
++            let b = &mut scratch.b;
++            clip_half(a, b, true, x0, false);
++            clip_half(b, a, true, x1, true);
++            clip_half(a, b, false, y0, false);
++            clip_half(b, a, false, y1, true);
++        }
++        if a.len() < 3 {
++            continue;
++        }
++        words.push(a.len() as u32);
++        for &p in a.iter() {
++            words.push(floor_i32(p.x * PATH_UNITS + 0.5) as u32);
++            words.push(floor_i32(p.y * PATH_UNITS + 0.5) as u32);
++        }
++        count += 1;
++    }
++    if count == 0 {
++        words.truncate(head);
++        return false;
++    }
++    words[head + 1] = (words.len() - head) as u32;
++    words[head + 4] = count;
++    true
++}
++
++// ---- the per-node pipeline --------------------------------------------------------
++
++/// What a node asks of its path (resolved style values).
++#[derive(Clone, Copy, Debug)]
++pub struct PathPaint {
++    pub morph: f32,
++    pub fill: u32,
++    pub evenodd: bool,
++    pub stroke: u32,
++    pub stroke_style: StrokeStyle,
++    pub trim: Trim,
++}
++
++#[derive(Default)]
++pub struct PathScratch {
++    pub pts: Vec<Pt>,
++    pub flat: Flat,
++    pub trimmed: Flat,
++    pub contours: Contours,
++    pub cum: Vec<f32>,
++    pub stroke: StrokeScratch,
++    pub emit: EmitScratch,
++    /// Running counts, for the cost measurements; nothing reads them to draw.
++    pub stats: PathStats,
++}
++
++/// Counters for the cost measurements: chords flattened, contour vertices
++/// emitted.
++#[derive(Clone, Copy, Debug, Default)]
++pub struct PathStats {
++    pub chords: usize,
++    pub vertices: usize,
++}
++
++/// A bound on the scale `xf` applies to any length: its Frobenius norm,
++/// which is at least the largest singular value and does not change under
++/// rotation (up to rounding), so a turning path keeps its chord count.
++pub fn scale_bound(xf: &Affine) -> f32 {
++    sqrtf(xf.a * xf.a + xf.b * xf.b + xf.c * xf.c + xf.d * xf.d)
++}
++
++/// The viewBox mapping (xMidYMid meet) onto a w x h box, composed before
++/// `world`.
++pub fn local_frame(entry: &PathEntry, w: f32, h: f32, world: &Affine) -> Affine {
++    let Some([vx, vy, vw, vh]) = entry.view_box else {
++        return *world;
++    };
++    let sx = w / vw;
++    let sy = h / vh;
++    let s = if sx < sy { sx } else { sy };
++    let tx = (w - vw * s) * 0.5 - vx * s;
++    let ty = (h - vh * s) * 0.5 - vy * s;
++    let m = Affine { a: s, b: 0.0, c: 0.0, d: s, tx, ty };
++    Affine {
++        a: world.a * m.a + world.c * m.b,
++        b: world.b * m.a + world.d * m.b,
++        c: world.a * m.c + world.c * m.d,
++        d: world.b * m.c + world.d * m.d,
++        tx: world.a * m.tx + world.c * m.ty + world.tx,
++        ty: world.b * m.tx + world.d * m.ty + world.ty,
++    }
++}
++
++/// Morph and flatten an entry for one node; returns the local-to-screen
++/// affine and the local tolerance, or None when the transform collapses it.
++pub fn prepare(entry: &PathEntry, w: f32, h: f32, world: &Affine, morph: f32, sc: &mut PathScratch) -> Option<(Affine, f32)> {
++    let xf = local_frame(entry, w, h, world);
++    let s = scale_bound(&xf);
++    if !(s > 0.0) || !s.is_finite() {
++        return None;
++    }
++    let tol = FLATTEN_TOL / s;
++    entry.points_at(morph, &mut sc.pts);
++    flatten(&entry.verbs, &sc.pts, tol, &mut sc.flat);
++    sc.stats.chords += sc.flat.pts.len();
++    Some((xf, tol))
++}
++
++/// The fill op of a prepared path (every subpath closed implicitly).
++pub fn emit_fill(words: &mut Vec<u32>, xf: &Affine, color: u32, evenodd: bool, screen: (f32, f32), sc: &mut PathScratch) -> bool {
++    sc.contours.clear();
++    for sub in &sc.flat.subs {
++        sc.contours.pts.extend_from_slice(&sc.flat.pts[sub.start..sub.end]);
++        sc.contours.close();
++    }
++    sc.stats.vertices += sc.contours.pts.len();
++    emit_op(words, &sc.contours, xf, color, evenodd, screen, &mut sc.emit)
++}
++
++/// The stroke op of a prepared path: trimmed, outlined, filled nonzero.
++#[allow(clippy::too_many_arguments)]
++pub fn emit_stroke(
++    words: &mut Vec<u32>,
++    xf: &Affine,
++    tol: f32,
++    color: u32,
++    style: &StrokeStyle,
++    t: &Trim,
++    screen: (f32, f32),
++    sc: &mut PathScratch,
++) -> bool {
++    if !(style.width > 0.0) {
++        return false;
++    }
++    trim(&sc.flat, t, &mut sc.trimmed, &mut sc.cum);
++    sc.contours.clear();
++    stroke(&sc.trimmed, style, tol, &mut sc.contours, &mut sc.stroke);
++    sc.stats.vertices += sc.contours.pts.len();
++    emit_op(words, &sc.contours, xf, color, false, screen, &mut sc.emit)
++}
++
++/// Emit a node's path: fill (if its colour has alpha) then stroke.
++#[allow(clippy::too_many_arguments)]
++pub fn emit_path(
++    words: &mut Vec<u32>,
++    entry: &PathEntry,
++    w: f32,
++    h: f32,
++    world: &Affine,
++    paint: &PathPaint,
++    screen: (f32, f32),
++    sc: &mut PathScratch,
++) {
++    let Some((xf, tol)) = prepare(entry, w, h, world, paint.morph, sc) else {
++        return;
++    };
++    if paint.fill >> 24 != 0 {
++        emit_fill(words, &xf, paint.fill, paint.evenodd, screen, sc);
++    }
++    if paint.stroke >> 24 != 0 {
++        emit_stroke(words, &xf, tol, paint.stroke, &paint.stroke_style, &paint.trim, screen, sc);
++    }
++}
++
++// ---- test support -----------------------------------------------------------------
++
++/// The convex pieces whose union a stroke is: one quad per segment, the
++/// outer wedge of every join, the caps. Built from the same normals and the
++/// same join and cap points the outline uses, so a test can hold the
++/// outline's winding to the union of these (the assembly), while the
++/// geometry of the pieces is held to the true offset separately.
++#[cfg(test)]
++pub(crate) fn stroke_pieces(pts: &[Pt], closed: bool, s: &StrokeStyle, tol: f32) -> Vec<Vec<Pt>> {
++    let hw = s.width * 0.5;
++    let mut p: Vec<Pt> = Vec::new();
++    for &q in pts {
++        if let Some(&last) = p.last() {
++            let (dx, dy) = (q.x - last.x, q.y - last.y);
++            if !(dx * dx + dy * dy > 1e-12) {
++                continue;
++            }
++        }
++        p.push(q);
++    }
++    if closed && p.len() > 1 {
++        let (f, l) = (p[0], p[p.len() - 1]);
++        let (dx, dy) = (f.x - l.x, f.y - l.y);
++        if !(dx * dx + dy * dy > 1e-12) {
++            p.pop();
++        }
++    }
++    let mut out = Vec::new();
++    if p.len() < 2 || !(hw > 0.0) {
++        return out;
++    }
++    let ns = if closed { p.len() } else { p.len() - 1 };
++    let mut segs = Vec::new();
++    for i in 0..ns {
++        let a = p[i];
++        let b = p[if i + 1 == p.len() { 0 } else { i + 1 }];
++        let (dx, dy) = (b.x - a.x, b.y - a.y);
++        let len = sqrtf(dx * dx + dy * dy);
++        let d = pt(dx / len, dy / len);
++        segs.push(Seg { d, n: pt(-d.y, d.x), len });
++    }
++    let off = |q: Pt, n: Pt, side: f32| pt(q.x + n.x * side * hw, q.y + n.y * side * hw);
++    for i in 0..ns {
++        let a = p[i];
++        let b = p[if i + 1 == p.len() { 0 } else { i + 1 }];
++        let n = segs[i].n;
++        out.push(alloc::vec![off(a, n, 1.0), off(b, n, 1.0), off(b, n, -1.0), off(a, n, -1.0)]);
++        if !(closed || i + 1 < ns) {
++            continue;
++        }
++        let j = if i + 1 == ns { 0 } else { i + 1 };
++        let (s0, s1) = (segs[i], segs[j]);
++        let cross = s0.d.x * s1.d.y - s0.d.y * s1.d.x;
++        let dot = s0.d.x * s1.d.x + s0.d.y * s1.d.y;
++        let a_outer = cross < 0.0 || (cross == 0.0 && dot < 0.0);
++        let side = if a_outer { 1.0 } else { -1.0 };
++        let mut mid = Vec::new();
++        outer_join(&mut mid, b, s0.n, s1.n, s0.d, side, hw, s, tol);
++        let mut wedge = alloc::vec![b, off(b, s0.n, side)];
++        wedge.extend_from_slice(&mid);
++        wedge.push(off(b, s1.n, side));
++        out.push(wedge);
++    }
++    if !closed {
++        let last = segs[ns - 1];
++        let pe = p[p.len() - 1];
++        let mut c = alloc::vec![pe, off(pe, last.n, 1.0)];
++        cap(&mut c, pe, last.n, last.d, hw, s.cap, tol);
++        c.push(off(pe, last.n, -1.0));
++        out.push(c);
++        let first = segs[0];
++        let n0 = pt(-first.n.x, -first.n.y);
++        let mut c = alloc::vec![p[0], off(p[0], n0, 1.0)];
++        cap(&mut c, p[0], n0, pt(-first.d.x, -first.d.y), hw, s.cap, tol);
++        c.push(off(p[0], n0, -1.0));
++        out.push(c);
++    }
++    out
++}
+diff --git a/engine/core/src/path_scenes.rs b/engine/core/src/path_scenes.rs
+new file mode 100644
+index 00000000..9022e7b3
+--- /dev/null
++++ b/engine/core/src/path_scenes.rs
+@@ -0,0 +1,666 @@
++//! Path test scenes, shared by the core tests, the cross-platform digest
++//! check and the cost measurement (feature `path-scenes` exposes them to
++//! the wasm harness). Every scene is a pure function of its index: the same
++//! words and the same pixels on every host, which is what the digests pin.
++
++use alloc::vec::Vec;
++
++use crate::draw::Affine;
++use crate::path::*;
++use crate::spec::draw_op;
++use crate::Ui;
++
++// ---- deterministic randomness ----------------------------------------------------
++
++pub struct Rng(pub u64);
++
++impl Rng {
++    pub fn next(&mut self) -> u64 {
++        // xorshift64*
++        let mut x = self.0;
++        x ^= x >> 12;
++        x ^= x << 25;
++        x ^= x >> 27;
++        self.0 = x;
++        x.wrapping_mul(0x2545_f491_4f6c_dd1d)
++    }
++
++    /// Uniform in [0, 1) from 24 bits: exact in f32.
++    pub fn f(&mut self) -> f32 {
++        (self.next() >> 40) as f32 / 16_777_216.0
++    }
++
++    pub fn range(&mut self, lo: f32, hi: f32) -> f32 {
++        lo + (hi - lo) * self.f()
++    }
++
++    pub fn below(&mut self, n: u64) -> u64 {
++        self.next() % n
++    }
++}
++
++pub fn fnv64(bytes: &[u8]) -> u64 {
++    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
++    for &b in bytes {
++        h ^= b as u64;
++        h = h.wrapping_mul(0x0000_0100_0000_01b3);
++    }
++    h
++}
++
++pub fn words_digest(words: &[u32]) -> u64 {
++    let mut bytes = Vec::with_capacity(words.len() * 4);
++    for w in words {
++        bytes.extend_from_slice(&w.to_le_bytes());
++    }
++    fnv64(&bytes)
++}
++
++// ---- shape builders ------------------------------------------------------------------
++
++/// Verbs + points for a shape built with move/line/cubic/close calls.
++#[derive(Clone, Default)]
++pub struct Shape {
++    pub verbs: Vec<u8>,
++    pub pts: Vec<Pt>,
++}
++
++impl Shape {
++    pub fn m(&mut self, x: f32, y: f32) -> &mut Self {
++        self.verbs.push(VERB_MOVE);
++        self.pts.push(pt(x, y));
++        self
++    }
++    pub fn l(&mut self, x: f32, y: f32) -> &mut Self {
++        self.verbs.push(VERB_LINE);
++        self.pts.push(pt(x, y));
++        self
++    }
++    #[allow(clippy::too_many_arguments)]
++    pub fn c(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) -> &mut Self {
++        self.verbs.push(VERB_CUBIC);
++        self.pts.push(pt(x1, y1));
++        self.pts.push(pt(x2, y2));
++        self.pts.push(pt(x, y));
++        self
++    }
++    pub fn z(&mut self) -> &mut Self {
++        self.verbs.push(VERB_CLOSE);
++        self
++    }
++
++    pub fn entry(&self) -> PathEntry {
++        PathEntry::new(self.verbs.clone(), &[self.pts.clone()], None).expect("valid shape")
++    }
++}
++
++pub fn morph_entry(shapes: &[&Shape]) -> PathEntry {
++    let verbs = shapes[0].verbs.clone();
++    for s in shapes {
++        assert_eq!(s.verbs, verbs, "morph shapes share their verbs");
++    }
++    let pts: Vec<Vec<Pt>> = shapes.iter().map(|s| s.pts.clone()).collect();
++    PathEntry::new(verbs, &pts, None).expect("valid morph")
++}
++
++/// A circle as `k` cubic arcs (k = 4 or 8), clockwise on screen.
++pub fn circle(sh: &mut Shape, cx: f32, cy: f32, r: f32, k: usize) {
++    // Control distance for an arc of 90 / 45 degrees: 4/3 tan(theta/4).
++    let (cos_t, sin_t, h) = if k == 8 {
++        (0.707_106_77f32, 0.707_106_77f32, 0.265_216_45f32)
++    } else {
++        (0.0f32, 1.0f32, 0.552_284_75f32)
++    };
++    // Unit points around the circle by repeated rotation (exact table for k).
++    let mut ux = Vec::new();
++    let mut uy = Vec::new();
++    let (mut x, mut y) = (1.0f32, 0.0f32);
++    for _ in 0..k {
++        ux.push(x);
++        uy.push(y);
++        let nx = x * cos_t - y * sin_t;
++        let ny = x * sin_t + y * cos_t;
++        x = nx;
++        y = ny;
++    }
++    sh.m(cx + r * ux[0], cy + r * uy[0]);
++    for i in 0..k {
++        let j = (i + 1) % k;
++        let (ax, ay, bx, by) = (ux[i], uy[i], ux[j], uy[j]);
++        sh.c(
++            cx + r * (ax - h * ay),
++            cy + r * (ay + h * ax),
++            cx + r * (bx + h * by),
++            cy + r * (by - h * bx),
++            cx + r * bx,
++            cy + r * by,
++        );
++    }
++    sh.z();
++}
++
++/// An 8-cubic flower with the circle's verbs (morphs with `circle(.., 8)`).
++pub fn flower(sh: &mut Shape, cx: f32, cy: f32, r: f32, depth: f32) {
++    let mut c = Shape::default();
++    circle(&mut c, cx, cy, r, 8);
++    // Pull every other on-curve point in and swing the handles outward.
++    let mut pts = c.pts.clone();
++    for (i, p) in pts.iter_mut().enumerate() {
++        let (dx, dy) = (p.x - cx, p.y - cy);
++        let on_curve = i % 3 == 0;
++        let k = if on_curve {
++            if (i / 3) % 2 == 1 {
++                1.0 - depth
++            } else {
++                1.0
++            }
++        } else {
++            1.0 + depth * 0.6
++        };
++        p.x = cx + dx * k;
++        p.y = cy + dy * k;
++    }
++    sh.verbs.extend_from_slice(&c.verbs);
++    sh.pts.extend_from_slice(&pts);
++}
++
++pub fn star(sh: &mut Shape, cx: f32, cy: f32, r: f32, points: usize, step: usize) {
++    // A {points/step} star polygon: self-intersecting, so nonzero and
++    // evenodd differ in its middle. Vertices from repeated rotation.
++    let mut vx = Vec::new();
++    let mut vy = Vec::new();
++    let a = 2.0 * core::f32::consts::PI / points as f32;
++    // cos/sin of the step by the core's own Taylor polynomial (deterministic).
++    let (c, s) = (cos_poly(a), sin_poly(a));
++    let (mut x, mut y) = (0.0f32, -1.0f32);
++    for _ in 0..points {
++        vx.push(x);
++        vy.push(y);
++        let nx = x * c - y * s;
++        let ny = x * s + y * c;
++        x = nx;
++        y = ny;
++    }
++    let mut i = 0usize;
++    sh.m(cx + r * vx[0], cy + r * vy[0]);
++    for _ in 1..points {
++        i = (i + step) % points;
++        sh.l(cx + r * vx[i], cy + r * vy[i]);
++    }
++    sh.z();
++}
++
++/// sin by the 5-term Taylor series `draw.rs` uses, for |x| <= pi/2.
++pub fn sin_poly(r: f32) -> f32 {
++    let x2 = r * r;
++    r * (1.0 + x2 * (-1.0 / 6.0 + x2 * (1.0 / 120.0 + x2 * (-1.0 / 5040.0 + x2 * (1.0 / 362880.0)))))
++}
++
++pub fn cos_poly(r: f32) -> f32 {
++    sin_poly(core::f32::consts::FRAC_PI_2 - r)
++}
++
++/// sin of any angle: fold into [-pi/2, pi/2] first (the `draw.rs` sequence).
++pub fn sin_any(x: f32) -> f32 {
++    sin_poly(wrap(x))
++}
++
++pub fn cos_any(x: f32) -> f32 {
++    sin_any(x + core::f32::consts::FRAC_PI_2)
++}
++
++pub fn affine(a: f32, b: f32, c: f32, d: f32, tx: f32, ty: f32) -> Affine {
++    Affine { a, b, c, d, tx, ty }
++}
++
++pub fn rotation(deg: f32, sx: f32, sy: f32, tx: f32, ty: f32) -> Affine {
++    let r = deg * (core::f32::consts::PI / 180.0);
++    let (s, c) = if deg == 0.0 { (0.0, 1.0) } else { (sin_any(r), cos_any(r)) };
++    affine(c * sx, s * sx, -s * sy, c * sy, tx, ty)
++}
++
++pub fn paint_fill(color: u32, evenodd: bool) -> PathPaint {
++    PathPaint {
++        morph: 0.0,
++        fill: color,
++        evenodd,
++        stroke: 0,
++        stroke_style: StrokeStyle { width: 0.0, join: Join::Miter, cap: Cap::Butt, miter_limit: 4.0 },
++        trim: Trim::NONE,
++    }
++}
++
++pub fn paint_stroke(color: u32, width: f32, join: Join, cap: Cap) -> PathPaint {
++    PathPaint {
++        morph: 0.0,
++        fill: 0,
++        evenodd: false,
++        stroke: color,
++        stroke_style: StrokeStyle { width, join, cap, miter_limit: 4.0 },
++        trim: Trim::NONE,
++    }
++}
++
++pub fn abgr(r: u32, g: u32, b: u32, a: u32) -> u32 {
++    (a << 24) | (b << 16) | (g << 8) | r
++}
++
++/// Emit one path into `words` (box w/h only matter for a viewBox).
++pub fn emit(words: &mut Vec<u32>, entry: &PathEntry, xf: &Affine, paint: &PathPaint, screen: (f32, f32), stats: &mut PathStats) {
++    let mut sc = PathScratch::default();
++    emit_path(words, entry, 0.0, 0.0, xf, paint, screen, &mut sc);
++    stats.chords += sc.stats.chords;
++    stats.vertices += sc.stats.vertices;
++}
++
++/// Rasterise `words` over a cleared `w x h` (logical) frame at `scale`.
++pub fn render(words: &[u32], w: u32, h: u32, scale: u32) -> Vec<u8> {
++    let mut ui = Ui::new();
++    ui.set_viewport(w as f32, h as f32);
++    let mut fb = alloc::vec![0u8; (w * scale * h * scale * 4) as usize];
++    crate::raster::render_scaled(&ui, words, &mut fb, scale);
++    fb
++}
++
++/// A MASK_PUSH of `pts` in logical px: 2 + 2N words, `(x, y)` f32 pairs
++/// (the format since pocket-motion patch 0024).
++pub fn mask_push(words: &mut Vec<u32>, pts: &[(f32, f32)]) {
++    words.push(draw_op::MASK_PUSH);
++    words.push(pts.len() as u32);
++    for &(x, y) in pts {
++        words.push(x.to_bits());
++        words.push(y.to_bits());
++    }
++}
++
++/// An opaque ground the size of the frame, so blends land on opaque pixels.
++pub fn ground(words: &mut Vec<u32>, w: u32, h: u32, color: u32) {
++    words.push(draw_op::RECT);
++    words.push(0);
++    words.push(w | (h << 16));
++    words.push(color);
++}
++
++// ---- the scenes ------------------------------------------------------------------
++
++pub const SCENE_W: u32 = 640;
++pub const SCENE_H: u32 = 360;
++
++pub const SCENE_NAMES: [&str; 16] = [
++    "fill-nonzero-star",
++    "fill-evenodd-star",
++    "fill-donut-rules",
++    "stroke-joins-caps",
++    "stroke-closed-round",
++    "stroke-tight-curvature",
++    "trim-each-sweep",
++    "trim-whole-offset-wrap",
++    "morph-circle-flower",
++    "transform-rotate-skew",
++    "under-mask-paint-layer",
++    "abutting-tiles",
++    "dense-300-fill-stroke-x1",
++    "dense-300-animated-x2",
++    "flat-300-smooth-x1",
++    "lineart-300-animated-x1",
++];
++
++/// Words of scene `i` and its frame size and render scale.
++pub fn scene(i: usize) -> (Vec<u32>, u32, u32, u32) {
++    let screen = (SCENE_W as f32, SCENE_H as f32);
++    let mut w = Vec::new();
++    let mut st = PathStats::default();
++    let bg = abgr(16, 18, 24, 255);
++    match i {
++        0 | 1 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            let mut s = Shape::default();
++            star(&mut s, 180.0, 180.0, 150.0, 7, 3);
++            star(&mut s, 470.0, 180.0, 140.0, 5, 2);
++            emit(&mut w, &s.entry(), &Affine::IDENTITY, &paint_fill(abgr(250, 200, 40, 255), i == 1), screen, &mut st);
++        }
++        2 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            // Outer circle clockwise, inner circle clockwise too (same
++            // direction): nonzero fills the hole, evenodd does not.
++            for (k, &eo) in [false, true].iter().enumerate() {
++                let mut s = Shape::default();
++                let cx = 170.0 + 300.0 * k as f32;
++                circle(&mut s, cx, 180.0, 140.0, 8);
++                circle(&mut s, cx + 20.0, 170.0, 70.0, 4);
++                emit(&mut w, &s.entry(), &Affine::IDENTITY, &paint_fill(abgr(90, 200, 255, 230), eo), screen, &mut st);
++            }
++        }
++        3 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            let joins = [Join::Miter, Join::Round, Join::Bevel];
++            let caps = [Cap::Butt, Cap::Round, Cap::Square];
++            for (row, &j) in joins.iter().enumerate() {
++                for (col, &c) in caps.iter().enumerate() {
++                    let (ox, oy) = (40.0 + 200.0 * col as f32, 30.0 + 110.0 * row as f32);
++                    let mut s = Shape::default();
++                    s.m(ox, oy + 60.0).l(ox + 40.0, oy).l(ox + 80.0, oy + 60.0).l(ox + 110.0, oy + 20.0).l(ox + 150.0, oy + 70.0).l(ox + 152.0, oy + 10.0);
++                    emit(&mut w, &s.entry(), &Affine::IDENTITY, &paint_stroke(abgr(240, 240, 240, 255), 14.0, j, c), screen, &mut st);
++                }
++            }
++        }
++        4 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            let mut s = Shape::default();
++            flower(&mut s, 200.0, 180.0, 130.0, 0.35);
++            let e = s.entry();
++            let mut p = paint_fill(abgr(40, 90, 200, 255), false);
++            p.stroke = abgr(255, 255, 255, 200);
++            p.stroke_style = StrokeStyle { width: 9.0, join: Join::Round, cap: Cap::Round, miter_limit: 4.0 };
++            emit(&mut w, &e, &Affine::IDENTITY, &p, screen, &mut st);
++            let mut q = Shape::default();
++            star(&mut q, 470.0, 180.0, 130.0, 9, 4);
++            let mut p2 = paint_stroke(abgr(255, 120, 60, 255), 6.0, Join::Miter, Cap::Butt);
++            p2.stroke_style.miter_limit = 10.0;
++            emit(&mut w, &q.entry(), &Affine::IDENTITY, &p2, screen, &mut st);
++        }
++        5 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            // A spiral and a hairpin whose curvature radius drops below the
++            // half-width: the inner offsets fold, the pivot keeps the union.
++            let mut s = Shape::default();
++            s.m(320.0, 180.0);
++            let mut r = 4.0f32;
++            let mut a = 0.0f32;
++            for _ in 0..40 {
++                a += 0.5;
++                r *= 1.09;
++                let (sa, ca) = (sin_any(a), cos_any(a));
++                s.l(320.0 + r * ca, 180.0 + r * sa);
++            }
++            emit(&mut w, &s.entry(), &Affine::IDENTITY, &paint_stroke(abgr(120, 255, 160, 255), 22.0, Join::Round, Cap::Round), screen, &mut st);
++            let mut h = Shape::default();
++            h.m(40.0, 300.0).c(40.0, 40.0, 60.0, 40.0, 60.0, 300.0);
++            emit(&mut w, &h.entry(), &Affine::IDENTITY, &paint_stroke(abgr(255, 90, 200, 255), 30.0, Join::Miter, Cap::Square), screen, &mut st);
++        }
++        6 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            // One spiral-ish shape trimmed at five windows, side by side.
++            let mut base = Shape::default();
++            base.m(0.0, 100.0).c(0.0, 0.0, 100.0, 0.0, 100.0, 60.0).c(100.0, 120.0, 30.0, 110.0, 40.0, 60.0).l(60.0, 40.0);
++            let e = base.entry();
++            let windows = [(0.0f32, 0.0f32), (0.0, 0.25), (0.1, 0.6), (0.3, 1.0), (0.0, 1.0)];
++            for (k, &(a, b)) in windows.iter().enumerate() {
++                let mut p = paint_stroke(abgr(255, 230, 120, 255), 8.0, Join::Round, Cap::Round);
++                p.trim = Trim { start: a, end: b, offset: 0.0, mode: TrimMode::Each };
++                emit(&mut w, &e, &affine(1.0, 0.0, 0.0, 1.0, 20.0 + 124.0 * k as f32, 100.0), &p, screen, &mut st);
++            }
++        }
++        7 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            // Three subpaths, Whole vs Each, with an offset that wraps.
++            let mut s = Shape::default();
++            circle(&mut s, 60.0, 60.0, 50.0, 4);
++            s.m(130.0, 20.0).l(230.0, 100.0);
++            s.m(130.0, 100.0).c(170.0, 0.0, 200.0, 140.0, 240.0, 30.0);
++            let e = s.entry();
++            for (row, mode) in [TrimMode::Whole, TrimMode::Each].iter().enumerate() {
++                for (col, off) in [0.0f32, 0.35, 0.8].iter().enumerate() {
++                    let mut p = paint_stroke(abgr(140, 200, 255, 255), 6.0, Join::Bevel, Cap::Butt);
++                    p.trim = Trim { start: 0.1, end: 0.55, offset: *off, mode: *mode };
++                    emit(&mut w, &e, &affine(0.8, 0.0, 0.0, 0.8, 10.0 + 210.0 * col as f32, 20.0 + 170.0 * row as f32), &p, screen, &mut st);
++                }
++            }
++        }
++        8 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            let mut a = Shape::default();
++            circle(&mut a, 0.0, 0.0, 60.0, 8);
++            let mut b = Shape::default();
++            flower(&mut b, 0.0, 0.0, 60.0, 0.5);
++            let e = morph_entry(&[&a, &b]);
++            for (k, &m) in [0.0f32, 0.25, 0.5, 0.75, 1.0].iter().enumerate() {
++                let mut p = paint_fill(abgr(255, 140, 90, 255), false);
++                p.morph = m;
++                p.stroke = abgr(255, 255, 255, 255);
++                p.stroke_style = StrokeStyle { width: 3.0, join: Join::Round, cap: Cap::Butt, miter_limit: 4.0 };
++                emit(&mut w, &e, &affine(1.0, 0.0, 0.0, 1.0, 70.0 + 125.0 * k as f32, 180.0), &p, screen, &mut st);
++            }
++        }
++        9 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            let mut s = Shape::default();
++            flower(&mut s, 0.0, 0.0, 50.0, 0.3);
++            star(&mut s, 0.0, 0.0, 30.0, 5, 2);
++            let e = s.entry();
++            let xfs = [
++                rotation(17.0, 1.0, 1.0, 110.0, 120.0),
++                rotation(-63.5, 1.6, 0.6, 320.0, 120.0),
++                affine(1.0, 0.0, 0.7, 1.0, 520.0, 120.0), // skew
++                rotation(200.0, 2.4, 2.4, 160.0, 270.0),
++                rotation(45.0, 0.2, 0.2, 480.0, 270.0), // tiny: few chords
++            ];
++            for (k, xf) in xfs.iter().enumerate() {
++                let mut p = paint_fill(abgr(80 + 30 * k as u32, 220, 140, 255), k % 2 == 1);
++                p.stroke = abgr(250, 250, 250, 255);
++                p.stroke_style = StrokeStyle { width: 4.0, join: Join::Miter, cap: Cap::Butt, miter_limit: 4.0 };
++                emit(&mut w, &e, xf, &p, screen, &mut st);
++            }
++            // A viewBox entry: a 24x24 icon mapped into a 200x120 box (meet).
++            let mut icon = Shape::default();
++            icon.m(12.0, 2.0).l(22.0, 22.0).l(2.0, 22.0).z();
++            let ie = PathEntry::new(icon.verbs.clone(), &[icon.pts.clone()], Some([0.0, 0.0, 24.0, 24.0])).unwrap();
++            let mut sc = PathScratch::default();
++            emit_path(&mut w, &ie, 200.0, 120.0, &affine(1.0, 0.0, 0.0, 1.0, 420.0, 220.0), &paint_fill(abgr(255, 255, 255, 255), false), screen, &mut sc);
++        }
++        10 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            let mut s = Shape::default();
++            flower(&mut s, 0.0, 0.0, 120.0, 0.4);
++            let e = s.entry();
++            // Under a mask (a rotated square), under a gradient paint, in a
++            // blurred layer: the op reaches each through the target trait.
++            mask_push(&mut w, &[(60.0, 60.0), (260.0, 20.0), (300.0, 220.0), (100.0, 260.0)]);
++            emit(&mut w, &e, &affine(1.0, 0.0, 0.0, 1.0, 170.0, 150.0), &paint_fill(abgr(255, 255, 255, 255), false), screen, &mut st);
++            w.push(draw_op::MASK_POP);
++            // PAINT_PUSH linear, t = x/200 - 1.6 over x in [320, 520].
++            w.push(draw_op::PAINT_PUSH);
++            w.push(1);
++            w.push(2);
++            for f in [1.0f32 / 200.0, 0.0, -1.6, 0.0, 0.0, 0.0] {
++                w.push(f.to_bits());
++            }
++            w.push(abgr(255, 60, 120, 255));
++            w.push(0f32.to_bits());
++            w.push(abgr(60, 160, 255, 255));
++            w.push(1f32.to_bits());
++            emit(&mut w, &e, &affine(0.7, 0.0, 0.0, 0.7, 420.0, 110.0), &paint_fill(abgr(255, 255, 255, 255), false), screen, &mut st);
++            w.push(draw_op::PAINT_POP);
++            w.push(draw_op::LAYER_PUSH);
++            w.push(0);
++            w.push(3f32.to_bits());
++            w.push(0f32.to_bits());
++            w.push(6f32.to_bits());
++            w.push(8f32.to_bits());
++            w.push(abgr(0, 0, 0, 200));
++            w.push(1f32.to_bits());
++            let mut p = paint_stroke(abgr(255, 255, 120, 255), 5.0, Join::Round, Cap::Round);
++            p.trim = Trim { start: 0.0, end: 0.7, offset: 0.1, mode: TrimMode::Each };
++            emit(&mut w, &e, &affine(0.6, 0.0, 0.0, 0.6, 470.0, 270.0), &p, screen, &mut st);
++            w.push(draw_op::LAYER_POP);
++        }
++        11 => {
++            ground(&mut w, SCENE_W, SCENE_H, bg);
++            // A fan of wedges sharing edges, each its own op: seams carry
++            // no double coverage (the partition the top-left rule gives).
++            let n = 24;
++            let (cx, cy, r) = (320.0f32, 180.0f32, 160.0f32);
++            let a = 2.0 * core::f32::consts::PI / n as f32;
++            let (c, s) = (cos_poly(a), sin_poly(a));
++            let (mut x, mut y) = (r, 0.0f32);
++            for k in 0..n {
++                let (nx, ny) = (x * c - y * s, x * s + y * c);
++                let mut sh = Shape::default();
++                sh.m(cx, cy).l(cx + x, cy + y).l(cx + nx, cy + ny).z();
++                let shade = 60 + (k as u32 * 7) % 190;
++                emit(&mut w, &sh.entry(), &Affine::IDENTITY, &paint_fill(abgr(shade, 255 - shade, 200, 255), false), screen, &mut st);
++                x = nx;
++                y = ny;
++            }
++        }
++        12 => return dense(0, 1),
++        13 => return dense(17, 2),
++        14 => return (dense_words(&dense_entries_of(Dense::Smooth), 0).0, DENSE_W, DENSE_H, 1),
++        15 => return (dense_words(&dense_entries_of(Dense::LineArt), 17).0, DENSE_W, DENSE_H, 1),
++        _ => {}
++    }
++    (w, SCENE_W, SCENE_H, 1)
++}
++
++fn wrap(a: f32) -> f32 {
++    // into [-pi/2, pi/2] for the Taylor polynomial, folding by symmetry
++    let pi = core::f32::consts::PI;
++    let mut r = a - 2.0 * pi * crate::layout::floorf((a + pi) / (2.0 * pi));
++    if r > pi / 2.0 {
++        r = pi - r;
++    } else if r < -pi / 2.0 {
++        r = -pi - r;
++    }
++    r
++}
++
++// ---- the dense illustration (cost and digest) ------------------------------------
++
++pub const DENSE_W: u32 = 1920;
++pub const DENSE_H: u32 = 1080;
++pub const DENSE_PATHS: usize = 300;
++/// Cubic segments per path; 300 x 67 = 20,100.
++pub const DENSE_SEGS: usize = 67;
++
++/// Which dense illustration: the stress case (spiky blobs, ~4.4x overdraw),
++/// a flat-vector one (smooth blobs, ~1.4x coverage), or line art (open
++/// curves, stroked only).
++#[derive(Clone, Copy, PartialEq, Debug)]
++pub enum Dense {
++    Spiky,
++    Smooth,
++    LineArt,
++}
++
++/// The 300 entries, 67 cubics each (20,100), two shapes (morph keys).
++pub fn dense_entries() -> Vec<(PathEntry, Affine, u32, u32, f32)> {
++    dense_entries_of(Dense::Spiky)
++}
++
++pub fn dense_entries_of(kind: Dense) -> Vec<(PathEntry, Affine, u32, u32, f32)> {
++    let mut rng = Rng(0x5eed_1234_abcd_0001);
++    let mut out = Vec::with_capacity(DENSE_PATHS);
++    let (rlo, rhi, wlo, whi) = match kind {
++        Dense::Spiky => (20.0, 160.0, 0.75, 1.15),
++        Dense::Smooth => (10.0, 90.0, 0.97, 1.03),
++        Dense::LineArt => (40.0, 140.0, 0.0, 0.0),
++    };
++    for _ in 0..DENSE_PATHS {
++        let r = rng.range(rlo, rhi);
++        let cx = rng.range(0.0, DENSE_W as f32);
++        let cy = rng.range(0.0, DENSE_H as f32);
++        let mut shapes = [Shape::default(), Shape::default()];
++        if kind == Dense::LineArt {
++            // A meandering open curve: 67 cubics, tangent-continuous, each
++            // a step of about r/20 in a slowly turning direction.
++            for sh in shapes.iter_mut() {
++                let (mut x, mut y) = (-r, 0.0f32);
++                let mut a = rng.range(-1.0, 1.0);
++                let step = r / 20.0;
++                sh.m(x, y);
++                let (mut tx, mut ty) = (cos_any(a), sin_any(a));
++                for _ in 0..DENSE_SEGS {
++                    a += rng.range(-0.6, 0.6);
++                    let (nx, ny) = (cos_any(a), sin_any(a));
++                    let (ex, ey) = (x + step * nx * 3.0, y + step * ny * 3.0);
++                    sh.c(x + step * tx, y + step * ty, ex - step * nx, ey - step * ny, ex, ey);
++                    x = ex;
++                    y = ey;
++                    tx = nx;
++                    ty = ny;
++                }
++            }
++        } else {
++            let a = 2.0 * core::f32::consts::PI / DENSE_SEGS as f32;
++            let (c, s) = (cos_poly(a), sin_poly(a));
++            let h = 0.3 * a; // handle length per unit radius, roughly circular
++            for sh in shapes.iter_mut() {
++                let wob: Vec<f32> = (0..DENSE_SEGS).map(|_| rng.range(wlo, whi)).collect();
++                let (mut ux, mut uy) = (1.0f32, 0.0f32);
++                let rad = |k: usize| r * wob[k % DENSE_SEGS];
++                sh.m(rad(0) * ux, rad(0) * uy);
++                for k in 0..DENSE_SEGS {
++                    let (vx, vy) = (ux * c - uy * s, ux * s + uy * c);
++                    let (r0, r1) = (rad(k), rad(k + 1));
++                    sh.c(
++                        r0 * (ux - h * uy),
++                        r0 * (uy + h * ux),
++                        r1 * (vx + h * vy),
++                        r1 * (vy - h * vx),
++                        r1 * vx,
++                        r1 * vy,
++                    );
++                    ux = vx;
++                    uy = vy;
++                }
++                sh.z();
++            }
++        }
++        let e = morph_entry(&[&shapes[0], &shapes[1]]);
++        let rot = rng.range(0.0, 360.0);
++        let xf = rotation(rot, 1.0, 1.0, cx, cy);
++        let fill = if kind == Dense::LineArt { 0 } else { abgr(rng.below(256) as u32, rng.below(256) as u32, rng.below(256) as u32, 255) };
++        let stroke = abgr(rng.below(256) as u32, rng.below(256) as u32, rng.below(256) as u32, 255);
++        let width = rng.range(1.5, 6.0);
++        out.push((e, xf, fill, stroke, width));
++    }
++    out
++}
++
++/// One frame of the dense illustration: every path filled and stroked; for
++/// `frame > 0` the morph, the trim window and a rotation move with it.
++pub fn dense(frame: u32, scale: u32) -> (Vec<u32>, u32, u32, u32) {
++    let entries = dense_entries();
++    let (words, _) = dense_words(&entries, frame);
++    (words, DENSE_W, DENSE_H, scale)
++}
++
++pub fn dense_words(entries: &[(PathEntry, Affine, u32, u32, f32)], frame: u32) -> (Vec<u32>, PathStats) {
++    let screen = (DENSE_W as f32, DENSE_H as f32);
++    let mut w = Vec::with_capacity(1 << 20);
++    ground(&mut w, DENSE_W, DENSE_H, abgr(12, 12, 16, 255));
++    let mut sc = PathScratch::default();
++    let t = frame as f32 / 60.0;
++    for (k, (e, xf, fill, stroke, width)) in entries.iter().enumerate() {
++        let mut p = PathPaint {
++            morph: if frame == 0 { 0.0 } else { 0.5 + 0.5 * sin_any(t * 3.0 + k as f32 * 0.1) },
++            fill: *fill,
++            evenodd: false,
++            stroke: *stroke,
++            stroke_style: StrokeStyle { width: *width, join: Join::Round, cap: Cap::Round, miter_limit: 4.0 },
++            trim: Trim::NONE,
++        };
++        let mut xf = *xf;
++        if frame > 0 {
++            p.trim = Trim { start: 0.0, end: 0.2 + 0.6 * (0.5 + 0.5 * sin_any(t + k as f32)), offset: t * 0.25, mode: TrimMode::Each };
++            let r = rotation(frame as f32 * 0.7, 1.0, 1.0, 0.0, 0.0);
++            xf = Affine {
++                a: xf.a * r.a + xf.c * r.b,
++                b: xf.b * r.a + xf.d * r.b,
++                c: xf.a * r.c + xf.c * r.d,
++                d: xf.b * r.c + xf.d * r.d,
++                tx: xf.tx,
++                ty: xf.ty,
++            };
++        }
++        emit_path(&mut w, e, 0.0, 0.0, &xf, &p, screen, &mut sc);
++    }
++    (w, sc.stats)
++}
++
++/// (words digest, framebuffer digest) of scene `i`.
++pub fn scene_digest(i: usize) -> (u64, u64) {
++    let (words, w, h, scale) = scene(i);
++    let fb = render(&words, w, h, scale);
++    (words_digest(&words), fnv64(&fb))
++}
+diff --git a/engine/core/src/path_tests.rs b/engine/core/src/path_tests.rs
+new file mode 100644
+index 00000000..2f1300da
+--- /dev/null
++++ b/engine/core/src/path_tests.rs
+@@ -0,0 +1,1218 @@
++//! Vector path tests (pocket-motion prototype). Each test names the defect
++//! that turns it red.
++
++extern crate std;
++
++use alloc::vec::Vec;
++use std::collections::BTreeMap;
++
++use crate::draw::Affine;
++use crate::path::*;
++use crate::path_scenes::*;
++use crate::raster::{path_rows, poly_hits_rows, Clip, PathRaster};
++use crate::spec::draw_op;
++
++// ---- the reference rasteriser -------------------------------------------------------
++//
++// The rule, written once more without any of the scanline machinery: for a
++// sample (X, Y) in physical 1/256 px, sum `dir` over every edge with
++// ytop <= Y < ybot whose crossing x satisfies X >= x — tested as
++// X * den >= num, no division — and apply the fill rule. One pixel at a
++// time, sixteen samples, every edge. No sorting, no active list, no
++// difference arrays, no clamping to a clip.
++
++type Edge = (i64, i64, i64, i64); // directed, physical 1/256 px
++
++fn op_edges(op: &[u32], scale: i64) -> Vec<Edge> {
++    let mut out = Vec::new();
++    let mut k = 5usize;
++    for _ in 0..op[4] {
++        let n = op[k] as usize;
++        let v = |i: usize| (op[k + 1 + 2 * i] as i32 as i64 * scale, op[k + 2 + 2 * i] as i32 as i64 * scale);
++        for i in 0..n {
++            let (a, b) = (v(if i == 0 { n - 1 } else { i - 1 }), v(i));
++            out.push((a.0, a.1, b.0, b.1));
++        }
++        k += 1 + 2 * n;
++    }
++    out
++}
++
++fn ref_inside(edges: &[Edge], x: i64, y: i64, evenodd: bool) -> bool {
++    let mut w = 0i32;
++    for &(x0, y0, x1, y1) in edges {
++        if y0 == y1 {
++            continue;
++        }
++        let (xa, ya, xb, yb, dir) = if y1 > y0 { (x0, y0, x1, y1, 1) } else { (x1, y1, x0, y0, -1) };
++        if ya <= y && y < yb {
++            let den = yb - ya;
++            let num = xa * den + (y - ya) * (xb - xa);
++            if x * den >= num {
++                w += dir;
++            }
++        }
++    }
++    if evenodd {
++        w & 1 != 0
++    } else {
++        w != 0
++    }
++}
++
++const SAMPLE: [i64; 4] = [32, 96, 160, 224];
++
++fn ref_hits(op: &[u32], scale: i32, clip: Clip) -> BTreeMap<(i32, i32), u8> {
++    let edges = op_edges(op, scale as i64);
++    let evenodd = op[2] & 1 != 0;
++    let mut out = BTreeMap::new();
++    for py in clip.y0..clip.y1 {
++        for px in clip.x0..clip.x1 {
++            let mut h = 0u8;
++            for &sy in &SAMPLE {
++                for &sx in &SAMPLE {
++                    if ref_inside(&edges, 256 * px as i64 + sx, 256 * py as i64 + sy, evenodd) {
++                        h += 1;
++                    }
++                }
++            }
++            if h > 0 {
++                out.insert((px, py), h);
++            }
++        }
++    }
++    out
++}
++
++fn opt_hits(op: &[u32], scale: i32, clip: Clip) -> BTreeMap<(i32, i32), u8> {
++    let mut ras = PathRaster::default();
++    let mut out = BTreeMap::new();
++    path_rows(scale, clip, op, &mut ras, |py, x0, x1, h| {
++        assert!((1..=16).contains(&h) && x1 > x0, "run ({x0}..{x1}, {h})");
++        for x in x0..x1 {
++            assert!(out.insert((x, py), h as u8).is_none(), "pixel ({x},{py}) emitted twice");
++        }
++    });
++    out
++}
++
++/// A PATH op from contours in 1/256 logical px.
++fn op_from(contours: &[Vec<(i32, i32)>], evenodd: bool, color: u32) -> Vec<u32> {
++    let mut w = alloc::vec![draw_op::PATH, 0, evenodd as u32, color, contours.len() as u32];
++    for c in contours {
++        w.push(c.len() as u32);
++        for &(x, y) in c {
++            w.push(x as u32);
++            w.push(y as u32);
++        }
++    }
++    w[1] = w.len() as u32;
++    w
++}
++
++fn clip(x0: i32, y0: i32, x1: i32, y1: i32) -> Clip {
++    Clip { x0, y0, x1, y1 }
++}
++
++/// Random contours on a grid of `g` (1/256 px units), so vertices and
++/// crossings land exactly on sample rows and columns as often as the grid
++/// allows: g = 64 puts vertices ON the sample lattice's rows, g = 256 on
++/// pixel corners, g = 1 anywhere.
++fn random_contours(rng: &mut Rng, g: i32, span: i32, lo: i32) -> Vec<Vec<(i32, i32)>> {
++    let nc = 1 + rng.below(4) as usize;
++    let mut cs = Vec::new();
++    // A coordinate in [lo, lo + span) px, in 1/256 px snapped to the grid.
++    let coord = |rng: &mut Rng| ((lo * 256 + rng.below(span as u64 * 256) as i32).div_euclid(g)) * g;
++    for _ in 0..nc {
++        let n = 2 + rng.below(28) as usize;
++        let mut c = Vec::new();
++        for _ in 0..n {
++            let (x, y) = (coord(rng), coord(rng));
++            c.push((x, y));
++            // Repeats, horizontal runs and spikes, on purpose.
++            match rng.below(10) {
++                0 => c.push((x, y)),
++                1 => c.push((x + g * (1 + rng.below(40) as i32), y)),
++                2 => {
++                    c.push((x - g * rng.below(30) as i32, y + g));
++                    c.push((x, y));
++                }
++                _ => {}
++            }
++        }
++        cs.push(c);
++    }
++    cs
++}
++
++// ---- 1. the scanline equals the reference ----------------------------------------
++
++#[test]
++fn path_coverage_equals_the_brute_force_reference() {
++    // Red if the scanline drops a crossing, rounds a ceil the wrong way,
++    // mishandles a horizontal edge, a vertex on a sample row, a crossing
++    // left of the clip, a pixel boundary in the difference arrays, or a
++    // fill rule — any of those changes a hit count somewhere in the sweep.
++    let mut rng = Rng(0x0123_4567_89ab_cdef);
++    let grids = [256, 128, 64, 32, 85, 1];
++    let mut cases = 0;
++    let mut pixels = 0usize;
++    for case in 0..480 {
++        let g = grids[case % grids.len()];
++        let scale = 1 + (case / grids.len()) as i32 % 3;
++        let cs = random_contours(&mut rng, g, 56, -8);
++        let op = op_from(&cs, case % 2 == 1, 0xffff_ffff);
++        let size = 40 * scale;
++        let c = if case % 5 == 0 {
++            let x0 = rng.below(size as u64 / 2) as i32;
++            let y0 = rng.below(size as u64 / 2) as i32;
++            clip(x0, y0, x0 + 1 + rng.below(size as u64 / 2) as i32, y0 + 1 + rng.below(size as u64 / 2) as i32)
++        } else {
++            clip(0, 0, size, size)
++        };
++        let want = ref_hits(&op, scale, c);
++        let got = opt_hits(&op, scale, c);
++        assert_eq!(got, want, "case {case}: grid {g}, scale {scale}, contours {cs:?}");
++        pixels += want.len();
++        cases += 1;
++    }
++    assert_eq!(cases, 480);
++    assert!(pixels > 100_000, "the sweep covers pixels: {pixels}");
++}
++
++#[test]
++fn path_blends_each_pixel_at_a_times_hits_over_16() {
++    // The framebuffer a PATH op leaves equals one built from the reference
++    // hits with 1x1 RECTs of alpha a*h/16 (opaque runs are fill_opaque,
++    // which RECT also takes at alpha 255). Red if the row emitter skips a
++    // pixel, merges a partial pixel into an opaque run, or blends a full
++    // pixel of a translucent colour at anything but a.
++    let mut rng = Rng(77);
++    for case in 0..40 {
++        let cs = random_contours(&mut rng, [256, 16, 1][case % 3], 60, 0);
++        let alpha = [255u32, 180, 37][case % 3];
++        let color = abgr(200, 120, 40, alpha);
++        let op = op_from(&cs, case % 2 == 0, color);
++        let mut words = Vec::new();
++        ground(&mut words, 64, 64, abgr(10, 20, 30, 255));
++        let mut expect = words.clone();
++        words.extend_from_slice(&op);
++        for ((x, y), h) in ref_hits(&op, 1, clip(0, 0, 64, 64)) {
++            let a = alpha * h as u32 / 16;
++            expect.extend_from_slice(&[draw_op::RECT, (x as u32) | ((y as u32) << 16), 1 | (1 << 16), (color & 0x00ff_ffff) | (a << 24)]);
++        }
++        assert_eq!(render(&words, 64, 64, 1), render(&expect, 64, 64, 1), "case {case}");
++    }
++}
++
++// ---- 2. against POLY ------------------------------------------------------------------
++
++/// POLY's predicate for a convex polygon: every edge function >= 0 (the
++/// inclusive rule), at doubled-pixel... here at 1/256 px, exactly.
++fn inclusive_inside(verts: &[(i64, i64)], x: i64, y: i64) -> (bool, bool) {
++    let n = verts.len();
++    let mut area = 0i64;
++    for i in 0..n {
++        let (a, b) = (verts[i], verts[(i + 1) % n]);
++        area += a.0 * b.1 - b.0 * a.1;
++    }
++    let sign = if area > 0 { 1 } else { -1 };
++    let mut on_edge = false;
++    for i in 0..n {
++        let (a, b) = (verts[i], verts[(i + 1) % n]);
++        let f = ((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) * sign;
++        if f < 0 {
++            return (false, false);
++        }
++        if f == 0 {
++            on_edge = true;
++        }
++    }
++    (true, on_edge)
++}
++
++fn convex_hull(mut p: Vec<(i32, i32)>) -> Vec<(i32, i32)> {
++    p.sort();
++    p.dedup();
++    if p.len() < 3 {
++        return p;
++    }
++    let cross = |o: (i32, i32), a: (i32, i32), b: (i32, i32)| (a.0 - o.0) as i64 * (b.1 - o.1) as i64 - (a.1 - o.1) as i64 * (b.0 - o.0) as i64;
++    let mut lower: Vec<(i32, i32)> = Vec::new();
++    for &q in &p {
++        while lower.len() >= 2 && cross(lower[lower.len() - 2], lower[lower.len() - 1], q) <= 0 {
++            lower.pop();
++        }
++        lower.push(q);
++    }
++    let mut upper: Vec<(i32, i32)> = Vec::new();
++    for &q in p.iter().rev() {
++        while upper.len() >= 2 && cross(upper[upper.len() - 2], upper[upper.len() - 1], q) <= 0 {
++            upper.pop();
++        }
++        upper.push(q);
++    }
++    lower.pop();
++    upper.pop();
++    lower.extend(upper);
++    lower
++}
++
++#[test]
++fn convex_path_counts_what_poly_counts_except_samples_on_its_right_and_bottom_edges() {
++    // Same lattice, same 16 levels, same polygon: the hit count differs only
++    // by samples lying EXACTLY on an edge, which POLY counts for every edge
++    // and PATH for top and left ones (the partition rule). Red if PATH's
++    // sample lattice is offset from POLY's, its scale mapping differs, or it
++    // loses or gains any sample off the boundary.
++    let mut rng = Rng(0xfeed);
++    let (mut differing_pixels, mut covered_pixels, mut tie_samples) = (0usize, 0usize, 0usize);
++    let mut polys = 0;
++    while polys < 300 {
++        let k = 3 + rng.below(9) as usize;
++        let pts: Vec<(i32, i32)> = (0..k).map(|_| (rng.below(48) as i32, rng.below(48) as i32)).collect();
++        let mut hull = convex_hull(pts);
++        if hull.len() < 3 || hull.len() > 8 {
++            continue;
++        }
++        if rng.below(2) == 0 {
++            hull.reverse();
++        }
++        polys += 1;
++        let scale = 1 + (polys % 3) as i32;
++        let c = clip(0, 0, 48 * scale, 48 * scale);
++        let words: Vec<u32> = hull.iter().map(|&(x, y)| (x as u32) | ((y as u32) << 16)).collect();
++        let mut poly = BTreeMap::new();
++        poly_hits_rows(scale, c, &words, |y, x, h| {
++            if h > 0 {
++                poly.insert((x, y), h as u8);
++            }
++        });
++        let op = op_from(&[hull.iter().map(|&(x, y)| (x * 256, y * 256)).collect()], false, 0xffff_ffff);
++        let path = opt_hits(&op, scale, c);
++        let verts: Vec<(i64, i64)> = hull.iter().map(|&(x, y)| (x as i64 * 256 * scale as i64, y as i64 * 256 * scale as i64)).collect();
++        let edges = op_edges(&op, scale as i64);
++        for py in c.y0..c.y1 {
++            for px in c.x0..c.x1 {
++                let (mut inc, mut tl, mut ties_here) = (0u8, 0u8, 0usize);
++                for &sy in &SAMPLE {
++                    for &sx in &SAMPLE {
++                        let (x, y) = (256 * px as i64 + sx, 256 * py as i64 + sy);
++                        let (i_in, on) = inclusive_inside(&verts, x, y);
++                        let t_in = ref_inside(&edges, x, y, false);
++                        assert!(!t_in || i_in, "PATH has a sample POLY does not: {hull:?} at ({x},{y})");
++                        if i_in != t_in {
++                            assert!(on, "a disagreement off the boundary: {hull:?} at ({x},{y})");
++                            ties_here += 1;
++                        }
++                        inc += i_in as u8;
++                        tl += t_in as u8;
++                    }
++                }
++                assert_eq!(poly.get(&(px, py)).copied().unwrap_or(0), inc, "POLY's own hits are the inclusive count");
++                assert_eq!(path.get(&(px, py)).copied().unwrap_or(0), tl, "PATH's hits are the top-left count");
++                tie_samples += ties_here;
++                if inc > 0 {
++                    covered_pixels += 1;
++                }
++                if inc != tl {
++                    differing_pixels += 1;
++                }
++            }
++        }
++    }
++    std::println!("POLY vs PATH over 300 convex integer polygons: {differing_pixels} of {covered_pixels} covered pixels differ, by {tie_samples} on-edge samples");
++}
++
++#[test]
++fn abutting_paths_partition_the_samples_of_their_shared_edge() {
++    // A convex polygon cut along a diagonal into two ops: on every pixel the
++    // two counts add up to the whole's. Red under POLY's inclusive rule (the
++    // diagonal's on-edge samples would count twice) and red if the top-left
++    // convention were applied to one orientation only.
++    let mut rng = Rng(0xab0e);
++    let mut cases = 0;
++    let mut seam_ties = 0usize;
++    while cases < 300 {
++        let k = 4 + rng.below(8) as usize;
++        let g = [256, 64, 1][cases % 3];
++        let pts: Vec<(i32, i32)> = (0..k).map(|_| (rng.below(40 * 256) as i32 / g * g, rng.below(40 * 256) as i32 / g * g)).collect();
++        let hull = convex_hull(pts);
++        if hull.len() < 4 {
++            continue;
++        }
++        cases += 1;
++        let cut = 2 + rng.below(hull.len() as u64 - 3) as usize;
++        let mut a: Vec<(i32, i32)> = hull[..=cut].to_vec();
++        let mut b: Vec<(i32, i32)> = hull[cut..].to_vec();
++        b.push(hull[0]);
++        if rng.below(2) == 0 {
++            a.reverse();
++        }
++        if rng.below(2) == 0 {
++            b.reverse();
++        }
++        let scale = 1 + (cases % 2) as i32;
++        let c = clip(0, 0, 41 * scale, 41 * scale);
++        let whole = opt_hits(&op_from(&[hull.clone()], false, !0), scale, c);
++        let ha = opt_hits(&op_from(&[a], false, !0), scale, c);
++        let hb = opt_hits(&op_from(&[b], false, !0), scale, c);
++        for py in c.y0..c.y1 {
++            for px in c.x0..c.x1 {
++                let (wa, wb) = (ha.get(&(px, py)).copied().unwrap_or(0), hb.get(&(px, py)).copied().unwrap_or(0));
++                let w = whole.get(&(px, py)).copied().unwrap_or(0);
++                assert_eq!(wa + wb, w, "pixel ({px},{py}) of {hull:?} cut at {cut}");
++                if wa > 0 && wb > 0 {
++                    seam_ties += 1;
++                }
++            }
++        }
++    }
++    assert!(seam_ties > 1000, "the sweep crosses seams: {seam_ties}");
++}
++
++// ---- 3. stroke: the union, and the offset ---------------------------------------------
++
++fn q(v: f32) -> i64 {
++    floor_i32(v * PATH_UNITS + 0.5) as i64
++}
++
++fn convex_contains(poly: &[(i64, i64)], x: i64, y: i64) -> Option<(bool, bool)> {
++    let n = poly.len();
++    let mut area = 0i64;
++    for i in 0..n {
++        let (a, b) = (poly[i], poly[(i + 1) % n]);
++        area += a.0 * b.1 - b.0 * a.1;
++    }
++    if area == 0 {
++        return None;
++    }
++    let sign = if area > 0 { 1 } else { -1 };
++    let mut on = false;
++    for i in 0..n {
++        let (a, b) = (poly[i], poly[(i + 1) % n]);
++        let f = ((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) * sign;
++        if f < 0 {
++            return Some((false, false));
++        }
++        if f == 0 {
++            on = true;
++        }
++    }
++    Some((true, on))
++}
++
++/// Distance in 1/256 px from (x, y) to segment a-b.
++fn seg_dist(a: (i64, i64), b: (i64, i64), x: i64, y: i64) -> f64 {
++    dist_to_segment((x as f64, y as f64), (a.0 as f64, a.1 as f64), (b.0 as f64, b.1 as f64))
++}
++
++fn random_polyline(rng: &mut Rng, n: usize, lo: f32, hi: f32, short: bool) -> Vec<Pt> {
++    let mut v = Vec::new();
++    let mut p = pt(rng.range(lo, hi), rng.range(lo, hi));
++    for _ in 0..n {
++        v.push(p);
++        let step = if short && rng.below(3) == 0 { rng.range(0.2, 3.0) } else { rng.range(4.0, 30.0) };
++        let mut np = pt(p.x + rng.range(-1.0, 1.0) * step, p.y + rng.range(-1.0, 1.0) * step);
++        np.x = np.x.clamp(lo, hi);
++        np.y = np.y.clamp(lo, hi);
++        if rng.below(12) == 0 {
++            np = v[v.len() - 1]; // a repeated point
++        }
++        if rng.below(10) == 0 && v.len() > 1 {
++            np = v[v.len() - 2]; // an exact reversal
++        }
++        p = np;
++    }
++    v
++}
++
++#[test]
++fn stroke_outline_fills_to_exactly_the_union_of_its_pieces() {
++    // The outline's nonzero fill against "inside any quad, join wedge or
++    // cap", sample by sample; they may disagree only on a sample lying
++    // within 2/256 px of a piece's edge: the top-left rule against the
++    // reference's closed test, and the pivot vertex, quantised on its own,
++    // sitting up to 1/256 px off the straight edge between the two offsets
++    // it lies between in exact arithmetic. Red if a join is wound the wrong way (a hole
++    // where the wedge cancels a quad), if the inner pivot is skipped where
++    // the wedge is not inside both quads, or if an outer join goes the long
++    // way round.
++    let mut rng = Rng(0x57_20_4e);
++    let (mut samples, mut edge_mismatch, mut worst) = (0usize, 0usize, 0f64);
++    for case in 0..240 {
++        let joins = [Join::Miter, Join::Round, Join::Bevel];
++        let caps = [Cap::Butt, Cap::Round, Cap::Square];
++        let st = StrokeStyle {
++            width: [1.0f32, 3.5, 9.0, 24.0][case % 4],
++            join: joins[case % 3],
++            cap: caps[(case / 3) % 3],
++            miter_limit: [1.5f32, 4.0, 30.0][(case / 9) % 3],
++        };
++        let closed = case % 7 == 0;
++        let n = 3 + rng.below(9) as usize;
++        let line = random_polyline(&mut rng, n, 12.0, 68.0, case % 2 == 0);
++        let mut out = Contours::default();
++        let mut scratch = StrokeScratch::default();
++        stroke_polyline(&line, closed, &st, FLATTEN_TOL, &mut out, &mut scratch);
++        let pieces: Vec<Vec<(i64, i64)>> = stroke_pieces(&line, closed, &st, FLATTEN_TOL)
++            .iter()
++            .map(|p| p.iter().map(|v| (q(v.x), q(v.y))).collect())
++            .collect();
++        let mut words = Vec::new();
++        let mut es = EmitScratch::default();
++        if !emit_op(&mut words, &out, &Affine::IDENTITY, 0xffff_ffff, false, (80.0, 80.0), &mut es) {
++            assert!(pieces.iter().all(|p| p.len() < 3), "case {case}: no outline but pieces exist");
++            continue;
++        }
++        let edges = op_edges(&words, 1);
++        for py in 0..80i64 {
++            for px in 0..80i64 {
++                for &sy in &SAMPLE {
++                    for &sx in &SAMPLE {
++                        let (x, y) = (256 * px + sx, 256 * py + sy);
++                        let got = ref_inside(&edges, x, y, false);
++                        let mut want = false;
++                        for p in &pieces {
++                            if let Some((inside, _)) = convex_contains(p, x, y) {
++                                want |= inside;
++                            }
++                        }
++                        samples += 1;
++                        if got != want {
++                            let near = pieces.iter().map(|p| (0..p.len()).map(|i| seg_dist(p[i], p[(i + 1) % p.len()], x, y)).fold(f64::MAX, f64::min)).fold(f64::MAX, f64::min);
++                            assert!(near <= 2.0, "case {case} ({st:?}, closed {closed}): sample ({x},{y}) is {got} by winding, {want} by the pieces, {near}/256 px from the nearest piece edge; line {line:?}");
++                            edge_mismatch += 1;
++                            worst = worst.max(near);
++                        }
++                    }
++                }
++            }
++        }
++    }
++    std::println!("stroke union: {samples} samples, {edge_mismatch} differ, the farthest {worst}/256 px from a piece edge");
++}
++
++fn dist_to_segment(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
++    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
++    let l2 = dx * dx + dy * dy;
++    let t = if l2 > 0.0 { (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
++    let (cx, cy) = (a.0 + t * dx, a.1 + t * dy);
++    ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt()
++}
++
++#[test]
++fn round_stroke_is_the_true_offset_within_the_tolerance() {
++    // With round joins and caps a stroke is every point within w/2 of the
++    // polyline. Each sample farther than w/2 + eps must be out and each
++    // nearer than w/2 - eps in, eps = the chord tolerance plus the 1/256 px
++    // quantisation. Red if an arc is generated around the wrong centre or
++    // with too few chords, or a cap faces backward.
++    let mut rng = Rng(0x0ff5e7);
++    let eps = FLATTEN_TOL as f64 + 2.0 / 256.0 + 1e-3;
++    let mut checked = 0usize;
++    for case in 0..120 {
++        let st = StrokeStyle { width: [2.0f32, 7.0, 15.0, 31.0][case % 4], join: Join::Round, cap: Cap::Round, miter_limit: 4.0 };
++        let closed = case % 5 == 0;
++        let n = 3 + rng.below(8) as usize;
++        let line = random_polyline(&mut rng, n, 16.0, 64.0, case % 3 == 0);
++        let mut out = Contours::default();
++        stroke_polyline(&line, closed, &st, FLATTEN_TOL, &mut out, &mut StrokeScratch::default());
++        let mut words = Vec::new();
++        if !emit_op(&mut words, &out, &Affine::IDENTITY, !0, false, (80.0, 80.0), &mut EmitScratch::default()) {
++            continue;
++        }
++        let edges = op_edges(&words, 1);
++        let mut segs: Vec<((f64, f64), (f64, f64))> = Vec::new();
++        for i in 0..line.len() - 1 + closed as usize {
++            let (a, b) = (line[i], line[(i + 1) % line.len()]);
++            segs.push(((a.x as f64, a.y as f64), (b.x as f64, b.y as f64)));
++        }
++        let hw = st.width as f64 / 2.0;
++        for py in 0..80i64 {
++            for px in 0..80i64 {
++                for &sy in &SAMPLE {
++                    for &sx in &SAMPLE {
++                        let (x, y) = (256 * px + sx, 256 * py + sy);
++                        let p = (x as f64 / 256.0, y as f64 / 256.0);
++                        let d = segs.iter().map(|&(a, b)| dist_to_segment(p, a, b)).fold(f64::MAX, f64::min);
++                        let got = ref_inside(&edges, x, y, false);
++                        if d < hw - eps {
++                            assert!(got, "case {case}: sample at distance {d} < {hw} is outside; line {line:?}");
++                        } else if d > hw + eps {
++                            assert!(!got, "case {case}: sample at distance {d} > {hw} is inside; line {line:?}");
++                        }
++                        checked += 1;
++                    }
++                }
++            }
++        }
++    }
++    assert!(checked > 1_000_000);
++}
++
++#[test]
++fn miter_tip_sits_at_its_length_and_the_limit_bevels_it() {
++    // A corner of interior angle 60 degrees: the miter is w/2 / sin(30) = w
++    // from the vertex along the bisector; ratio 1/sin(30) = 2, so a limit
++    // of 2.01 keeps it and 1.99 bevels. Red if the limit test is inverted
++    // or the tip is computed from the wrong normals.
++    let line = [pt(0.0, 0.0), pt(50.0, 0.0), pt(50.0 - 50.0 * 0.5, 50.0 * 0.866_025_4)];
++    let tip_dist = |limit: f32| {
++        let st = StrokeStyle { width: 10.0, join: Join::Miter, cap: Cap::Butt, miter_limit: limit };
++        let mut out = Contours::default();
++        stroke_polyline(&line, false, &st, FLATTEN_TOL, &mut out, &mut StrokeScratch::default());
++        out.pts.iter().map(|p| ((p.x - 50.0).powi(2) + p.y.powi(2)).sqrt()).filter(|&d| d < 20.0).fold(0.0f32, f32::max)
++    };
++    let kept = tip_dist(2.01);
++    assert!((kept - 10.0).abs() < 1e-3, "miter tip at {kept}, want 10");
++    let beveled = tip_dist(1.99);
++    assert!(beveled < 5.0 + 1e-3, "beveled corner reaches {beveled}, want <= w/2");
++}
++
++// ---- 4. trim ----------------------------------------------------------------------------
++
++fn spiral_entry() -> PathEntry {
++    let mut s = Shape::default();
++    s.m(10.0, 50.0).c(10.0, 0.0, 90.0, 0.0, 90.0, 50.0).c(90.0, 100.0, 30.0, 95.0, 35.0, 50.0).l(50.0, 30.0);
++    circle(&mut s, 60.0, 60.0, 20.0, 4);
++    s.m(5.0, 90.0).l(95.0, 92.0);
++    s.entry()
++}
++
++fn stroke_words(e: &PathEntry, trim: Trim, cap: Cap) -> Vec<u32> {
++    let mut p = paint_stroke(!0, 4.0, Join::Round, cap);
++    p.trim = trim;
++    let mut w = Vec::new();
++    emit(&mut w, e, &Affine::IDENTITY, &p, (100.0, 100.0), &mut PathStats::default());
++    w
++}
++
++#[test]
++fn a_trim_window_of_the_whole_length_is_no_trim() {
++    // Red if ordering, clamping or the offset leaks into a full window.
++    let e = spiral_entry();
++    let none = stroke_words(&e, Trim::NONE, Cap::Round);
++    for t in [
++        Trim { start: 0.0, end: 1.0, offset: 0.0, mode: TrimMode::Whole },
++        Trim { start: 1.0, end: 0.0, offset: 0.0, mode: TrimMode::Each },
++        Trim { start: -0.5, end: 1.5, offset: 0.37, mode: TrimMode::Whole },
++        Trim { start: 0.0, end: 1.0, offset: 12.25, mode: TrimMode::Each },
++    ] {
++        assert_eq!(stroke_words(&e, t, Cap::Round), none, "{t:?}");
++    }
++    for t in [Trim { start: 0.4, end: 0.4, offset: 0.0, mode: TrimMode::Each }, Trim { start: 2.0, end: 3.0, offset: 0.0, mode: TrimMode::Whole }] {
++        assert!(stroke_words(&e, t, Cap::Round).is_empty(), "{t:?} draws nothing");
++    }
++}
++
++fn flat_len(f: &Flat) -> (f32, usize) {
++    let mut total = 0.0f32;
++    for s in &f.subs {
++        for i in s.start + 1..s.end {
++            let (a, b) = (f.pts[i - 1], f.pts[i]);
++            total += sqrtf((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
++        }
++        if s.closed {
++            let (a, b) = (f.pts[s.end - 1], f.pts[s.start]);
++            total += sqrtf((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y));
++        }
++    }
++    (total, f.subs.len())
++}
++
++#[test]
++fn trimmed_length_is_the_window_in_both_modes() {
++    // The pieces' arc length is (end - start) of the measured length, in
++    // Whole over the sum and in Each per subpath; a wrapped window on a
++    // closed subpath is ONE piece through its start. Red if a piece misses
++    // its cut point, duplicates a vertex, or the wrap splits a closed loop.
++    let e = spiral_entry();
++    let mut pts = Vec::new();
++    e.points_at(0.0, &mut pts);
++    let mut flat = Flat::default();
++    flatten(&e.verbs, &pts, FLATTEN_TOL, &mut flat);
++    let (full, nsub) = flat_len(&flat);
++    assert_eq!(nsub, 3);
++    let mut out = Flat::default();
++    let mut cum = Vec::new();
++    for &(s, en, off) in &[(0.1f32, 0.6f32, 0.0f32), (0.0, 0.3, 0.85), (0.25, 0.75, 0.5), (0.05, 0.95, 0.2)] {
++        trim(&flat, &Trim { start: s, end: en, offset: off, mode: TrimMode::Whole }, &mut out, &mut cum);
++        let (l, _) = flat_len(&out);
++        assert!((l - (en - s) * full).abs() < 1e-3 * full, "Whole {s}..{en}+{off}: {l} of {full}");
++        trim(&flat, &Trim { start: s, end: en, offset: off, mode: TrimMode::Each }, &mut out, &mut cum);
++        let (l, n) = flat_len(&out);
++        assert!((l - (en - s) * full).abs() < 1e-3 * full, "Each {s}..{en}+{off}: {l} of {full}");
++        let wraps = s + (off - crate::layout::floorf(off)) >= 1.0 || en + (off - crate::layout::floorf(off)) > 1.0;
++        // Each: the closed circle is one piece even when wrapped; the two
++        // open subpaths are two pieces when wrapped.
++        assert_eq!(n, if wraps { 5 } else { 3 }, "Each {s}..{en}+{off}: pieces");
++    }
++}
++
++#[test]
++fn trim_end_only_adds_samples_as_it_grows() {
++    // A draw-on: a longer window never uncovers a sample a shorter one
++    // covered (butt caps). Red if a cut point moves backward as its
++    // fraction grows, or a piece is rebuilt differently from frame to frame.
++    let e = spiral_entry();
++    let mut prev: Option<BTreeMap<(i32, i32), u8>> = None;
++    let mut violations = 0usize;
++    for k in 1..=40 {
++        let t = Trim { start: 0.0, end: k as f32 / 40.0, offset: 0.0, mode: TrimMode::Whole };
++        let w = stroke_words(&e, t, Cap::Butt);
++        let h = if w.is_empty() { BTreeMap::new() } else { opt_hits(&w, 1, clip(0, 0, 100, 100)) };
++        if let Some(p) = &prev {
++            for (px, &v) in p {
++                if h.get(px).copied().unwrap_or(0) < v {
++                    violations += 1;
++                }
++            }
++        }
++        prev = Some(h);
++    }
++    std::println!("trim growth: {violations} pixel decreases over 40 steps");
++    assert!(violations <= 4, "{violations} pixels lost coverage as the window grew");
++}
++
++// ---- 5. morph ---------------------------------------------------------------------------
++
++#[test]
++fn morph_at_a_key_draws_that_key_exactly() {
++    // Red if the lerp is not exact at its ends (a + (b - a) * 1 is not b in
++    // f32), if the key index is off by one, or if out-of-range or NaN
++    // values are not clamped.
++    let mut a = Shape::default();
++    circle(&mut a, 50.0, 50.0, 30.0, 8);
++    let mut b = Shape::default();
++    flower(&mut b, 50.0, 50.0, 30.0, 0.45);
++    let mut c = Shape::default();
++    flower(&mut c, 48.0, 51.0, 41.0, -0.2);
++    let m = morph_entry(&[&a, &b, &c]);
++    let words = |e: &PathEntry, morph: f32| {
++        let mut p = paint_fill(!0, false);
++        p.stroke = abgr(255, 0, 0, 255);
++        p.stroke_style.width = 3.0;
++        p.morph = morph;
++        let mut w = Vec::new();
++        emit(&mut w, e, &rotation(33.0, 1.3, 0.9, 10.0, 5.0), &p, (100.0, 100.0), &mut PathStats::default());
++        w
++    };
++    assert_eq!(words(&m, 0.0), words(&a.entry(), 0.0));
++    assert_eq!(words(&m, 1.0), words(&b.entry(), 0.0));
++    assert_eq!(words(&m, 2.0), words(&c.entry(), 0.0));
++    assert_eq!(words(&m, 7.5), words(&c.entry(), 0.0), "clamped above");
++    assert_eq!(words(&m, -3.0), words(&a.entry(), 0.0), "clamped below");
++    assert_eq!(words(&m, f32::NAN), words(&a.entry(), 0.0), "NaN is the first key");
++    assert_ne!(words(&m, 1.5), words(&b.entry(), 0.0));
++    // The words are quantised to 1/256 px, which hides an error of one
++    // ulp; the points are compared exactly, at every key and both ends.
++    let mut got = Vec::new();
++    for (k, key) in [&a, &b, &c].iter().enumerate() {
++        m.points_at(k as f32, &mut got);
++        assert!(got.iter().zip(key.pts.iter()).all(|(p, q)| p.x.to_bits() == q.x.to_bits() && p.y.to_bits() == q.y.to_bits()), "key {k} is not exact");
++    }
++    // Between two keys whose coordinates differ in exponent, so that
++    // b - a rounds: the far end must still be b to the bit.
++    let mut sa = Shape::default();
++    let mut sb = Shape::default();
++    sa.m(0.1, 3.0e-3).l(1234.567, -0.7).c(0.3, 9.9, 17.0, 0.013, 5.5, 2.2).z();
++    sb.m(0.3, 777.7).l(0.0123, 41.0).c(-65.0, 0.29, 1.0e-3, 33.3, 0.77, 1.0e4).z();
++    let two = morph_entry(&[&sa, &sb]);
++    two.points_at(1.0, &mut got);
++    assert!(got.iter().zip(sb.pts.iter()).all(|(p, q)| p.x.to_bits() == q.x.to_bits() && p.y.to_bits() == q.y.to_bits()), "far key is not exact: {got:?}");
++    let mut mid = Vec::new();
++    m.points_at(1.5, &mut mid);
++    for (i, p) in mid.iter().enumerate() {
++        let (pb, pc) = (b.pts[i], c.pts[i]);
++        assert!((p.x - (pb.x + pc.x) / 2.0).abs() < 1e-4 && (p.y - (pb.y + pc.y) / 2.0).abs() < 1e-4);
++    }
++}
++
++// ---- 6. flattening ---------------------------------------------------------------------
++
++#[test]
++fn chord_count_does_not_follow_rotation() {
++    // Flattening happens in local space with a tolerance scaled by the
++    // transform's Frobenius norm, so a turning path keeps its chords. Red if
++    // the flattening moves to screen space (the count would depend on the
++    // angle) or the bound is replaced by a row norm.
++    let mut s = Shape::default();
++    flower(&mut s, 0.0, 0.0, 200.0, 0.4);
++    let e = s.entry();
++    let mut counts = std::collections::BTreeSet::new();
++    for deg in 0..360 {
++        let mut st = PathStats::default();
++        emit(&mut Vec::new(), &e, &rotation(deg as f32 + 0.5, 1.7, 1.7, 300.0, 300.0), &paint_fill(!0, false), (600.0, 600.0), &mut st);
++        counts.insert(st.chords);
++    }
++    std::println!("chords over 360 angles: {counts:?}");
++    assert!(counts.len() <= 2, "chord count varies with angle: {counts:?}");
++}
++
++#[test]
++fn flattened_curve_stays_within_tolerance() {
++    // Every chord is within FLATTEN_TOL of the cubic over its parameter
++    // span (in f64). Red if Wang's bound is mis-scaled or a chord end is
++    // evaluated at the wrong t.
++    let mut rng = Rng(5150);
++    for _ in 0..200 {
++        let p: Vec<Pt> = (0..4).map(|_| pt(rng.range(-300.0, 300.0), rng.range(-300.0, 300.0))).collect();
++        let mut f = Flat::default();
++        flatten(&[VERB_MOVE, VERB_CUBIC], &p, FLATTEN_TOL, &mut f);
++        // Wang's bound is on the PARAMETRIC deviation: at t between chord
++        // ends i/n and (i+1)/n, the curve is within tol of the chord's lerp.
++        let n = f.pts.len() - 1;
++        let bez = |t: f64| {
++            let mt = 1.0 - t;
++            let b = [mt * mt * mt, 3.0 * mt * mt * t, 3.0 * mt * t * t, t * t * t];
++            ((0..4).map(|k| b[k] * p[k].x as f64).sum::<f64>(), (0..4).map(|k| b[k] * p[k].y as f64).sum::<f64>())
++        };
++        for i in 0..n {
++            for k in 0..=8 {
++                let u = k as f64 / 8.0;
++                let c = bez((i as f64 + u) / n as f64);
++                let (a, b) = (f.pts[i], f.pts[i + 1]);
++                let l = (a.x as f64 + (b.x - a.x) as f64 * u, a.y as f64 + (b.y - a.y) as f64 * u);
++                let d = ((c.0 - l.0).powi(2) + (c.1 - l.1).powi(2)).sqrt();
++                assert!(d <= FLATTEN_TOL as f64 + 1e-3, "chord {i}/{n} deviates {d}");
++            }
++        }
++    }
++}
++
++// ---- 7. the table ----------------------------------------------------------------------
++
++#[test]
++fn path_table_round_trips_and_refuses_malformed_entries() {
++    let mut a = Shape::default();
++    circle(&mut a, 0.0, 0.0, 10.0, 4);
++    let mut b = Shape::default();
++    circle(&mut b, 1.0, 2.0, 12.0, 4);
++    let entries = [a.entry(), morph_entry(&[&a, &b]), PathEntry::new(a.verbs.clone(), &[a.pts.clone()], Some([0.0, 0.0, 24.0, 24.0])).unwrap()];
++    let mut bytes = Vec::new();
++    PathTable::encode(&entries, &mut bytes);
++    let (t, end) = PathTable::parse(&bytes, 0, 3).expect("parses");
++    assert_eq!(end, bytes.len());
++    for (x, y) in t.entries.iter().zip(entries.iter()) {
++        assert_eq!(x.verbs, y.verbs);
++        assert_eq!(x.coords, y.coords);
++        assert_eq!(x.view_box, y.view_box);
++    }
++    assert!(PathTable::parse(&bytes[..bytes.len() - 1], 0, 3).is_none(), "truncated");
++    let mut bad = bytes.clone();
++    bad[4] = VERB_LINE; // first verb not a move
++    assert!(PathTable::parse(&bad, 0, 1).is_none());
++    let mut bad = bytes.clone();
++    bad[4 + 1] = 9; // unknown verb
++    assert!(PathTable::parse(&bad, 0, 1).is_none());
++    let mut bad = bytes.clone();
++    bad[2] = 0; // zero shapes
++    assert!(PathTable::parse(&bad, 0, 1).is_none());
++    assert!(PathEntry::new(a.verbs.clone(), &[a.pts.clone(), b.pts[..b.pts.len() - 1].to_vec()], None).is_none(), "shapes of different sizes");
++    let nine: Vec<Vec<Pt>> = (0..9).map(|_| a.pts.clone()).collect();
++    assert!(PathEntry::new(a.verbs.clone(), &nine[..8], None).is_some(), "eight morph keys");
++    assert!(PathEntry::new(a.verbs.clone(), &nine, None).is_none(), "nine morph keys");
++    let mut nan = a.pts.clone();
++    nan[2].x = f32::NAN;
++    assert!(PathEntry::new(a.verbs.clone(), &[nan], None).is_none(), "NaN coordinate");
++}
++
++// ---- 8. the op in the stream ------------------------------------------------------------
++
++#[test]
++fn emitted_coordinates_stay_inside_the_guard_and_never_carry_nan() {
++    // Huge, tiny, degenerate and non-finite transforms: every coordinate is
++    // within the guard band in 1/256 px, or the op is not emitted. Red if a
++    // vertex escapes the clip (i64 products downstream assume the bound) or
++    // a NaN reaches the stream.
++    let mut s = Shape::default();
++    flower(&mut s, 0.0, 0.0, 100.0, 0.3);
++    s.m(-1e6, -1e6).l(1e6, -1e6).l(1e6, 1e6).z();
++    let e = s.entry();
++    let screen = (200.0f32, 120.0f32);
++    let bound = ((screen.0 + 8.0) * 256.0) as i64;
++    let xfs = [
++        affine(1e4, 0.0, 0.0, 1e4, 100.0, 60.0),
++        affine(1e-6, 0.0, 0.0, 1e-6, 100.0, 60.0),
++        affine(0.0, 0.0, 0.0, 0.0, 100.0, 60.0),
++        affine(1.0, 2.0, 2.0, 4.0, 100.0, 60.0), // singular
++        affine(f32::NAN, 0.0, 0.0, 1.0, 0.0, 0.0),
++        affine(f32::INFINITY, 0.0, 0.0, 1.0, 0.0, 0.0),
++        rotation(31.0, 3.0, 0.01, -5000.0, 70.0),
++    ];
++    for xf in &xfs {
++        let mut p = paint_fill(!0, false);
++        p.stroke = !0;
++        p.stroke_style.width = 7.0;
++        let mut w = Vec::new();
++        emit(&mut w, &e, xf, &p, screen, &mut PathStats::default());
++        let mut i = 0;
++        while i < w.len() {
++            assert_eq!(w[i], draw_op::PATH);
++            let len = w[i + 1] as usize;
++            assert!(crate::raster::path_op_valid(&w[i..i + len]));
++            let mut k = i + 5;
++            for _ in 0..w[i + 4] {
++                let n = w[k] as usize;
++                for v in 0..2 * n {
++                    let c = w[k + 1 + v] as i32 as i64;
++                    assert!(c.abs() <= bound, "{xf:?}: coordinate {c} beyond the guard");
++                }
++                k += 1 + 2 * n;
++            }
++            i += len;
++        }
++        // And it rasterises without panicking.
++        render(&w, 200, 120, 2);
++    }
++}
++
++#[test]
++fn path_under_a_mask_is_the_rect_under_that_mask_where_it_covers() {
++    // A path covering the whole frame, under a rotated mask, against a RECT
++    // under the same mask: identical bytes, because a fully covered pixel
++    // is fill_opaque either way and the mask scales both alike. Red if PATH
++    // bypasses the target trait (masks, paints and layers wrap targets).
++    // The mask's own words come from `mask_push`: written in the format
++    // 0024 replaced, both streams stopped at it and this compared two
++    // grounds — so it also asserts the mask let paint through.
++    let mut base = Vec::new();
++    ground(&mut base, 120, 90, abgr(0, 0, 0, 255));
++    let bare = base.clone();
++    mask_push(&mut base, &[(20.0, 10.0), (100.0, 25.0), (90.0, 80.0), (10.0, 70.0)]);
++    let mut a = base.clone();
++    a.extend_from_slice(&op_from(&[alloc::vec![(-512, -512), (130 * 256, -512), (130 * 256, 100 * 256), (-512, 100 * 256)]], false, abgr(250, 250, 250, 255)));
++    a.push(draw_op::MASK_POP);
++    let mut b = base;
++    b.extend_from_slice(&[draw_op::RECT, 0, 120 | (90 << 16), abgr(250, 250, 250, 255), draw_op::MASK_POP]);
++    for scale in 1..=2 {
++        let got = render(&a, 120, 90, scale);
++        assert_ne!(got, render(&bare, 120, 90, scale), "scale {scale}: nothing painted under the mask");
++        assert_eq!(got, render(&b, 120, 90, scale), "scale {scale}");
++    }
++}
++
++#[test]
++fn damage_tracking_decodes_path_and_bounds_it() {
++    // An incremental render of a moving path equals a full render. Red if
++    // damage.rs does not know the op (the plan errors) or bounds it short.
++    use crate::damage::{DamagePolicy, DamageTracker};
++    let mut ui = crate::Ui::new();
++    ui.set_viewport(160.0, 120.0);
++    let mut tracker = DamageTracker::<8>::new();
++    let mut fb = alloc::vec![0u8; 160 * 120 * 4];
++    let mut s = Shape::default();
++    flower(&mut s, 0.0, 0.0, 30.0, 0.4);
++    let e = s.entry();
++    for f in 0..6 {
++        let mut words = Vec::new();
++        ground(&mut words, 160, 120, abgr(5, 5, 5, 255));
++        let mut p = paint_fill(abgr(255, 200, 0, 255), false);
++        p.stroke = abgr(255, 255, 255, 255);
++        p.stroke_style.width = 3.0;
++        emit(&mut words, &e, &affine(1.0, 0.0, 0.0, 1.0, 40.0 + 9.0 * f as f32, 60.0), &p, (160.0, 120.0), &mut PathStats::default());
++        crate::raster::render_scaled_incremental(&ui, &words, &mut fb, 1, &mut tracker, DamagePolicy::default()).expect("plans");
++        assert_eq!(fb, render(&words, 160, 120, 1), "frame {f}");
++    }
++}
++
++// ---- 8b. through the node walk -----------------------------------------------------------
++
++/// styles.bin with `records` (base props only), no anims, and `paths`.
++fn styles_with_paths(records: &[Vec<(u8, u32)>], paths: &[PathEntry]) -> Vec<u8> {
++    use crate::spec::style_table as st;
++    let mut b = Vec::new();
++    b.extend_from_slice(&st::MAGIC.to_le_bytes());
++    b.extend_from_slice(&st::VERSION.to_le_bytes());
++    b.extend_from_slice(&(records.len() as u16).to_le_bytes());
++    b.extend_from_slice(&0u16.to_le_bytes());
++    b.extend_from_slice(&(paths.len() as u16).to_le_bytes());
++    for r in records {
++        b.push(st::VARIANT_BASE);
++        b.push(r.len() as u8);
++        for &(prop, v) in r {
++            b.push(prop);
++            b.push(0);
++            b.extend_from_slice(&v.to_le_bytes());
++        }
++    }
++    PathTable::encode(paths, &mut b);
++    b
++}
++
++fn path_node(ui: &mut crate::Ui) -> i32 {
++    use crate::spec::{self, prop};
++    let n = ui.create_node(spec::NodeType::View as u8);
++    for (p, v) in [
++        (prop::WIDTH, 120.0),
++        (prop::HEIGHT, 120.0),
++        (prop::POS_TYPE, spec::PosType::Absolute as u32 as f64),
++        (prop::INSET_L, 100.0),
++        (prop::INSET_T, 60.0),
++        (prop::PATH, 1.0),
++        (prop::FILL_COLOR, abgr(255, 160, 0, 255) as f64),
++        (prop::STROKE_COLOR, abgr(255, 255, 255, 255) as f64),
++        (prop::STROKE_WIDTH, 4.0),
++        (prop::STROKE_JOIN, spec::StrokeJoin::Round as u32 as f64),
++        (prop::ROTATE, 20.0),
++    ] {
++        ui.set_prop(n, p, v);
++    }
++    ui.insert_before(spec::ROOT_ID, n, 0);
++    n
++}
++
++fn ops_of(words: &[u32]) -> Vec<u32> {
++    // Every op this test meets has a fixed or self-described length.
++    let mut out = Vec::new();
++    let mut i = 0;
++    while i < words.len() {
++        let op = words[i];
++        out.push(op);
++        i += match op {
++            draw_op::RECT => 4,
++            draw_op::PATH => words[i + 1] as usize,
++            draw_op::PAINT_PUSH => 9 + 2 * words[i + 2] as usize,
++            draw_op::PAINT_POP => 1,
++            draw_op::POLY => 3 + words[i + 1] as usize,
++            _ => panic!("unexpected op {op}"),
++        };
++    }
++    out
++}
++
++fn blob_entry() -> PathEntry {
++    let mut a = Shape::default();
++    circle(&mut a, 60.0, 60.0, 50.0, 8);
++    let mut b = Shape::default();
++    flower(&mut b, 60.0, 60.0, 50.0, 0.4);
++    morph_entry(&[&a, &b])
++}
++
++#[test]
++fn a_path_node_draws_fill_then_stroke_and_debug_hide_removes_both() {
++    // Red if the walk does not reach the path, emits the stroke under the
++    // fill, or draws a hidden node.
++    let mut ui = crate::Ui::new();
++    assert!(ui.load_styles(&styles_with_paths(&[], &[blob_entry()])));
++    let n = path_node(&mut ui);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let ops = ops_of(&words);
++    assert_eq!(ops, [draw_op::PATH, draw_op::PATH], "fill, then stroke");
++    // The fill is the fill colour; the stroke op is the stroke colour.
++    let first = 0;
++    let second = words[1] as usize;
++    assert_eq!(words[first + 3], abgr(255, 160, 0, 255));
++    assert_eq!(words[second + 3], abgr(255, 255, 255, 255));
++    let fb = raster_through(&mut ui);
++    assert!(fb.chunks(4).any(|p| p == [255, 160, 0, 255]), "the fill reaches the picture");
++    ui.debug_hide(n);
++    assert!(ui.draw().words.is_empty(), "a hidden path node emits nothing");
++    ui.debug_hide(0);
++    assert_eq!(ui.draw().words, words, "and unhiding restores the same words");
++}
++
++#[test]
++fn every_draw_list_walker_steps_over_a_path() {
++    // The compositor's walkers take each op's length from a table of their
++    // own (`compositor::draw_op_len`, `Ui::compositor_surface_frames`), and a
++    // length they do not know ends the walk. A PATH ahead of a surface: the
++    // surface must still be found, and a compositor render with no surface
++    // raster must equal the plain render. Red with PATH dropped from either
++    // table — the frame list comes back empty, or the composite stops at the
++    // path and never draws it.
++    use crate::spec;
++    let mut ui = crate::Ui::new();
++    assert!(ui.load_styles(&styles_with_paths(&[], &[blob_entry()])));
++    path_node(&mut ui);
++    let surface = ui.create_node(spec::NodeType::Surface as u8);
++    for (p, v) in [
++        (spec::prop::WIDTH, 40.0),
++        (spec::prop::HEIGHT, 30.0),
++        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64),
++        (spec::prop::INSET_L, 10.0),
++        (spec::prop::INSET_T, 10.0),
++    ] {
++        ui.set_prop(surface, p, v);
++    }
++    ui.set_compositor_surface(surface, 3, false);
++    ui.insert_before(spec::ROOT_ID, surface, 0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    let path_at = words.iter().position(|&w| w == draw_op::PATH).expect("a path op");
++    let quad_at = words.iter().position(|&w| w == draw_op::SURFACE_QUAD).expect("a surface op");
++    assert!(path_at < quad_at, "the path is walked first");
++    assert_eq!(crate::compositor::draw_op_len(&words, path_at), Some(words[path_at + 1] as usize));
++    let frames = ui.compositor_surface_frames();
++    assert_eq!(frames.len(), 1, "the surface after the path is found");
++    assert_eq!(frames[0].handle, 3);
++    let (w, h) = ui.viewport();
++    let mut plain = alloc::vec![0u8; w as usize * h as usize * 4];
++    crate::raster::render(&ui, &words, &mut plain);
++    let mut composed = alloc::vec![0u8; w as usize * h as usize * 4];
++    crate::compositor::render(&ui, &words, &mut composed, 1, &[]);
++    assert!(plain.chunks(4).any(|p| p == [255, 160, 0, 255]), "the path paints");
++    assert!(plain == composed, "the composite draws what the plain render draws");
++}
++
++fn raster_through(ui: &mut crate::Ui) -> Vec<u8> {
++    let words = ui.draw().words.clone();
++    let (w, h) = ui.viewport();
++    let mut fb = alloc::vec![0u8; w as usize * h as usize * 4];
++    crate::raster::render(ui, &words, &mut fb);
++    fb
++}
++
++#[test]
++fn trim_end_animates_through_the_anim_machinery_and_moves_the_draw_hash() {
++    // A draw-on: trimEnd 0 -> 1 over 30 frames with `animate`. Every frame's
++    // stroke differs from the last and the fill never changes. Red if the
++    // prop is not animatable, not resolved, or not read by the walk.
++    use crate::spec::{self, prop};
++    let mut ui = crate::Ui::new();
++    assert!(ui.load_styles(&styles_with_paths(&[], &[blob_entry()])));
++    let n = path_node(&mut ui);
++    ui.set_prop(n, prop::TRIM_END, 0.0);
++    ui.tick();
++    assert_eq!(ops_of(&ui.draw().words), [draw_op::PATH], "trimmed to nothing: the fill only");
++    assert!(ui.animate(n, prop::TRIM_END, 1.0, 500, spec::Easing::Linear as u8, 0) >= 0, "trimEnd is animatable");
++    let mut last_stroke: Option<Vec<u32>> = None;
++    let mut fill: Option<Vec<u32>> = None;
++    let mut seen = 0;
++    for _ in 0..30 {
++        ui.tick();
++        let w = ui.draw().words.clone();
++        let len = w[1] as usize;
++        let f = w[..len].to_vec();
++        if let Some(prev) = &fill {
++            assert_eq!(&f, prev, "the fill does not move with the trim");
++        }
++        fill = Some(f);
++        if w.len() > len {
++            let s = w[len..].to_vec();
++            if let Some(prev) = &last_stroke {
++                assert_ne!(&s, prev, "every frame of the draw-on is a new stroke");
++            }
++            last_stroke = Some(s);
++            seen += 1;
++        }
++    }
++    assert!(seen >= 28, "the stroke appears and grows: {seen} frames");
++}
++
++#[test]
++fn opacity_and_morph_reach_the_ops() {
++    use crate::spec::prop;
++    let mut ui = crate::Ui::new();
++    assert!(ui.load_styles(&styles_with_paths(&[], &[blob_entry()])));
++    let n = path_node(&mut ui);
++    ui.tick();
++    let a = ui.draw().words.clone();
++    ui.set_prop(n, prop::OPACITY, 0.5);
++    ui.tick();
++    let b = ui.draw().words.clone();
++    assert_eq!(b[3] >> 24, 128, "fill alpha carries the opacity (scale_alpha rounds 127.5 up)");
++    ui.set_prop(n, prop::OPACITY, 1.0);
++    ui.set_prop(n, prop::MORPH, 1.0);
++    ui.tick();
++    let c = ui.draw().words.clone();
++    assert_ne!(a, c, "morph moves the geometry");
++}
++
++#[test]
++fn bg_clip_path_paints_the_ground_gradient_into_the_fill_and_not_the_box() {
++    // Red if the box ground is still painted, or the fill is not wrapped in
++    // the gradient paint.
++    use crate::spec::{self, prop};
++    let mut ui = crate::Ui::new();
++    assert!(ui.load_styles(&styles_with_paths(&[], &[blob_entry()])));
++    let n = path_node(&mut ui);
++    for (p, v) in [
++        (prop::BG_COLOR, abgr(10, 10, 10, 255) as f64),
++        (prop::GRAD_KIND, spec::GradKind::Linear as u32 as f64),
++        (prop::GRAD_FROM, abgr(255, 0, 0, 255) as f64),
++        (prop::GRAD_TO, abgr(0, 0, 255, 255) as f64),
++        (prop::GRAD_ANGLE, 90.0),
++        (prop::BG_CLIP, spec::BgClip::Path as u32 as f64),
++    ] {
++        ui.set_prop(n, p, v);
++    }
++    ui.tick();
++    let ops = ops_of(&ui.draw().words);
++    assert_eq!(ops, [draw_op::PAINT_PUSH, draw_op::PATH, draw_op::PAINT_POP, draw_op::PATH]);
++}
++
++#[test]
++fn a_style_table_without_paths_is_the_same_bytes_and_a_truncated_one_is_refused() {
++    let none = styles_with_paths(&[alloc::vec![(crate::spec::prop::BG_COLOR, 0xff00_00ff)]], &[]);
++    let t = crate::style::StyleTable::parse(&none).expect("parses");
++    assert!(t.paths.entries.is_empty());
++    let with = styles_with_paths(&[], &[blob_entry()]);
++    let mut ui = crate::Ui::new();
++    assert!(!ui.load_styles(&with[..with.len() - 3]), "a truncated path table is refused");
++}
++
++// ---- 9. the digests the other platforms must reproduce ------------------------------------
++
++/// (words, framebuffer) FNV-1a 64 per scene, recorded on darwin/arm64 (rustc
++/// 1.97.1, native). `baselines/vector-paths.md` in pocket-motion reproduces
++/// them on linux/x86-64 and under wasm32 in JavaScriptCore.
++///
++/// Scene 10 is the one re-pinned since the stage-1 record: its MASK_PUSH was
++/// written in the format 0024 replaced (N packed whole-pixel words), and its
++/// words are now `mask_push`'s f32 pairs — the same polygon, so the same
++/// mask; and its layer composites over its shadow by 0032's exact divisor.
++/// With that divisor reverted, its framebuffer is the stage-1 digest
++/// 0xbb5836a02e7cc858 byte for byte.
++const SCENE_DIGESTS: [(u64, u64); 16] = [
++    (0xd03a0c3226e20ff9, 0x2b13ba2c0869791d), // fill-nonzero-star
++    (0x00bb3a9823157fa0, 0xfeba9c5429f168f1), // fill-evenodd-star
++    (0x77bc3337ec94df9b, 0xd831a592ad4e4e0d), // fill-donut-rules
++    (0x274a11eaed142578, 0x9865aa5da5da96f9), // stroke-joins-caps
++    (0x52604bf90d7b694e, 0xc9702e8bf9178b4d), // stroke-closed-round
++    (0x329c490bf21551a0, 0x2f1eedf8b975f2f2), // stroke-tight-curvature
++    (0x2bbe1a1ffab7be43, 0xd323c06082d52f09), // trim-each-sweep
++    (0xf60ffa5d0fab5c45, 0x536d786522c3af2f), // trim-whole-offset-wrap
++    (0x7443890eb10b693f, 0xf2d0282db4b78595), // morph-circle-flower
++    (0x40b41642889c6ad9, 0x2cca2c314654cb32), // transform-rotate-skew
++    (0xc460f9c5923e4dab, 0x0462be5553bf994d), // under-mask-paint-layer
++    (0xff569918a3ff7c02, 0x496ee364eac1c599), // abutting-tiles
++    (0x0a439fe13bc1addc, 0x6fa8f71daddca5b5), // dense-300-fill-stroke-x1
++    (0x6f61516deb6573e1, 0xca638f349590b4af), // dense-300-animated-x2
++    (0xcb3ec3d685960abe, 0xb8682e1558ad2bc1), // flat-300-smooth-x1
++    (0x5c988ac343fd07db, 0x4b3ef5c12af3e9ea), // lineart-300-animated-x1
++];
++
++#[test]
++fn path_scene_digests_are_pinned() {
++    let mut out = std::string::String::new();
++    let mut mismatch = 0;
++    for i in 0..SCENE_NAMES.len() {
++        let (w, f) = scene_digest(i);
++        out.push_str(&std::format!("    (0x{w:016x}, 0x{f:016x}), // {}\n", SCENE_NAMES[i]));
++        if SCENE_DIGESTS[i] != (w, f) {
++            mismatch += 1;
++        }
++    }
++    std::println!("{out}");
++    assert_eq!(mismatch, 0, "{mismatch} scene digests differ:\n{out}");
++}
++
++// ---- 10. dumping, for looking -----------------------------------------------------------
++
++/// Dump every scene as raw RGBA under $PATH_DUMP (for looking at them).
++#[test]
++fn dump_scenes_when_asked() {
++    let Ok(dir) = std::env::var("PATH_DUMP") else {
++        return;
++    };
++    for (i, name) in SCENE_NAMES.iter().enumerate() {
++        let (words, w, h, scale) = scene(i);
++        let fb = render(&words, w, h, scale);
++        let path = std::format!("{dir}/{i:02}-{name}-{}x{}.rgba", w * scale, h * scale);
++        std::fs::write(&path, &fb).unwrap();
++    }
++}
++
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index 4572ea87..09bf9d0a 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -67,11 +67,11 @@ const DAMAGE_SIGNATURE_RGB565: u64 = u32::from_be_bytes(*b"R565") as u64;
+ 
+ /// Integer clip rect: x0/y0 inclusive, x1/y1 exclusive.
+ #[derive(Clone, Copy)]
+-struct Clip {
+-    x0: i32,
+-    y0: i32,
+-    x1: i32,
+-    y1: i32,
++pub(crate) struct Clip {
++    pub(crate) x0: i32,
++    pub(crate) y0: i32,
++    pub(crate) x1: i32,
++    pub(crate) y1: i32,
+ }
+ 
+ impl Clip {
+@@ -847,7 +847,7 @@ fn render_scaled_clipped<T: RenderTarget>(
+     scale: i32,
+     screen: Clip,
+ ) {
+-    let mut pool = LayerPool { free: Vec::new() };
++    let mut pool = LayerPool { free: Vec::new(), path: PathRaster::default() };
+     render_ops(ui, words, target, width, scale, screen, screen, 0, &mut pool);
+ }
+ 
+@@ -1007,6 +1007,17 @@ fn render_ops<T: RenderTarget>(
+                 poly(target, width, scale, clip, words[i + 2], &words[i + 3..i + 3 + n]);
+                 i += 3 + n;
+             }
++            draw_op::PATH => {
++                if i + PATH_HEADER > words.len() {
++                    return i;
++                }
++                let len = words[i + 1] as usize;
++                if len < PATH_HEADER || i + len > words.len() || !path_op_valid(&words[i..i + len]) {
++                    return i;
++                }
++                path_fill(target, width, scale, clip, &words[i..i + len], &mut pool.path);
++                i += len;
++            }
+             draw_op::TEXT_RUN => {
+                 // Native-text op (host text system shapes the run); the
+                 // software rasterizer has no shaper, so hosts that raster run
+@@ -1561,6 +1572,374 @@ fn poly<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, co
+     }
+ }
+ 
++/// POLY's per-pixel hits over its bbox (tests compare PATH against it).
++#[cfg(test)]
++pub(crate) fn poly_hits_rows(scale: i32, clip: Clip, verts: &[u32], mut emit: impl FnMut(i32, i32, u32)) {
++    let Some(scan) = PolyScan::from_pixels(scale, clip, verts) else {
++        return;
++    };
++    for row in scan.min_y..scan.max_y {
++        let Some(pr) = scan.row(row) else {
++            continue;
++        };
++        for col in pr.tl..pr.th {
++            let h = if col >= pr.il && col < pr.ih { 16 } else { scan.hits(&pr, col) };
++            emit(row, scan.min_x + col, h);
++        }
++    }
++}
++
++// ---- PATH: any polygon set, 4×4 samples by winding (pocket-motion) -----------------
++//
++// The sample grid is POLY's: 16 points per pixel at quarter-pixel offsets
++// ±1/8, ±3/8 from the centre, a pixel blends at `a * hits / 16`, and a run of
++// fully covered pixels is one `fill_opaque`. What differs is the predicate.
++// POLY asks every edge function of one convex polygon for F >= 0, which
++// counts a sample lying exactly on an edge as inside for BOTH polygons that
++// share the edge. PATH counts winding over any number of contours, with the
++// top-left convention: an edge counts at sample row Y when ytop <= Y < ybot,
++// and a crossing at x counts for the samples with X >= x. Two paths that
++// share an edge therefore partition its samples — `hits_a + hits_b == 16` on
++// the seam — which an illustration of abutting shapes needs and POLY's
++// inclusive rule cannot give.
++//
++// Coordinates arrive as i32 in 1/256 logical px; times `scale` they are
++// 1/256 physical px, where pixel p spans [256p, 256p + 256) and sample
++// column s sits at X = 64s + 32 (four per pixel). Every crossing is solved
++// exactly in i64: no float enters the coverage.
++
++/// One edge at its first sample row, stepped exactly from row to row.
++///
++/// The crossing's first sample column at row Y is c = ceil(n / D) with
++/// n = x0*den + (Y - y0)*dx - 32*den and D = 64*den. Between sample rows n
++/// grows by S = 64*dx = qs*D + rs, so c and its remainder rem = c*D - n
++/// step by integer adds: c += qs, rem -= rs, and one more column (with
++/// rem += D) when rem goes negative. No division after the first row; the
++/// same value the division would give, every row.
++#[derive(Clone, Copy)]
++struct PathEdge {
++    c: i32,
++    rem: i32,
++    d: i32,
++    qs: i32,
++    rs: i32,
++    /// First and last sample row (inclusive) the edge counts at.
++    r0: i32,
++    r1: i32,
++    dir: i32,
++}
++
++/// Header words of a PATH op: op, len, flags, color, contour count.
++pub(crate) const PATH_HEADER: usize = 5;
++
++/// Walk a PATH op's contours; false when a count disagrees with `len`.
++fn path_contours(op: &[u32], mut f: impl FnMut(&[u32])) -> bool {
++    let count = op[4] as usize;
++    let mut k = PATH_HEADER;
++    for _ in 0..count {
++        let Some(&n) = op.get(k) else {
++            return false;
++        };
++        let n = n as usize;
++        if n == 0 || k + 1 + 2 * n > op.len() {
++            return false;
++        }
++        f(&op[k + 1..k + 1 + 2 * n]);
++        k += 1 + 2 * n;
++    }
++    k == op.len()
++}
++
++/// A PATH op's words are well-formed: header, contour counts summing to `len`.
++pub(crate) fn path_op_valid(op: &[u32]) -> bool {
++    op.len() >= PATH_HEADER && op[1] as usize == op.len() && path_contours(op, |_| {})
++}
++
++/// ceil(a / b) for b > 0.
++#[inline]
++fn ceil_div(a: i64, b: i64) -> i64 {
++    -((-a).div_euclid(b))
++}
++
++/// Reused buffers for PATH coverage.
++#[derive(Default)]
++pub(crate) struct PathRaster {
++    edges: Vec<PathEdge>,
++    /// Edge indices bucketed by first sample row (counting sort).
++    order: Vec<u32>,
++    starts: Vec<u32>,
++    fill: Vec<u32>,
++    active: Vec<PathEdge>,
++    /// Interval ends of one pixel row's four sample rows: (column, +1|-1),
++    /// each sample row's run sorted; `row_ends` closes each run.
++    events: Vec<(i64, i32)>,
++    row_ends: [usize; 4],
++    merged: Vec<(i64, i32)>,
++    pair: Vec<(i64, i32)>,
++}
++
++/// Merge two sorted runs of interval ends.
++fn merge_ends(a: &[(i64, i32)], b: &[(i64, i32)], out: &mut Vec<(i64, i32)>) {
++    out.clear();
++    let (mut i, mut j) = (0, 0);
++    while i < a.len() && j < b.len() {
++        if a[i].0 <= b[j].0 {
++            out.push(a[i]);
++            i += 1;
++        } else {
++            out.push(b[j]);
++            j += 1;
++        }
++    }
++    out.extend_from_slice(&a[i..]);
++    out.extend_from_slice(&b[j..]);
++}
++
++/// Coverage of one PATH op as runs: `emit(py, x0, x1, hits)` for pixels
++/// `x0..x1` of physical row `py`, all with `hits` (1..=16) samples inside by
++/// the op's fill rule; runs come left to right, no pixel twice. Rows and
++/// columns are limited to `clip`; crossings left of it still count.
++///
++/// Per sample row the active edges, kept in crossing order, give the inside
++/// intervals; their ends from the pixel row's four sample rows are swept
++/// once, so a pixel's count is the sum over its four sample columns of how
++/// many sample rows are inside there. A run of whole pixels between two
++/// ends is emitted as one run — a solid interior is one `fill_opaque`, and
++/// the hole of a ring costs nothing.
++pub(crate) fn path_rows(scale: i32, clip: Clip, op: &[u32], ras: &mut PathRaster, mut emit: impl FnMut(i32, i32, i32, u32)) {
++    let evenodd = op[2] & 1 != 0;
++    let sc = scale as i64;
++    // The op's bounds first: they decide the rows an edge is clipped to.
++    let (mut bx0, mut by0, mut bx1, mut by1) = (i64::MAX, i64::MAX, i64::MIN, i64::MIN);
++    path_contours(op, |c| {
++        for v in c.chunks(2) {
++            let (x, y) = (v[0] as i32 as i64 * sc, v[1] as i32 as i64 * sc);
++            bx0 = bx0.min(x);
++            by0 = by0.min(y);
++            bx1 = bx1.max(x);
++            by1 = by1.max(y);
++        }
++    });
++    if bx0 > bx1 {
++        return;
++    }
++    let px0 = (bx0.div_euclid(256) as i32).max(clip.x0);
++    let px1 = (ceil_div(bx1, 256) as i32).min(clip.x1);
++    let py0 = (by0.div_euclid(256) as i32).max(clip.y0);
++    let py1 = (ceil_div(by1, 256) as i32).min(clip.y1);
++    if px0 >= px1 || py0 >= py1 {
++        return;
++    }
++    // Sample rows R = 4*py + j sit at Y = 64R + 32.
++    let (rlo, rhi) = (4 * py0, 4 * py1);
++    ras.edges.clear();
++    let edges = &mut ras.edges;
++    path_contours(op, |c| {
++        let n = c.len() / 2;
++        let at = |i: usize| (c[2 * i] as i32 as i64 * sc, c[2 * i + 1] as i32 as i64 * sc);
++        let mut prev = at(n - 1);
++        for i in 0..n {
++            let cur = at(i);
++            let (a, b, dir) = if cur.1 > prev.1 {
++                (prev, cur, 1)
++            } else {
++                (cur, prev, -1)
++            };
++            prev = cur;
++            if a.1 == b.1 {
++                continue;
++            }
++            // Rows with ytop <= Y < ybot: R from ceil((ytop-32)/64) to
++            // ceil((ybot-32)/64) - 1. An edge between two sample rows counts
++            // nowhere and is dropped here.
++            let r0 = (ceil_div(a.1 - 32, 64) as i32).max(rlo);
++            let r1 = (ceil_div(b.1 - 32, 64) as i32 - 1).min(rhi - 1);
++            if r0 > r1 {
++                continue;
++            }
++            let den = b.1 - a.1;
++            let dx = b.0 - a.0;
++            let d = 64 * den;
++            let y = 64 * r0 as i64 + 32;
++            let num = a.0 * den + (y - a.1) * dx - 32 * den;
++            let c0 = ceil_div(num, d);
++            let s = 64 * dx;
++            let qs = s.div_euclid(d);
++            // Every one of these fits an i32: coordinates are clipped to the
++            // guard band (|x| < 2^20 at scale 4), so d = 64*den < 2^27 and
++            // c, a sample column, < 2^23.
++            edges.push(PathEdge {
++                c: c0 as i32,
++                rem: (c0 * d - num) as i32,
++                d: d as i32,
++                qs: qs as i32,
++                rs: (s - qs * d) as i32,
++                r0,
++                r1,
++                dir,
++            });
++        }
++    });
++    if ras.edges.is_empty() {
++        return;
++    }
++    // Counting sort by first row.
++    let nrows = (rhi - rlo) as usize;
++    ras.starts.clear();
++    ras.starts.resize(nrows + 1, 0);
++    for e in ras.edges.iter() {
++        ras.starts[(e.r0 - rlo) as usize + 1] += 1;
++    }
++    for k in 0..nrows {
++        ras.starts[k + 1] += ras.starts[k];
++    }
++    ras.order.clear();
++    ras.order.resize(ras.edges.len(), 0);
++    ras.fill.clear();
++    ras.fill.extend_from_slice(&ras.starts[..nrows]);
++    for (i, e) in ras.edges.iter().enumerate() {
++        let k = (e.r0 - rlo) as usize;
++        ras.order[ras.fill[k] as usize] = i as u32;
++        ras.fill[k] += 1;
++    }
++    let (s_lo, s_hi) = (4 * px0 as i64, 4 * px1 as i64);
++    ras.active.clear();
++    ras.events.clear();
++    let inside = |w: i32| if evenodd { w & 1 != 0 } else { w != 0 };
++    for r in rlo..rhi {
++        // Step the edges carried from the row above; drop the finished.
++        let a = &mut ras.active;
++        let mut keep = 0usize;
++        for i in 0..a.len() {
++            let mut e = a[i];
++            if e.r1 < r {
++                continue;
++            }
++            e.c += e.qs;
++            e.rem -= e.rs;
++            let carry = (e.rem < 0) as i32;
++            e.rem += carry * e.d;
++            e.c += carry;
++            a[keep] = e;
++            keep += 1;
++        }
++        a.truncate(keep);
++        let k = (r - rlo) as usize;
++        for &i in &ras.order[ras.starts[k] as usize..ras.starts[k + 1] as usize] {
++            a.push(ras.edges[i as usize]);
++        }
++        if !a.is_empty() {
++            // Insertion sort: the order from the row above is nearly right.
++            for i in 1..a.len() {
++                let mut j = i;
++                while j > 0 && a[j - 1].c > a[j].c {
++                    a.swap(j - 1, j);
++                    j -= 1;
++                }
++            }
++            // Every change of inside-ness is an interval end: +1 where the
++            // fill rule turns on, -1 where it turns off. Appended without a
++            // branch (the slot is written, the length advances only on a
++            // change), because which edges change it is data, not a pattern.
++            let base = ras.events.len();
++            ras.events.resize(base + a.len(), (0, 0));
++            let ev = &mut ras.events[base..];
++            let mut n = 0usize;
++            let mut w = 0i32;
++            let mut was = 0i32;
++            for e in a.iter() {
++                w += e.dir;
++                let now = inside(w) as i32;
++                ev[n] = ((e.c as i64).clamp(s_lo, s_hi), now - was);
++                n += (now != was) as usize;
++                was = now;
++            }
++            ras.events.truncate(base + n);
++        }
++        ras.row_ends[(r & 3) as usize] = ras.events.len();
++        // The fourth sample row closes a pixel row: sweep its interval ends.
++        if r & 3 == 3 && !ras.events.is_empty() {
++            // Four sorted runs, merged pairwise in linear time (an insertion
++            // sort of their concatenation is quadratic once they interleave).
++            let [e0, e1, e2, _] = ras.row_ends;
++            merge_ends(&ras.events[..e0], &ras.events[e0..e1], &mut ras.merged);
++            merge_ends(&ras.events[e1..e2], &ras.events[e2..], &mut ras.pair);
++            let (m, q) = (core::mem::take(&mut ras.merged), core::mem::take(&mut ras.pair));
++            merge_ends(&m, &q, &mut ras.events);
++            ras.merged = m;
++            ras.pair = q;
++            let ev = &mut ras.events;
++            let py = r >> 2;
++            // The pixel being accumulated and its count so far.
++            let (mut acc_px, mut acc) = (i64::MIN, 0u32);
++            let mut k = 0u32;
++            let mut prev = ev[0].0;
++            let mut i = 0usize;
++            while i < ev.len() {
++                let x = ev[i].0;
++                if x > prev && k > 0 {
++                    // Sample columns prev..x carry k inside rows each.
++                    let (pa, pb) = (prev >> 2, x >> 2);
++                    if pa == pb {
++                        if acc_px != pa {
++                            if acc > 0 {
++                                emit(py, acc_px as i32, acc_px as i32 + 1, acc);
++                            }
++                            acc_px = pa;
++                            acc = 0;
++                        }
++                        acc += k * (x - prev) as u32;
++                    } else {
++                        let head = k * (4 - (prev & 3)) as u32;
++                        if acc_px != pa {
++                            if acc > 0 {
++                                emit(py, acc_px as i32, acc_px as i32 + 1, acc);
++                            }
++                            acc_px = pa;
++                            acc = 0;
++                        }
++                        acc += head;
++                        emit(py, acc_px as i32, acc_px as i32 + 1, acc);
++                        if pb > pa + 1 {
++                            emit(py, (pa + 1) as i32, pb as i32, 4 * k);
++                        }
++                        acc_px = pb;
++                        acc = k * (x & 3) as u32;
++                    }
++                }
++                while i < ev.len() && ev[i].0 == x {
++                    k = (k as i32 + ev[i].1) as u32;
++                    i += 1;
++                }
++                prev = x;
++            }
++            if acc > 0 {
++                emit(py, acc_px as i32, acc_px as i32 + 1, acc);
++            }
++            ev.clear();
++        }
++    }
++}
++
++fn path_fill<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, op: &[u32], ras: &mut PathRaster) {
++    let (r, g, b, a) = channels(op[3]);
++    if a == 0 {
++        return;
++    }
++    let opaque = a >= 255;
++    path_rows(scale, clip, op, ras, |py, x0, x1, h| {
++        let base = py * stride;
++        if h >= 16 && opaque {
++            target.fill_opaque((base + x0) as usize, (x1 - x0) as usize, r, g, b);
++        } else {
++            let a = a * h / 16;
++            for x in x0..x1 {
++                target.blend((base + x) as usize, r, g, b, a);
++            }
++        }
++    });
++}
++
+ // ---- MASK_PUSH / MASK_POP: a convex polygon as coverage over what follows --------------
+ // (pocket-motion patch 0013; the software rasteriser only.)
+ 
+@@ -1964,6 +2343,8 @@ struct LayerTarget {
+ /// per nesting depth rather than one per node.
+ struct LayerPool {
+     free: Vec<Vec<u8>>,
++    /// PATH coverage buffers (pocket-motion), reused across ops.
++    path: PathRaster,
+ }
+ 
+ impl LayerPool {
+@@ -4095,3 +4476,34 @@ mod tests {
+         assert!(painted * 4 >= compared * 3, "only {painted} of {compared} draws painted anything");
+     }
+ }
++
++/// Cost instrumentation (the pathwasm harness): run only the PATH coverage of every op in
++/// `words` (no blending) and count crossings, rows and covered pixels.
++#[cfg(any(test, feature = "path-scenes"))]
++#[doc(hidden)]
++pub fn bench_path_coverage(words: &[u32], w: i32, h: i32, scale: i32) -> (u64, u64, u64, u64) {
++    let clip = Clip { x0: 0, y0: 0, x1: w * scale, y1: h * scale };
++    let mut ras = PathRaster::default();
++    let (mut rows, mut px, mut full, mut edges) = (0u64, 0u64, 0u64, 0u64);
++    let mut i = 0;
++    while i < words.len() {
++        match words[i] {
++            draw_op::RECT => i += 4,
++            draw_op::PATH => {
++                let len = words[i + 1] as usize;
++                let op = &words[i..i + len];
++                path_rows(scale, clip, op, &mut ras, |_, x0, x1, h| {
++                    rows += 1;
++                    px += (x1 - x0) as u64;
++                    if h == 16 {
++                        full += (x1 - x0) as u64;
++                    }
++                });
++                edges += ras.edges.len() as u64;
++                i += len;
++            }
++            _ => break,
++        }
++    }
++    (rows, px, full, edges)
++}
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index fc18ed9f..58421b46 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -214,6 +214,19 @@ pub mod prop {
+     pub const GLOW_MODE: u8 = 185;
+     pub const GLOW_THRESHOLD: u8 = 186;
+     pub const SHUTTER_HOLD: u8 = 198;
++    pub const PATH: u8 = 199;
++    pub const FILL_COLOR: u8 = 200;
++    pub const FILL_RULE: u8 = 201;
++    pub const STROKE_COLOR: u8 = 202;
++    pub const STROKE_WIDTH: u8 = 203;
++    pub const STROKE_JOIN: u8 = 204;
++    pub const STROKE_CAP: u8 = 205;
++    pub const STROKE_MITER: u8 = 206;
++    pub const TRIM_START: u8 = 207;
++    pub const TRIM_END: u8 = 208;
++    pub const TRIM_OFFSET: u8 = 209;
++    pub const TRIM_MODE: u8 = 210;
++    pub const MORPH: u8 = 211;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -237,8 +250,8 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
++    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ ];
+@@ -258,14 +271,14 @@ pub const ANIM_BIT: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0x2f, 0x30, 0x31, 0x32, 0x33,
+     0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3a, 0xff, 0x3b, 0x3c, 0xff, 0xff, 0xff, 0x3d,
++    0x3e, 0x3f, 0xff, 0x40, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ ];
+ 
+ /// Bitset over prop ids: animatable props (tween/spring/transition targets).
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x0000000000000000];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x00000000000b8d00];
+ /// Bitset over prop ids: props whose change invalidates layout.
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ 
+@@ -392,6 +405,7 @@ pub enum GradKind {
+ pub enum BgClip {
+     Border = 0,
+     Text = 1,
++    Path = 2,
+ }
+ 
+ /// a radial gradient's ending shape about the box centre (`bg-radial-circle`, `radial-gradient(circle closest-side, …)`).
+@@ -421,6 +435,40 @@ pub enum ArcCap {
+     Butt = 1,
+ }
+ 
++/// FillRule
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum FillRule {
++    NonZero = 0,
++    EvenOdd = 1,
++}
++
++/// StrokeJoin
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum StrokeJoin {
++    Miter = 0,
++    Round = 1,
++    Bevel = 2,
++}
++
++/// StrokeCap
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum StrokeCap {
++    Butt = 0,
++    Round = 1,
++    Square = 2,
++}
++
++/// TrimMode
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum TrimMode {
++    Each = 0,
++    Whole = 1,
++}
++
+ /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
+ #[repr(u8)]
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+@@ -566,6 +614,7 @@ pub mod draw_op {
+     pub const LAYER_POP: u32 = 68;
+     pub const PAINT_PUSH: u32 = 69;
+     pub const PAINT_POP: u32 = 70;
++    pub const PATH: u32 = 71;
+     /// Largest vertex count a MASK_PUSH may carry.
+     pub const MASK_MAX_VERTS: usize = 256;
+     pub const STROKE_MAX_WIDTH: f32 = 64.0;
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index 912890ad..03836933 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -103,11 +103,13 @@ pub struct Timeline {
+ pub struct StyleTable {
+     pub records: Vec<StyleRecord>,
+     pub anims: Vec<Timeline>,
++    /// Vector paths (pocket-motion), after the ANIM TABLE.
++    pub paths: crate::path::PathTable,
+ }
+ 
+ impl StyleTable {
+     pub fn new() -> StyleTable {
+-        StyleTable { records: Vec::new(), anims: Vec::new() }
++        StyleTable { records: Vec::new(), anims: Vec::new(), paths: crate::path::PathTable::default() }
+     }
+ 
+     /// Parse a styles.bin blob. `None` on bad magic/version/truncation.
+@@ -214,7 +216,11 @@ impl StyleTable {
+             }
+             anims.push(Timeline { delay_frames, period_frames, iterations, fill, tracks });
+         }
+-        Some(StyleTable { records, anims })
++        // Vector paths (pocket-motion): the header's reserved u16 counts them,
++        // so a table with none reads exactly as it did.
++        let path_count = rd_u16(bytes, 10)? as usize;
++        let (paths, _) = crate::path::PathTable::parse(bytes, o, path_count)?;
++        Some(StyleTable { records, anims, paths })
+     }
+ 
+     /// Record for a style id (STYLE_ID_NONE / out-of-range → None).
+@@ -342,6 +348,24 @@ pub struct Resolved {
+     pub bg_clip: u8,
+     /// spec::GradShape ordinal (radial only).
+     pub grad_shape: u8,
++    /// Vector path (pocket-motion): PATH TABLE index + 1, 0 = none.
++    pub path: u32,
++    pub fill_color: u32,
++    /// spec::FillRule ordinal.
++    pub fill_rule: u8,
++    pub stroke_color: u32,
++    pub stroke_width: f32,
++    /// spec::StrokeJoin ordinal.
++    pub stroke_join: u8,
++    /// spec::StrokeCap ordinal.
++    pub stroke_cap: u8,
++    pub stroke_miter: f32,
++    pub trim_start: f32,
++    pub trim_end: f32,
++    pub trim_offset: f32,
++    /// spec::TrimMode ordinal.
++    pub trim_mode: u8,
++    pub morph: f32,
+ }
+ 
+ impl Default for Resolved {
+@@ -427,6 +451,19 @@ impl Default for Resolved {
+             grad_vias: [(0, f32::NAN); 4],
+             bg_clip: spec::BgClip::Border as u8,
+             grad_shape: spec::GradShape::Ellipse as u8,
++            path: 0,
++            fill_color: 0,
++            fill_rule: spec::FillRule::NonZero as u8,
++            stroke_color: 0,
++            stroke_width: 1.0,
++            stroke_join: spec::StrokeJoin::Miter as u8,
++            stroke_cap: spec::StrokeCap::Butt as u8,
++            stroke_miter: 4.0,
++            trim_start: 0.0,
++            trim_end: 1.0,
++            trim_offset: 0.0,
++            trim_mode: spec::TrimMode::Each as u8,
++            morph: 0.0,
+         }
+     }
+ }
+@@ -549,6 +586,19 @@ impl Resolved {
+             p::GRAD_VIA4_POS => self.grad_vias[3].1 = f,
+             p::BG_CLIP => self.bg_clip = bits as u8,
+             p::GRAD_SHAPE => self.grad_shape = bits as u8,
++            p::PATH => self.path = bits,
++            p::FILL_COLOR => self.fill_color = bits,
++            p::FILL_RULE => self.fill_rule = bits as u8,
++            p::STROKE_COLOR => self.stroke_color = bits,
++            p::STROKE_WIDTH => self.stroke_width = f,
++            p::STROKE_JOIN => self.stroke_join = bits as u8,
++            p::STROKE_CAP => self.stroke_cap = bits as u8,
++            p::STROKE_MITER => self.stroke_miter = f,
++            p::TRIM_START => self.trim_start = f,
++            p::TRIM_END => self.trim_end = f,
++            p::TRIM_OFFSET => self.trim_offset = f,
++            p::TRIM_MODE => self.trim_mode = bits as u8,
++            p::MORPH => self.morph = f,
+             _ => {}
+         }
+     }
+@@ -654,6 +704,19 @@ impl Resolved {
+             p::GRAD_VIA4_POS => self.grad_vias[3].1.to_bits(),
+             p::BG_CLIP => self.bg_clip as u32,
+             p::GRAD_SHAPE => self.grad_shape as u32,
++            p::PATH => self.path,
++            p::FILL_COLOR => self.fill_color,
++            p::FILL_RULE => self.fill_rule as u32,
++            p::STROKE_COLOR => self.stroke_color,
++            p::STROKE_WIDTH => self.stroke_width.to_bits(),
++            p::STROKE_JOIN => self.stroke_join as u32,
++            p::STROKE_CAP => self.stroke_cap as u32,
++            p::STROKE_MITER => self.stroke_miter.to_bits(),
++            p::TRIM_START => self.trim_start.to_bits(),
++            p::TRIM_END => self.trim_end.to_bits(),
++            p::TRIM_OFFSET => self.trim_offset.to_bits(),
++            p::TRIM_MODE => self.trim_mode as u32,
++            p::MORPH => self.morph.to_bits(),
+             _ => 0,
+         }
+     }
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 589539ed..cdf46c3e 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -329,6 +329,22 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+                 }
+                 i += 12;
+             }
++            spec::draw_op::PATH => {
++                // 1/256 px coordinates, clipped to the viewport grown by the
++                // 4 px guard band (exempt from the i16 guarantee, bounded).
++                let n = words[i + 1] as usize;
++                assert!(i + n <= words.len() && crate::raster::path_op_valid(&words[i..i + n]), "malformed PATH");
++                let mut k = i + 5;
++                for _ in 0..words[i + 4] {
++                    let m = words[k] as usize;
++                    for v in 0..m {
++                        let (x, y) = (words[k + 1 + 2 * v] as i32, words[k + 2 + 2 * v] as i32);
++                        assert!((-4 * 256..=(sw + 4) * 256).contains(&x) && (-4 * 256..=(sh + 4) * 256).contains(&y), "PATH vertex outside the guard: ({x},{y})");
++                    }
++                    k += 1 + 2 * m;
++                }
++                i += n;
++            }
+             spec::draw_op::POLY => {
+                 let n = words[i + 1] as usize;
+                 assert!((3..=8).contains(&n), "POLY vertex count {n} not in 3..=8");
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index 1ef1088f..a88b1a84 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -106,6 +106,19 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("glowMode", 185, "i32"),
+     ("glowThreshold", 186, "f32"),
+     ("shutterHold", 198, "i32"),
++    ("path", 199, "i32"),
++    ("fillColor", 200, "u32"),
++    ("fillRule", 201, "i32"),
++    ("strokeColor", 202, "u32"),
++    ("strokeWidth", 203, "f32"),
++    ("strokeJoin", 204, "i32"),
++    ("strokeCap", 205, "i32"),
++    ("strokeMiter", 206, "f32"),
++    ("trimStart", 207, "f32"),
++    ("trimEnd", 208, "f32"),
++    ("trimOffset", 209, "f32"),
++    ("trimMode", 210, "i32"),
++    ("morph", 211, "f32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+@@ -227,6 +240,8 @@ pub const STYLE_UNITS: &[(&str, &str)] = &[
+     ("gradVia2", "Color"),
+     ("gradVia3", "Color"),
+     ("gradVia4", "Color"),
++    ("fillColor", "Color"),
++    ("strokeColor", "Color"),
+ ];
+ pub const INPUT_ELEMENTS: &[(&str, &[&str], &[&str])] = &[
+     ("ActionHandler", &["button", "active", "latched"], &["press"]),
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index 00d7c58c..c217cca3 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -101,6 +101,19 @@ export interface MicroTsStyleProps {
+   glowMode?: i32;
+   glowThreshold?: MicroTsFloatInput;
+   shutterHold?: i32;
++  path?: i32;
++  fillColor?: Color;
++  fillRule?: i32;
++  strokeColor?: Color;
++  strokeWidth?: MicroTsFloatInput;
++  strokeJoin?: i32;
++  strokeCap?: i32;
++  strokeMiter?: MicroTsFloatInput;
++  trimStart?: MicroTsFloatInput;
++  trimEnd?: MicroTsFloatInput;
++  trimOffset?: MicroTsFloatInput;
++  trimMode?: i32;
++  morph?: MicroTsFloatInput;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;

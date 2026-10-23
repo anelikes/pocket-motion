@@ -180,6 +180,11 @@ Worked examples, roughly in reading order:
   rotated window whose width sweeps a diagonal edge, a rounded card clipping
   its text, and a circle inside a rotated window. Its `NOTES.md` says what
   each took; its sidecar asserts what each is for.
+- `compositions/vector-paths` — `<Path>`: a signature drawn on by `trimEnd`,
+  a blob morphing between a circle and a star under a gradient fill, six
+  wedges sharing their edges, a wireframe globe in a viewBox with a trimmed
+  ring orbiting it, and a wave morphing under an `overflow-mask` window. Its
+  sidecar asserts what each is for.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
@@ -404,6 +409,32 @@ node's frame and follows the world transform like any other paint
 (`patches/0026`): a ring of arcs on a rotating wrapper turns with it, a
 mirror reverses the sweep, and a scale that differs per axis stretches ring,
 stroke and caps into an elliptical band.
+
+**A line can draw itself.** `<Path>`, from `@pocketjs/framework/components`,
+is a View that also draws a vector outline: `d` is SVG path data, and
+`viewBox="x y w h"` maps it onto the box (without one, `d` is in the node's
+own px). `fill-<color>` fills it, nonzero or `fill-evenodd`; `stroke-<color>`
+and `stroke-[Npx]` stroke it in the path's own units — viewBox units under a
+viewBox — with `stroke-join-*`, `stroke-cap-*` and `stroke-miter-[N]`; and
+`trim-start-[f]`, `trim-end-[f]` and `trim-offset-[f]` draw only part of the
+stroke, by fractions of its length. A draw-on is one keyframe, `trimEnd` from
+`"0"` to `"1"`; `stroke-dashoffset` is not a spelling of it, being a length.
+`d={[A, B]}` gives morph keys, and `morph-[f]` (keyframe `morph`) moves
+between them; `bg-clip-path` paints the node's ground, a gradient included,
+into the fill. Colours, width, trim and morph all animate. The outline is
+baked at build time, so write `d` where the build can read it — a string, a
+`+` of two, an array of them, a `const` of any of those, or a `.map` over a
+`const` array — and a `d` it cannot read, an import or a string computed at
+run time, is refused at mount, naming the outline. The keys of a morph must
+have the same commands once normalised: a line against a curve is promoted,
+anything else is refused at the line that wrote it, and nothing resamples one
+key to fit another. Two paths sharing an edge split its samples instead of
+both drawing them, but each is still blended alone, so a seam between two
+shapes of one colour shows a trace of what is behind it; overlap them by a
+hair where that matters. A path trimmed to nothing emits nothing, which
+`layout` reports as `text_not_painted` and `visibility` as invisible by
+declaration, not covered. Drawn by this repository's rasteriser only
+(`patches/0042` and `0043`; the design is `patches/0042-vector-paths.design.md`).
 
 **Text can carry an outline.** `text-stroke-[6px] text-stroke-[#7c2d12]`
 draws a 6 px outline around a Text node's glyphs; `text-stroke-outside` (the
@@ -1196,6 +1227,7 @@ digest in `render --json` is the job's picture at a fixed `--hash`;
 bun compositions/copy/gen.ts     # only if the composition has a generator
 bun src/cli/main.ts build compositions/smoke
 bun src/cli/main.ts build compositions/layout-codes
+bun src/cli/main.ts build compositions/vector-paths
 ```
 
 `build` spawns upstream's `tools/build.ts` with the argv every command prints
@@ -1293,6 +1325,7 @@ bun src/cli/main.ts layout compositions/layout-codes --at 0  # one named node pe
 bun src/cli/main.ts keyframes compositions/smoke  # the baked timelines, on the grid the render samples
 bun src/cli/main.ts visibility compositions/smoke  # over sampled frames: is a named node never shown, or shown then buried?
 bun src/cli/main.ts assert compositions/layout-codes  # do the sidecar's assertions[] hold?
+bun src/cli/main.ts assert compositions/vector-paths  # a line drawn on, a morph, a masked wave: each is for something
 bun src/cli/main.ts sound  compositions/sound-roles  # what sound is declared, and does each file resolve?
 bun src/cli/main.ts render compositions/smoke --out out.mp4
 bun src/cli/main.ts diff trace-a.json trace-b.json  # not run: two files you write with `trace --json`; first divergent frame, or none
