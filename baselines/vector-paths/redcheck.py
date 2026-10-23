@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Introduce each defect, run the test that should catch it, revert.
 
-    python3 -I redcheck.py <prototype tree>/engine/core [mutation name ...]
+    python3 -I redcheck.py <tree>/engine/core [mutation name ...]
+
+<tree> is a pocketjs checkout with patches/0001-0043 applied (the stage-1
+prototype tree's anchors are in this file's history, commit ec26435).
 
 Prints one line per mutation: RED (the guard caught it), GREEN (it did not),
 or SKIP (its anchor is not found exactly once, so it did not run). Names
@@ -131,16 +134,16 @@ MUTATIONS = [
      "            999 => {\n                let n = self.words.get(start + 1)",
      "damage_tracking_decodes_path"),
     ("damage bounds short by a pixel", "src/damage.rs",
-     "            max_x = max_x.max(-((-x).div_euclid(256)));",
-     "            max_x = max_x.max(x.div_euclid(256) - 1);",
+     "            max_x = max_x.max((x + 255).div_euclid(256) as i32);",
+     "            max_x = max_x.max(x.div_euclid(256) as i32 - 1);",
      "damage_tracking_decodes_path"),
     ("table: first verb not checked", "src/path.rs",
      "if shapes.is_empty() || shapes.len() > PATH_MAX_SHAPES || verbs.first() != Some(&VERB_MOVE) {",
      "if shapes.is_empty() || shapes.len() > PATH_MAX_SHAPES {",
      "path_table_round_trips"),
     ("walk ignores the trim", "src/draw.rs",
-     "                path::emit_stroke(&mut dl.words, &xf, tol, stroke, &style, &trim, self.screen, &mut sc, &mut stats);",
-     "                path::emit_stroke(&mut dl.words, &xf, tol, stroke, &style, &path::Trim::NONE, self.screen, &mut sc, &mut stats);",
+     "                path::emit_stroke(&mut dl.words, &xf, tol, stroke, &style, &trim, self.screen, &mut sc);",
+     "                path::emit_stroke(&mut dl.words, &xf, tol, stroke, &style, &path::Trim::NONE, self.screen, &mut sc);",
      "trim_end_animates_through"),
     ("bg-clip-path paints the box too", "src/draw.rs",
      "        let clip_text = (r.bg_clip == spec::BgClip::Text as u8 && node.node_type == spec::NodeType::Text as u8) || clip_path;",
@@ -154,6 +157,27 @@ MUTATIONS = [
      "if shapes.is_empty() || shapes.len() > PATH_MAX_SHAPES || verbs.first() != Some(&VERB_MOVE) {",
      "if shapes.is_empty() || verbs.first() != Some(&VERB_MOVE) {",
      "path_table_round_trips"),
+    # Added at the landing (patches/0042).
+    ("compositor op table does not know PATH", "src/compositor.rs",
+     "        crate::spec::draw_op::PATH => Some(*words.get(at + 1)? as usize).filter(|&n| n >= raster::PATH_HEADER)?,\n",
+     "",
+     "every_draw_list_walker_steps_over_a_path"),
+    ("surface-frame walk does not know PATH", "src/lib.rs",
+     "                x if x == spec::draw_op::PATH => {",
+     "                x if x == 0xffff_ffff => {",
+     "every_draw_list_walker_steps_over_a_path"),
+    ("table count read but entries skipped", "src/style.rs",
+     "        let (paths, _) = crate::path::PathTable::parse(bytes, o, path_count)?;",
+     "        let (paths, _) = crate::path::PathTable::parse(bytes, o, 0)?;\n        let _ = path_count;",
+     "a_style_table_without_paths_is_the_same_bytes_and_a_truncated_one_is_refused"),
+    ("the scenes' mask in the format 0024 replaced", "src/path_scenes.rs",
+     "    for &(x, y) in pts {\n        words.push(x.to_bits());\n        words.push(y.to_bits());\n    }",
+     "    for &(x, y) in pts {\n        words.push(x as u32 | ((y as u32) << 16));\n    }",
+     "path_under_a_mask_is_the_rect_under_that_mask"),
+    ("gradient fill painted without its PAINT_PUSH", "src/draw.rs",
+     "            if clip_path && grad {",
+     "            if false {",
+     "bg_clip_path_paints"),
 ]
 
 

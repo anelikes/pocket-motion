@@ -119,6 +119,33 @@ export interface CollectProbe {
 }
 
 /**
+ * A `<Path>` outline, through the vendored collector or the vendored baker
+ * (G9, pocket-motion patches 0042/0043).
+ *
+ * Two halves of one claim. The collector records a `d` only where the module
+ * wrote it as literals — a string, a `+` of two, an array of them (the morph
+ * keys), a `const` of any of those — and pairs it with the viewBox written on
+ * the same element; anything else is left to mount, which refuses an outline
+ * the build did not bake. The baker (`compilePathEntry`) normalises the keys
+ * to one verb list or refuses them, naming where they part.
+ */
+export interface PathProbe {
+  /** What the author wrote. Names the case in a failure message. */
+  readonly what: string;
+  /** A module, run through `transformFile`; or `d` handed to the baker. One of the two. */
+  readonly source?: string;
+  readonly d?: readonly string[];
+  readonly viewBox?: string;
+  readonly outcome:
+    /** The collector records exactly these outlines (order-free); empty is a refusal. */
+    | { readonly records: readonly { readonly d: readonly string[]; readonly viewBox?: string }[] }
+    /** The baker's verb list (0 move, 1 line, 2 cubic, 3 close). */
+    | { readonly verbs: readonly number[] }
+    /** The baker throws, with this substring in the message. */
+    | { readonly refuses: string };
+}
+
+/**
  * A frame's geometry, given directly, and the codes it must produce.
  *
  * The finding codes are not sidecar keys and have no diagnostics: they are read
@@ -210,6 +237,11 @@ export interface CapabilityRow {
    * the two above: only the `layout` group has any.
    */
   readonly findingProbes?: readonly FindingProbe[];
+  /**
+   * `<Path>` outlines run through the vendored collector or baker (G9).
+   * Optional for the same reason: only the path rows have any.
+   */
+  readonly pathProbes?: readonly PathProbe[];
 }
 
 const MIN = {
@@ -2517,6 +2549,274 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-square"],
         fromClassAttribute: true,
         outcome: { refuses: "`arc-cap-square` in class" },
+      },
+    ],
+  },
+
+  {
+    id: "paint.path",
+    group: "paint",
+    declaredIn: "<Path d=… viewBox=…>",
+    key: "<Path d> | d={[key0, key1, …]} | viewBox",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "a View that also draws a baked vector outline, imported from `@pocketjs/framework/components`. `d` is the whole SVG path grammar (implicit repeats, exponents, arc flags without separators), normalised at build time to move, line, cubic and close — Q and T by exact degree elevation, an arc to cubics of at most 45 degrees by unit-vector bisection and square roots only, so a pak's bytes do not depend on the host's `Math.sin`. An array is the morph keys (at most 8): a line against a cubic is promoted exactly, any other difference is refused naming the first differing command, and point counts are never equalised. `viewBox` maps the coordinates onto the box, xMidYMid meet; without it `d` is in the node's own px. The build bakes a `d` written as literals — a string, a `+` of two, an array of them, a `const` of any of those, an element of a `const` array by literal index, the parameter of a `.map` callback over one, or the arms of a ternary — on any element, paired with the viewBox written beside it, so a component that forwards `d` to a `<Path>` is baked from its call site; any other `d` (an import, a computed string) is looked up at mount, which refuses an outline the build did not bake. Fill and stroke are the `fill-*`/`stroke-*` rows; geometry is rebuilt every frame in the core, so the world transform, a mask, a paint and a filter layer all apply. Drawn by this repository's rasteriser only (patches/0042 op 71 and 0043, class motion)",
+    source: "vendor/pocketjs/framework/compiler/path-data.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    pathProbes: [
+      {
+        what: "a string literal is recorded",
+        source: 'import { Path } from "@pocketjs/framework/components";\nexport const A = () => <Path d="M0 0 L10 0 L10 10 Z" class="fill-white" />;\n',
+        outcome: { records: [{ d: ["M0 0 L10 0 L10 10 Z"] }] },
+      },
+      {
+        what: "an array of module consts, one of them a `+`, with the viewBox written beside it",
+        source:
+          'import { Path } from "@pocketjs/framework/components";\nconst UP = "M0 5 L10 5" + " L10 10 Z";\nconst DOWN = `M0 5 C3 0 7 0 10 5 L10 10 Z`;\nexport const A = () => <Path d={[UP, DOWN]} viewBox="0 0 10 10" class="fill-white" />;\n',
+        outcome: { records: [{ d: ["M0 5 L10 5 L10 10 Z", "M0 5 C3 0 7 0 10 5 L10 10 Z"], viewBox: "0 0 10 10" }] },
+      },
+      {
+        what: "each element of a `.map` over a const array, keys and all",
+        source:
+          'import { Path } from "@pocketjs/framework/components";\nconst ICONS = ["M0 0 L1 0 Z", "M0 0 L0 1 Z"] as const;\nconst PAIRS = [["M0 0 L1 0 Z", "M0 0 L2 0 Z"]];\nexport const A = () => <>{ICONS.map((d) => <Path d={d} />)}{PAIRS.map((keys) => <Path d={keys} />)}</>;\n',
+        outcome: { records: [{ d: ["M0 0 L1 0 Z"] }, { d: ["M0 0 L0 1 Z"] }, { d: ["M0 0 L1 0 Z", "M0 0 L2 0 Z"] }] },
+      },
+      {
+        what: "a d passed through a component is not vouched for — mount looks it up",
+        source:
+          'import { Path } from "@pocketjs/framework/components";\nexport function Icon(props: { d: string }) { return <Path d={props.d} class="fill-white" />; }\n',
+        outcome: { records: [] },
+      },
+      {
+        what: "a line against a cubic is promoted, so a square can morph into a curve",
+        d: ["M0 0 L10 0 L10 10 Z", "M0 0 C3 -3 7 -3 10 0 L10 10 Z"],
+        outcome: { verbs: [0, 2, 1, 3] },
+      },
+      {
+        what: "and the same with the cubic in the first key",
+        d: ["M0 0 C3 -3 7 -3 10 0 L10 10 Z", "M0 0 L10 0 L10 10 Z"],
+        outcome: { verbs: [0, 2, 1, 3] },
+      },
+      {
+        what: "a half-turn arc is four cubics of 45 degrees",
+        d: ["M0 10 A10 10 0 0 1 20 10"],
+        outcome: { verbs: [0, 2, 2, 2, 2] },
+      },
+      {
+        what: "keys that differ in structure are refused, naming where",
+        d: ["M0 0 L10 0 Z", "M0 0 L10 0 L5 5 Z"],
+        outcome: { refuses: "morph keys 0 and 1 differ at normalised command 2" },
+      },
+      {
+        what: "a number after a close is not a command",
+        d: ["M0 0 L10 0 Z 5 5"],
+        outcome: { refuses: "unknown command \"5\"" },
+      },
+    ],
+  },
+  {
+    id: "paint.fill",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "fill-<color> | fill-[#hex] | fill-none | fill-nonzero|evenodd",
+    required: false,
+    defaultValue: "none; nonzero",
+    constraint:
+      "a `<Path>`'s fill: colour `fill-<palette>` or `fill-[#hex]`, transparent by default so a path draws nothing until asked; `fill-evenodd` or the default `fill-nonzero` decides which winding is inside. Coverage is POLY's 4x4 sample lattice with a top-left rule, so two paths sharing an edge split its samples between them rather than both drawing it (a seam pixel half-covered by each is still two blends). The colour animates in keyframes as `fillColor` or CSS's `fill`. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "fill-[#ff0000] compiles to the ABGR colour",
+        literals: ["fill-[#ff0000]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fillColor", value: 4278190335 } },
+      },
+      {
+        what: "fill-evenodd compiles to FillRule.EvenOdd (1)",
+        literals: ["fill-white fill-evenodd"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fillRule", value: 1 } },
+      },
+      {
+        what: "a fill that names no colour is refused",
+        literals: ["fill-wat"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`fill-wat`" },
+      },
+    ],
+  },
+  {
+    id: "paint.stroke",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "stroke-<color> | stroke-N | stroke-[Npx] | stroke-join-* | stroke-cap-* | stroke-miter-[N]",
+    required: false,
+    defaultValue: "none; width 1; miter join, limit 4; butt cap",
+    constraint:
+      "a `<Path>`'s stroke, SVG's defaults: colour `stroke-<palette>`/`stroke-[#hex]` (transparent until set), width `stroke-N` or `stroke-[Npx]` in the path's own units — viewBox units under a viewBox, and stroked before the world transform, so a non-uniform scale strokes as an SVG transform does; `stroke-join-miter|round|bevel`, `stroke-cap-butt|round|square`, `stroke-miter-[N]` with N >= 1. A negative width or a limit under 1 does not parse, which a class= attribute refuses. The outline is one positively wound cycle per open subpath (two per closed one) filled nonzero, so curvature tighter than the half-width fills solid. Round joins and caps bisect without trigonometry to 1/16 px. Width and colour animate as `strokeWidth`/`stroke-width` and `strokeColor`/`stroke`. A zero-length subpath draws no dot. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "stroke-[4px] compiles to strokeWidth = 4.0",
+        literals: ["stroke-white stroke-[4px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "strokeWidth", value: 1082130432 } },
+      },
+      {
+        what: "stroke-join-round compiles to StrokeJoin.Round (1)",
+        literals: ["stroke-white stroke-join-round"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "strokeJoin", value: 1 } },
+      },
+      {
+        what: "stroke-cap-square compiles to StrokeCap.Square (2)",
+        literals: ["stroke-white stroke-cap-square"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "strokeCap", value: 2 } },
+      },
+      {
+        what: "a miter limit under 1 is refused",
+        literals: ["stroke-white stroke-miter-[0.5]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`stroke-miter-[0.5]`" },
+      },
+      {
+        what: "a negative width is refused",
+        literals: ["stroke-white stroke-[-2px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`stroke-[-2px]`" },
+      },
+    ],
+  },
+  {
+    id: "paint.bg-clip-path",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "bg-clip-path",
+    required: false,
+    defaultValue: "border",
+    constraint:
+      "on a `<Path>`, paints the node's ground into the path's fill instead of its box — the solid `bg-*` colour, or a gradient (`bg-linear-*`, `bg-radial`, and a legacy two-stop `bg-gradient-to-*`, which takes the paint path here as under `bg-clip-text`) spanning the node's box. The stroke is not painted by it. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "bg-clip-path compiles to BgClip.Path (2)",
+        literals: ["bg-clip-path bg-linear-90 from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "bgClip", value: 2 } },
+      },
+      {
+        what: "over a legacy two-stop gradient it takes the paint path",
+        literals: ["bg-clip-path bg-gradient-to-r from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradKind", value: 1 } },
+      },
+      {
+        what: "a clip the core does not draw is refused",
+        literals: ["bg-clip-shape bg-white"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`bg-clip-shape`" },
+      },
+    ],
+  },
+  {
+    id: "animation.trim",
+    group: "animation",
+    declaredIn: "class literal",
+    key: "trim-start-[f] | trim-end-[f] | trim-offset-[f] | trim-each|whole",
+    required: false,
+    defaultValue: "0, 1, 0; each",
+    constraint:
+      "a `<Path>`'s stroke drawn between two fractions of its arc length, measured on the flattened outline in the path's own units: start and end are ordered and clamped to [0, 1], the offset moves the window round and wraps (a window past the end of a closed subpath is one piece through its start; of an open one, two). `trim-each` trims every subpath alike, `trim-whole` treats them as one sequence. A window of the whole length is no trim at all, byte for byte, and a path trimmed to nothing emits no geometry — invisible by declaration, not covered. The fill is never trimmed. All three animate as `trimStart`, `trimEnd`, `trimOffset`; a draw-on is one keyframe, `trimEnd` 0 -> 1. `stroke-dashoffset` is not a spelling: it is a length, and trim a fraction. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "trim-end-[0.5] compiles to trimEnd = 0.5",
+        literals: ["stroke-white trim-end-[0.5]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "trimEnd", value: 1056964608 } },
+      },
+      {
+        what: "trim-whole compiles to TrimMode.Whole (1)",
+        literals: ["stroke-white trim-whole"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "trimMode", value: 1 } },
+      },
+      {
+        what: "a fraction that is not a number is refused",
+        literals: ["stroke-white trim-end-[half]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`trim-end-[half]`" },
+      },
+      {
+        what: "a draw-on is one keyframe on trimEnd",
+        keyframes: { draw: { from: { trimEnd: "0" }, to: { trimEnd: "1" } } },
+        animation: { draw: { value: "draw 1200ms ease-out both" } },
+        literals: ["stroke-white animate-draw"],
+        outcome: { bakes: true },
+      },
+      {
+        what: "stroke-dashoffset is not a spelling of it",
+        keyframes: { dash: { from: { "stroke-dashoffset": "100" }, to: { "stroke-dashoffset": "0" } } },
+        animation: { dash: { value: "dash 1200ms both" } },
+        literals: ["animate-dash"],
+        outcome: { refuses: "unsupported property `stroke-dashoffset`" },
+      },
+    ],
+  },
+  {
+    id: "animation.morph",
+    group: "animation",
+    declaredIn: "class literal",
+    key: "morph-[f]",
+    required: false,
+    defaultValue: "0",
+    constraint:
+      "which of a `<Path>`'s morph keys it draws: at f = k + t, the control points are key k's and key k+1's mixed as `a * (1 - t) + b * t`, which is exact at every key; past the last key it holds the last. Negative values do not parse. Animates as `morph`; between keys the shape moves point for point along the correspondence the author drew, never a resampled one. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "morph-[1] compiles to morph = 1.0",
+        literals: ["fill-white morph-[1]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "morph", value: 1065353216 } },
+      },
+      {
+        what: "a negative key is refused",
+        literals: ["fill-white morph-[-1]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`morph-[-1]`" },
+      },
+      {
+        what: "a morph is one keyframe on morph",
+        keyframes: { blob: { "0%": { morph: "0" }, "50%": { morph: "1" }, "100%": { morph: "0" } } },
+        animation: { blob: { value: "blob 2000ms ease-in-out infinite" } },
+        literals: ["fill-white animate-blob"],
+        outcome: { bakes: true },
       },
     ],
   },
