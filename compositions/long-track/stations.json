@@ -1,0 +1,59 @@
+{
+  "canvas": {
+    "w": 320,
+    "h": 180
+  },
+  "arrivals": [
+    {
+      "node": "station-0",
+      "tick": 0,
+      "size": 16
+    },
+    {
+      "node": "station-1",
+      "tick": 500,
+      "size": 16
+    },
+    {
+      "node": "station-2",
+      "tick": 1000,
+      "size": 16
+    },
+    {
+      "node": "station-3",
+      "tick": 1500,
+      "size": 16
+    },
+    {
+      "node": "station-4",
+      "tick": 2000,
+      "size": 16
+    },
+    {
+      "node": "station-5",
+      "tick": 2500,
+      "size": 16
+    },
+    {
+      "node": "station-6",
+      "tick": 3000,
+      "size": 16
+    },
+    {
+      "node": "station-7",
+      "tick": 3500,
+      "size": 16
+    },
+    {
+      "node": "station-8",
+      "tick": 4000,
+      "size": 16
+    },
+    {
+      "node": "last-station",
+      "tick": 4100,
+      "size": 28
+    }
+  ],
+  "cut": 4100
+}

@@ -9,12 +9,16 @@
  * - `Reg.window(from, until)` with `until <= from` crossed its step keys and
  *   baked a ramp from tick 0, so four cells of a drop wave faded in from the
  *   first frame;
- * - more than 255 segments in one track fails the build two steps later.
+ * - more than 255 segments in one track failed the build two steps later,
+ *   so the kit refused more than 250 keys. patches/0050 widened the ANIM
+ *   TABLE's segment count to a u16, and a track of any length is now one
+ *   keyframe set; what is refused instead is a film longer than a timeline's
+ *   u16 period (`tests/long-track.test.ts` carries such a track to the pak).
  */
 
 import { describe, expect, test } from "bun:test";
 
-import { bezier, decodeSeq, echo, El, glyphCell, MAX_KEYS, MOVE_STEP, Reg, rng, stateAt } from "../src/anim/sampled.ts";
+import { bezier, decodeSeq, echo, El, glyphCell, MAX_TICKS, MOVE_STEP, Reg, rng, stateAt } from "../src/anim/sampled.ts";
 
 const reg = () => new Reg(600, 10_000);
 const opacityAt = (r: Reg, entry: string, t: number) => {
@@ -72,10 +76,14 @@ describe("El", () => {
     expect(MOVE_STEP).toBe(2);
   });
 
-  test("entry refuses a track the baker cannot hold", () => {
-    const el = new El(reg(), { x: 0, y: 0, w: 10, h: 10 });
+  test("entry writes a move of more than 255 segments as one keyframe set", () => {
+    const r = reg();
+    const el = new El(r, { x: 0, y: 0, w: 10, h: 10 });
     el.to(0, 599, { cx: 1000 }, (u) => u * u);
-    expect(() => el.entry()).toThrow(/255 segments/);
+    const name = el.entry().split(" ")[0]!;
+    // keys every second tick from 0 to 598, the move's end at 599 and the film's at 600: 301 segments
+    expect(Object.keys(r.keyframes[name]!).length).toBe(302);
+    expect(Object.keys(r.keyframes)).toEqual([name]);
   });
 });
 
@@ -100,10 +108,17 @@ describe("Reg", () => {
     expect(() => reg().step("opacity", [[0, "0"], [10, "1"], [9, "0"]])).toThrow(/does not follow/);
   });
 
-  test("prop refuses more keys than a track holds", () => {
-    const keys = Array.from({ length: MAX_KEYS + 1 }, (_, i) => [i, String(i)] as [number, string]);
-    expect(() => reg().prop("opacity", keys)).toThrow(/255 segments/);
-    expect(() => reg().prop("opacity", keys.slice(0, MAX_KEYS))).not.toThrow();
+  test("prop keys every tick of a film as one keyframe set", () => {
+    const r = reg();
+    const keys = Array.from({ length: 601 }, (_, i) => [i, String(i)] as [number, string]);
+    const name = r.prop("opacity", keys).split(" ")[0]!;
+    // 0% and 100% are pinned beside the keys at the same two places: 601 positions, 600 segments
+    expect(new Set(Object.keys(r.keyframes[name]!).map((pct) => parseFloat(pct))).size).toBe(601);
+  });
+
+  test("refuses a film longer than a timeline's period holds", () => {
+    expect(() => new Reg(MAX_TICKS + 1, 1_092_266)).toThrow(/at most 65535/);
+    expect(() => new Reg(MAX_TICKS, 1_092_250)).not.toThrow();
   });
 });
 

@@ -189,6 +189,12 @@ const ENTRIES = [
   // flattening, the stroke outline, the trim, the morph, the arc conversion
   // or the PATH coverage moves this digest and no other.
   "compositions/vector-paths",
+  // long-track. patches/0050: a camera tour whose six transform tracks carry
+  // 2,003 segments each and a frame counter whose units glyphs carry 841 —
+  // every one past the 255 a track held before — over 2,100 frames at
+  // 320×180. A count read short, a segment found wrong by the core's search,
+  // or a kit that splits or thins a long move moves this digest and no other.
+  "compositions/long-track",
 ] as const;
 
 /**

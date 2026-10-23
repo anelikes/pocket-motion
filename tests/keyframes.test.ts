@@ -14,12 +14,17 @@
  * The negative half is asserted too: `lint` and `check` pass on the same
  * composition. A timeline the film cannot reach is invisible to every other
  * command, which is why this one exists.
+ *
+ * `compositions/long-track` is the second fixture: tracks over the 255
+ * segments the ANIM TABLE held before patches/0050, read to their ends.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { readTimelines, nearestSampledMs } from "../src/anim/timelines.ts";
+import { runBuild } from "../src/cli/build.ts";
+import { resolveComposition } from "../src/cli/resolve.ts";
 import { writeBuildRecord } from "../src/render/build-record.ts";
 import { TICKS_PER_SECOND } from "../src/runtime/boot.ts";
 import { run as runCheck } from "../src/cli/commands/check.ts";
@@ -272,5 +277,66 @@ describe("nearestSampledMs", () => {
     expect(nearestSampledMs(45, 30)).toBeCloseTo(33.333, 2);
     expect(nearestSampledMs(100, 30)).toBeCloseTo(100, 5);
     expect(nearestSampledMs(50, 60)).toBeCloseTo(50, 5);
+  });
+});
+
+/**
+ * `compositions/long-track`: a camera whose six transform tracks carry 2,003
+ * segments each and ten opacity tracks of 841, every one past the 255 the
+ * ANIM TABLE held before patches/0050. `readTimelines` decodes through the
+ * vendored `decodeStyleTable`, so the readings come from the same bytes the
+ * core plays; what is held here is that they come from ALL of them. Every
+ * timeline's segment count is held to the keyframe set the generator wrote,
+ * and the one reading placed at the far end of a track — the camera's cut at
+ * tick 4100, after its 2,000th segment, reported as a step the shutter does
+ * not blur across — must be there. A decoder that read the count's low byte
+ * would carry 211 of the camera's segments and none of the cut.
+ *
+ * The readings asserted are the ones that depend on the segments alone. Which
+ * instants count as unsampled depends on where the render's grid sits against
+ * a node's clock, and that is the same question for a track of any length.
+ */
+describe("a track over 255 segments", () => {
+  const LONG = join(ROOT, "compositions", "long-track");
+  let report: NonNullable<Awaited<ReturnType<typeof readTimelines>>>;
+  let theme: { keyframes: Record<string, Record<string, Record<string, string>>> };
+
+  beforeAll(async () => {
+    const resolved = await resolveComposition({ dir: LONG, flags: { json: false }, requireBundle: false });
+    if (!resolved.ok) throw new Error("long-track did not resolve");
+    await runBuild(resolved.value);
+    report = (await readTimelines({
+      pakPath: resolved.value.pakPath,
+      fps: 30,
+      durationFrames: 2100,
+      tickHz: TICKS_PER_SECOND,
+    }))!;
+    theme = ((await import(join(LONG, "pocket.config.ts"))) as { default: { theme: typeof theme } }).default.theme;
+  }, 300_000);
+
+  /** Segments a keyframe set bakes to: one per gap between distinct positions, per property. */
+  const segmentsOf = (stops: Record<string, Record<string, string>>): number => {
+    const positions = new Set(Object.keys(stops).map((pct) => parseFloat(pct))).size;
+    const props = new Set(Object.values(stops).flatMap((decl) => Object.keys(decl))).size;
+    return props * (positions - 1);
+  };
+
+  test("every timeline carries every segment its keyframe set declares", () => {
+    const declared = Object.values(theme.keyframes).map(segmentsOf).sort((a, b) => a - b);
+    const baked = report.timelines.map((t) => t.segments).sort((a, b) => a - b);
+    expect(baked).toEqual(declared);
+    expect(report.timelines.filter((t) => t.segments > 255 * t.props.length).length).toBe(11);
+  });
+
+  test("the camera's cut after its 2,000th segment is read, and nothing contends", () => {
+    const camera = report.timelines.find((t) => t.props.includes("translateX"))!;
+    expect(camera.segments).toBe(6 * 2003);
+    expect(camera.shutterJumps).toEqual([
+      { prop: "translateX", tick: 4100, kind: "step" },
+      { prop: "translateY", tick: 4100, kind: "step" },
+    ]);
+    expect(camera.neverStarts).toBe(false);
+    expect(camera.endsPastWindow).toBe(false);
+    expect(report.contended).toEqual([]);
   });
 });

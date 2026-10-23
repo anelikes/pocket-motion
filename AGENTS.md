@@ -751,7 +751,48 @@ mechanisms with the file or test beside them.
   inherit it silently, and the printed header names the number. The
   assumption is bounded rather than safe — `assertBakedTickRate` refuses a
   bundle baked at another rate, so a pak this would misread is a pak no
-  command can render.
+  command can render. It reads a track of any length — it decodes through
+  the vendored `decodeStyleTable`, which reads 0050's wide count — and the
+  long-track block of `tests/keyframes.test.ts` holds every timeline of
+  `compositions/long-track` to the segments its keyframe set declares and
+  reads the camera's cut after its 2,000th segment, which a decoder reading
+  the count's low byte would never reach.
+- **A baked track holds up to 65,535 segments**
+  (`patches/0050-long-animation-tracks.patch`, class `upstream`). The 255 a
+  track held was the format's: `segCount` is the second byte of a track
+  header, the encoder threw above it and the core read one byte, while the
+  baker had no limit of its own. So `src/anim/sampled.ts` refused more than
+  250 keys, and a film-length move was keyed once per eight frames or split
+  by hand. A `segCount` byte of 0, which every earlier core refuses, is now
+  followed by a u16 count, written only above 255, so a table with no long
+  track is the bytes it was: every bundle and pak of the digest ledger built
+  byte-identical before and after the patch (`baselines/long-tracks.md`).
+  The count goes no further than a timeline's own u16 period allows, since
+  every segment spans at least a frame, and the kit now refuses the period
+  instead (`Reg`, `MAX_TICKS`). `sample_track` walked from the first segment
+  on every tick and now searches on `t1`; that is the walk's answer only for
+  sorted, disjoint segments, so the parser refuses any other order rather
+  than trusting it. A 7.5-minute camera track — six tracks of 13,500
+  segments — traced in 2.4 s of user CPU searching against 4.0 s walking,
+  every frame hash equal. **Chaining was measured and refused.** A long track
+  split into consecutive animations on one property in one comma list renders
+  byte for byte like the single track without a shutter. Under one, the later
+  animation's start is a fill-less edge, which the shutter never samples
+  across, so the samples on the earlier side of a hand-off are clamped to its
+  value: with the hand-off on a sampled tick, frame 150 of 300 differed at
+  180° and at 360° (`baselines/long-tracks/chain.ts`), and `keyframes`
+  reports no jump there. At 60 fps every tick is a frame's, and the same
+  chain with its hand-off on an even tick, which showed nothing at 30 fps,
+  differs at frame 300 of 600. `compositions/long-track` is the
+  fixture, in both ledgers: a camera whose six transform tracks carry 2,003
+  segments each and cut to the last station at tick 4100, past the 2,000th,
+  and a frame counter whose units glyphs carry 841 each.
+  `tests/long-track.test.ts` reads every station at the canvas centre on its
+  arrival from `layout`, runs the sidecar's assertions, and carries a
+  kit-written 70-second move through the vendored baker, encoder and decoder
+  segment for segment; it is red with 0050 out of `patches/` and with the
+  kit's 250-key refusal restored. The patch's own tests hold the format and
+  the search, each red under an edit its header names.
 - `preview` is the only browser in this project, and it is a display: the
   pixels are the host's. `/frame` returns the SAME PNG BYTES `frame --at N`
   writes, asserted rather than intended (`tests/preview.test.ts`), which is
@@ -1290,6 +1331,34 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   change to one does not reach the other. Pointing the ports at the template
   would move their digests and their visibility counts, so it is a recorded
   change to five deliveries rather than a refactor.
+- **A film is at most 18 min 12 s of one timeline.** A timeline's period,
+  its delay and its segment endpoints are u16 frame counts at 60 Hz, so no
+  track spans more than 65,535 ticks: `Reg` refuses a longer film and the
+  baker refuses a longer duration. Past that, a delay cannot reach a second
+  timeline either, so a longer film needs a wider anim entry header — every
+  field of it, not one count. Nothing in this tree is longer, and the
+  HyperFrames series runs 7.5 minutes.
+- **The shutter still finds a segment by walking.** `within_iteration` in
+  `engine/core/src/shutter.rs` (0034) takes `.find` over a track's segments
+  for every sample of every integrated track, so under a declared shutter a
+  long track costs O(segments) per sample — the cost 0050 removed from the
+  tick. Unmeasured at film length: no composition here declares both.
+- **`keyframes` places the render's grid at the wrong end of each frame.** It
+  counts a node's ticks from its clock's start and takes f × 60 / fps as the
+  tick frame f shows; the realm renders frame f at the LAST tick of its
+  window, (f + 1) × 60 / fps − 1 — clock f at 60 fps, 2f + 1 at 30, 3f + 2 at
+  20. Measured with a node moving one pixel per tick (at 30 fps frame 0 at
+  x = 1, frame 1 at 3, frame 30 at 61, in `layout` and in `frame`'s pixels
+  alike), and `tests/shutter.test.ts` reads the same ("frame 15 (clock 31)").
+  At 60 fps the two agree. At 30 fps the instants reported unsampled are the
+  ones the render samples, and
+  `late-anim`'s `gated` step over ticks 3 to 5, reported shown half done by
+  frame 2, is at full opacity at frame 2 (red 248, as at frame 3): no frame
+  shows it part-way. The readings that depend on the segments alone —
+  counts, jumps, contention, `neverStarts` — do not move with the phase,
+  which is why the long-track tests assert only those. Not fixed with 0050:
+  the readings, their tests, `late-anim`'s comments and `src/anim/sampled.ts`'s
+  "a frame shows tick 2f" have to move together.
 
 ## Working rules
 
