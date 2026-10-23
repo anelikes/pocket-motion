@@ -36,10 +36,6 @@ Both are pinned rather than resolved from the system, because a render's
 identity includes the exact font bytes (`src/render/identity.ts`).
 See `assets/fonts/README.md`.
 
-Archivo Black (Regular) — checked in at `compositions/mg-bauhaus/fonts/`.
-  Copyright 2017 The Archivo Black Project Authors.
-  SIL Open Font License, Version 1.1, vendored verbatim beside it as `OFL.txt`.
-
 Poppins (Black) — checked in at `compositions/mg-bauhaus/fonts/`, fetched from
   github.com/google/fonts (ofl/poppins), sha256 d82aaaf98a9283f9a8edd24e51173337d8eaf09e25cd3d98831f8ec8461748a1.
   Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins).
