@@ -12,7 +12,8 @@ Sidecar rows are probed against `parseSidecar` and name the diagnostic they prod
 rows are probed against the vendored compiler, which has no diagnostic codes and refuses by
 throwing, so those rows own none. Layout findings are neither: they are read off a rendered
 frame, own no diagnostics, and are probed by handing `findingsFor` a geometry copied out of
-`compositions/layout-codes` and asserting the codes it returns.
+`compositions/layout-codes` and asserting the codes it returns. Captions rows describe a job spec
+rather than a sidecar and are probed against `parseSpec`, each with a job that breaks only its key.
 
 ## Sidecar root (`pocket-motion.json`)
 
@@ -132,6 +133,41 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 |---|---|---|---|---|---|
 | --format | no | mp4 | mp4 \| webm \| mov \| png-seq. mp4 is libx264 yuv420p; webm is libvpx-vp9 yuv420p with `-b:v 0` so --crf means quality; mov is prores_ks, profile 3 (422 HQ, yuv422p10le); png-seq writes <out>/%06d.png with no ffmpeg in the path and is byte-identical to `frame --at N`. With no --format the --out extension decides; a --format that disagrees with the extension is refused rather than silently winning. Read back with ffprobe in tests/format.test.ts | src/render/encode.ts:106 | pinned |
 | --alpha | no | off | asks the codec for an alpha channel: mov becomes ProRes 4444 (yuva444p10le in, yuva444p12le out — the 4444 bitstream is 12-bit), webm becomes yuva420p and the container gains alpha_mode=1 while the stream's own pix_fmt stays yuv420p, png-seq always carries all four channels. Refused for mp4, whose yuv420p has no alpha plane. The channel carries the picture: the rasteriser clears to transparent black (patches/0014), so a pixel no declared ground reaches has alpha 0 and a composition with a full-bleed ground is 255 everywhere — `render` measures and prints the floor rather than restating this | src/render/encode.ts:169 | pinned |
+
+## Captions job (`render --spec`, `template: "captions"`)
+
+| key | required | default | constraint | source | verified |
+|---|---|---|---|---|---|
+| transcript | yes | — | object naming the words exactly one way: `src` with `format` (a file) or `words` (inline). Read while the spec is parsed, so a directory of jobs refuses a bad transcript before it renders any of them | src/captions/spec.ts | probed |
+| transcript.src | no | — | repo-relative path to a JSON file; same path rules as footage src | src/captions/spec.ts | probed |
+| transcript.format | no | — | required with `src`: words \| whisperx \| openai — declared, never guessed from the file's keys. words is `{ words: [{ text, start, end }] }` with unknown keys refused; whisperx reads `segments[].words[]` of `{ word, start?, end? }` and closes a page at each segment's end; openai reads a word-level `verbose_json`, whose `words[]` carry no punctuation, and puts it back from `text` — refused when a word is not found there in order or `text` holds letters `words[]` does not. Inline `words` take no other format | src/captions/ingest.ts | probed |
+| transcript.language | yes | — | a BCP-47 tag. zh, ja, yue, wuu, th, lo, km and my are written without spaces: their words join with no gap and a word wider than a line breaks between its characters, keeping 禁則 (`NO_START` / `NO_END` in src/text/fit.ts). A language the file declares (WhisperX's code, OpenAI's name) must agree | src/captions/spec.ts | probed |
+| transcript.untimed | no | refuse | refuse \| attach. A spoken token with no times — WhisperX leaves a numeral it could not align that way — is refused, naming it, or shown with the word before it. A token that is only punctuation is attached whatever this says: closing marks to the word before, opening marks to the word after | src/captions/ingest.ts | probed |
+| transcript.words | no | — | array of `{ text, start, end }`, seconds — inline, or what any format reduces to. Times are finite and >= 0, a word does not end before it starts, starts never go back; ends may overlap the next word. A word's frames are [round(start·fps), max(that + 1, round(end·fps))), clipped to its page | src/captions/ingest.ts | probed |
+| style | yes | — | object; `name` decides which other keys it may carry, and a key the named style does not read is refused | src/captions/spec.ts | probed |
+| style.name | yes | — | highlight \| pill-karaoke \| clip-wipe \| matrix-decode \| kinetic-slam — the five treatments of src/captions/styles.ts, each keeping every word in the picture at every frame of its window | src/captions/spec.ts | probed |
+| style.size | no | at a 1080 px short side, scaled to the viewport: highlight 80, pill-karaoke 72, clip-wipe 88, matrix-decode 96, kinetic-slam 160 | integer 8…240, px. The face's own ceiling is lower — Noto Sans SC bakes up to 176 — and the measurement build names it | src/captions/spec.ts | probed |
+| style.minSize | no | 0.7 × size (kinetic-slam 0.5) | integer 8…size; the last rung of a 10% ladder down from size. The track takes the largest rung at which every word fits a line on its own (kinetic-slam: each page its own), and a word of a spaced language wider than the line at this size is refused rather than broken | src/captions/spec.ts | probed |
+| style.case | no | upper (pill-karaoke lower, matrix-decode none) | upper \| lower \| none, mapped with the transcript's language | src/captions/spec.ts | probed |
+| style.ink | no | #ffffff (matrix-decode #00ff41) | `#RRGGBB` or `#RRGGBBAA`; the text, in highlight, clip-wipe, matrix-decode and kinetic-slam | src/captions/spec.ts | probed |
+| style.box | no | #ff1745 | `#RRGGBB` or `#RRGGBBAA`; highlight's box behind the word being spoken | src/captions/spec.ts | probed |
+| style.pill | no | #e7e5e7 | `#RRGGBB` or `#RRGGBBAA`; pill-karaoke's pill behind every line | src/captions/spec.ts | probed |
+| style.inactive | no | #a6a6a6 | `#RRGGBB` or `#RRGGBBAA`; pill-karaoke's words before they are spoken | src/captions/spec.ts | probed |
+| style.active | no | #1c1e1d | `#RRGGBB` or `#RRGGBBAA`; pill-karaoke's words from 50 ms before they are spoken | src/captions/spec.ts | probed |
+| style.accent | no | #ffd700 | `#RRGGBB` or `#RRGGBBAA`; a keyword, in clip-wipe and kinetic-slam | src/captions/spec.ts | probed |
+| style.spoken | no | #ffffff66 | `#RRGGBB` or `#RRGGBBAA`; clip-wipe's words once spoken | src/captions/spec.ts | probed |
+| style.keywords | no | [] | array of non-empty strings, clip-wipe and kinetic-slam only; a word matches ignoring case and the punctuation attached to it, and is painted in `accent` | src/captions/spec.ts | probed |
+| layout | no | {} | optional object. A page closes before a word when the pause before it is at least pauseMs, the word before ends a sentence or a WhisperX segment, the page holds maxWords, or the word would need more than maxLines lines — except that a word starting on the page's first frame always joins it. Lines are rebalanced to the same count with the least squared slack | src/captions/spec.ts | probed |
+| layout.position | no | bottom (kinetic-slam center) | bottom \| center \| top; bottom and top sit `margin` from that edge | src/captions/spec.ts | probed |
+| layout.maxLines | no | 2 (kinetic-slam 1) | integer 1…4 | src/captions/spec.ts | probed |
+| layout.maxWords | no | no limit (pill-karaoke 4, kinetic-slam 1) | integer 1…100 | src/captions/spec.ts | probed |
+| layout.pauseMs | no | 400 | integer 0…10000; a pause at least this long between two words closes the page | src/captions/spec.ts | probed |
+| layout.holdMs | no | 500 (pill-karaoke and kinetic-slam 300) | integer 0…10000; how long a page stays after its last word ends, cut short when the next page starts | src/captions/spec.ts | probed |
+| layout.lineWidth | no | 80% of the width at 16:9, 78% at 9:16, 84% at 1:1 | integer px 1…width: the widest the caption block may be, its boxes and pill included | src/captions/spec.ts | probed |
+| layout.margin | no | 10% of the height from the bottom (9:16: 22%); from the top, 8% (9:16: 12%) | integer px 0…height/2. The 9:16 defaults keep clear of the button column and description band short-form players draw; they are this template's numbers, not a platform's | src/captions/spec.ts | probed |
+| footage | no | — | optional `{ src, fit }`, lower-third's block: one clip drawn under the captions at the full viewport from frame 0 to durationFrames — the burned-in delivery. Absent, the tree declares no ground and the frames are transparent wherever no caption paints (`render --format mov --alpha`) | src/manifest/spec.ts | probed |
+| viewport | no | [1920, 1080] | 16:9, 9:16 or 1:1 exactly, even sides (yuv420p needs them), short side 360…2160 | src/captions/spec.ts | probed |
+| durationFrames | no | the last word's end frame plus the last page's hold | when declared, refused if any word ends after it | src/captions/spec.ts | probed |
 
 ## Layout findings (`layout --json` `findings[]`)
 
@@ -348,3 +384,42 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.sound.unknownKey | sidecar.sound |
 | sidecar.supersample.invalid | sidecar.supersample |
 | sidecar.unknownKey | sidecar.motion |
+| spec.layout.holdMs | captions.layout.holdMs |
+| spec.layout.lineWidth | captions.layout.lineWidth |
+| spec.layout.margin | captions.layout.margin |
+| spec.layout.maxLines | captions.layout.maxLines |
+| spec.layout.maxWords | captions.layout.maxWords |
+| spec.layout.notObject | captions.layout |
+| spec.layout.pauseMs | captions.layout.pauseMs |
+| spec.layout.position | captions.layout.position |
+| spec.layout.unknownKey | captions.layout |
+| spec.style.case | captions.style.case |
+| spec.style.hex | captions.style.ink |
+| spec.style.keywords | captions.style.keywords |
+| spec.style.minSize | captions.style.minSize |
+| spec.style.name | captions.style.name |
+| spec.style.notObject | captions.style |
+| spec.style.required | captions.style |
+| spec.style.size | captions.style.size |
+| spec.style.unknownKey | captions.style |
+| spec.transcript.empty | captions.transcript.words |
+| spec.transcript.format | captions.transcript.format |
+| spec.transcript.json | captions.transcript.src |
+| spec.transcript.language | captions.transcript.language |
+| spec.transcript.missingFile | captions.transcript.src |
+| spec.transcript.notObject | captions.transcript |
+| spec.transcript.order | captions.transcript.words |
+| spec.transcript.pastEnd | captions.durationFrames |
+| spec.transcript.required | captions.transcript |
+| spec.transcript.shape | captions.transcript.format |
+| spec.transcript.source | captions.transcript |
+| spec.transcript.src.absolute | captions.transcript.src |
+| spec.transcript.src.empty | captions.transcript.src |
+| spec.transcript.src.missing | captions.transcript.src |
+| spec.transcript.src.traversal | captions.transcript.src |
+| spec.transcript.time | captions.transcript.words |
+| spec.transcript.unaligned | captions.transcript.format |
+| spec.transcript.unknownKey | captions.transcript |
+| spec.transcript.untimed | captions.transcript.untimed |
+| spec.transcript.untimedMode | captions.transcript.untimed |
+| spec.viewport.aspect | captions.viewport |

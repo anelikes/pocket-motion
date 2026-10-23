@@ -30,6 +30,7 @@ const GROUP_HEADINGS: Record<CapabilityRow["group"], string> = {
   paint: "Paint (class literals — faces, text effects, gradients, filters, blend modes)",
   declare: "Declaring footage (generator side — `src/footage/declare.ts`)",
   output: "Output (`render` flags — nothing here moves a pixel)",
+  captions: 'Captions job (`render --spec`, `template: "captions"`)',
   layout: "Layout findings (`layout --json` `findings[]`)",
 };
 
@@ -44,6 +45,7 @@ const GROUP_ORDER: readonly CapabilityRow["group"][] = [
   "paint",
   "declare",
   "output",
+  "captions",
   "layout",
 ];
 
@@ -105,7 +107,8 @@ export function renderCatalog(): string {
     "rows are probed against the vendored compiler, which has no diagnostic codes and refuses by",
     "throwing, so those rows own none. Layout findings are neither: they are read off a rendered",
     "frame, own no diagnostics, and are probed by handing `findingsFor` a geometry copied out of",
-    "`compositions/layout-codes` and asserting the codes it returns.",
+    "`compositions/layout-codes` and asserting the codes it returns. Captions rows describe a job spec",
+    "rather than a sidecar and are probed against `parseSpec`, each with a job that breaks only its key.",
   ];
 
   for (const group of GROUP_ORDER) {

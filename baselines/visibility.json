@@ -15,6 +15,20 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/captions/alpha-en": {
+      "failures": [],
+      "nodes": 26,
+      "named": 13,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/captions/burn-zh": {
+      "failures": [],
+      "nodes": 24,
+      "named": 15,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/captions/clip-wipe": {
       "failures": [],
       "nodes": 28,

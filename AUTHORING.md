@@ -41,7 +41,7 @@ failed — the command that fixes it: the running Bun against the one
 `build.json` names; rustup and the wasm target; `ffmpeg` and `ffprobe`
 separately, with their version lines; the vendored tree at the pin with the
 patches applied; `assets/*/manifest.json` fetched and matching; and free disk
-against what a full ledger run was measured to decode (688 MiB — it fails below
+against what a full ledger run was measured to decode (1.3 GiB — it fails below
 that and calls the headroom thin below 3x it).
 
 `ffprobe` is asked for separately because it is separately load-bearing:
@@ -165,6 +165,10 @@ Worked examples, roughly in reading order:
   scramble, a directional entrance. `compositions/captions/NOTES.md` states
   what each source did and what it became — and the face lesson: measure
   against the face the build actually bakes.
+- `compositions/captions/alpha-en`, `compositions/captions/burn-zh` — the two
+  samples of the `captions` job template: any transcript, any of the five
+  styles, three aspects, every word asserted in the picture for its own
+  window. See "Captions from a transcript" below.
 - `compositions/transitions` — nine scene-to-scene transitions from the
   HyperFrames catalog in one film: a velocity-matched cut, a clip wipe, a
   wash, a tile grid, a match cut, a rubber band, a whip pan with echoes
@@ -1009,6 +1013,148 @@ reports four `present`, one `skipped`, every level window in range and the
 tail met. `compositions/reel` declares its bed in the sidecar and is mixed
 by `render`.
 
+## Captions from a transcript
+
+A word-level transcript and a style name are a job like any other: `render
+--spec` stages it, generates it, builds it and encodes it. The generator is
+`src/captions/template.ts`, and its two samples are
+`compositions/captions/alpha-en` (a Latin alpha track, WhisperX in,
+`highlight`, 16:9) and `compositions/captions/burn-zh` (a CJK track, OpenAI
+`verbose_json` in, `clip-wipe`, 9:16, burned into a synthetic clip). Either
+directory takes any captions job; the job decides everything it draws.
+
+```jsonc
+{ "spec": 1, "template": "captions",
+  "viewport": [1080, 1920], "fps": 30,
+  "fonts": { "regular": "assets/fonts/NotoSansSC-Regular.otf",
+             "bold":    "assets/fonts/NotoSansSC-Bold.otf" },
+  "transcript": { "src": "jobs/ep12.whisperx.json", "format": "whisperx", "language": "zh" },
+  "style": { "name": "clip-wipe", "keywords": ["哈希"] },
+  "layout": { "maxLines": 2 },
+  "footage": { "src": "jobs/ep12.mp4", "fit": "cover" } }
+```
+
+**Without `footage` it is an alpha track; with it, the captions are burned
+in.** With no `footage` the tree declares no ground, so every pixel no caption
+paints has alpha 0 — render it with `--format mov --alpha`, `--format webm
+--alpha` or `--format png-seq` ("Delivery formats" below). With `footage` the
+clip is drawn under the captions at the full viewport, through the same
+declaration lower-third uses. Every key, its default and the refusal for it
+are in `CAPABILITIES.md` under "Captions job"; `durationFrames` may be left out,
+and is then the last word's end plus the last page's hold.
+
+**Transcripts.** `transcript.format` declares the shape — it is never guessed
+from the file's keys: `words` is this repository's own (`{ "words": [{ "text",
+"start", "end" }] }`, seconds), `whisperx` is WhisperX's aligned
+`segments[].words[]`, `openai` is OpenAI's `verbose_json` requested with word
+timestamps. The same word objects can also be written inline as
+`transcript.words`. Three rules turn any of them into timed words:
+
+- **Punctuation is attached, never timed.** A token that is only punctuation —
+  WhisperX emits CJK `，` and `。` that way, often without times — joins the
+  word before it, or the word after it when it opens (`「`, `(`, `“`). So a
+  `，` travels with the word it closes and never starts a line on its own.
+- **OpenAI's words carry no punctuation, and its `text` does.** It is put back
+  by finding each word in `text`, in order; what lies between two words must be
+  whitespace and punctuation. A word not found, or letters `words[]` does not
+  carry, is refused (`spec.transcript.unaligned`) rather than guessed at.
+- **A spoken word without times is refused**, naming it, unless
+  `untimed: "attach"` says to show it with the word before. WhisperX leaves
+  numerals it could not align untimed; `alpha-en`'s "2026" is one, and its spec
+  says `attach`.
+
+`transcript.language` is required. It decides whether words are joined with a
+gap and where a line may break: zh, ja, yue, wuu, th, lo, km and my are written
+without spaces. The transcript is read while the spec is parsed, so a directory
+of jobs refuses a bad one before it renders any.
+
+**Pages, lines, sizes.** Every word is measured as its own run against the
+faces the build will bake (`openMeasurer`), so a line's width is arithmetic and
+nothing is wrapped by the renderer. A page closes before a word when the pause
+before it is at least `layout.pauseMs`, the word before ends a sentence or a
+WhisperX segment, the page holds `layout.maxWords`, or the word would need more
+than `layout.maxLines` lines — except that a word starting on the page's first
+frame always joins it, because a page that started on the same frame as the
+one before would never be seen. Lines are broken between words and rebalanced
+to the same count with the least squared slack, so a two-line page is two
+even lines. A spaceless word wider than a whole line breaks between its
+characters and keeps 禁則 (`NO_START` / `NO_END` in `src/text/fit.ts`); its
+pieces are separate nodes on the word's own clock.
+
+The size is a ladder from `style.size` down to `style.minSize` in 10% steps,
+each a real atlas slot: the track takes the largest rung at which every word
+fits a line on its own, so the size does not jump from page to page
+(`kinetic-slam`, one big word at a time, sizes each page instead). **A word in
+a spaced language that is wider than the line at `minSize` is refused**,
+naming the word and both widths — breaking it would change what it says, and
+a size below the declared minimum is not what was declared. Lower `minSize`,
+widen `layout.lineWidth`, or shorten the word.
+
+Where the block sits is a table per aspect (`SAFE_AREAS`,
+`src/captions/layout.ts`): the widest a block may be, and its distance from the
+bottom (or top) edge.
+
+| aspect | line width | bottom margin | top margin |
+|---|---|---|---|
+| 16:9 | 80% of the width | 10% of the height | 8% |
+| 9:16 | 78% | 22% | 12% |
+| 1:1 | 84% | 10% | 8% |
+
+The 9:16 numbers keep clear of the button column and description band
+short-form players draw over a video. They are this template's choice, not a
+platform's published zone; `layout.lineWidth` and `layout.margin` take px per
+job.
+
+**What the sidecar asserts.** Every word is a node named `w<index>`
+(`w<index>.<piece>` for a split word), and the generated `pocket-motion.json`
+carries one `inPicture` per word over the frames of its window: from
+`round(start · fps)` to its end, or until its page gives way to the next,
+whichever is first. Holding that at the first frame took a measurement: frame
+`f` shows every timeline at clock `(f + 1) · 60 / fps − 1`, and a timeline is
+still at its first keyframe — opacity 0, a clip window 0 wide — on the tick
+its delay names. So every style starts a word's entrance one tick before the
+clock its first frame samples (`gateInTick`, `src/captions/clock.ts`), and
+never from the word's ms: `round(start · 60)` is that tick or later — later
+for 25.6% of start times at 30 fps and 99.8% at 60, counted over 0–10 s in
+0.1 ms steps. Moved one tick later,
+onto the sampled clock, `assert --samples 101` on `burn-zh` fails all nine
+words, each at exactly its first frame; `tests/captions.test.ts` sweeps every
+frame of all five styles at 30 and 60 fps.
+
+`assert` without `--samples` looks at 24 frames, and an assertion whose window
+holds none of them FAILS ("raise --samples"). Every window in the two samples
+is at least as wide as that stride, so `assert` and `verify` pass on them with
+the default grid — a property of those two transcripts, not of the template.
+For a job of any length, the exact check is `--samples <durationFrames>`.
+`verify` passes on both. `burn-zh` carries 23 layout warnings, so `--strict`
+fails it: 21 are `text_not_painted` on words whose clip window has not opened
+yet, which is what `clip-wipe` is, and two are on the unnamed text inside a
+window as it closes. The word-over-tile `content_overlap` a burn-in draws on
+purpose is excused in its sidecar's `layoutAllow`, written by the template.
+
+**Why a template and not a `captions` command.** The job path already stages,
+builds, encodes in every format, refuses `--frames` and the other patches on a
+job, renders a directory of jobs after parsing all of them, and opens a job in
+`preview`. A command of its own would be a second door to the same pipeline
+with its own `--format`, `--alpha` and `--out-dir` to keep in agreement with
+`render`'s. And a spec is data, which a programmatic caller can hand over as it
+is.
+
+```bash
+bun src/cli/main.ts build  compositions/captions/alpha-en
+bun src/cli/main.ts assert compositions/captions/alpha-en  # one inPicture per word; --samples 180 checks every frame
+bun src/cli/main.ts render compositions/captions/alpha-en --spec compositions/captions/alpha-en/spec.default.json --out /tmp/captions-en.mov --format mov --alpha
+bun src/cli/main.ts render compositions/captions/burn-zh --spec job.json --out out.mp4  # not run: a job spec you write; tests/captions.test.ts drives this path
+```
+
+The third line renders the sample's own spec as a job, and its digest is the
+one the ledger records for the sample: the job path and the sample are one
+picture. Two things it does not do yet: a job's assertions are written into
+its staged sidecar and deleted with it, so `render --spec` never evaluates
+them — the samples and `tests/captions.test.ts` are what hold the claim; and
+no style carries an outline or shadow for text over busy footage, though
+`text-stroke-*` and `text-shadow-*` exist in the vocabulary.
+
 ## Build, then verify
 
 **`verify` is the gate, and everything else in this section is either how you
@@ -1033,7 +1179,9 @@ hex becomes a class literal the generator writes. A job is a complete spec,
 not a patch on the sample: `--frames`, `--fps`, `--width`, `--height`,
 `--supersample`, `--bundle` and `--pak` are refused with `--spec`. `copy`
 is a title card;
-`lower-third` is a name plate (optional logo, optional one footage clip).
+`lower-third` is a name plate (optional logo, optional one footage clip);
+`captions` is a caption track from a word-level transcript (see "Captions from
+a transcript").
 `glow: true` bakes a vertical veil behind the copy/name column at build
 time: a constant fill stretched to the column and the stack, and two caps
 whose falloff stays at native σ (a still picture baked at build time; a
@@ -1475,14 +1623,15 @@ are named are the `buried` nodes in `compositions/occluded` and
 
 Do not read the `debugName`s in this tree as evidence that naming is already
 usual. `baselines/visibility.json` records the count per composition, and it is
-the honest number rather than a memory: most of them are
+the honest number rather than a memory: of 137, 19 are
 `footage:<track>/tile:<col>:<row>`, which the footage binder refuses a track
-without, and the rest are the fixtures — `reel`, the one composition here at
-film length, records 0 named of 631 nodes. **Nothing names a caption unless
-you do**, and a caption painted over is exactly what this gate is for. If you
-want it to cover the thing
-you would be upset to lose, put a `debugName` on it. **And a burial has to be
-permanent to be seen.** The check asks whether any covered frame comes after
+without, 22 are the words the two captions samples name, and the rest are the
+fixtures — `reel`, the one composition here at film length, records 0 named of
+631 nodes. **Nothing you write by hand names a caption unless you do** (the
+captions template names every word it draws, which is the one exception), and
+a caption painted over is exactly what this gate is for. If you want it to
+cover the thing you would be upset to lose, put a `debugName` on it. **And a
+burial has to be permanent to be seen.** The check asks whether any covered frame comes after
 the last frame that showed the node, so a caption hidden behind something for
 the middle of a shot and back by the end passes — and a covered stretch
 shorter than the sampling stride can fall between two samples entirely. Raise

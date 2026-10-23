@@ -24,6 +24,13 @@ import {
   type FootageFit,
   type SidecarFonts,
 } from "./sidecar.ts";
+import { pathIssue } from "./paths.ts";
+import {
+  CAPTIONS_BODY_KEYS,
+  SPEC_TEMPLATE_CAPTIONS,
+  parseCaptionsBody,
+  type CaptionsBody,
+} from "../captions/spec.ts";
 
 /**
  * A job spec names the default pair only. Named faces are a sidecar
@@ -35,7 +42,9 @@ const SPEC_FONT_KEYS = new Set<string>(FONT_WEIGHT_KEYS);
 export const SPEC_TEMPLATE_COPY = "copy";
 export const SPEC_TEMPLATE_LOWER_THIRD = "lower-third";
 
-export const SPEC_TEMPLATES = [SPEC_TEMPLATE_COPY, SPEC_TEMPLATE_LOWER_THIRD] as const;
+export { SPEC_TEMPLATE_CAPTIONS };
+
+export const SPEC_TEMPLATES = [SPEC_TEMPLATE_COPY, SPEC_TEMPLATE_LOWER_THIRD, SPEC_TEMPLATE_CAPTIONS] as const;
 export type SpecTemplate = (typeof SPEC_TEMPLATES)[number];
 
 export const SPEC_ENVELOPE_KEYS = new Set([
@@ -59,6 +68,9 @@ export const SPEC_LOWER_THIRD_ROOT_KEYS = new Set([
   "footage",
   "glow",
 ]);
+
+/** Allowed root keys for `template: "captions"` (`src/captions/spec.ts` owns what is inside them). */
+export const SPEC_CAPTIONS_ROOT_KEYS = new Set([...SPEC_ENVELOPE_KEYS, ...CAPTIONS_BODY_KEYS]);
 
 export const SPEC_COPY_KEYS = new Set(["eyebrow", "headline", "body"]);
 export const SPEC_PALETTE_KEYS = new Set(["ground", "ink", "muted", "accent", "rule"]);
@@ -130,7 +142,19 @@ export interface LowerThirdSpec extends SpecEnvelope {
   readonly glow?: true;
 }
 
-export type JobSpec = CopySpec | LowerThirdSpec;
+/**
+ * A spec the `captions` generator accepts. `durationFrames` is the spec's
+ * own when it wrote one, and otherwise the transcript's length plus the last
+ * page's hold — materialised here, so the generator and the sidecar it writes
+ * read one number.
+ */
+export interface CaptionsSpec extends SpecEnvelope, CaptionsBody {
+  readonly template: typeof SPEC_TEMPLATE_CAPTIONS;
+  /** Burned in: one clip drawn under the captions at the full viewport. */
+  readonly footage?: LowerThirdFootage;
+}
+
+export type JobSpec = CopySpec | LowerThirdSpec | CaptionsSpec;
 
 export type SpecParseResult =
   | { readonly ok: true; readonly value: JobSpec }
@@ -153,32 +177,6 @@ function describeType(value: unknown): string {
 
 function diag(code: string, path: string, message: string): Diagnostic {
   return { code, path, message };
-}
-
-function pathIssue(
-  src: string,
-  field: string,
-  prefix: string,
-): { code: string; message: string } | null {
-  if (src.length === 0) {
-    return {
-      code: `${prefix}.empty`,
-      message: `\`${field}\` must be a non-empty relative path`,
-    };
-  }
-  if (src.startsWith("/") || /^[a-zA-Z]:[\\/]/.test(src) || src.startsWith("\\")) {
-    return {
-      code: `${prefix}.absolute`,
-      message: `\`${field}\` must be a relative path; got absolute path ${JSON.stringify(src)}`,
-    };
-  }
-  if (src.split(/[/\\]/).some((s) => s === "..")) {
-    return {
-      code: `${prefix}.traversal`,
-      message: `\`${field}\` must not contain \`..\` segments; got ${JSON.stringify(src)}`,
-    };
-  }
-  return null;
 }
 
 function parseHex(value: unknown, path: string, diagnostics: Diagnostic[]): string | undefined {
@@ -334,7 +332,7 @@ function parseEnvelope(
           `\`viewport\` must be [width, height] of positive integers; got ${JSON.stringify(v)}`,
         ),
       );
-    } else if (v[0] !== 1920 || v[1] !== 1080) {
+    } else if (template !== SPEC_TEMPLATE_CAPTIONS && (v[0] !== 1920 || v[1] !== 1080)) {
       const named = template ?? "this template";
       diagnostics.push(
         diag(
@@ -778,7 +776,9 @@ export function parseSpec(input: unknown, options: ParseSpecOptions): SpecParseR
       ? SPEC_LOWER_THIRD_ROOT_KEYS
       : template === SPEC_TEMPLATE_COPY
         ? SPEC_ROOT_KEYS
-        : new Set([...SPEC_ROOT_KEYS, ...SPEC_LOWER_THIRD_ROOT_KEYS]);
+        : template === SPEC_TEMPLATE_CAPTIONS
+          ? SPEC_CAPTIONS_ROOT_KEYS
+          : new Set([...SPEC_ROOT_KEYS, ...SPEC_LOWER_THIRD_ROOT_KEYS, ...SPEC_CAPTIONS_ROOT_KEYS]);
   for (const key of Object.keys(input)) {
     if (!allowed.has(key)) {
       diagnostics.push(
@@ -845,6 +845,41 @@ export function parseSpec(input: unknown, options: ParseSpecOptions): SpecParseR
         ...(body.logo !== undefined ? { logo: body.logo } : {}),
         ...(body.footage !== undefined ? { footage: body.footage } : {}),
         ...(glow ? { glow: true as const } : {}),
+      },
+    };
+  }
+
+  if (template === SPEC_TEMPLATE_CAPTIONS) {
+    const footage = parseLowerThirdFootage(input, options, diagnostics);
+    const body = parseCaptionsBody(
+      input,
+      options.root,
+      {
+        viewport: env.viewport,
+        fps: env.fps,
+        durationFrames: env.durationFrames,
+        durationDeclared: "durationFrames" in input,
+      },
+      diagnostics,
+    );
+    if (diagnostics.length > 0) return { ok: false, diagnostics };
+    if (!env.specOk || !fontsOk || !body) {
+      return {
+        ok: false,
+        diagnostics: [diag("spec.incomplete", "", "spec failed to materialise after validation")],
+      };
+    }
+    return {
+      ok: true,
+      value: {
+        spec: 1,
+        template: SPEC_TEMPLATE_CAPTIONS,
+        viewport: env.viewport,
+        fps: env.fps,
+        supersample: env.supersample,
+        fonts: env.fonts,
+        ...body,
+        ...(footage !== undefined ? { footage } : {}),
       },
     };
   }

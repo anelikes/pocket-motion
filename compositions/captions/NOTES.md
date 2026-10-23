@@ -60,6 +60,49 @@ sized for 187. AUTHORING.md was corrected in the same commit.
   (AUTHORING.md, "Text"); a resampled glyph is softer than a baked one, so
   the ladder is still the sharper choice.
 
+## The same five, for any transcript
+
+`src/captions/styles.ts` is these five treatments again, written for the
+`captions` job template (`src/captions/template.ts`, AUTHORING.md "Captions
+from a transcript") rather than for one sentence on one row. The ports above
+stay as they are, as the record of what each source did; the template is what
+a job runs. What changed on the way, and why:
+
+- **Every word is a node of its own with a name**, `w<i>`, and the generated
+  sidecar asserts it is in the picture at every frame of its window. The
+  ports name nothing, so no gate is about their words.
+- **Entrances start on a tick chosen from the frame, not from the word's
+  ms.** Frame `f` samples clock `(f + 1) · 60 / fps − 1`, and a timeline is
+  still at its first keyframe on the tick its delay names, so a word's
+  entrance has to start at least one tick before the clock its first frame
+  samples. The template starts every entrance exactly there (`gateInTick`).
+  The ports write the word's time in ms, which bakes to `round(start · 60)`:
+  at 30 fps that is one tick too late whenever `start · 30` falls in about
+  `[k + ¼, k + ½)`, and at 60 fps nearly always — 25.6% and 99.8% of start
+  times, counted over 0–10 s in 0.1 ms steps. Their own transcript puts every
+  time on a 50 ms grid and never lands in that band, so their first frames are
+  not empty; a transcript from speech recognition would be.
+- **A page's entrance and exit are two nested wrappers.** The ports put
+  `gin` and `gout` in one comma list on one node, where the later one wins
+  opacity while it writes.
+- **Pages have lines.** Highlight boxes and clip windows are per word on any
+  line; the pill grows to the whole block; lines are balanced to even slack.
+  The ports' "no group here needs two lines" is now a rule the layout keeps
+  rather than a fact about one transcript.
+- **clip-wipe's exit closes left to right and ends when the page does**, but a
+  window never closes before its own word's window has ended, so overlapping
+  speech is still drawn. A closed window needs no gate of its own: zero width
+  emits no geometry and `visibility` never reads it as covered — measured on
+  `compositions/captions/burn-zh` at every frame with the windows ungated.
+- **matrix-decode shortens its two scrambles for a short word**, to a third of
+  the word's window each, so the word itself always lands inside its window.
+  In a spaceless language the scrambles draw from the transcript's own
+  characters, the way the ports draw from A–Z and 0–9.
+- **kinetic-slam is 160 px at a 1080 px short side**, not 200: Noto Sans SC
+  bakes up to 176, and a default one language cannot render is not a default.
+  It sizes each page on its own, and its entrance distances scale with the
+  viewport.
+
 ## What the engine would need for the other eleven
 
 Stated so the list can be worked rather than remembered. Each is a caption
@@ -85,6 +128,7 @@ coverage layer would cover both neon styles without a runtime blur.
 ## Verification
 
 `lint` and `check` exit 0 on each; the digest and visibility ledgers carry
-all five. Each was looked at on eight frames spanning the first two phrases;
+all five, and the template's two samples, `alpha-en` and `burn-zh`, beside
+them. Each was looked at on eight frames spanning the first two phrases;
 `layout --at` is what catches a slot narrower than its word, which is the
 defect this family is most likely to grow.

@@ -25,6 +25,7 @@ import {
   TEX_MAX_DIM,
   VALID_FPS,
 } from "../manifest/sidecar.ts";
+import { CAPTIONS_ROWS } from "./captions.ts";
 
 /** How thoroughly this repository has verified the row it renders. */
 export type Verification =
@@ -177,6 +178,7 @@ export interface CapabilityRow {
     | "paint"
     | "declare"
     | "output"
+    | "captions"
     | "layout";
   /** Where the author writes it: "pocket-motion.json", "class literal", "<dir>/images.json", … */
   readonly declaredIn: string;
@@ -213,6 +215,12 @@ export interface CapabilityRow {
    * the two above: only the `layout` group has any.
    */
   readonly findingProbes?: readonly FindingProbe[];
+  /**
+   * Job specs run through `parseSpec` (G9), each of which must be refused with
+   * its code. A job spec is not a sidecar, so these cannot sit in `probes`,
+   * which G3 hands to `parseSidecar`. Only the `captions` group has any.
+   */
+  readonly specProbes?: readonly Probe[];
 }
 
 const MIN = {
@@ -3323,4 +3331,9 @@ export const SURFACE: readonly CapabilityRow[] = [
       },
     ],
   },
+
+  // -------------------------------------------------------------------------
+  // The captions job spec — src/catalog/captions.ts
+  // -------------------------------------------------------------------------
+  ...CAPTIONS_ROWS,
 ];

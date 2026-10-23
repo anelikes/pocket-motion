@@ -1,0 +1,10 @@
+{
+  "task": "transcribe",
+  "language": "english",
+  "duration": 1.2,
+  "text": "Hello uh world.",
+  "words": [
+    { "word": "Hello", "start": 0.0, "end": 0.4 },
+    { "word": "world", "start": 0.7, "end": 1.2 }
+  ]
+}

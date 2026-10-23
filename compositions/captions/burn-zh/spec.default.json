@@ -1,0 +1,18 @@
+{
+  "spec": 1,
+  "template": "captions",
+  "viewport": [720, 1280],
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/NotoSansSC-Regular.otf",
+    "bold": "assets/fonts/NotoSansSC-Bold.otf"
+  },
+  "transcript": {
+    "src": "compositions/captions/burn-zh/transcript.openai.json",
+    "format": "openai",
+    "language": "zh"
+  },
+  "style": { "name": "clip-wipe", "keywords": ["哈希", "字节"] },
+  "footage": { "src": "assets/synthetic/bars-9x16-30fps.mp4" }
+}

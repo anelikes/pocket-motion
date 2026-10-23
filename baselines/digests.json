@@ -10,6 +10,14 @@
       "frames": 2,
       "digest": "6e3f2d48b0d7b23ba9b8e6956e765f1eba4a27e6ac5079ec9b9f6a1f9da375c8"
     },
+    "compositions/captions/alpha-en": {
+      "frames": 180,
+      "digest": "1a92b40287f35efc6828fdc5e61fdc469d45f21cf1f886565ee32acf47ddb2b9"
+    },
+    "compositions/captions/burn-zh": {
+      "frames": 101,
+      "digest": "b486b715eac55a4aa11dce428a665c5c237b355cee1f7f5dbbacc3753a080624"
+    },
     "compositions/captions/clip-wipe": {
       "frames": 240,
       "digest": "9aa91339233aa1ed105de49526427778638958b23afd13bfb6026205248e3d33"
