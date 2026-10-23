@@ -13,11 +13,12 @@ import {
   isOutputFormat,
   type OutputFormat,
 } from "../../render/encode.ts";
-import type { SidecarShutter } from "../../manifest/sidecar.ts";
+import type { SidecarShutter, SidecarSound } from "../../manifest/sidecar.ts";
 import { describeShutter, pocketjsRoot } from "../../runtime/boot.ts";
-import { framesToMs, mixGraph, soundDeclared } from "../../sound/mix.ts";
-import { muxSound } from "../../sound/mux.ts";
+import { framesToMs, mixGraph, soundDeclared, tailOverruns } from "../../sound/mix.ts";
+import { muxSound, type ManifestElement } from "../../sound/mux.ts";
 import { probeSoundDurations, resolveSound } from "../../sound/resolve.ts";
+import { describeTail, type TailMeasurement } from "../../sound/tail.ts";
 import {
   UsageError,
   optionalString,
@@ -250,6 +251,8 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
         bytes: number;
         ffmpeg: string;
         manifestPath: string;
+        elements: readonly ManifestElement[];
+        tail?: TailMeasurement;
       };
     } = {
       ok: true,
@@ -315,23 +318,86 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
         };
       }
       const probed = await probeSoundDurations(resolved.elements);
-      const graph = mixGraph(c.sidecar.sound, probed, c.fps, c.durationFrames);
+      // The declared tail is the last N ms of the FILM. A `--frames` render
+      // of another length does not end where the film does, so it carries no
+      // tail, and says so rather than gating some other instant.
+      const partial = c.durationFrames !== c.sidecar.durationFrames;
+      const sound =
+        partial && c.sidecar.sound.silentTailMs !== undefined
+          ? withoutTail(c.sidecar.sound)
+          : c.sidecar.sound;
+      if (sound !== c.sidecar.sound) {
+        stdoutLines.push(
+          `sound silent tail not applied — --frames renders ${c.durationFrames} of ` +
+            `${c.sidecar.durationFrames} frames, and the declared ${c.sidecar.sound.silentTailMs} ms ` +
+            "tail is the end of the film",
+        );
+      }
+      // An element still sounding when the declared silent tail begins would
+      // be cut by the gate. The parser refuses one that STARTS in the tail;
+      // how long a file runs is known only once it is probed, so this is the
+      // first place that can refuse the rest.
+      const overruns = tailOverruns(sound, probed, c.fps, c.durationFrames);
+      if (overruns.length > 0) {
+        return {
+          exitCode: EXIT_FAIL,
+          json: {
+            ok: false,
+            error: "declared sound runs into the silent tail",
+            diagnostics: overruns,
+            digest: result.digest,
+          },
+          stderrLines: overruns.map((d) => `sidecar ${d.path}: ${d.code}: ${d.message}`),
+          stdoutLines: [`render failed — declared sound runs into the silent tail`],
+        };
+      }
+      const graph = mixGraph(sound, probed, c.fps, c.durationFrames);
       const mixed = await muxSound({
         videoPath: payload.outputPath,
         outputPath: payload.outputPath,
         graph,
         durationSec: framesToMs(c.durationFrames, c.fps) / 1000,
+        ...(sound.silentTailMs !== undefined ? { silentTailMs: sound.silentTailMs } : {}),
       });
       payload.sound = {
         sha256: mixed.sha256,
         bytes: mixed.bytes,
         ffmpeg: mixed.ffmpeg,
         manifestPath: mixed.manifestPath,
+        elements: mixed.elements,
+        ...(mixed.tail !== undefined ? { tail: mixed.tail } : {}),
       };
       stdoutLines.push(
         `sound ${mixed.sha256}  ${mixed.ffmpeg}`,
         `sound manifest ${mixed.manifestPath}`,
       );
+      // An optional element is reported whichever way it went: one that was
+      // skipped is a delivery without it, and saying so is the difference
+      // between this and the probed-guessed-path mix the schema replaced.
+      for (const e of graph.elements) {
+        if (!e.optional) continue;
+        const who = `${e.role} ${e.id === null ? "" : JSON.stringify(e.id) + " "}`;
+        stdoutLines.push(
+          e.mixed
+            ? `sound optional ${who}mixed — ${e.path}`
+            : `sound optional ${who}skipped — not on disk: ${resolved.elements.find((r) => r.pointer === e.pointer)?.src ?? e.pointer}`,
+        );
+      }
+      if (mixed.tail !== undefined) {
+        stdoutLines.push(`sound ${describeTail(mixed.tail)}`);
+        if (!mixed.tail.ok) {
+          // The file is written and stays where it is, as a video whose
+          // declared sound is missing does: the exit code is the verdict.
+          return {
+            exitCode: EXIT_FAIL,
+            json: { ...payload, ok: false, error: "declared silent tail not met" },
+            stdoutLines: [
+              ...stdoutLines,
+              `render failed — the declared silent tail is not digital silence in ${payload.outputPath}`,
+            ],
+          };
+        }
+      }
     }
 
     return {
@@ -352,6 +418,11 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
     await bound.footage?.close();
     await staged?.dispose();
   }
+}
+
+function withoutTail(sound: SidecarSound): SidecarSound {
+  const { silentTailMs: _tail, ...rest } = sound;
+  return rest;
 }
 
 async function runBatch(options: {

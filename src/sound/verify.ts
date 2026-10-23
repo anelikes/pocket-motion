@@ -1,5 +1,6 @@
 /**
- * Is each declared element in the produced mix, at its offset?
+ * Is each declared element in the produced mix, at its offset — and, where
+ * the declaration varies its level, at that level?
  *
  * For each element this builds the same mix graph with that element
  * omitted and measures the residual against the produced file. If the
@@ -9,27 +10,59 @@
  * The residual is measured in several windows across the span the element
  * claims, not only at its start, so an element that muxes and then stops
  * early reports as `truncated` rather than as present. Each window is
- * paired with the source's own level at the same instant, and a window
- * where the source is silent is dropped: there the produced mix and the
- * omit-mix are equal whether or not the element muxed, so the window
- * carries no evidence either way.
+ * paired with the source's own level at the same instant and with the
+ * element's DECLARED level there (gain × envelope × ducks), and a window
+ * where the two together put the element under the floor is dropped: there
+ * the produced mix and the omit-mix are equal whether or not the element
+ * muxed, so the window carries no evidence either way. An envelope that
+ * ramps a line to 0 is therefore not read as the line stopping.
  *
- * It does not check levels, ducking depth, overlap, or that the element
- * is the right audio — a wrong file at the right offset produces a
- * residual and passes. A source that is silent in every sampled window is
- * reported as `source-silent`, not as a pass. Between the sampled windows
- * nothing is examined: a gap shorter than the spacing is not seen.
+ * Levels are checked only where the declaration VARIES them — an
+ * `envelope`, a bed `ducks[]` window, a narration line's `duck` — at one
+ * window inside each piece between two breakpoints: the residual's level
+ * less the source's (read through the mix's own channel layout, since a
+ * mono leg in a stereo mix is upmixed at −3.01 dB) must lie within the
+ * declared level's range over that window, give or take
+ * `VERIFY_LEVEL_TOLERANCE_DB`. The expected level comes from the sidecar's
+ * numbers (`elementLevel`), not from rendering the graph, so an expression
+ * that drops a term is a measured mismatch rather than agreeing with itself.
+ * A constant level is not checked, and neither is a piece too short to hold
+ * a window or one where the source is silent.
+ *
+ * It does not check overlap, or that the element is the right audio — a
+ * wrong file at the right offset produces a residual and passes. A source
+ * that is silent in every sampled window is reported as `source-silent`, a
+ * declared level that leaves nothing above the floor as `declared-silent`,
+ * and neither is a pass. An optional element whose file is not on disk is
+ * `skipped`: there is nothing to compare, and that is said rather than
+ * passed or failed. Between the sampled windows nothing is examined: a gap
+ * shorter than the spacing is not seen.
+ *
+ * A declared `silentTailMs` is measured on the produced file the way
+ * `render` measures it (`src/sound/tail.ts`): every sample from the tail's
+ * start to the end of the decode.
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MotionSidecar } from "../manifest/sidecar.ts";
-import { framesToMs, mixGraph, type MixGraph } from "./mix.ts";
+import {
+  elementLevel,
+  framesToMs,
+  levelBreaks,
+  levelIsConstant,
+  levelRange,
+  mixGraph,
+  tailGateSec,
+  type ElementLevel,
+  type MixGraph,
+} from "./mix.ts";
 import {
   probeSoundDurations,
   type ResolvedSoundElement,
 } from "./resolve.ts";
+import { measureSilentTail, type TailMeasurement } from "./tail.ts";
 
 /** Short window used for the RMS sample, in seconds. */
 export const VERIFY_WINDOW_SEC = 0.1;
@@ -73,10 +106,60 @@ export type VerifyStatus =
   | "present"
   | "truncated"
   | "unmuxed"
+  /** Present, and a level window measured outside the declared level. */
+  | "level-mismatch"
   /** The source is silent in every sampled window, so nothing was established. */
   | "source-silent"
+  /** The declared level puts every voiced window under the floor. */
+  | "declared-silent"
   | "source-missing"
+  /** Declared `optional` and not on disk: not mixed, nothing to examine. */
+  | "skipped"
   | "no-audio";
+
+/**
+ * How far a measured level may sit outside the declared range, in dB.
+ *
+ * Measured 2026-10-23 on `compositions/sound-roles` muxed to AAC at
+ * 192 kb/s. Correct mix: the bed's windows under the narration duck and under
+ * the cut duck sat 0.018 and 0.009 dB from the declared level, the dialogue
+ * envelope's hold 0.001 dB, its ramp inside the range. The same mix with the
+ * dialogue envelope left out: 3.06 dB outside on the ramp. With the cut duck
+ * left out: 6.0 dB outside. 1 dB sits between the two populations with room
+ * on both sides; `tests/sound.test.ts` holds both.
+ */
+export const VERIFY_LEVEL_TOLERANCE_DB = 1;
+
+/**
+ * How late a varying level may switch: one `VOLUME_STEP_SAMPLES` frame at
+ * the slowest rate a source here has, 480 / 44100 s. The expected range of a
+ * window starting at `a` is taken over `[a − lag, a + window]`.
+ */
+export const VERIFY_LEVEL_LAG_SEC = 0.011;
+
+/** A level window keeps this far from either end of its piece. */
+export const VERIFY_LEVEL_MARGIN_SEC = 0.05;
+
+export interface LevelWindow {
+  readonly atSec: number;
+  /** The source at the same instant, through the mix's channel layout. */
+  readonly sourceDb: number;
+  /** Produced minus the mix without this element. */
+  readonly residualDb: number;
+  /** `residualDb − sourceDb`: the level the element arrived at. */
+  readonly measuredDb: number;
+  /** The declared level's range over the window, in dB (−Infinity for 0). */
+  readonly expectedMinDb: number;
+  readonly expectedMaxDb: number;
+  readonly ok: boolean;
+}
+
+export interface LevelReport {
+  readonly windows: readonly LevelWindow[];
+  /** Pieces of the declared level with no window: too short, or the source and
+   *  the declared level together under the floor there. */
+  readonly unexamined: number;
+}
 
 /**
  * Windows sampled across an element's declared span.
@@ -96,22 +179,28 @@ export interface VerifyElement {
   readonly id: string | null;
   readonly role: ResolvedSoundElement["role"];
   readonly pointer: string;
+  readonly optional: boolean;
   readonly offsetSec: number;
   readonly sourceRmsDb: number | null;
   readonly residualRmsDb: number | null;
   readonly status: VerifyStatus;
+  /** Present when the declared level varies over the element's span. */
+  readonly level?: LevelReport;
 }
 
 export interface VerifyResult {
   /**
-   * True only when every declared element is `present`.
-   * `source-silent` is a report, not a pass: the source had nothing to
-   * hear, so this check did not establish that the element muxed.
+   * True only when every declared element is `present` or `skipped`, and a
+   * declared silent tail measured silent. `source-silent` and
+   * `declared-silent` are reports, not passes: there was nothing to hear,
+   * so this check did not establish that the element muxed.
    */
   readonly ok: boolean;
   readonly floorDb: number;
   readonly windowSec: number;
   readonly elements: readonly VerifyElement[];
+  /** Present when the sidecar declares `silentTailMs`. */
+  readonly tail?: TailMeasurement;
 }
 
 const SILENT = Number.NEGATIVE_INFINITY;
@@ -153,7 +242,11 @@ export async function measureRmsDb(
   path: string,
   startSec: number,
   windowSec: number = VERIFY_WINDOW_SEC,
+  layout?: "mono" | "stereo",
 ): Promise<number> {
+  // `layout` converts inside the graph, with the rematrix `amix`'s own
+  // negotiation inserts: `-ac` on the output would act after `astats`.
+  const convert = layout === undefined ? "" : `aformat=channel_layouts=${layout},`;
   const p = Bun.spawn(
     [
       "ffmpeg",
@@ -167,7 +260,7 @@ export async function measureRmsDb(
       path,
       "-vn",
       "-af",
-      "astats=measure_overall=RMS_level:measure_perchannel=none",
+      `${convert}astats=measure_overall=RMS_level:measure_perchannel=none`,
       "-f",
       "null",
       "-",
@@ -363,6 +456,29 @@ export function sampleOffsetsInVoiced(
   return out;
 }
 
+/** Channel count of the first audio stream; 0 when there is none. */
+export async function audioChannels(path: string): Promise<number> {
+  const p = Bun.spawn(
+    [
+      "ffprobe",
+      "-v",
+      "error",
+      "-select_streams",
+      "a:0",
+      "-show_entries",
+      "stream=channels",
+      "-of",
+      "csv=p=0",
+      path,
+    ],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const text = (await new Response(p.stdout).text()).trim();
+  await p.exited;
+  const n = Number(text);
+  return Number.isInteger(n) && n > 0 ? n : 0;
+}
+
 export async function hasAudioStream(path: string): Promise<boolean> {
   const p = Bun.spawn(
     [
@@ -539,18 +655,109 @@ export function elementSampleStartSec(
   return startSec;
 }
 
+/**
+ * How long the element is sampled for, from `startSec`.
+ *
+ * The bed runs to where its fade-out begins, and that is earlier than the end
+ * of the picture when a silent tail is declared: its fade completes at the
+ * gate ahead of the tail. Every other element runs for its source's length,
+ * clipped to the composition and to that gate.
+ */
 function elementSpanSec(
   el: ResolvedSoundElement,
   sidecar: MotionSidecar,
   startSec: number,
   compositionDurationSec: number,
+  fps: number,
 ): number {
+  const gate = tailGateSec(sidecar.sound, fps, sidecar.durationFrames);
+  const end = gate ?? compositionDurationSec;
   if (el.role === "bed") {
     const fadeOutSec = (sidecar.sound.bed?.fadeOutMs ?? 0) / 1000;
-    return Math.max(0, compositionDurationSec - fadeOutSec - startSec);
+    return Math.max(0, end - fadeOutSec - startSec);
   }
   const source = el.durationSec ?? 0;
-  return Math.max(0, Math.min(source, compositionDurationSec - startSec));
+  return Math.max(0, Math.min(source, end - startSec));
+}
+
+function toDb(gain: number): number {
+  return gain <= 0 ? Number.NEGATIVE_INFINITY : 20 * Math.log10(gain);
+}
+
+/**
+ * The declared level's range over a window that starts at `atSec`, widened
+ * back by the lag a varying `volume` may switch late by.
+ */
+export function expectedLevelRange(
+  level: ElementLevel,
+  atSec: number,
+  windowSec: number = VERIFY_WINDOW_SEC,
+): { readonly min: number; readonly max: number } {
+  return levelRange(level, atSec - VERIFY_LEVEL_LAG_SEC, atSec + windowSec);
+}
+
+/**
+ * One window per piece of the declared level inside `[from, to)`.
+ *
+ * A piece runs between two breakpoints — an envelope point, the edge of a
+ * duck window — or between a breakpoint and the span's end, and the window
+ * sits at its middle, so it is as far from either switch as the piece
+ * allows. A piece shorter than the window plus a margin at each end gets no
+ * window: it is counted as unexamined rather than read across a switch.
+ */
+export function levelWindowStarts(
+  level: ElementLevel,
+  from: number,
+  to: number,
+  windowSec: number = VERIFY_WINDOW_SEC,
+  marginSec: number = VERIFY_LEVEL_MARGIN_SEC,
+): { readonly starts: number[]; readonly unexamined: number } {
+  const edges = [from, ...levelBreaks(level).filter((t) => t > from && t < to), to];
+  const starts: number[] = [];
+  let unexamined = 0;
+  for (let k = 0; k + 1 < edges.length; k++) {
+    const a = edges[k]!;
+    const b = edges[k + 1]!;
+    if (b - a < windowSec + 2 * marginSec) {
+      unexamined++;
+      continue;
+    }
+    starts.push((a + b) / 2 - windowSec / 2);
+  }
+  return { starts, unexamined };
+}
+
+/** The verdict on one level window. Pure, so the arithmetic is tested alone. */
+export function levelWindowOk(
+  measuredDb: number,
+  residualDb: number,
+  expected: { readonly min: number; readonly max: number },
+  toleranceDb: number = VERIFY_LEVEL_TOLERANCE_DB,
+): boolean {
+  // Declared silent across the whole window: the element must contribute
+  // nothing measurable there.
+  if (expected.max <= 0) return isBelowFloor(residualDb, VERIFY_RESIDUAL_FLOOR_DB);
+  if (!Number.isFinite(measuredDb)) return false;
+  return measuredDb >= toDb(expected.min) - toleranceDb && measuredDb <= toDb(expected.max) + toleranceDb;
+}
+
+/**
+ * The level of `el` as the produced mix should carry it. Built with the
+ * element itself as `omit` so a missing sibling is skipped rather than thrown
+ * on — this is a measurement of the mix that exists, and the sibling reports
+ * its own absence. Omitting the element does not change its own level.
+ */
+function declaredLevel(
+  el: ResolvedSoundElement,
+  sidecar: MotionSidecar,
+  elements: readonly ResolvedSoundElement[],
+  fps: number,
+): ElementLevel {
+  return elementLevel(el.pointer, sidecar.sound, elements, fps, el.pointer);
+}
+
+function layoutOf(channels: number): "mono" | "stereo" | undefined {
+  return channels === 1 ? "mono" : channels === 2 ? "stereo" : undefined;
 }
 
 export async function verifyMix(options: {
@@ -561,7 +768,9 @@ export async function verifyMix(options: {
 }): Promise<VerifyResult> {
   const { sidecar, producedPath, fps } = options;
   const elements = await probeSoundDurations(options.elements);
-  const audio = await hasAudioStream(producedPath);
+  const channels = await audioChannels(producedPath);
+  const audio = channels > 0;
+  const layout = layoutOf(channels);
   const durationSec = framesToMs(sidecar.durationFrames, fps) / 1000;
   const tmp = mkdtempSync(join(tmpdir(), "pocketjs-verify-"));
   const out: VerifyElement[] = [];
@@ -569,31 +778,28 @@ export async function verifyMix(options: {
   try {
     for (const el of elements) {
       const offsetSec = mixOffsetSec(el, sidecar, fps);
+      const head = {
+        id: el.id,
+        role: el.role,
+        pointer: el.pointer,
+        optional: el.optional === true,
+        offsetSec,
+      };
       if (!audio) {
-        out.push({
-          id: el.id,
-          role: el.role,
-          pointer: el.pointer,
-          offsetSec,
-          sourceRmsDb: null,
-          residualRmsDb: null,
-          status: "no-audio",
-        });
+        out.push({ ...head, sourceRmsDb: null, residualRmsDb: null, status: "no-audio" });
         continue;
       }
       if (el.path === null) {
         out.push({
-          id: el.id,
-          role: el.role,
-          pointer: el.pointer,
-          offsetSec,
+          ...head,
           sourceRmsDb: null,
           residualRmsDb: null,
-          status: "source-missing",
+          status: el.optional === true ? "skipped" : "source-missing",
         });
         continue;
       }
 
+      const level = declaredLevel(el, sidecar, elements, fps);
       // Sampled across the element's declared span, not only at its start:
       // one window cannot tell a full line from its first 100 ms. And
       // sampled where the source has something to contribute, not at fixed
@@ -603,7 +809,7 @@ export async function verifyMix(options: {
       // windows, which is how every element of a correct mix came to be
       // reported as absent.
       const sampleFrom = elementSampleStartSec(el, sidecar, offsetSec);
-      const spanSec = elementSpanSec(el, sidecar, sampleFrom, durationSec);
+      const spanSec = elementSpanSec(el, sidecar, sampleFrom, durationSec, fps);
       const srcFrom = sourceTimeAt(el, sidecar, sampleFrom, fps);
       const voiced = clipSpans(
         voicedFromEnvelope(await sourceEnvelope(el.path)),
@@ -617,10 +823,7 @@ export async function verifyMix(options: {
       );
       if (offsets.length === 0) {
         out.push({
-          id: el.id,
-          role: el.role,
-          pointer: el.pointer,
-          offsetSec,
+          ...head,
           sourceRmsDb: await measureRmsDb(el.path, srcFrom),
           residualRmsDb: null,
           status: "source-silent",
@@ -637,47 +840,48 @@ export async function verifyMix(options: {
       // the level there. `silencedetect` thresholds on amplitude and this
       // check reads RMS over 100 ms, so a window can be voiced by one and
       // under the floor by the other — a recorded narration line picked a
-      // window reading -51.2 dBFS. Those windows are still dropped.
+      // window reading -51.2 dBFS. Those windows are still dropped, and so
+      // is a window where the DECLARED level puts the element under the
+      // floor: an envelope at 0 there is the declaration, not an absence.
+      const voicedHeard: number[] = [];
       const heard: number[] = [];
       for (let i = 0; i < offsets.length; i++) {
-        if (!isBelowFloor(sourceDbs[i]!, VERIFY_RMS_FLOOR_DB)) heard.push(i);
+        if (isBelowFloor(sourceDbs[i]!, VERIFY_RMS_FLOOR_DB)) continue;
+        voicedHeard.push(i);
+        const expected = expectedLevelRange(level, offsets[i]!);
+        if (!isBelowFloor(sourceDbs[i]! + toDb(expected.max), VERIFY_RMS_FLOOR_DB)) {
+          heard.push(i);
+        }
       }
       if (heard.length === 0) {
         out.push({
-          id: el.id,
-          role: el.role,
-          pointer: el.pointer,
-          offsetSec,
+          ...head,
           sourceRmsDb: sourceDbs.reduce((a, b) => (a > b ? a : b)),
           residualRmsDb: null,
-          status: "source-silent",
+          status: voicedHeard.length > 0 ? "declared-silent" : "source-silent",
         });
         continue;
       }
 
       // The reference mix is rendered once and reused for every window.
-      const residuals: number[] = [];
-      if (!mixableBesides(elements, el.pointer)) {
-        // Residual against silence is the produced window itself.
-        for (const i of heard) {
-          residuals.push(await measureRmsDb(producedPath, offsets[i]!));
-        }
-      } else {
-        const graph = mixGraph(
-          sidecar.sound,
-          elements,
-          fps,
-          sidecar.durationFrames,
-          el.pointer,
+      const alone = !mixableBesides(elements, el.pointer);
+      let refPath: string | null = null;
+      if (!alone) {
+        refPath = join(tmp, "ref.wav");
+        await renderMixPcm(
+          mixGraph(sidecar.sound, elements, fps, sidecar.durationFrames, el.pointer),
+          refPath,
+          durationSec,
         );
-        const refPath = join(tmp, "ref.wav");
-        await renderMixPcm(graph, refPath, durationSec);
-        for (const i of heard) {
-          residuals.push(
-            await measureResidualRmsDb(producedPath, refPath, offsets[i]!),
-          );
-        }
       }
+      const residualAt = (at: number, ref: string | null): Promise<number> =>
+        ref === null
+          ? // Residual against silence is the produced window itself.
+            measureRmsDb(producedPath, at)
+          : measureResidualRmsDb(producedPath, ref, at);
+
+      const residuals: number[] = [];
+      for (const i of heard) residuals.push(await residualAt(offsets[i]!, refPath));
       const absent = residuals.filter((r) =>
         isBelowFloor(r, VERIFY_RESIDUAL_FLOOR_DB),
       ).length;
@@ -689,30 +893,91 @@ export async function verifyMix(options: {
       for (let i = 1; i < residuals.length; i++) {
         if (residuals[i]! < residuals[worst]!) worst = i;
       }
+      let status: VerifyStatus =
+        absent === residuals.length ? "unmuxed" : absent > 0 ? "truncated" : "present";
+
+      let levelReport: LevelReport | undefined;
+      if (!levelIsConstant(level)) {
+        // A narration line's residual against the plain omit-mix is the line
+        // plus the duck it took off the bed. Its own level is read against
+        // a mix that keeps that duck.
+        const n = el.pointer.match(/^\/sound\/narration\/(\d+)\/src$/);
+        const line = n === null ? undefined : sidecar.sound.narration[Number(n[1])];
+        let levelRef = refPath;
+        if (!alone && line !== undefined && line.duck !== 1) {
+          levelRef = join(tmp, "ref-keep-duck.wav");
+          await renderMixPcm(
+            mixGraph(sidecar.sound, elements, fps, sidecar.durationFrames, el.pointer, {
+              omitKeepsDuck: true,
+            }),
+            levelRef,
+            durationSec,
+          );
+        }
+        const planned = levelWindowStarts(level, sampleFrom, sampleFrom + spanSec);
+        const windows: LevelWindow[] = [];
+        let unexamined = planned.unexamined;
+        for (const at of planned.starts) {
+          const sourceDb = await measureRmsDb(
+            el.path,
+            sourceTimeAt(el, sidecar, at, fps),
+            VERIFY_WINDOW_SEC,
+            layout,
+          );
+          const expected = expectedLevelRange(level, at);
+          // A window carries evidence about a level when the source is
+          // voiced there and the declared level leaves the element above the
+          // floor — under it, the encoder's error is the same size as the
+          // thing measured. A piece declared silent is the exception: it
+          // asks whether the element is absent, which the floor answers.
+          if (
+            isBelowFloor(sourceDb, VERIFY_RMS_FLOOR_DB) ||
+            (expected.max > 0 && isBelowFloor(sourceDb + toDb(expected.max), VERIFY_RMS_FLOOR_DB))
+          ) {
+            unexamined++;
+            continue;
+          }
+          const residualDb = await residualAt(at, levelRef);
+          const measuredDb = residualDb - sourceDb;
+          windows.push({
+            atSec: at,
+            sourceDb,
+            residualDb,
+            measuredDb,
+            expectedMinDb: toDb(expected.min),
+            expectedMaxDb: toDb(expected.max),
+            ok: levelWindowOk(measuredDb, residualDb, expected),
+          });
+        }
+        levelReport = { windows, unexamined };
+        if (status === "present" && windows.some((w) => !w.ok)) status = "level-mismatch";
+      }
 
       out.push({
-        id: el.id,
-        role: el.role,
-        pointer: el.pointer,
-        offsetSec,
+        ...head,
         sourceRmsDb: sourceDbs[heard[worst]!]!,
         residualRmsDb: residuals[worst]!,
-        status:
-          absent === residuals.length
-            ? "unmuxed"
-            : absent > 0
-              ? "truncated"
-              : "present",
+        status,
+        ...(levelReport !== undefined ? { level: levelReport } : {}),
       });
     }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
 
+  const tail =
+    sidecar.sound.silentTailMs !== undefined && audio
+      ? await measureSilentTail(producedPath, durationSec, sidecar.sound.silentTailMs)
+      : undefined;
+
   return {
-    ok: out.length > 0 && out.every((e) => e.status === "present"),
+    ok:
+      out.length > 0 &&
+      out.every((e) => e.status === "present" || e.status === "skipped") &&
+      (sidecar.sound.silentTailMs === undefined || tail?.ok === true),
     floorDb: VERIFY_RESIDUAL_FLOOR_DB,
     windowSec: VERIFY_WINDOW_SEC,
     elements: out,
+    ...(tail !== undefined ? { tail } : {}),
   };
 }
