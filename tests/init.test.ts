@@ -151,7 +151,7 @@ describe("pocket.json identity", () => {
 });
 
 describe("declaredAssets", () => {
-  test("reaches fonts, footage and all four sound roles", () => {
+  test("reaches fonts, footage and all four sound roles, and not an optional element", () => {
     const parsed = parseSidecar(
       JSON.parse(readFileSync(join(ROOT, "compositions/sound-roles/pocket-motion.json"), "utf8")),
     );
@@ -163,6 +163,9 @@ describe("declaredAssets", () => {
     expect(assets).toContain("assets/synthetic/narration-440hz-2000ms.wav");
     expect(assets).toContain("assets/synthetic/dialogue-660hz-1500ms.wav");
     expect(assets).toContain("assets/synthetic/cue-880hz-300ms.wav");
+    // Declared `optional` and absent on purpose: mixed when present, skipped
+    // when not, so it is not a file the copy needs.
+    expect(assets).not.toContain("assets/synthetic/sting-not-shipped.wav");
     for (const rel of assets) {
       expect(existsSync(join(ROOT, rel)), rel).toBe(true);
     }

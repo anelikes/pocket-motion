@@ -22,10 +22,25 @@
  * it from the implementation would be checking the implementation against
  * itself.
  *
+ * It also declares one of each shape the schema gained after the four roles,
+ * each placed so `sound --verify` has somewhere to see it:
+ *
+ *   - `bed.ducks`: the bed at 0.5 for the whole cut the clip is on screen,
+ *     frames 30-150, whatever is playing — not for the length of one line;
+ *   - an `envelope` on the dialogue line, on THAT line's clock: up from 0 over
+ *     its first 3 frames, down to 0 over its last 9, so it rides the clip
+ *     mapping with the line;
+ *   - `optional` on a second cue whose file is deliberately not in the tree,
+ *     so `lint` passes, `render` reports it skipped and `sound --verify` says
+ *     `skipped` rather than calling it missing;
+ *   - `silentTailMs`: the last 500 ms are digital silence, measured after the
+ *     mux, with the bed's fade-out completing before them.
+ *
  * Sound is OUTSIDE frame-digest identity by construction: audio is a separate
  * mux pass and the frame hash never opens an audio file. So this composition's
- * ledger entry is a claim about its picture only, and what checks the mix is
- * `render` followed by `sound --verify`.
+ * ledger entry is a claim about its picture only — the shapes above were added
+ * without moving it — and what checks the mix is `render` followed by
+ * `sound --verify`.
  */
 
 import { join } from "node:path";
@@ -57,6 +72,29 @@ export const DIALOGUE_COMPOSITION_FRAME = 90;
 
 export const NARRATION_START_FRAME = 15;
 export const CUE_AT_FRAME = 150;
+
+/** The cut the clip is on screen for, ducked as one window. */
+export const CUT_DUCK = { startFrame: TRACK.startFrame, endFrame: TRACK.endFrame, duck: 0.5 } as const;
+
+/**
+ * The dialogue file is 1.5 s, 45 frames at 30 fps. Frames are the line's own,
+ * counted from where it lands (composition frame 90), not the film's.
+ */
+export const DIALOGUE_ENVELOPE = [
+  { frame: 0, gain: 0 },
+  { frame: 3, gain: 1 },
+  { frame: 36, gain: 1 },
+  { frame: 45, gain: 0 },
+] as const;
+
+/** Declared optional, and not in the tree on purpose. */
+export const OPTIONAL_CUE = {
+  id: "cue-2",
+  src: "assets/synthetic/sting-not-shipped.wav",
+  atFrame: 120,
+} as const;
+
+export const SILENT_TAIL_MS = 500;
 
 const derived = dialogueCompositionFrame(
   { sourceFrame: DIALOGUE_SOURCE_FRAME },
@@ -146,6 +184,7 @@ export function sidecar(): string {
             gain: 0.3,
             fadeInMs: 600,
             fadeOutMs: 1200,
+            ducks: [CUT_DUCK],
           },
           narration: [
             {
@@ -163,6 +202,7 @@ export function sidecar(): string {
               track: TRACK.id,
               sourceFrame: DIALOGUE_SOURCE_FRAME,
               gain: 1,
+              envelope: DIALOGUE_ENVELOPE,
             },
           ],
           cues: [
@@ -172,7 +212,9 @@ export function sidecar(): string {
               atFrame: CUE_AT_FRAME,
               gain: 1,
             },
+            { ...OPTIONAL_CUE, gain: 1, optional: true },
           ],
+          silentTailMs: SILENT_TAIL_MS,
         },
       },
       null,
@@ -186,6 +228,7 @@ if (import.meta.main) {
   await Bun.write(join(DIR, "pocket-motion.json"), sidecar());
   console.error(
     `sound-roles: 4 role(s), 1 track, dialogue at clip frame ${DIALOGUE_SOURCE_FRAME} ` +
-      `-> composition frame ${DIALOGUE_COMPOSITION_FRAME}`,
+      `-> composition frame ${DIALOGUE_COMPOSITION_FRAME}; a cut duck, a dialogue envelope, ` +
+      `an optional cue and a ${SILENT_TAIL_MS} ms silent tail`,
   );
 }

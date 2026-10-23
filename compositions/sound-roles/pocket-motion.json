@@ -28,7 +28,14 @@
       "startAt": 0,
       "gain": 0.3,
       "fadeInMs": 600,
-      "fadeOutMs": 1200
+      "fadeOutMs": 1200,
+      "ducks": [
+        {
+          "startFrame": 30,
+          "endFrame": 150,
+          "duck": 0.5
+        }
+      ]
     },
     "narration": [
       {
@@ -45,7 +52,25 @@
         "src": "assets/synthetic/dialogue-660hz-1500ms.wav",
         "track": "clip",
         "sourceFrame": 80,
-        "gain": 1
+        "gain": 1,
+        "envelope": [
+          {
+            "frame": 0,
+            "gain": 0
+          },
+          {
+            "frame": 3,
+            "gain": 1
+          },
+          {
+            "frame": 36,
+            "gain": 1
+          },
+          {
+            "frame": 45,
+            "gain": 0
+          }
+        ]
       }
     ],
     "cues": [
@@ -54,7 +79,15 @@
         "src": "assets/synthetic/cue-880hz-300ms.wav",
         "atFrame": 150,
         "gain": 1
+      },
+      {
+        "id": "cue-2",
+        "src": "assets/synthetic/sting-not-shipped.wav",
+        "atFrame": 120,
+        "gain": 1,
+        "optional": true
       }
-    ]
+    ],
+    "silentTailMs": 500
   }
 }
