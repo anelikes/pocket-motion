@@ -1,0 +1,12 @@
+{
+  "name": "render-cost-remotion",
+  "private": true,
+  "version": "0.0.0",
+  "description": "The render-cost benchmark scene in Remotion. Measured against 4.0.482; see docs/render-cost-benchmark.md.",
+  "dependencies": {
+    "@remotion/cli": "4.0.482",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.482"
+  }
+}
