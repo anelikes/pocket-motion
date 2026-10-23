@@ -62,7 +62,7 @@ const W = 1920;
 const H = 1080;
 const CX = 960;
 const CY = 540;
-const G = { hot: "#ffffff", mid: "#a6a6a6", low: "#7d7d7d", faint: "#3a3a3a", bg: "#1e1e1e", plate: "#0b0b0b" };
+const G = { hot: "#ffffff", mid: "#a6a6a6", low: "#7d7d7d", faint: "#3a3a3a", bg: "#0c0c0c", plate: "#0b0b0b" };
 const CYAN = "#00e5ff";
 const ORANGE = "#ff6a00";
 
@@ -555,7 +555,7 @@ function coast(): string {
           if (Math.floor((prev - brg) / 360) !== Math.floor((cur - brg) / 360)) ch.push([t - 1, "0.25"], [t, "1"], [t + 20, "0.25"]);
           prev = cur;
         }
-        return `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.anim(reg.prop("opacity", ch))}" /><View class="absolute left-[${fx * S + 14}px] top-[${fy * S - 8}px]">${mono(`C-0${5 + OTHERS.findIndex((o) => o[0] === fx)} AIS`, 11, G.mid)}</View>`;
+        return `<View class="absolute left-[${fx * S - 9}px] top-[${fy * S - 9}px] w-[18px] h-[18px] border-[${G.hot}] border-2 rotate-45 animate-${reg.anim(reg.prop("opacity", ch))}" /><View class="absolute left-[${fx > 0.5 ? fx * S - 92 : fx * S + 30}px] top-[${fy * S - 8}px]">${mono(`C-0${5 + OTHERS.findIndex((o) => o[0] === fx)} AIS`, 11, G.mid)}</View>`;
       }).join("")}
     </View></View>`;
   // range rings: one a beat out from the hull once the push has landed, the alarm's own pulse
@@ -644,9 +644,16 @@ function kelvinOverlay(): string {
 function hullTop(): string {
   const core = "#ffe2c2";
   const on = reg.anim(reg.window(T_LAND));
-  const lobes = `${rect(CX - 230, CY, 460, 1, core, "opacity-20")}${rect(CX, CY - 150, 1, 300, core, "opacity-15")}`;
-  const hull = `<View class="absolute left-[${CX - 68}px] top-[${CY - 6}px] w-[136px] h-[12px] rounded-[6px] bg-[${core}] origin-center rotate-342" />`;
-  return `<View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}"><View class="absolute inset-0 animate-${on}">${lobes}<View class="absolute inset-0 glow-[8px] glow-[#ff9a40] glow-gain-[1.2]">${hull}</View></View></View>`;
+  // the hull as radar sees it: a thin hot return along the 072 degree heading and one hard point target where it is
+  //   brightest, with the cross of sidelobes a point target throws along the image's range and azimuth axes. A row of
+  //   white squares read as a debug overlay, and a rounded bar as a pill
+  const ux = Math.cos((-18 * Math.PI) / 180);
+  const uy = Math.sin((-18 * Math.PI) / 180);
+  const [bx, by] = [Math.round(CX + ux * 18), Math.round(CY + uy * 18)];
+  const lobes = `${rect(bx - 64, by, 128, 1, core, "opacity-30")}${rect(bx, by - 64, 1, 128, core, "opacity-25")}`;
+  const coreLine = `<View class="absolute left-[${CX - 62}px] top-[${CY - 1}px] w-[124px] h-[2px] bg-[${core}] opacity-70 origin-center rotate-342" />`;
+  const dots = `<View class="absolute left-[${bx - 3}px] top-[${by - 3}px] w-[6px] h-[6px] rounded-[3px] bg-[#ffffff]" />`;
+  return `<View class="absolute inset-0 origin-center animate-${reg.anim(sarPush())}"><View class="absolute inset-0 animate-${on}">${lobes}<View class="absolute inset-0 glow-[6px] glow-[#ff9a40] glow-gain-[1.2]">${coreLine}${dots}</View></View></View>`;
 }
 
 /**
@@ -698,7 +705,8 @@ function interceptVector(color: string): string {
   const ux = Math.sin(brg);
   const uy = -Math.cos(brg);
   const r0 = 440;
-  const r1 = LOCK_S / 2 + 30;
+  // the vector stops 250 px out: on bearing 248 it ran through the 19.47 degree tag (at 252, 170 px out) from 91 to 187
+  const r1 = 250;
   const out: string[] = [];
   const n = 16;
   // dotted on over twenty-four frames from the cutter's bearing, a dash every three ticks
@@ -762,24 +770,27 @@ function tracking(): string {
  * so their strokes keep their weight at every size.
  */
 const T_RAMP = T_LOCK + 6;
-const T_SNAP_IN = T_FLIP - 8;
-const T_HELD = T_FLIP - 18; // f186: the brackets are square at 1.4 and hold for the snap
-const LOCK_D = 70; // half the box the brackets close on: 140 px around the contact
-const VESSEL_D = 130; // half the box they open to as the push lands on the vessel
+const T_HELD = T_FLIP - 16; // f187: the brackets come square at 1.4 and go straight into the snap
+const T_SNAP_IN = T_HELD; // the snap starts as the spin comes square
+// half the box the brackets close on: 200 px around the contact. At 140 the snap from 1.4 moved each corner 28 px,
+//   and both judges read it as a small event apart from the flip
+const LOCK_D = 100;
+// the box they hold on the vessel: the same box, bitten again where the push lands, rather than opened and closed
+//   again (two contractions read as two locks)
+const VESSEL_D = LOCK_D;
 const LOCK_S = 2 * VESSEL_D;
 const lockD = (t: number): number => {
   if (t < T_RAMP) return 1.8 * LOCK_D;
   if (t < T_HELD) return lerp(1.8 * LOCK_D, 1.4 * LOCK_D, inOut((t - T_RAMP) / (T_HELD - T_RAMP)));
-  if (t < T_SNAP_IN) return 1.4 * LOCK_D;
-  if (t <= T_FLIP) return lerp(1.4 * LOCK_D, LOCK_D, ((t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN)) ** 2);
+  // no hold at 1.4: the spin hands straight into eight frames of fast-out slow-in that land on the flip
+  if (t <= T_FLIP) return lerp(1.4 * LOCK_D, LOCK_D, snapEase(Math.min(1, Math.max(0, (t - T_SNAP_IN) / (T_FLIP - T_SNAP_IN)))));
   if (t <= T_FLIP + 2) return lerp(LOCK_D, 0.97 * LOCK_D, (t - T_FLIP) / 2);
   if (t <= T_FLIP + 4) return lerp(0.97 * LOCK_D, LOCK_D, (t - T_FLIP - 2) / 2);
   // the lock holds its box through the dive (opening with the zoom read as letting go), then locks again on the vessel
   //   the push lands on: open at 1.4 of the vessel's box, four frames in at speed, a one-frame bite
-  if (t <= T_LAND - 8) return LOCK_D;
-  if (t <= T_LAND) return lerp(1.4 * VESSEL_D, VESSEL_D, ((t - (T_LAND - 8)) / 8) ** 2);
-  if (t <= T_LAND + 2) return lerp(VESSEL_D, 0.97 * VESSEL_D, (t - T_LAND) / 2);
-  if (t <= T_LAND + 4) return lerp(0.97 * VESSEL_D, VESSEL_D, (t - T_LAND - 2) / 2);
+  if (t <= T_LAND) return LOCK_D;
+  if (t <= T_LAND + 2) return lerp(VESSEL_D, 0.94 * VESSEL_D, (t - T_LAND) / 2);
+  if (t <= T_LAND + 6) return lerp(0.94 * VESSEL_D, VESSEL_D, (t - T_LAND - 2) / 4);
   return VESSEL_D;
 };
 const lockRot = (t: number): number => (t < T_RAMP ? 45 : t < T_HELD ? lerp(45, 0, inOut((t - T_RAMP) / (T_HELD - T_RAMP))) : 0);
@@ -1373,7 +1384,7 @@ import { Image, Text, View } from "@pocketjs/framework/components";
 mount(() => (
   <View class="w-full h-full bg-[#000000]">
     <View class="absolute inset-0 bg-[${G.bg}]" />
-    <View class="absolute inset-0 bg-[radial-gradient(#2a2a2a,#1e1e1e_45%,#0c0c0c)]" />
+    <View class="absolute inset-0 bg-[radial-gradient(#161616,#0c0c0c_45%,#040404)]" />
     <View class="absolute inset-0 bg-[#000000] animate-${groundDown}" />
     <View class="absolute inset-0 origin-center animate-${punch}">
 ${hud}
@@ -1381,7 +1392,7 @@ ${hud}
     <View class="absolute left-[0px] top-[${CY - W / 2}px] w-[${W}px] h-[${W}px] bg-[radial-gradient(${ORANGE},${ORANGE}_0%,${CYAN}_3%,${CYAN})] mix-blend-multiply animate-${tint}" />
     <View class="absolute inset-0 mix-blend-screen animate-${caX(1)}">${reticle("#ff1f3d", "#7a0f1d", true)}</View>
     <View class="absolute inset-0 mix-blend-screen animate-${caX(-1)}">${reticle("#1f6bff", "#0f2f7a", true)}</View>
-    <View class="absolute inset-0 bg-[radial-gradient(#ff2a0000,#ff2a0030)] mix-blend-screen animate-${reg.anim([reg.window(T_FLIP)])}"><View class="absolute inset-0 animate-${reg.loop([reg.short(wash, B, "ease-out", 0)], B)}" /></View>
+    <View class="absolute inset-0 bg-[radial-gradient(#ff2a0000,#ff2a000c)] mix-blend-screen animate-${reg.anim([reg.window(T_FLIP)])}"><View class="absolute inset-0 animate-${reg.loop([reg.short(wash, B, "ease-out", 0)], B)}" /></View>
     <View class="absolute left-[0px] top-[${CY - W / 2}px] w-[${W}px] h-[${W}px] bg-[radial-gradient(#ffe2c0,#ffe2c000_38%)] mix-blend-screen animate-${reg.anim(reg.prop("opacity", [[0, "0"], [T_FLIP - 1, "0"], [T_FLIP, "0.85"], [T_FLIP + 4, "0"]]))}" />
     <View class="absolute inset-0 bg-[radial-gradient(#ff6a0000,#ff6a0000_55%,#ff6a00b0)] mix-blend-screen animate-${alarm}" />
     <View class="absolute left-[12px] top-[12px] right-[12px] bottom-[12px] border-[#ffd6a8] border-[7px] animate-${alarmEdge}" />
