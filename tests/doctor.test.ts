@@ -137,8 +137,8 @@ describe("vendorProblems", () => {
  * The disk verdict, at free-space values this machine is not at.
  *
  * The number it is measured against is a MEASUREMENT with a date on it —
- * 721,152,000 bytes over five files, read off a full serial ledger run on
- * 2026-09-02 — which is what lets this fail at all. It used to be checked
+ * 1,381,017,600 bytes over six files, read off a full serial ledger run on
+ * 2026-10-22 — which is what lets this fail at all. It used to be checked
  * against a 64 GiB high-water mark from a tree the release plan deleted, so
  * every hosted runner (11.6 GiB free) came back red, and the `AUTHORING.md`
  * and `SKILL.md` command gates went red with it because both run `doctor` out
@@ -150,9 +150,9 @@ describe("diskVerdict", () => {
   const HOSTED_RUNNER_GIB = 11.6;
 
   test("the need is the measurement, not a remembered ceiling", () => {
-    expect(FULL_RUN_RGBA_BYTES).toBe(721_152_000);
-    expect(FULL_RUN_RGBA_FILES).toBe(5);
-    expect(formatGiB(FULL_RUN_NEED_GIB)).toBe("688 MiB");
+    expect(FULL_RUN_RGBA_BYTES).toBe(1_381_017_600);
+    expect(FULL_RUN_RGBA_FILES).toBe(6);
+    expect(formatGiB(FULL_RUN_NEED_GIB)).toBe("1.3 GiB");
     expect(FULL_RUN_COMFORTABLE_GIB).toBe(FULL_RUN_NEED_GIB * HEADROOM_MULTIPLE);
   });
 

@@ -11,10 +11,15 @@
  * element's state over the film.
  *
  * Three limits of the format are enforced here rather than discovered in a
- * render, each because a generator in this tree once hit it:
+ * render:
  *
- *   - a track holds at most 255 segments, so `prop` and `El.entry` refuse
- *     more than 250 keys instead of letting the build fail later;
+ *   - a timeline's period is a u16 of ticks, so `Reg` refuses a film longer
+ *     than 65,535 ticks (18 min 12 s at 60 Hz) instead of letting the build
+ *     refuse it as "duration too long". A segment spans at least one whole
+ *     tick of that period, so no track outgrows the ANIM TABLE's u16 segment
+ *     count (patches/0050), and a track of any length is one keyframe set.
+ *     Until 0050 the count was a byte and this file refused more than 250
+ *     keys, which made a film-length move or counter a hand-split;
  *   - `step` keys `t - 1` and `t` for every change, so changes on the same or
  *     a decreasing tick cross their keys and bake as a ramp from tick 0 —
  *     refused;
@@ -72,8 +77,11 @@ const r3 = (v: number) => (Math.abs(v) < 1e-6 ? 0 : Math.round(v * 1000) / 1000)
 
 export type Stops = Record<string, Record<string, string>>;
 
-/** The largest key count a single track is given; the baker's limit is 255 segments. */
-export const MAX_KEYS = 250;
+/**
+ * The longest film a `Reg` takes, in ticks: a timeline's period is a u16
+ * (`bakeEntry` in the vendored `framework/compiler/animation.ts`).
+ */
+export const MAX_TICKS = 0xffff;
 /**
  * Ticks between the keys of a move. Two: a one-tick segment is how a cut is
  * written (`set`), and a declared shutter (patches/0034) never blurs across
@@ -89,7 +97,11 @@ export class Reg {
   constructor(
     readonly ticks: number,
     readonly durMs: number,
-  ) {}
+  ) {
+    if (ticks > MAX_TICKS) {
+      throw new Error(`Reg: ${ticks} ticks; a timeline's period holds at most ${MAX_TICKS} (18 min 12 s at 60 Hz)`);
+    }
+  }
 
   pct(t: number): string {
     return `${((Math.max(0, Math.min(this.ticks, t)) * 100) / this.ticks).toFixed(4)}%`;
@@ -136,7 +148,6 @@ export class Reg {
     const late = keys.find(([t]) => t > this.ticks);
     if (late) throw new Error(`Reg.prop(${prop}): a key at tick ${late[0]}, past the film's ${this.ticks}; it would ramp the whole film toward its value`);
     const sorted = [...keys].sort((a, b) => a[0] - b[0]);
-    if (sorted.length > MAX_KEYS) throw new Error(`Reg.prop(${prop}): ${sorted.length} keys; a track holds at most 255 segments — sample more coarsely`);
     const stops: Stops = {};
     stops["0%"] = { [prop]: sorted[0]![1] };
     for (const [t, v] of sorted) stops[this.pct(t)] = { [prop]: v };
@@ -302,7 +313,6 @@ export class El {
       stops[this.reg.pct(row.t)] = row.v;
       prev = sig;
     });
-    if (Object.keys(stops).length > MAX_KEYS) throw new Error(`El: ${Object.keys(stops).length} keys; a track holds at most 255 segments`);
     return this.reg.film(stops);
   }
 

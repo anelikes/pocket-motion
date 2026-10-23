@@ -11,6 +11,8 @@
 import {
   DURATION_FRAMES_MAX,
   DURATION_FRAMES_MIN,
+  ENVELOPE_POINTS_MAX,
+  ENVELOPE_POINTS_MIN,
   FOOTAGE_FIT_VALUES,
   GRID_PRODUCT_MAX,
   ID_RE,
@@ -18,10 +20,12 @@ import {
   SHUTTER_ANGLE_MIN,
   SHUTTER_SAMPLES_MAX,
   SHUTTER_SAMPLES_MIN,
+  SILENT_TAIL_GUARD_MS,
   SUPERSAMPLE_VALUES,
   TEX_MAX_DIM,
   VALID_FPS,
 } from "../manifest/sidecar.ts";
+import { CAPTIONS_ROWS } from "./captions.ts";
 
 /** How thoroughly this repository has verified the row it renders. */
 export type Verification =
@@ -119,6 +123,33 @@ export interface CollectProbe {
 }
 
 /**
+ * A `<Path>` outline, through the vendored collector or the vendored baker
+ * (G10, pocket-motion patches 0042/0043).
+ *
+ * Two halves of one claim. The collector records a `d` only where the module
+ * wrote it as literals — a string, a `+` of two, an array of them (the morph
+ * keys), a `const` of any of those — and pairs it with the viewBox written on
+ * the same element; anything else is left to mount, which refuses an outline
+ * the build did not bake. The baker (`compilePathEntry`) normalises the keys
+ * to one verb list or refuses them, naming where they part.
+ */
+export interface PathProbe {
+  /** What the author wrote. Names the case in a failure message. */
+  readonly what: string;
+  /** A module, run through `transformFile`; or `d` handed to the baker. One of the two. */
+  readonly source?: string;
+  readonly d?: readonly string[];
+  readonly viewBox?: string;
+  readonly outcome:
+    /** The collector records exactly these outlines (order-free); empty is a refusal. */
+    | { readonly records: readonly { readonly d: readonly string[]; readonly viewBox?: string }[] }
+    /** The baker's verb list (0 move, 1 line, 2 cubic, 3 close). */
+    | { readonly verbs: readonly number[] }
+    /** The baker throws, with this substring in the message. */
+    | { readonly refuses: string };
+}
+
+/**
  * A frame's geometry, given directly, and the codes it must produce.
  *
  * The finding codes are not sidecar keys and have no diagnostics: they are read
@@ -174,6 +205,7 @@ export interface CapabilityRow {
     | "paint"
     | "declare"
     | "output"
+    | "captions"
     | "layout";
   /** Where the author writes it: "pocket-motion.json", "class literal", "<dir>/images.json", … */
   readonly declaredIn: string;
@@ -210,6 +242,17 @@ export interface CapabilityRow {
    * the two above: only the `layout` group has any.
    */
   readonly findingProbes?: readonly FindingProbe[];
+  /**
+   * Job specs run through `parseSpec` (G9), each of which must be refused with
+   * its code. A job spec is not a sidecar, so these cannot sit in `probes`,
+   * which G3 hands to `parseSidecar`. Only the `captions` group has any.
+   */
+  readonly specProbes?: readonly Probe[];
+  /**
+   * `<Path>` outlines run through the vendored collector or baker (G10).
+   * Optional for the same reason: only the path rows have any.
+   */
+  readonly pathProbes?: readonly PathProbe[];
 }
 
 const MIN = {
@@ -303,6 +346,29 @@ function dialogueLine(
 
 function cueLine(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return { id: "hit-1", src: "assets/audio/sfx/x.mp3", atFrame: 0, ...overrides };
+}
+
+/** A cue carrying `envelope`, the element every role's envelope is parsed like. */
+function withEnvelope(envelope: unknown, cue: Record<string, unknown> = {}): Record<string, unknown> {
+  return withCue({ envelope, ...cue });
+}
+
+function withDucks(ducks: unknown): Record<string, unknown> {
+  return withSound({ bed: bed({ ducks }) });
+}
+
+function duckWindow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return { startFrame: 0, endFrame: 10, duck: 0.5, ...overrides };
+}
+
+function duckWindowWithout(...keys: readonly string[]): Record<string, unknown> {
+  const out = duckWindow();
+  for (const key of keys) delete out[key];
+  return out;
+}
+
+function withTail(silentTailMs: unknown, sound: Record<string, unknown> = { bed: bed() }): Record<string, unknown> {
+  return withSound({ ...sound, silentTailMs });
 }
 
 function withNarration(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -471,7 +537,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "{ narration: [], dialogue: [], cues: [] }",
     constraint:
-      "optional object of bed / narration / dialogue / cues; absent materialises empty arrays and omits bed. ids are one namespace across narration, dialogue and cues",
+      "optional object of bed / narration / dialogue / cues / silentTailMs; absent materialises empty arrays and omits bed and silentTailMs. ids are one namespace across narration, dialogue and cues. Outside input identity: `identityProjection` drops the whole key",
     source: "src/manifest/sidecar.ts:523",
     verification: "probed",
     diagnostics: [
@@ -946,7 +1012,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "optional object; src required (same path rules as footage src); startAt default 0; gain default 1; fadeInMs/fadeOutMs default 0",
+      "optional object; src required (same path rules as footage src); startAt default 0; gain default 1; fadeInMs/fadeOutMs default 0. Its level is gain × envelope × every ducks[] window × every narration duck while that line runs; ducks, envelope and optional have rows of their own",
     source: "src/manifest/sidecar.ts:949",
     verification: "probed",
     diagnostics: [
@@ -1269,6 +1335,242 @@ export const SURFACE: readonly CapabilityRow[] = [
       { code: "sidecar.sound.cues.atFrame.pastDuration", input: withCue({ atFrame: 91 }) },
       { code: "sidecar.sound.cues.gain.notNumber", input: withCue({ gain: NaN }) },
       { code: "sidecar.sound.cues.gain.outOfRange", input: withCue({ gain: 9 }) },
+    ],
+    pinned: [],
+  },
+
+  {
+    id: "sound.silentTailMs",
+    group: "sound",
+    declaredIn: "pocket-motion.json",
+    key: "silentTailMs",
+    required: false,
+    defaultValue: null,
+    constraint:
+      `integer ms >= 1: the last silentTailMs of the delivered audio are digital silence in the s16le 48 kHz stereo decode the sound manifest hashes, MEASURED after the mux by render (which exits 1 when it is not) and by sound --verify. The mixer stops all sound ${SILENT_TAIL_GUARD_MS} ms before the tail — the codec carries sound one frame window past its last input — and the bed's fade-out completes there. Refused: nothing declared to mix; tail plus ${SILENT_TAIL_GUARD_MS} ms not shorter than the film; a bed fade-out that does not fit before the gate; an element starting at or after the gate. One that starts before and runs past it by its probed length is refused by render (sound.tail.overrun). A --frames render of another length carries no tail and says so`,
+    source: "src/manifest/sidecar.ts:1742",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.sound.silentTailMs.notInteger",
+      "sidecar.sound.silentTailMs.outOfRange",
+      "sidecar.sound.silentTailMs.nothingToMix",
+      "sidecar.sound.silentTailMs.pastDuration",
+      "sidecar.sound.silentTailMs.noRoomForFade",
+      "sidecar.sound.silentTailMs.startsInTail",
+    ],
+    probes: [
+      { code: "sidecar.sound.silentTailMs.notInteger", input: withTail(1.5) },
+      { code: "sidecar.sound.silentTailMs.notInteger", input: withTail("500") },
+      { code: "sidecar.sound.silentTailMs.outOfRange", input: withTail(0) },
+      { code: "sidecar.sound.silentTailMs.nothingToMix", input: withSound({ silentTailMs: 500 }) },
+      // 90 frames at 30 fps is 3000 ms; 2960 + the guard is not shorter.
+      { code: "sidecar.sound.silentTailMs.pastDuration", input: withTail(2960) },
+      // The gate is at 3000 - 500 - guard = 2450 ms.
+      {
+        code: "sidecar.sound.silentTailMs.noRoomForFade",
+        input: withTail(500, { bed: bed({ fadeOutMs: 2500 }) }),
+      },
+      {
+        code: "sidecar.sound.silentTailMs.startsInTail",
+        input: withTail(500, { cues: [cueLine({ atFrame: 74 })] }),
+      },
+      {
+        code: "sidecar.sound.silentTailMs.startsInTail",
+        input: withTail(500, { narration: [narrationLine({ startFrame: 89 })] }),
+      },
+    ],
+    pinned: [],
+  },
+  {
+    id: "sound.envelope",
+    group: "sound",
+    declaredIn: "pocket-motion.json, on bed, narration[], dialogue[] and cues[]",
+    key: "<element>.envelope",
+    required: false,
+    defaultValue: null,
+    constraint:
+      `${ENVELOPE_POINTS_MIN}..${ENVELOPE_POINTS_MAX} points { frame, gain }, piecewise linear, multiplying the element's gain; the last value holds. frame counts composition frames from the ELEMENT'S OWN START (0 for the bed, startFrame, atFrame, the derived frame for dialogue), so the envelope moves with its element; the first point is at 0 and frames strictly increase; gain 0..8; no point past durationFrames. One point is refused — it is a constant, which gain says. sound --verify measures the level once per piece between breakpoints`,
+    source: "src/manifest/sidecar.ts:1892",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.sound.envelope.notArray",
+      "sidecar.sound.envelope.tooFew",
+      "sidecar.sound.envelope.tooMany",
+      "sidecar.sound.envelope.pointNotObject",
+      "sidecar.sound.envelope.unknownKey",
+      "sidecar.sound.envelope.frame.required",
+      "sidecar.sound.envelope.frame.notInteger",
+      "sidecar.sound.envelope.frame.outOfRange",
+      "sidecar.sound.envelope.gain.required",
+      "sidecar.sound.envelope.gain.notNumber",
+      "sidecar.sound.envelope.gain.outOfRange",
+      "sidecar.sound.envelope.firstNotZero",
+      "sidecar.sound.envelope.notIncreasing",
+      "sidecar.sound.envelope.pastDuration",
+    ],
+    probes: [
+      { code: "sidecar.sound.envelope.notArray", input: withEnvelope({ frame: 0, gain: 1 }) },
+      { code: "sidecar.sound.envelope.tooFew", input: withEnvelope([{ frame: 0, gain: 1 }]) },
+      {
+        code: "sidecar.sound.envelope.tooMany",
+        input: withEnvelope(
+          Array.from({ length: ENVELOPE_POINTS_MAX + 1 }, (_, frame) => ({ frame, gain: 1 })),
+        ),
+      },
+      {
+        code: "sidecar.sound.envelope.pointNotObject",
+        input: withEnvelope([1, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.unknownKey",
+        input: withEnvelope([{ frame: 0, gain: 1, curve: "exp" }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.frame.required",
+        input: withEnvelope([{ gain: 1 }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.frame.notInteger",
+        input: withEnvelope([{ frame: 0, gain: 1 }, { frame: 1.5, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.frame.outOfRange",
+        input: withEnvelope([{ frame: 0, gain: 1 }, { frame: -1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.gain.required",
+        input: withEnvelope([{ frame: 0 }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.gain.notNumber",
+        input: withEnvelope([{ frame: 0, gain: "1" }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.gain.outOfRange",
+        input: withEnvelope([{ frame: 0, gain: 9 }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.firstNotZero",
+        input: withEnvelope([{ frame: 1, gain: 1 }, { frame: 2, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.notIncreasing",
+        input: withEnvelope([{ frame: 0, gain: 1 }, { frame: 0, gain: 0.5 }]),
+      },
+      // A cue at frame 80 with a point 20 frames in lands on 100 of 90.
+      {
+        code: "sidecar.sound.envelope.pastDuration",
+        input: withEnvelope([{ frame: 0, gain: 1 }, { frame: 20, gain: 0 }], { atFrame: 80 }),
+      },
+      // The same parse on every role: the bed, a narration line, and a
+      // dialogue line whose start is the clip mapping's.
+      {
+        code: "sidecar.sound.envelope.pastDuration",
+        input: withSound({ bed: bed({ envelope: [{ frame: 0, gain: 1 }, { frame: 91, gain: 0 }] }) }),
+      },
+      {
+        code: "sidecar.sound.envelope.firstNotZero",
+        input: withNarration({ envelope: [{ frame: 3, gain: 1 }, { frame: 4, gain: 0 }] }),
+      },
+      {
+        code: "sidecar.sound.envelope.pastDuration",
+        input: withDialogue(
+          { sourceFrame: 15, envelope: [{ frame: 0, gain: 1 }, { frame: 80, gain: 0 }] },
+          { startFrame: 10, endFrame: 20, sourceFrame: 10 },
+        ),
+      },
+    ],
+    pinned: [],
+  },
+  {
+    id: "sound.optional",
+    group: "sound",
+    declaredIn: "pocket-motion.json, on bed, narration[], dialogue[] and cues[]",
+    key: "<element>.optional",
+    required: false,
+    defaultValue: "false",
+    constraint:
+      "boolean. true: the element is mixed when its file is on disk and SKIPPED when it is not — lint and render do not refuse it, render prints which it was and writes `mixed` per element into the sound manifest, sound and sound --verify report it `skipped`, and init does not count it as a file the copy needs. false (the default) is a required file, parsed to an absent key",
+    source: "src/manifest/sidecar.ts:1861",
+    verification: "probed",
+    diagnostics: ["sidecar.sound.optional.notBoolean"],
+    probes: [
+      { code: "sidecar.sound.optional.notBoolean", input: withCue({ optional: "yes" }) },
+      { code: "sidecar.sound.optional.notBoolean", input: withSound({ bed: bed({ optional: 1 }) }) },
+    ],
+    pinned: [],
+  },
+  {
+    id: "sound.bed.ducks",
+    group: "sound",
+    declaredIn: "pocket-motion.json",
+    key: "bed.ducks",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "array of { startFrame, endFrame, duck } windows [startFrame, endFrame) on the composition clock in which the bed is multiplied by duck (0..1), whatever is playing — a narration line's duck lasts only as long as its file. Windows multiply each other and narration ducks where they overlap; the step is within 480 samples of the frame. sound --verify measures the bed's level inside and outside each window",
+    source: "src/manifest/sidecar.ts:2034",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.sound.bed.ducks.notArray",
+      "sidecar.sound.bed.ducks.notObject",
+      "sidecar.sound.bed.ducks.unknownKey",
+      "sidecar.sound.bed.ducks.startFrame.required",
+      "sidecar.sound.bed.ducks.startFrame.notInteger",
+      "sidecar.sound.bed.ducks.startFrame.outOfRange",
+      "sidecar.sound.bed.ducks.startFrame.pastDuration",
+      "sidecar.sound.bed.ducks.endFrame.required",
+      "sidecar.sound.bed.ducks.endFrame.notInteger",
+      "sidecar.sound.bed.ducks.endFrame.outOfRange",
+      "sidecar.sound.bed.ducks.endFrame.pastDuration",
+      "sidecar.sound.bed.ducks.empty",
+      "sidecar.sound.bed.ducks.duck.required",
+      "sidecar.sound.bed.ducks.duck.notNumber",
+      "sidecar.sound.bed.ducks.duck.outOfRange",
+    ],
+    probes: [
+      { code: "sidecar.sound.bed.ducks.notArray", input: withDucks(duckWindow()) },
+      { code: "sidecar.sound.bed.ducks.notObject", input: withDucks(["whole cut"]) },
+      { code: "sidecar.sound.bed.ducks.unknownKey", input: withDucks([duckWindow({ rampMs: 200 })]) },
+      {
+        code: "sidecar.sound.bed.ducks.startFrame.required",
+        input: withDucks([duckWindowWithout("startFrame")]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.startFrame.notInteger",
+        input: withDucks([duckWindow({ startFrame: 1.5 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.startFrame.outOfRange",
+        input: withDucks([duckWindow({ startFrame: -1 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.startFrame.pastDuration",
+        input: withDucks([duckWindow({ startFrame: 91, endFrame: 92 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.endFrame.required",
+        input: withDucks([duckWindowWithout("endFrame")]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.endFrame.notInteger",
+        input: withDucks([duckWindow({ endFrame: 10.5 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.endFrame.outOfRange",
+        input: withDucks([duckWindow({ endFrame: -1 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.endFrame.pastDuration",
+        input: withDucks([duckWindow({ endFrame: 91 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.empty",
+        input: withDucks([duckWindow({ startFrame: 10, endFrame: 10 })]),
+      },
+      { code: "sidecar.sound.bed.ducks.duck.required", input: withDucks([duckWindowWithout("duck")]) },
+      { code: "sidecar.sound.bed.ducks.duck.notNumber", input: withDucks([duckWindow({ duck: "0.5" })]) },
+      { code: "sidecar.sound.bed.ducks.duck.outOfRange", input: withDucks([duckWindow({ duck: 1.5 })]) },
     ],
     pinned: [],
   },
@@ -2521,6 +2823,274 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
 
+  {
+    id: "paint.path",
+    group: "paint",
+    declaredIn: "<Path d=… viewBox=…>",
+    key: "<Path d> | d={[key0, key1, …]} | viewBox",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "a View that also draws a baked vector outline, imported from `@pocketjs/framework/components`. `d` is the whole SVG path grammar (implicit repeats, exponents, arc flags without separators), normalised at build time to move, line, cubic and close — Q and T by exact degree elevation, an arc to cubics of at most 45 degrees by unit-vector bisection and square roots only, so a pak's bytes do not depend on the host's `Math.sin`. An array is the morph keys (at most 8): a line against a cubic is promoted exactly, any other difference is refused naming the first differing command, and point counts are never equalised. `viewBox` maps the coordinates onto the box, xMidYMid meet; without it `d` is in the node's own px. The build bakes a `d` written as literals — a string, a `+` of two, an array of them, a `const` of any of those, an element of a `const` array by literal index, the parameter of a `.map` callback over one, or the arms of a ternary — on any element, paired with the viewBox written beside it, so a component that forwards `d` to a `<Path>` is baked from its call site; any other `d` (an import, a computed string) is looked up at mount, which refuses an outline the build did not bake. Fill and stroke are the `fill-*`/`stroke-*` rows; geometry is rebuilt every frame in the core, so the world transform, a mask, a paint and a filter layer all apply. Drawn by this repository's rasteriser only (patches/0042 op 71 and 0043, class motion)",
+    source: "vendor/pocketjs/framework/compiler/path-data.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    pathProbes: [
+      {
+        what: "a string literal is recorded",
+        source: 'import { Path } from "@pocketjs/framework/components";\nexport const A = () => <Path d="M0 0 L10 0 L10 10 Z" class="fill-white" />;\n',
+        outcome: { records: [{ d: ["M0 0 L10 0 L10 10 Z"] }] },
+      },
+      {
+        what: "an array of module consts, one of them a `+`, with the viewBox written beside it",
+        source:
+          'import { Path } from "@pocketjs/framework/components";\nconst UP = "M0 5 L10 5" + " L10 10 Z";\nconst DOWN = `M0 5 C3 0 7 0 10 5 L10 10 Z`;\nexport const A = () => <Path d={[UP, DOWN]} viewBox="0 0 10 10" class="fill-white" />;\n',
+        outcome: { records: [{ d: ["M0 5 L10 5 L10 10 Z", "M0 5 C3 0 7 0 10 5 L10 10 Z"], viewBox: "0 0 10 10" }] },
+      },
+      {
+        what: "each element of a `.map` over a const array, keys and all",
+        source:
+          'import { Path } from "@pocketjs/framework/components";\nconst ICONS = ["M0 0 L1 0 Z", "M0 0 L0 1 Z"] as const;\nconst PAIRS = [["M0 0 L1 0 Z", "M0 0 L2 0 Z"]];\nexport const A = () => <>{ICONS.map((d) => <Path d={d} />)}{PAIRS.map((keys) => <Path d={keys} />)}</>;\n',
+        outcome: { records: [{ d: ["M0 0 L1 0 Z"] }, { d: ["M0 0 L0 1 Z"] }, { d: ["M0 0 L1 0 Z", "M0 0 L2 0 Z"] }] },
+      },
+      {
+        what: "a d passed through a component is not vouched for — mount looks it up",
+        source:
+          'import { Path } from "@pocketjs/framework/components";\nexport function Icon(props: { d: string }) { return <Path d={props.d} class="fill-white" />; }\n',
+        outcome: { records: [] },
+      },
+      {
+        what: "a line against a cubic is promoted, so a square can morph into a curve",
+        d: ["M0 0 L10 0 L10 10 Z", "M0 0 C3 -3 7 -3 10 0 L10 10 Z"],
+        outcome: { verbs: [0, 2, 1, 3] },
+      },
+      {
+        what: "and the same with the cubic in the first key",
+        d: ["M0 0 C3 -3 7 -3 10 0 L10 10 Z", "M0 0 L10 0 L10 10 Z"],
+        outcome: { verbs: [0, 2, 1, 3] },
+      },
+      {
+        what: "a half-turn arc is four cubics of 45 degrees",
+        d: ["M0 10 A10 10 0 0 1 20 10"],
+        outcome: { verbs: [0, 2, 2, 2, 2] },
+      },
+      {
+        what: "keys that differ in structure are refused, naming where",
+        d: ["M0 0 L10 0 Z", "M0 0 L10 0 L5 5 Z"],
+        outcome: { refuses: "morph keys 0 and 1 differ at normalised command 2" },
+      },
+      {
+        what: "a number after a close is not a command",
+        d: ["M0 0 L10 0 Z 5 5"],
+        outcome: { refuses: "unknown command \"5\"" },
+      },
+    ],
+  },
+  {
+    id: "paint.fill",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "fill-<color> | fill-[#hex] | fill-none | fill-nonzero|evenodd",
+    required: false,
+    defaultValue: "none; nonzero",
+    constraint:
+      "a `<Path>`'s fill: colour `fill-<palette>` or `fill-[#hex]`, transparent by default so a path draws nothing until asked; `fill-evenodd` or the default `fill-nonzero` decides which winding is inside. Coverage is POLY's 4x4 sample lattice with a top-left rule, so two paths sharing an edge split its samples between them rather than both drawing it (a seam pixel half-covered by each is still two blends). The colour animates in keyframes as `fillColor` or CSS's `fill`. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "fill-[#ff0000] compiles to the ABGR colour",
+        literals: ["fill-[#ff0000]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fillColor", value: 4278190335 } },
+      },
+      {
+        what: "fill-evenodd compiles to FillRule.EvenOdd (1)",
+        literals: ["fill-white fill-evenodd"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fillRule", value: 1 } },
+      },
+      {
+        what: "a fill that names no colour is refused",
+        literals: ["fill-wat"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`fill-wat`" },
+      },
+    ],
+  },
+  {
+    id: "paint.stroke",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "stroke-<color> | stroke-N | stroke-[Npx] | stroke-join-* | stroke-cap-* | stroke-miter-[N]",
+    required: false,
+    defaultValue: "none; width 1; miter join, limit 4; butt cap",
+    constraint:
+      "a `<Path>`'s stroke, SVG's defaults: colour `stroke-<palette>`/`stroke-[#hex]` (transparent until set), width `stroke-N` or `stroke-[Npx]` in the path's own units — viewBox units under a viewBox, and stroked before the world transform, so a non-uniform scale strokes as an SVG transform does; `stroke-join-miter|round|bevel`, `stroke-cap-butt|round|square`, `stroke-miter-[N]` with N >= 1. A negative width or a limit under 1 does not parse, which a class= attribute refuses. The outline is one positively wound cycle per open subpath (two per closed one) filled nonzero, so curvature tighter than the half-width fills solid. Round joins and caps bisect without trigonometry to 1/16 px. Width and colour animate as `strokeWidth`/`stroke-width` and `strokeColor`/`stroke`. A zero-length subpath draws no dot. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "stroke-[4px] compiles to strokeWidth = 4.0",
+        literals: ["stroke-white stroke-[4px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "strokeWidth", value: 1082130432 } },
+      },
+      {
+        what: "stroke-join-round compiles to StrokeJoin.Round (1)",
+        literals: ["stroke-white stroke-join-round"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "strokeJoin", value: 1 } },
+      },
+      {
+        what: "stroke-cap-square compiles to StrokeCap.Square (2)",
+        literals: ["stroke-white stroke-cap-square"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "strokeCap", value: 2 } },
+      },
+      {
+        what: "a miter limit under 1 is refused",
+        literals: ["stroke-white stroke-miter-[0.5]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`stroke-miter-[0.5]`" },
+      },
+      {
+        what: "a negative width is refused",
+        literals: ["stroke-white stroke-[-2px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`stroke-[-2px]`" },
+      },
+    ],
+  },
+  {
+    id: "paint.bg-clip-path",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "bg-clip-path",
+    required: false,
+    defaultValue: "border",
+    constraint:
+      "on a `<Path>`, paints the node's ground into the path's fill instead of its box — the solid `bg-*` colour, or a gradient (`bg-linear-*`, `bg-radial`, and a legacy two-stop `bg-gradient-to-*`, which takes the paint path here as under `bg-clip-text`) spanning the node's box. The stroke is not painted by it. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "bg-clip-path compiles to BgClip.Path (2)",
+        literals: ["bg-clip-path bg-linear-90 from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "bgClip", value: 2 } },
+      },
+      {
+        what: "over a legacy two-stop gradient it takes the paint path",
+        literals: ["bg-clip-path bg-gradient-to-r from-white to-black"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "gradKind", value: 1 } },
+      },
+      {
+        what: "a clip the core does not draw is refused",
+        literals: ["bg-clip-shape bg-white"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`bg-clip-shape`" },
+      },
+    ],
+  },
+  {
+    id: "animation.trim",
+    group: "animation",
+    declaredIn: "class literal",
+    key: "trim-start-[f] | trim-end-[f] | trim-offset-[f] | trim-each|whole",
+    required: false,
+    defaultValue: "0, 1, 0; each",
+    constraint:
+      "a `<Path>`'s stroke drawn between two fractions of its arc length, measured on the flattened outline in the path's own units: start and end are ordered and clamped to [0, 1], the offset moves the window round and wraps (a window past the end of a closed subpath is one piece through its start; of an open one, two). `trim-each` trims every subpath alike, `trim-whole` treats them as one sequence. A window of the whole length is no trim at all, byte for byte, and a path trimmed to nothing emits no geometry — invisible by declaration, not covered. The fill is never trimmed. All three animate as `trimStart`, `trimEnd`, `trimOffset`; a draw-on is one keyframe, `trimEnd` 0 -> 1. `stroke-dashoffset` is not a spelling: it is a length, and trim a fraction. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "trim-end-[0.5] compiles to trimEnd = 0.5",
+        literals: ["stroke-white trim-end-[0.5]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "trimEnd", value: 1056964608 } },
+      },
+      {
+        what: "trim-whole compiles to TrimMode.Whole (1)",
+        literals: ["stroke-white trim-whole"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "trimMode", value: 1 } },
+      },
+      {
+        what: "a fraction that is not a number is refused",
+        literals: ["stroke-white trim-end-[half]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`trim-end-[half]`" },
+      },
+      {
+        what: "a draw-on is one keyframe on trimEnd",
+        keyframes: { draw: { from: { trimEnd: "0" }, to: { trimEnd: "1" } } },
+        animation: { draw: { value: "draw 1200ms ease-out both" } },
+        literals: ["stroke-white animate-draw"],
+        outcome: { bakes: true },
+      },
+      {
+        what: "stroke-dashoffset is not a spelling of it",
+        keyframes: { dash: { from: { "stroke-dashoffset": "100" }, to: { "stroke-dashoffset": "0" } } },
+        animation: { dash: { value: "dash 1200ms both" } },
+        literals: ["animate-dash"],
+        outcome: { refuses: "unsupported property `stroke-dashoffset`" },
+      },
+    ],
+  },
+  {
+    id: "animation.morph",
+    group: "animation",
+    declaredIn: "class literal",
+    key: "morph-[f]",
+    required: false,
+    defaultValue: "0",
+    constraint:
+      "which of a `<Path>`'s morph keys it draws: at f = k + t, the control points are key k's and key k+1's mixed as `a * (1 - t) + b * t`, which is exact at every key; past the last key it holds the last. Negative values do not parse. Animates as `morph`; between keys the shape moves point for point along the correspondence the author drew, never a resampled one. patches/0042/0043, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "morph-[1] compiles to morph = 1.0",
+        literals: ["fill-white morph-[1]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "morph", value: 1065353216 } },
+      },
+      {
+        what: "a negative key is refused",
+        literals: ["fill-white morph-[-1]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`morph-[-1]`" },
+      },
+      {
+        what: "a morph is one keyframe on morph",
+        keyframes: { blob: { "0%": { morph: "0" }, "50%": { morph: "1" }, "100%": { morph: "0" } } },
+        animation: { blob: { value: "blob 2000ms ease-in-out infinite" } },
+        literals: ["fill-white animate-blob"],
+        outcome: { bakes: true },
+      },
+    ],
+  },
+
   // -------------------------------------------------------------------------
   // Declaring footage (generator side)
   //
@@ -3061,4 +3631,9 @@ export const SURFACE: readonly CapabilityRow[] = [
       },
     ],
   },
+
+  // -------------------------------------------------------------------------
+  // The captions job spec — src/catalog/captions.ts
+  // -------------------------------------------------------------------------
+  ...CAPTIONS_ROWS,
 ];

@@ -1,0 +1,18 @@
+# Cross-platform digest and cost harness for the vector-path prototype.
+# The same scenes as the core tests, compiled natively (src/bin/bench.rs)
+# and to wasm32 with the flags patch 0022 gives the shipping core
+# (opt-level 3, lto, +simd128), run under Bun / JavaScriptCore.
+[package]
+name = "pathwasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pocketjs-core = { path = "../pocketjs/engine/core", features = ["path-scenes"] }
+
+[profile.release]
+opt-level = 3
+lto = true

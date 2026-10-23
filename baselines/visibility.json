@@ -15,6 +15,20 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/captions/alpha-en": {
+      "failures": [],
+      "nodes": 26,
+      "named": 13,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/captions/burn-zh": {
+      "failures": [],
+      "nodes": 24,
+      "named": 15,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/captions/clip-wipe": {
       "failures": [],
       "nodes": 28,
@@ -157,6 +171,13 @@
       "neverShown": 1,
       "buriedAfterShown": 0
     },
+    "compositions/long-track": {
+      "failures": [],
+      "nodes": 11,
+      "named": 11,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/lower-third": {
       "failures": [],
       "nodes": 2,
@@ -240,8 +261,8 @@
     },
     "compositions/shutter-blur": {
       "failures": [],
-      "nodes": 13,
-      "named": 10,
+      "nodes": 14,
+      "named": 11,
       "neverShown": 0,
       "buriedAfterShown": 0
     },
@@ -322,6 +343,13 @@
       "failures": [],
       "nodes": 5,
       "named": 0,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/vector-paths": {
+      "failures": [],
+      "nodes": 17,
+      "named": 17,
       "neverShown": 0,
       "buriedAfterShown": 0
     }

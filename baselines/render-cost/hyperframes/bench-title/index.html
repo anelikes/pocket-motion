@@ -1,0 +1,135 @@
+<!doctype html>
+<!--
+  The render-cost benchmark scene, ported to HyperFrames from
+  ../../pocket-motion/bench-title (pocket.config.ts holds the timing). Every
+  tween below is one `animation` entry there, at the same instants and with
+  the same cubic-bezier, solved the way CSS solves it. CSS `infinite` loops
+  are unrolled over the 10 s, because a HyperFrames timeline may not repeat
+  forever.
+
+  Not tracked here: gsap.min.js (GSAP 3.15.0) and assets/fonts/*.ttf, which
+  baselines/render-cost/harness/stage-hf.sh copies in. The fonts are the
+  repository's assets/fonts/HarmonyOS_Sans_{Regular,Bold}.ttf.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face { font-family: "HarmonyOS Sans"; src: url("assets/fonts/HarmonyOS_Sans_Regular.ttf"); font-weight: 400; }
+      @font-face { font-family: "HarmonyOS Sans"; src: url("assets/fonts/HarmonyOS_Sans_Bold.ttf"); font-weight: 700; }
+      html, body { margin: 0; padding: 0; background: #0f172a; }
+      #root { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden;
+              background: linear-gradient(135deg, #0f172a, #1e1b4b 60%, #312e81);
+              font-family: "HarmonyOS Sans"; }
+      #root div { position: absolute; }
+      .t { white-space: nowrap; line-height: normal; }
+      #glow { left: -100px; top: 40px; width: 1000px; height: 1000px; opacity: 0.5;
+              background: radial-gradient(circle closest-side, #6366f1, #6366f100); }
+      #shape-c { left: 1240px; top: 600px; width: 320px; height: 320px; border-radius: 64px; background: #22d3ee; opacity: 0.2; }
+      #shape-a { left: 1380px; top: 140px; width: 220px; height: 220px; border-radius: 40px; background: #6366f1; opacity: 0.4; }
+      #shape-b { left: 1600px; top: 480px; width: 140px; height: 140px; border-radius: 28px; background: #f59e0b; opacity: 0.6; }
+      #title-out, #title-push { left: 0; top: 0; width: 1920px; height: 1080px; }
+      #kicker { left: 160px; top: 250px; font-size: 28px; font-weight: 700; color: #a5b4fc; }
+      #title1 { left: 160px; top: 300px; font-size: 120px; font-weight: 700; color: #ffffff; }
+      #title2 { left: 160px; top: 440px; font-size: 120px; font-weight: 700; color: #c7d2fe; }
+      #bar { left: 164px; top: 610px; width: 480px; height: 8px; border-radius: 4px; background: #f59e0b; }
+      #subtitle { left: 160px; top: 650px; font-size: 40px; font-weight: 400; color: #cbd5e1; }
+      #plate-out { left: 120px; top: 790px; width: 760px; height: 150px; }
+      #plate { left: 0; top: 0; width: 760px; height: 150px; border-radius: 16px; background: #f8fafc; }
+      #tab { left: 0; top: 0; width: 14px; height: 150px; border-radius: 4px; background: #f59e0b; }
+      #name { left: 48px; top: 22px; font-size: 56px; font-weight: 700; color: #0f172a; }
+      #role { left: 50px; top: 92px; font-size: 30px; font-weight: 400; color: #475569; }
+      #progress { left: 0; top: 1072px; width: 1920px; height: 8px; background: #818cf8; }
+    </style>
+    <script src="gsap.min.js"></script>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="10" data-fps="30" data-width="1920" data-height="1080">
+      <div id="glow"></div>
+      <div id="shape-c"></div>
+      <div id="shape-a"></div>
+      <div id="shape-b"></div>
+      <div id="title-out">
+        <div id="title-push">
+          <div id="kicker" class="t">RENDER COST · OCTOBER 2026</div>
+          <div id="title1" class="t">Same picture,</div>
+          <div id="title2" class="t">three renderers.</div>
+          <div id="bar"></div>
+          <div id="subtitle" class="t">1920 x 1080 · 30 fps · 300 frames</div>
+        </div>
+      </div>
+      <div id="plate-out">
+        <div id="plate">
+          <div id="tab"></div>
+          <div id="name" class="t">Ada Lovelace</div>
+          <div id="role" class="t">Analyst · Analytical Engine No. 1</div>
+        </div>
+      </div>
+      <div id="progress"></div>
+    </div>
+    <script>
+      // CSS cubic-bezier(x1,y1,x2,y2): solve x(s) = t for s, return y(s).
+      function bezier(x1, y1, x2, y2) {
+        const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+        const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+        const X = (s) => ((ax * s + bx) * s + cx) * s;
+        const Y = (s) => ((ay * s + by) * s + cy) * s;
+        const dX = (s) => (3 * ax * s + 2 * bx) * s + cx;
+        return (t) => {
+          if (t <= 0) return 0;
+          if (t >= 1) return 1;
+          let s = t;
+          for (let i = 0; i < 8; i++) {
+            const e = X(s) - t;
+            if (Math.abs(e) < 1e-7) return Y(s);
+            const d = dX(s);
+            if (Math.abs(d) < 1e-6) break;
+            s -= e / d;
+          }
+          let lo = 0, hi = 1; s = t;
+          while (hi - lo > 1e-7) { if (X(s) < t) lo = s; else hi = s; s = (lo + hi) / 2; }
+          return Y(s);
+        };
+      }
+      const OUT_EXPO = bezier(0.16, 1, 0.3, 1);
+      const IN_OUT = bezier(0.65, 0, 0.35, 1);
+      const IN_EXPO = bezier(0.7, 0, 0.84, 0);
+      const SINE = bezier(0.37, 0, 0.63, 1);
+      const lin = "none";
+
+      const tl = gsap.timeline({ paused: true });
+      // A CSS `infinite` keyframe loop, unrolled: one tween per keyframe segment.
+      function legs(sel, prop, values, legSeconds, ease) {
+        for (let i = 0; i + 1 < values.length; i++) {
+          tl.fromTo(sel, { [prop]: values[i] }, { [prop]: values[i + 1], duration: legSeconds, ease, immediateRender: i === 0 }, i * legSeconds);
+        }
+      }
+      legs("#glow", "scale", [1, 1.15, 1, 1.15, 1, 1.15], 2, SINE);
+      tl.fromTo("#shape-a", { rotation: 0 }, { rotation: 300, duration: 10, ease: lin }, 0);
+      legs("#shape-a", "y", [0, -40, 0, -40, 0], 2.5, SINE);
+      // spinBack 9 s from 360 to 0, looped: the same picture as 0 -> -400 over 10 s.
+      tl.fromTo("#shape-b", { rotation: 0 }, { rotation: -400, duration: 10, ease: lin }, 0);
+      legs("#shape-b", "x", [0, 30, 0, 30, 0, 30], 2, SINE);
+      tl.fromTo("#shape-c", { rotation: 0 }, { rotation: 180, duration: 10, ease: lin }, 0);
+
+      const rise = (sel, dy, dur, at) =>
+        tl.fromTo(sel, { y: dy, opacity: 0 }, { y: 0, opacity: 1, duration: dur, ease: OUT_EXPO }, at);
+      rise("#kicker", 30, 0.6, 0.3);
+      rise("#title1", 80, 0.7, 0.5);
+      rise("#title2", 80, 0.7, 0.7);
+      tl.fromTo("#bar", { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 0.6, ease: IN_OUT }, 1.1);
+      rise("#subtitle", 30, 0.6, 1.4);
+      tl.fromTo("#title-push", { scale: 1 }, { scale: 1.04, duration: 10, ease: lin }, 0);
+      tl.fromTo("#title-out", { opacity: 1 }, { opacity: 0, duration: 0.5, ease: IN_EXPO, immediateRender: false }, 9.3);
+
+      tl.fromTo("#plate", { x: -900 }, { x: 0, duration: 0.6, ease: OUT_EXPO }, 4.5);
+      tl.fromTo("#plate-out", { x: 0 }, { x: -900, duration: 0.5, ease: IN_EXPO, immediateRender: false }, 8.6);
+      rise("#name", 30, 0.5, 4.8);
+      rise("#role", 30, 0.5, 5.0);
+      tl.fromTo("#progress", { scaleX: 0, transformOrigin: "0% 50%" }, { scaleX: 1, duration: 10, ease: lin }, 0);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

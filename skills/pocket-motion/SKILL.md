@@ -91,7 +91,10 @@ text stroke (`text-stroke-[Npx] text-stroke-<color>`), and filter layers —
 subtree as one unit, and gradients of up to six stops at any angle, radial, or
 clipped to text (`via-*`, `bg-linear-*`, `bg-radial`, `bg-clip-text`). All
 paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
-`0016`–`0019`).
+`0016`–`0019`). Any outline is a `<Path d="…">` — filled (`fill-*`), stroked
+(`stroke-*`), drawn on by a `trimEnd` keyframe, morphed between `d={[A, B]}`
+by `morph` — with `d` written as literals the build can read
+(`patches/0042`–`0043`, `compositions/vector-paths`).
 
 **Motion blur is the sidecar's `shutter`** (`{ "angle": 180, "samples": 8 }`):
 each frame is the integer average of that many renders across the open
@@ -100,7 +103,11 @@ scale, rotate and skew move between samples — opacity and colour keep the
 frame's tick, and no sample crosses a keyframe jump, so gates and cuts stay
 sharp. `shutter-hold` keeps one node's own timelines at the tick; it is not
 inherited, so hold the moving group, not the caption inside it. It is part of
-identity and costs `samples` rasters a frame.
+identity and costs `samples` rasters a frame — and `samples` rasters a probe in
+`layout`, `visibility` and `assert`, which classify the exposure. `--read tick`
+classifies the frame's own tick at one raster a probe and says so in its
+output; it misses a node only the blur reveals, so use it to iterate and the
+default for the verdict.
 
 **What does not exist**: backdrop blur, conic gradients, footage effects at
 render time (grading and filtering belong to the ingest).
@@ -132,7 +139,7 @@ catalogue of every key and every diagnostic.
   "fonts": { "regular": "assets/fonts/NotoSansSC-Regular.otf",
              "bold":    "assets/fonts/NotoSansSC-Bold.otf" },
   "footage": [ /* host-owned tile grids */ ],
-  "sound":   { /* bed, narration, dialogue, cues */ },
+  "sound":   { /* bed, narration, dialogue, cues, silentTailMs */ },
   "layoutAllow": [
     { "node": "wing", "allow": "overflow",
       "reason": "the cap is drawn wider than the frame it hangs on" }
@@ -196,6 +203,33 @@ bun scripts/digests.ts     # not run: minutes, and CI runs it — every composit
 bun scripts/visibility.ts  # not run: the other ledger — every composition swept for buried nodes
 ```
 
+## Captions
+
+**A caption track is a job, not a composition you write.** A word-level
+transcript — WhisperX's aligned `segments[].words[]`, OpenAI's `verbose_json`
+with word timestamps, or `{ "words": [{ "text", "start", "end" }] }` — and one
+of five style names (`highlight`, `pill-karaoke`, `clip-wipe`,
+`matrix-decode`, `kinetic-slam`) are a `render --spec` job with
+`"template": "captions"`. The template measures every word against the faces
+the build bakes, decides which words share a screen and where each line
+breaks (a CJK word wider than a line breaks between its characters, keeping
+禁則; a Latin word too wide at `minSize` is refused, never broken), names each
+word `w<i>`, and writes an `inPicture` assertion per word over its own window.
+No `footage` in the job is an alpha track; a `footage` block burns the
+captions into that clip. `transcript.format` and `transcript.language` are
+declared, never guessed.
+
+```bash
+bun src/cli/main.ts render compositions/captions/alpha-en --spec compositions/captions/alpha-en/spec.default.json --out out.mov --format mov --alpha
+```
+
+`compositions/captions/alpha-en` and `compositions/captions/burn-zh` are the
+two samples; either takes any captions job. `assert --samples <durationFrames>`
+checks every word at every frame — the default 24 samples can miss a short
+word's window, and an assertion with no sample in its window fails rather
+than passing. `AUTHORING.md`, "Captions from a transcript", has the rules, and
+`CAPABILITIES.md`, "Captions job", every key with its default and refusal.
+
 ## The commands
 
 Every one takes a composition directory and supports `--json`. None needs a
@@ -236,6 +270,12 @@ browser.
   for a person reading a terminal, where a real path is what you paste back.
 - `MOTION_RUN_ID` in the environment is echoed back as `runId` on every
   envelope, so one agent turn's `lint`, `check`, `trace` and `verify` join up.
+- The same objects come back from code: `import { build, trace, render,
+  verify, doctor } from "pocket-motion"` (`src/api.ts`) runs the command
+  through the CLI's own dispatch and returns what `--json` would have
+  printed, redaction and `runId` included. `tests/api.test.ts` holds each
+  function equal to the CLI. `render`'s object carries `trace`'s `digest`
+  and `identity`, except for a `--spec` job, which has no identity.
 - A command states what it EXAMINED. `check` names the frame window it used;
   `visibility` and `assert` name the sampled frames; `layout` is one frame.
   None of them claims anything about the frames it did not look at, and
@@ -277,6 +317,10 @@ Each of these is a decision with a reason, not a gap to fill.
 - **Sound is outside input identity by construction.** Audio is a separate mux
   pass and the frame hash never opens an audio file. The schema buys static
   checks — declared, resolvable, correctly placed — and not digest coverage.
+  A gain envelope on any element, duck windows on the bed, an element that is
+  `optional` (mixed when present, skipped and reported when not) and a silent
+  tail are all declared there; `render` measures the tail after the mux and
+  `sound --verify` measures the levels where the declaration varies them.
 - **A missing still picture is refused rather than substituted.** Upstream's
   build bakes a checkerboard and succeeds; `lint` and `check` say no.
 - **An SVG bakes as written or stops the build.** Paths with arcs, circles,

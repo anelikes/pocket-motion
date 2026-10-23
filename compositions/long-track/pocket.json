@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-long-track",
+  "name": "pocketjs-motion-long-track",
+  "title": "PocketJS Motion: tracks over 255 segments",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/long-track/main.tsx",
+    "output": "motion-long-track",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [320, 180], "presentation": "native" } }
+  }
+}

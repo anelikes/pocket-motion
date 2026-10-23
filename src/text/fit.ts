@@ -52,7 +52,7 @@ export type Measure = (text: string) => number;
  * than a single word to reach: with the test's synthetic metrics, `Chrome` alone
  * fills a 60px line and the `，` after it has nowhere to go.
  */
-const NO_START = new Set(
+export const NO_START: ReadonlySet<string> = new Set(
   [
     ...",.;:!?)]}%",
     ..."、。，．！？：；）］｝〕〉》」』】〙〗〞",
@@ -61,7 +61,7 @@ const NO_START = new Set(
 );
 
 /** Characters that may not end a line (行末禁則). */
-const NO_END = new Set([..."([{", ..."（［｛〔〈《「『【〘〖〝", ..."“‘«‹"]);
+export const NO_END: ReadonlySet<string> = new Set([..."([{", ..."（［｛〔〈《「『【〘〖〝", ..."“‘«‹"]);
 
 const isSpace = (s: string): boolean => s.trim() === "";
 

@@ -1,0 +1,67 @@
+{
+  "motion": 1,
+  "durationFrames": 101,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/NotoSansSC-Regular.otf",
+    "bold": "assets/fonts/NotoSansSC-Bold.otf"
+  },
+  "footage": [
+    {
+      "id": "plate",
+      "src": "assets/synthetic/bars-9x16-30fps.mp4",
+      "nodePrefix": "footage:plate",
+      "tile": 512,
+      "grid": [
+        2,
+        3
+      ],
+      "startFrame": 0,
+      "endFrame": 101
+    }
+  ],
+  "layoutAllow": [
+    {
+      "node": "footage:plate/tile:0:0",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:1:0",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:0:1",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:1:1",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:0:2",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    },
+    {
+      "node": "footage:plate/tile:1:2",
+      "allow": "overlap",
+      "reason": "the captions are burned into this clip, so words are drawn over its tiles"
+    }
+  ],
+  "assertions": [
+    { "node": "w0", "inPicture": [0, 9] },
+    { "node": "w1", "inPicture": [10, 15] },
+    { "node": "w2", "inPicture": [16, 24] },
+    { "node": "w3", "inPicture": [28, 33] },
+    { "node": "w4", "inPicture": [34, 44] },
+    { "node": "w5", "inPicture": [50, 57] },
+    { "node": "w6", "inPicture": [58, 64] },
+    { "node": "w7", "inPicture": [68, 75] },
+    { "node": "w8", "inPicture": [76, 85] }
+  ]
+}

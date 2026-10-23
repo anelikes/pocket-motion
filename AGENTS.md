@@ -81,8 +81,11 @@ that is said rather than implied.
   Sound is now a sidecar schema of four roles, resolved and built into a mix
   graph by `src/sound/mix.ts` and muxed by `render`;
   `compositions/sound-roles` declares one element of each and
-  `tests/sound.test.ts` holds it. Four shapes the schema still cannot express
-  are in the next section.
+  `tests/sound.test.ts` holds it. The four shapes that were still built by
+  hand — a gain envelope, a silent tail, an element mixed only if present, a
+  duck for a whole cut — are declared in the same schema now, and the entry
+  for them is in the next section; what the schema still cannot say is in
+  the one after.
 - **Digests that no fresh build reproduced.** Recorded digests that rebuilt
   from the bundle they were taken against and from no newly built one —
   declared, because what produced the artifact was written down nowhere. Every
@@ -338,15 +341,19 @@ mechanisms with the file or test beside them.
   the burial, both dissolves and the reveal side by side.
 - **What that gate actually reaches is narrower than "a named node", and a
   total hides it.** `baselines/visibility.json` carries the count per
-  composition — 67 names over the tree as it stands — and reading it by
-  composition is the point: 13 of them are `footage:<track>/tile:<col>:<row>`,
-  which `src/cli/footage.ts` REFUSES a bound track without, so they are a
-  protocol rather than a declaration; the rest are the fixtures and the four
-  labels `footage-tracks` draws. `reel`, the one composition here at film
-  length, records **0 named of 631 nodes** and so cannot fail this gate at all.
-  A buried tile is a real finding and is the layer the occlusion defect came
-  from, but that defect's caption was not a tile, and nothing at film length
-  names its captions.
+  composition — 153 names over the tree as it stands — and reading it by
+  composition is the point: 19 of them are `footage:<track>/tile:<col>:<row>`
+  (15 of bound tracks, which `src/cli/footage.ts` REFUSES a track without, and
+  4 that `kenburns` and `shimmer` push into), so they are a protocol rather
+  than a declaration; 22 are the words the two captions samples name; the rest
+  are the fixtures and the four labels `footage-tracks` draws. `reel`, the one
+  composition here at film length, records **0 named of 631 nodes** and so
+  cannot fail this gate at all. A buried tile is a real finding and is the
+  layer the occlusion defect came from, but that defect's caption was not a
+  tile. Nothing written by hand at film length names its captions; the
+  captions template is the one generator that names every word it draws, so a
+  caption job is the one place this gate reaches every caption whatever the
+  length.
 - `scripts/visibility.ts` is what keeps those numbers from being a memory. It
   sweeps every composition — swept by default, `EXEMPT` costs a written reason,
   the same coverage gate `scripts/digests.ts` uses and the same discovery rule
@@ -476,7 +483,109 @@ mechanisms with the file or test beside them.
   sizes before the first snapshot so a restore never reallocates it.
   `compositions/shutter-blur` is the fixture, in both ledgers; it traced to
   the stage-1 prototype's recorded digests at N = 1, 4 and 8 before its
-  `known` node was added.
+  `known` and `peek` nodes were added.
+
+  **What a presence check costs under it, measured** (2026-10-23, Apple M4,
+  10 cores, 32 GB, Bun 1.3.11; every row and how it was taken in
+  `baselines/shutter.md`, "Stage 3"). A probe of the exposure is `samples`
+  rasters, and on `compositions/mg-hud` — 11,510 nodes, 0.15–0.47 s a
+  raster — `assert` with three assertions was stopped after 28 CPU minutes
+  at 120° × 12. Most of what it was doing was not the shutter: it
+  rasterised the whole frame to read each rect, 1,330 rects a frame there,
+  and probed all 593 named or text nodes for verdicts about three. Rasters
+  over the default 24-frame grid, counted at the core's exports, and seconds
+  at a load average of 10–17:
+
+  | `mg-hud` `assert` | no shutter | 120° × 4 | 120° × 12 |
+  | --- | ---: | ---: | ---: |
+  | main | 35,265 | 48,567 | 75,327 |
+  | now | 102 — 64 s | 432 — 211 s | 1,248 — 526 s |
+  | now, `--read tick` | | | 102 — 69 s |
+
+  At the 0.4 s a raster those runs average, main's was 4 to 8½ hours. Two
+  changes take out work no line of output read and change no output: a rect
+  is read after a draw walk (`ui_draw_hash`, about 7 ms there), because the
+  walk is what fills the latch; and `assert` classifies only the names its
+  assertions mention, ancestors still measured so `insideBox` reads the same
+  container. `assert`, `layout` and `visibility --json` are byte-identical to
+  main's on all eight compositions that declare assertions and on
+  `spanned`, `occluded` and `footage-tracks`. What is left is the shutter's
+  own factor, and `--read tick` (`layout`, `visibility`, `assert`, `verify`)
+  removes it by classifying the frame's own tick, with `read: "tick"` in
+  `--json` and a printed line saying so. It is never the default because it
+  is a different picture: `shutter-blur`'s `peek` lies under a blade turning
+  half a revolution a tick, covered at every frame's tick and in the picture
+  of every exposure, and the tick reading fails it where the exposure passes
+  it (`tests/shutter.test.ts`, `tests/verify.test.ts`). The other direction,
+  a node the average fades below one level, is stated there and not pinned.
+  Two candidates were measured and not taken. Reusing the tick raster as the
+  exposure where no sample's draw list differs is exact — an exposure of
+  identical samples is that sample byte for byte — and holds at 0 of 24 grid
+  frames of `mg-hud` and of `shutter-blur`, where something always moves. A
+  coarser default grid under a shutter narrows the default claim to buy what
+  `--samples` already buys on request.
+- **The four mix shapes that used to be hand-rolled are sidecar keys, and
+  each is measured where it can be.** `envelope` on any element (points on
+  the element's own clock, so a dialogue line's stays on its clip),
+  `bed.ducks` (windows on the composition clock, independent of any line),
+  `optional` on any element, and `silentTailMs` on the sound block —
+  parsed in `src/manifest/sidecar.ts`, catalogued as probed rows, rendered
+  by `src/sound/mix.ts`. Every element's level is ONE piece of data,
+  `elementLevel` (gain × envelope × ducks), which the graph renders as a
+  `volume` expression and `sound --verify` reads as the level it expects —
+  so a graph that drops a term is a measured mismatch rather than agreeing
+  with itself: with the dialogue envelope left out of the fixture's mix a
+  window sits 3.06 dB outside its range, with the cut duck left out 6.0 dB,
+  against at most 0.018 dB for the correct mix, and the tolerance is 1 dB.
+  Three properties were measured before they were written down. A WAV leg
+  arrives in 4096-sample frames and `eval=frame` reads `t` once per frame,
+  so a duck engaged up to 85 ms late; `asetnsamples=n=480` ahead of a
+  varying `volume` makes it 10 ms. The codec carries sound one frame window
+  past its last input — a gate exactly at the tail left 1092 non-zero s16
+  samples in the fixture's 500 ms tail, 43 ms before it none — so the mixer
+  stops sound `SILENT_TAIL_GUARD_MS` (50) early and the bed's fade-out
+  completes there; the tail itself is still MEASURED after the mux, on the
+  decode the manifest hashes, and `render` exits 1 when a sample is not zero.
+  And a mono leg in a stereo mix is upmixed at −3.01 dB, so the level check
+  reads the source through the mix's own layout. `optional` is a flag, never
+  an inference: `render` prints which way each went and writes `mixed` into
+  `*.sound.json`, `sound --verify` says `skipped`, and an element without the
+  flag is refused when absent exactly as before. A window where the DECLARED
+  level puts an element under the floor carries no evidence and is dropped,
+  which is why an envelope that takes a line to 0 is not read as the line
+  stopping. `compositions/sound-roles` declares one of each and its frame
+  digest did not move, sound being outside identity; `tests/sound.test.ts`
+  holds every guard above and each was seen red on its defect, the CLI
+  render of the fixture included.
+- **A vector outline is baked data a style prop selects, drawn by one op**
+  (`patches/0042`, `0043`, class `motion`; the design and every place the
+  landing departs from its prototype in `patches/0042-vector-paths.design.md`,
+  the numbers in `baselines/vector-paths.md`). `<Path d viewBox>` is a View
+  whose `d` the build normalises to move, line, cubic and close and writes
+  into a PATH TABLE after the ANIM TABLE in `styles.bin`, counted by the
+  header's formerly reserved u16 — so a composition with no `<Path>` writes
+  the bytes it did, and no recorded digest moved. Per frame the core morphs
+  an entry's keys, flattens its cubics in local space, trims and strokes it,
+  maps it through the world affine and emits PATH (71), whose coverage is
+  POLY's 4x4 lattice with a top-left rule: two paths sharing an edge split
+  its samples. Because it is a draw-list op, `ui_draw_hash`, `visibility`,
+  `layout` and `check` read it as they read any other, and a path trimmed to
+  nothing is invisible by declaration, not covered. Two things are refused
+  rather than drawn wrong: morph keys whose commands differ after
+  normalisation (at the build, at the line that wrote them — a resampled
+  correspondence is a picture nobody declared), and an outline the build
+  could not read where it was written (at mount, naming it — not a node
+  that silently draws nothing). An arc becomes cubics with no
+  transcendental: unit-vector bisection and square roots, so a pak's bytes
+  do not depend on the host's `Math.sin`; `tests/vector-paths.test.ts` pins
+  two arcs' bits and runs on Linux/x86-64 in the determinism workflow. The
+  core's guards are `engine/core/src/path_tests.rs` (a brute-force
+  reference over 480 random ops, the seam partition, the stroke union, 16
+  scene digests), each watched red by `baselines/vector-paths/redcheck.py`;
+  the host's are `tests/vector-paths.test.ts` and catalogue gates G6 and G10,
+  watched red by `redcheck-ts.ts` beside it. `compositions/vector-paths` is
+  the fixture, in both ledgers, its sidecar asserting that the caption is up
+  before the signature is drawn — which a draw-on ignoring its trim fails.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -564,6 +673,34 @@ mechanisms with the file or test beside them.
   patch on the sample. `trace` does not accept `--spec`, so a job never enters
   the identity ledger. `tests/spec.test.ts` drives the path and
   `tests/lower-third.test.ts` drives the template with the most inputs.
+- **A caption job asserts every word against the picture.** `template:
+  "captions"` (`src/captions/`) turns a WhisperX, OpenAI or own-schema
+  transcript into a composition in which every word is a node named `w<i>`
+  and the sidecar carries one `inPicture` per word over its window: its
+  frames, clipped to its page. The first frame is the hard one and was
+  measured rather than assumed — one-tick gates at known delays, read back
+  through `layout --at` at 15, 30 and 60 fps, show that frame `f` samples
+  every timeline at clock `(f + 1) · 60 / fps − 1`, and a timeline is still
+  at its first keyframe on the tick its delay names. So every entrance
+  starts one tick before the clock its word's first frame samples
+  (`gateInTick`, `src/captions/clock.ts`) rather than at the word's ms,
+  which bakes to that tick or later — later for 25.6% of start times at 30
+  fps and 99.8% at 60, counted over 0–10 s in 0.1 ms steps. Moved onto the
+  sampled clock, all nine words of `compositions/captions/burn-zh` fail
+  `assert --samples 101` at exactly their first frame, and all five styles
+  fail the every-frame sweep in `tests/captions.test.ts`, which runs at 30
+  and 60 fps. One reading the first draft rested on was measured and
+  dropped: a clip window closed to zero width emits no geometry, so
+  `visibility` reads it as invisible by declaration and never as covered,
+  and the gate that draft put on every closing window changed nothing at any
+  of `burn-zh`'s 101 frames. And a page that ends on the film's last frame
+  writes no exit: the exit would start on the first tick past the clock,
+  which `keyframes` fails as motion no frame can show — `verify` on
+  `burn-zh` found it, and the sweep now holds `keyframes` to exit 0 for
+  every style. The layout's refusals are the other half: a spaced-language
+  word too wide at `minSize`, and words starting on one frame that cannot
+  share a page, both stop the job instead of drawing past the line
+  (`tests/captions-layout.test.ts`).
 - `assertBakedTickRate` (`src/runtime/boot.ts`) refuses a bundle whose baked
   tick rate is not the 60 Hz this realm steps. `--hz=N` compiles into the
   bundle and the keyframe baker stores every delay and segment endpoint as a
@@ -614,7 +751,48 @@ mechanisms with the file or test beside them.
   inherit it silently, and the printed header names the number. The
   assumption is bounded rather than safe — `assertBakedTickRate` refuses a
   bundle baked at another rate, so a pak this would misread is a pak no
-  command can render.
+  command can render. It reads a track of any length — it decodes through
+  the vendored `decodeStyleTable`, which reads 0050's wide count — and the
+  long-track block of `tests/keyframes.test.ts` holds every timeline of
+  `compositions/long-track` to the segments its keyframe set declares and
+  reads the camera's cut after its 2,000th segment, which a decoder reading
+  the count's low byte would never reach.
+- **A baked track holds up to 65,535 segments**
+  (`patches/0050-long-animation-tracks.patch`, class `upstream`). The 255 a
+  track held was the format's: `segCount` is the second byte of a track
+  header, the encoder threw above it and the core read one byte, while the
+  baker had no limit of its own. So `src/anim/sampled.ts` refused more than
+  250 keys, and a film-length move was keyed once per eight frames or split
+  by hand. A `segCount` byte of 0, which every earlier core refuses, is now
+  followed by a u16 count, written only above 255, so a table with no long
+  track is the bytes it was: every bundle and pak of the digest ledger built
+  byte-identical before and after the patch (`baselines/long-tracks.md`).
+  The count goes no further than a timeline's own u16 period allows, since
+  every segment spans at least a frame, and the kit now refuses the period
+  instead (`Reg`, `MAX_TICKS`). `sample_track` walked from the first segment
+  on every tick and now searches on `t1`; that is the walk's answer only for
+  sorted, disjoint segments, so the parser refuses any other order rather
+  than trusting it. A 7.5-minute camera track — six tracks of 13,500
+  segments — traced in 2.4 s of user CPU searching against 4.0 s walking,
+  every frame hash equal. **Chaining was measured and refused.** A long track
+  split into consecutive animations on one property in one comma list renders
+  byte for byte like the single track without a shutter. Under one, the later
+  animation's start is a fill-less edge, which the shutter never samples
+  across, so the samples on the earlier side of a hand-off are clamped to its
+  value: with the hand-off on a sampled tick, frame 150 of 300 differed at
+  180° and at 360° (`baselines/long-tracks/chain.ts`), and `keyframes`
+  reports no jump there. At 60 fps every tick is a frame's, and the same
+  chain with its hand-off on an even tick, which showed nothing at 30 fps,
+  differs at frame 300 of 600. `compositions/long-track` is the
+  fixture, in both ledgers: a camera whose six transform tracks carry 2,003
+  segments each and cut to the last station at tick 4100, past the 2,000th,
+  and a frame counter whose units glyphs carry 841 each.
+  `tests/long-track.test.ts` reads every station at the canvas centre on its
+  arrival from `layout`, runs the sidecar's assertions, and carries a
+  kit-written 70-second move through the vendored baker, encoder and decoder
+  segment for segment; it is red with 0050 out of `patches/` and with the
+  kit's 250-key refusal restored. The patch's own tests hold the format and
+  the search, each red under an edit its header names.
 - `preview` is the only browser in this project, and it is a display: the
   pixels are the host's. `/frame` returns the SAME PNG BYTES `frame --at N`
   writes, asserted rather than intended (`tests/preview.test.ts`), which is
@@ -718,7 +896,7 @@ mechanisms with the file or test beside them.
   checks less than its name claims. ffmpeg is pinned in the workflow rather than
   taken from whatever the image carries, because the frozen ingest artifact
   stands in front of the decoder and its bytes are an input to the digest of
-  every composition that declares footage — 2 of the ledger's 22 today. The
+  every composition that declares footage — 3 of the ledger's 40 today. The
   visibility ledger is NOT run there; it is a local step before a pull request
   and nothing on a runner would notice it going stale.
 - `CAPABILITIES.md` is generated from `src/catalog/surface.ts` by
@@ -836,6 +1014,81 @@ mechanisms with the file or test beside them.
   back `undefined` and turn the diagnostic off quietly; both halves were
   wrong — the hit is unreachable, and `build.ts` iterates the field, so an
   `undefined` would throw rather than go quiet.
+- **The API is the CLI's `--json`, returned.** `src/api.ts` exports `build`,
+  `trace`, `render`, `verify` and `doctor`. Each turns its options into the
+  argv the command would be typed with, runs it through `dispatch`
+  (`src/cli/main.ts` — the parser, the command, and the conversion of a
+  thrown error into `{ ok: false, error, exitCode }` that `main` used to hold
+  inline), and returns it through `jsonPayload` and `envelope`, which are
+  what `--json` writes through. So an API result is redacted and carries
+  `runId` exactly as the printed object does, and nothing re-derives a
+  verdict. `tests/api.test.ts` runs the CLI as a separate process with a
+  hand-typed argv and requires equal objects; `render` may differ in
+  `elapsedMs` and `msPerFrame` and nothing else. Red with `envelope()`
+  skipped: six of eight cases.
+- **`render --json` carries `trace`'s identity**, from one function
+  (`compositionIdentity`, `src/cli/commands/trace.ts`), so a delivery holds
+  the pair another machine checks with `trace`. A `--spec` job carries none,
+  measured: one job staged twice moved both the `toolchain` and the `bundle`
+  components, because the staged directory's random name is in
+  `build.json`'s argv and in the bundle's module comments.
+- **The npm package is staged, never packed from the checkout.**
+  `scripts/pack.ts` assembles `dist/pack/pocket-motion` from an explicit
+  list, because npm honours `vendor/pocketjs`'s own `.gitignore`, which
+  ignores `node_modules` and `hosts/web/pocketjs.wasm` — measured, and naming
+  them in `files` does not override it; the root `prepack` refuses with the
+  command that packs. The vendored tree ships prebuilt rather than through a
+  `postinstall`: Bun runs no dependency's lifecycle script unless the
+  consumer trusts it, nothing hosts an artifact a fetch could verify, and the
+  compiler's 119 npm packages are copied as `bun install --frozen-lockfile`
+  laid them out, so the JSX transform that writes a bundle cannot float with a
+  consumer's resolver. `framework/src` and `contracts` ship whole; of the
+  compiler, `tools/` and `microts/`, only what the import graph reaches from
+  the five entries `src/` loads. That graph includes `typescript` at 66caf4e5,
+  23 MB of the package's 77 MiB unpacked: `tools/build.ts` imports microts'
+  AOT compiler at module scope and its first line imports `typescript`, so
+  every build loads it. The one platform-native package, the
+  JSX-vapor compiler's binding, is declared as an exact-version
+  `optionalDependency` instead of copied, so the tarball does not depend on
+  where it was packed. `vendor/prebuilt.json` stands in for git: upstream,
+  every patch and every file by sha256, which `doctor` hashes in an install
+  (`src/package/prebuilt.ts`) before loading the compiler in a child process —
+  the load is where a platform with no binding shows up.
+  `tests/package.test.ts` reads `npm pack --dry-run`'s own list, and installs
+  the real tarball into an empty project where `smoke` traces to its ledger
+  digest through the package's bin. Red, measured at 66caf4e5: shipping
+  upstream's `.gitignore` drops 4054 of 4410 files; staging with no
+  `optionalDependencies` fails `doctor` with `Cannot find native binding`.
+- **A consumer's `build.json` is relative to the consumer.** `relativise`
+  (`src/render/build-record.ts`) tries this package's root and then the
+  composition's repository root — the cwd `buildSpawn` builds from — so a
+  project that installed the package records `compositions/card/main.tsx`,
+  not where the project sits. In this repository the two roots are one
+  directory and every record is the bytes it was. `tests/identity.test.ts`
+  records one build from two project locations; red with the package root
+  alone.
+- **The Docker image is the workflow's run.** `Dockerfile` builds the
+  repository from nothing on linux/amd64 and runs `bun scripts/digests.ts`.
+  Bun is pinned by image digest, ffmpeg is the workflow's asset by the
+  workflow's sha256, Rust is 1.97.1, and `tests/docker.test.ts` holds the Bun
+  and ffmpeg pins equal to `.github/workflows/determinism.yml` and to the
+  ledger's recorded Bun (red on one changed digit). Upstream is fetched as the
+  one pinned commit, depth 1, over HTTP/1.1 and retried, rather than cloned
+  whole by `scripts/vendor.ts` — which reuses a present tree and checks the
+  pin out itself — because the full clone failed mid-transfer at 707 s on a
+  slow link; the fetch needs the full sha, which the same test holds to
+  `UPSTREAM.commit`. It fetches `bun scripts/assets.ts --kind
+  fonts,synthetic` — the frame hash never opens audio, so the Mixkit tracks
+  stay out of an image that might be pushed — and runs `git init` over the
+  copied source, because composition discovery asks git and a build context
+  carries no `.git`. Measured on an M4 under Rosetta, from a context with no
+  `vendor/`, `node_modules/` or `dist/`: at e0b37e20 on 2026-10-22, all 36
+  ledger digests reproduced in 593 s for the run; at 66caf4e5 on 2026-10-23,
+  all 38, `reel` and both footage compositions among them, in 1708 s on a
+  machine other jobs held at a load average between 60 and 220, so that time
+  says nothing about the image. The README's form, which builds from the
+  repository's URL, has not been run — it needs this on the default branch of
+  a reachable repository.
 
 ## What does not reach them yet
 
@@ -848,10 +1101,29 @@ mechanisms with the file or test beside them.
   node. `lint`'s two `shutter.*` warnings read the source text: ancestry is
   lexical within one file and the keyframes an `animate-*` names are not
   read, so a hold under an ancestor that only fades is warned about too, and
-  a hold placed by a component in another file is not seen. Every probe of
-  `layout`, `visibility` and `assert` costs `samples` renders under a
-  shutter; `reel` declares none, so what that does to a film-length sweep is
-  unmeasured.
+  a hold placed by a component in another file is not seen. A probe of the
+  exposure still costs `samples` rasters, and `visibility` probes every named
+  or text node, not only asserted ones: on `mg-hud` at 120° × 12 that is
+  39,864 rasters over the default grid, about 4½ hours at its raster cost,
+  against 3,322 and 20 minutes with `--read tick` — the reading that misses
+  `peek`. `reel` declares no shutter.
+- **A path's trim and morph do not blur, and nothing caches its geometry.**
+  The shutter integrates transform tracks only, so a moving `<Path>` blurs
+  and a draw-on's tip does not. The geometry is rebuilt every frame — and
+  under a shutter every sample — from the table: stage 1 measured a 1080p
+  frame of 300 paths of 67 cubics at 20-70 ms of wasm, against 1.19 ms for a
+  frame of the reel, so a dense illustration is a cost no ledger composition
+  carries yet.
+- **Abutting paths are still two blends.** The partition gives each seam
+  sample to one path, but a pixel half-covered by each is blended twice, so
+  a seam between two shapes of one colour lets `(1 - h_a/16)(1 - h_b/16)` of
+  the ground through; stage 1's fan of 24 wedges shows faint radial lines. A
+  coverage-merging op would close it and is not built.
+- **The collector reads a module's own literals.** A `d` imported from
+  another module, or computed at run time, is refused at mount rather than
+  baked; generators write literals, which is what every composition here
+  does, but a hand-written film that keeps its outlines in a shared module
+  meets the refusal.
 
 Stated rather than smoothed. Each is a known hole, not an oversight.
 
@@ -884,20 +1156,27 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   checks — declared, resolvable, correctly placed, refused by `lint` when the
   file is absent — and it does not buy digest coverage. Say so wherever it is
   documented.
-- **`render` mixes from the sound schema, and four shapes it cannot express
-  have each had to be built by hand against it.** `compositions/reel` declares
-  its bed in the sidecar and `render` muxes that graph;
-  `compositions/sound-roles` declares one element of each role. A mix that
-  needs any of the following has to be written outside the schema:
-  - a gain ramp across a window, or a piecewise-linear gain envelope; the
-    schema has one `gain` per element
-  - an enforced digital silence at the tail, measured after the mux, with the
-    fade-out completing *before* it rather than at the end of the picture
-  - a role that is mixed if its file is present and skipped if it is not; the
-    schema refuses a missing declared file and has no "if present"
-  - a duck applied to a bed for a whole cut, rather than for the span of one
-    narration line
-  The decision about which of these to add belongs upstream of the mixer.
+- **What the sound schema still cannot say, and what `sound --verify` still
+  does not read.** The four hand-rolled shapes are declared now (previous
+  section). What remains:
+  - a duck with an attack and a release: `ducks[]` and a narration `duck`
+    switch at their edges, within one 480-sample block. A ramped dip is
+    expressible only as the bed's `envelope`, which sets the bed's level
+    rather than attenuating whatever the level is
+  - more than one bed: a second music track can be placed as a cue with an
+    `envelope`, but `ducks[]` and narration ducks act on the bed alone, so a
+    cross-fade between two tracks that a voice must also duck cannot be said
+  - `optional` makes the delivered audio depend on whether a file was in the
+    tree when `render` ran. That is recorded in `*.sound.json` and nowhere
+    else — sound is outside identity, so no ledger notices an optional element
+    going missing between two renders of the same sidecar
+  - `sound --verify` checks a level only where the declaration varies it,
+    one window per piece; a constant `gain`, the bed's fades and a piece
+    shorter than a window and its margins are not read, and the windows
+    where two ducks overlap below the floor are counted as unexamined
+  - the 50 ms guard is two AAC frames at 44.1 kHz. A mix at a lower rate,
+    where two frames are longer, is not prevented — the measurement after the
+    mux is what would refuse it
 - **The two ProRes/VP9 facts a reader would get wrong from the argv**, both
   pinned so they are not rediscovered: ProRes 4444 is asked for as
   `yuva444p10le` and DECODES as `yuva444p12le`, because the 4444 bitstream is
@@ -921,29 +1200,33 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   records beside a hero size is not transferable** — swapping the face changes
   the ceiling, and a size that baked yesterday is refused today with no edit
   to the size itself.
-- **A full ledger run's disk cost is set by the footage in the tree, and only
-  the ledger can measure it.** Ingest decodes each footage track to raw RGBA
-  next to the bundle and leaves it there. Measured 2026-09-02 by clearing
-  `dist/**/*.rgba` and running the whole ledger serially: 5 `.rgba` files
-  totalling 721,152,000 bytes — 688 MiB — from 1.5 MB of tracked clips. A tree
-  carrying recorded material at film length reached 92 files and 120 GB and
-  filled a 1.8 TiB volume, and the ingest that hit the wall reported
-  `No space left on device` from ffmpeg rather than anything about capacity.
-  That measurement is `FULL_RUN_RGBA_BYTES` (`src/cli/disk.ts`), in bytes
-  because bytes are what was read, and both readers derive from it: `doctor`
-  FAILS below it and passes calling the headroom thin below `HEADROOM_MULTIPLE`
-  times it, and `scripts/digests.ts` prints the same two numbers before it
-  starts. It used to be a HIGH-WATER MARK from a tree that no longer exists —
-  52 files and 64 GiB, measured 2026-08-20 — and gating on that made `doctor`
-  red on every hosted runner, 11.6 GiB free against a 64 GiB threshold, which
-  took the `AUTHORING.md` and `SKILL.md` command gates down with it because
-  both run `doctor` out of a documented fence. Three failures, one stale
-  number. `tests/doctor.test.ts` pins the verdict at each end of the band, and
-  is red at 11.6 GiB the moment the constant goes back to 64. A composition
+- **A full ledger run's disk cost is set by the footage in the tree, and
+  only the ledger can measure it.** Ingest decodes each footage track to raw
+  RGBA next to the bundle and leaves it there. Measured 2026-10-22 by
+  clearing `dist/**/*.rgba` and running the whole ledger serially: 6 `.rgba`
+  files totalling 1,381,017,600 bytes — 1.3 GiB — from 1.5 MB of tracked
+  clips. 659,865,600 of those bytes are one 44 KB clip, the one
+  `compositions/captions/burn-zh` burns its captions into: ingest decodes a
+  source whole at the drawn size, here 179 frames at 720×1280, whatever
+  window the track uses. A tree carrying recorded material at film length
+  reached 92 files and 120 GB and filled a 1.8 TiB volume, and the ingest
+  that hit the wall reported `No space left on device` from ffmpeg rather
+  than anything about capacity. That measurement is `FULL_RUN_RGBA_BYTES`
+  (`src/cli/disk.ts`), in bytes because bytes are what was read, and both
+  readers derive from it: `doctor` FAILS below it and passes calling the
+  headroom thin below `HEADROOM_MULTIPLE` times it, and `scripts/digests.ts`
+  prints the same two numbers before it starts. It used to be a HIGH-WATER
+  MARK from a tree that no longer exists — 52 files and 64 GiB, measured
+  2026-08-20 — and gating on that made `doctor` red on every hosted runner,
+  11.6 GiB free against a 64 GiB threshold, which took the `AUTHORING.md`
+  and `SKILL.md` command gates down with it because both run `doctor` out of
+  a documented fence. Three failures, one stale number.
+  `tests/doctor.test.ts` pins the verdict at each end of the band, and is
+  red at 11.6 GiB the moment the constant goes back to 64. A composition
   added tomorrow moves the need and nothing else would notice, so a full run
-  re-reads `dist/` at the end and reports when what it left disagrees with the
-  constant by a file or by more than 5%. The bytes are re-derivable and safe
-  to delete.
+  re-reads `dist/` at the end and reports when what it left disagrees with
+  the constant by a file or by more than 5%. The bytes are re-derivable and
+  safe to delete.
 - **Nothing reads `baselines/ingest-bytes.json`.** It is a hand-recorded file
   no command, test or workflow opens, and `.github/workflows/determinism.yml`
   says so in the comment that pins ffmpeg. So when a footage composition's
@@ -984,6 +1267,98 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   to order the writers and never the readers; `scripts/digests.ts`'s
   mtime/size check is what makes a moved artefact impossible to pass silently,
   and it covers a ledger run and nothing outside one.
+- **An installed package's bundle is not this checkout's bundle, and
+  identity says so while the picture does not.** Measured on `smoke`, built
+  here and built in a project that installed the tarball, at e0b37e20 and
+  again at 66caf4e5: the frame digest,
+  `pak`, `params`, `sidecar` and `toolchain` agree, and `bundle` does not.
+  Bun's bundler writes each module's path relative to the build's cwd into a
+  comment, and the framework sits at `vendor/pocketjs/framework/src/…` here
+  and at `node_modules/pocket-motion/vendor/pocketjs/framework/src/…` there —
+  and at a third path under a linker that does not hoist. So two installs with
+  one layout share an identity, and an install and a checkout do not. Hashing
+  the bundle with those comments normalised, or building from a cwd that makes
+  the framework's path independent of the install, would close it; neither is
+  done.
+- **An installed package still speaks as a checkout in places.** Refusals
+  print `bun src/cli/main.ts build <dir>` and `bun scripts/assets.ts`, which a
+  consumer does not have (`bunx pocket-motion build <dir>` is the command
+  there), and `--json` redacts `$REPO` as the PACKAGE directory, so a
+  consumer's own paths come back as `$HOME/…`. `init` copies its fixtures
+  out of this repository's `compositions/`, which the package does not carry,
+  and refuses a target outside that tree, so a consumer cannot use it at all.
+  And a build writes into the package: `buildEnv` (`src/vendor/cache.ts`)
+  points upstream's transform cache at
+  `node_modules/pocket-motion/vendor/pocketjs/.cache`, so an install on a
+  read-only filesystem cannot build.
+- **What the package was checked on is one platform.** The install test has
+  run on darwin-arm64 only, at the time of writing; it is in the suite CI runs
+  on linux-x64, which is where the second platform will be measured. The
+  binding is declared for the fourteen platforms its compiler lists; Windows
+  has not been tried, and `doctor`'s disk check reads `df`.
+- **Nothing records the rustc that compiled the wasm, and the same rustc does
+  not give the same wasm.** `vendor/prebuilt.json` pins the wasm's bytes;
+  `scripts/vendor.ts` compiles it with whatever rustup runs and writes no
+  note, so a version recorded at pack time would describe a compile nothing
+  saw. Measured at 66caf4e5 with rustc 1.97.1 (`8bab26f4f`) throughout:
+  914,481 and 914,321 bytes from two checkouts on one Mac, and 913,329 bytes
+  in the linux/amd64 image, which reproduced all 38 digests (at e0b37e20:
+  513,402 on the Mac, 513,135 in the image). Two checkouts on one machine
+  already differ, so where the checkout sits is enough to move the bytes:
+  the wasm keeps panic locations as absolute paths, 23 of them in the packed
+  wasm — 17 into the checkout and 6 into `~/.cargo/registry` — and **a
+  packed tarball names the packing user's home directory**.
+  `--remap-path-prefix` in the wasm build would make the bytes
+  path-independent; nothing passes it. The frames do not depend on the
+  difference, which is the observation identity's omission of the wasm rests
+  on, and why the package ships one wasm instead of a compile per machine.
+  The Dockerfile pins 1.97.1; the workflow takes stable.
+- **A caption job's own assertions are never evaluated.** `render --spec`
+  stages the job's composition — sidecar `assertions[]` included — renders it
+  and deletes it, and nothing evaluates the assertions of the job in between.
+  What holds the word-window claim is the generator: `tests/captions.test.ts`
+  sweeps all five styles at every frame, and the two samples are in both
+  ledgers. A transcript shaped unlike anything those cover is a picture
+  nothing has checked. Run on a sample, `assert` with its default 24 samples
+  passes only because every window in those two transcripts is at least as
+  wide as the stride; an assertion whose window holds no sample fails, so a
+  job of real length needs `--samples <durationFrames>`.
+- **The five caption styles exist twice.** `compositions/captions/highlight`
+  and its four siblings are still the ports of the HyperFrames catalog, with
+  their own generators and hand-picked phrasing; `src/captions/styles.ts`
+  re-expresses the same five treatments for any transcript, with the one-tick
+  lead and the nested entrance and exit wrappers the ports do not have. A
+  change to one does not reach the other. Pointing the ports at the template
+  would move their digests and their visibility counts, so it is a recorded
+  change to five deliveries rather than a refactor.
+- **A film is at most 18 min 12 s of one timeline.** A timeline's period,
+  its delay and its segment endpoints are u16 frame counts at 60 Hz, so no
+  track spans more than 65,535 ticks: `Reg` refuses a longer film and the
+  baker refuses a longer duration. Past that, a delay cannot reach a second
+  timeline either, so a longer film needs a wider anim entry header — every
+  field of it, not one count. Nothing in this tree is longer, and the
+  HyperFrames series runs 7.5 minutes.
+- **The shutter still finds a segment by walking.** `within_iteration` in
+  `engine/core/src/shutter.rs` (0034) takes `.find` over a track's segments
+  for every sample of every integrated track, so under a declared shutter a
+  long track costs O(segments) per sample — the cost 0050 removed from the
+  tick. Unmeasured at film length: no composition here declares both.
+- **`keyframes` places the render's grid at the wrong end of each frame.** It
+  counts a node's ticks from its clock's start and takes f × 60 / fps as the
+  tick frame f shows; the realm renders frame f at the LAST tick of its
+  window, (f + 1) × 60 / fps − 1 — clock f at 60 fps, 2f + 1 at 30, 3f + 2 at
+  20. Measured with a node moving one pixel per tick (at 30 fps frame 0 at
+  x = 1, frame 1 at 3, frame 30 at 61, in `layout` and in `frame`'s pixels
+  alike), and `tests/shutter.test.ts` reads the same ("frame 15 (clock 31)").
+  At 60 fps the two agree. At 30 fps the instants reported unsampled are the
+  ones the render samples, and
+  `late-anim`'s `gated` step over ticks 3 to 5, reported shown half done by
+  frame 2, is at full opacity at frame 2 (red 248, as at frame 3): no frame
+  shows it part-way. The readings that depend on the segments alone —
+  counts, jumps, contention, `neverStarts` — do not move with the phase,
+  which is why the long-track tests assert only those. Not fixed with 0050:
+  the readings, their tests, `late-anim`'s comments and `src/anim/sampled.ts`'s
+  "a frame shows tick 2f" have to move together.
 
 ## Working rules
 

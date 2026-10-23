@@ -35,6 +35,12 @@
  *   bun scripts/assets.ts             # fetch whatever is missing, verify all
  *   bun scripts/assets.ts --check     # verify only; never touch the network
  *   bun scripts/assets.ts --force     # re-fetch everything
+ *   bun scripts/assets.ts --kind fonts,synthetic   # only those manifests
+ *
+ * `--kind` exists for the Docker image, which reproduces the digest ledger and
+ * needs the faces the compositions bake but not the audio `reel` muxes: the
+ * ledger hashes frames, and the frame hash never opens an audio file. An image
+ * that fetched the Mixkit tracks would carry them to wherever it was pushed.
  */
 
 import { existsSync } from "node:fs";
@@ -63,6 +69,9 @@ const ASSETS = join(ROOT, "assets");
 const argv = process.argv.slice(2);
 const checkOnly = argv.includes("--check");
 const force = argv.includes("--force");
+const kindArg = argv.find((a) => a.startsWith("--kind="))?.slice("--kind=".length)
+  ?? (argv.includes("--kind") ? argv[argv.indexOf("--kind") + 1] : undefined);
+const kinds = kindArg === undefined ? null : new Set(kindArg.split(",").filter(Boolean));
 
 const digest = async (path: string): Promise<string> =>
   new Bun.CryptoHasher("sha256").update(new Uint8Array(await Bun.file(path).arrayBuffer())).digest("hex");
@@ -74,7 +83,14 @@ async function manifests(): Promise<{ kind: string; dir: string; entries: Entry[
     const dir = join(ASSETS, kind);
     const file = join(dir, "manifest.json");
     if (!existsSync(file)) continue;
+    if (kinds !== null && !kinds.has(kind)) continue;
     out.push({ kind, dir, entries: JSON.parse(await Bun.file(file).text()) as Entry[] });
+  }
+  if (kinds !== null) {
+    const unknown = [...kinds].filter((k) => !out.some((m) => m.kind === k));
+    if (unknown.length > 0) {
+      throw new Error(`assets: no assets/<kind>/manifest.json for --kind ${unknown.join(", ")}`);
+    }
   }
   return out.sort((a, b) => a.kind.localeCompare(b.kind));
 }

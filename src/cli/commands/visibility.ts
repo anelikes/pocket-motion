@@ -129,7 +129,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { baseline, openProber, probe, rect } from "../../render/visibility.ts";
+import { baseline, openProber, probe, rect, type Reading } from "../../render/visibility.ts";
 import { hardenedBootWorld } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage } from "../footage.ts";
@@ -140,7 +140,7 @@ import {
   type CommandResult,
   type GlobalFlags,
 } from "../types.ts";
-import { flattenTree, shutterLines } from "./layout.ts";
+import { flattenTree, parseRead, shutterJson, shutterLines } from "./layout.ts";
 
 /** One node of the DevTools tree (`framework/src/devtools.ts` serializeNode). */
 interface TreeNode {
@@ -161,6 +161,9 @@ export interface VisibilityOptions {
   readonly samplesRaw?: string;
   /** Include nodes that carry neither text nor a debugName. */
   readonly all: boolean;
+  /** Under a declared shutter, the picture each node is classified in.
+   *  Absent means the exposure. */
+  readonly read?: Reading;
   readonly flags: GlobalFlags;
 }
 
@@ -186,8 +189,10 @@ export interface NodeSpan {
   readonly buriedAfterShown: boolean;
 }
 
-/** Default sample count. Two renders and a draw-list hash per node per frame
- *  is what each one costs, so this is the knob that decides the runtime. */
+/** Default sample count. A draw walk for the rect, then a render and a
+ *  draw-list hash per node per frame — `samples` of each under a shutter,
+ *  unless `--read tick` — is what each one costs, so this is the knob that
+ *  decides the runtime. */
 export const DEFAULT_SAMPLES = 24;
 
 /** How many examples a summary shows before it says how many it left out. */
@@ -297,7 +302,10 @@ export async function run(options: VisibilityOptions): Promise<CommandResult> {
     // Explicit, not the default: this command's whole output is the
     // classification, and inheriting it from a parameter default is how it
     // would quietly stop being asked for.
-    const prober = openProber(world, { classify: true });
+    const prober = openProber(world, {
+      classify: true,
+      ...(options.read ? { read: options.read } : {}),
+    });
     footage = c.sidecar.footage.length > 0 ? await openFootage(c, world, tree) : null;
 
     const spans = new Map<
@@ -427,7 +435,7 @@ export async function run(options: VisibilityOptions): Promise<CommandResult> {
       "Only a NAMED node is a failure — never shown, or shown and then buried;",
       "the rest of both columns is reported. `bun scripts/visibility.ts` is what",
       "holds these counts across the tree — this run measured only this one.",
-      ...shutterLines(c.shutter),
+      ...shutterLines(c.shutter, options.read),
     ];
 
     return {
@@ -446,7 +454,7 @@ export async function run(options: VisibilityOptions): Promise<CommandResult> {
         everCovered: everCovered.length,
         neverPaints: neverPaints.length,
         impossible: impossible.map(label),
-        ...(c.shutter ? { shutter: c.shutter } : {}),
+        ...shutterJson(c.shutter, options.read),
       },
       stdoutLines,
       stderrLines: [
@@ -484,12 +492,14 @@ export async function runFromArgv(argv: readonly string[]): Promise<CommandResul
   const samples = parsed.flags.samples;
   // Before anything resolves: a bad flag is a usage error whatever is on disk.
   const parsedSamples = parseSamples(samples);
+  const read = parseRead(parsed.flags.read);
   return run({
     dir,
     ...(parsedSamples === undefined
       ? {}
       : { samples: parsedSamples, samplesRaw: String(samples) }),
     all: parsed.flags.all === true,
+    ...(read ? { read } : {}),
     flags: parsed.global,
   });
 }

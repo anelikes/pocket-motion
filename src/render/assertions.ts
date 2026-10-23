@@ -62,6 +62,13 @@ export interface EvaluateInputs {
   readonly nodes: ReadonlyMap<string, SweptNode>;
   /** The frames the sweep looked at, ascending. */
   readonly frames: readonly number[];
+  /**
+   * Every debugName the sweep saw a box for, first seen first — what a failing
+   * name is told the composition carries. Absent means `nodes`' own keys,
+   * which is the same list when every named node was classified; `assert`
+   * classifies only the names its assertions mention and passes this.
+   */
+  readonly named?: readonly string[];
 }
 
 const list = (frames: readonly number[]): string =>
@@ -124,7 +131,7 @@ export function evaluateAssertions(inputs: EvaluateInputs): AssertionVerdict[] {
         detail:
           `no node carries the debugName ${JSON.stringify(a.node)}. ` +
           `Named in this composition: ${
-            [...inputs.nodes.keys()].slice(0, 8).join(", ") || "(none)"
+            (inputs.named ?? [...inputs.nodes.keys()]).slice(0, 8).join(", ") || "(none)"
           }`,
       });
       continue;

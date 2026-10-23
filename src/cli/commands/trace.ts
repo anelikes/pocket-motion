@@ -13,12 +13,13 @@ import {
   computeIdentity,
   recordedToolchain,
   sidecarCanonicalOf,
+  type InputIdentity,
 } from "../../render/identity.ts";
 import { render as renderComposition } from "../../render/render.ts";
 import { describeShutter } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage, scratchTree, type FootageHandle } from "../footage.ts";
-import { errMsg, resolveComposition } from "../resolve.ts";
+import { errMsg, resolveComposition, type ResolvedComposition } from "../resolve.ts";
 import {
   EXIT_FAIL,
   EXIT_OK,
@@ -30,6 +31,41 @@ import {
 export interface TraceOptions {
   readonly dir: string;
   readonly flags: GlobalFlags;
+}
+
+/**
+ * The input identity of a resolved composition — `trace`'s and `render`'s.
+ *
+ * One function for both because `render --json` reports the identity beside
+ * its digest so a delivery can be checked against a trace on another machine,
+ * and that comparison means something only when the two were derived the same
+ * way. `footageHashes` are the frozen artifacts the render actually drew,
+ * which only the caller that bound the footage layer holds.
+ */
+export async function compositionIdentity(
+  c: ResolvedComposition,
+  footageHashes: Readonly<Record<string, string>> | undefined,
+): Promise<InputIdentity> {
+  return computeIdentity({
+    bundlePath: c.bundlePath,
+    pakPath: existsSync(c.pakPath) ? c.pakPath : undefined,
+    sidecarCanonical: sidecarCanonicalOf(c.sidecar),
+    fontPaths: c.fontPaths
+      ? [c.fontPaths.regular, c.fontPaths.bold]
+      : undefined,
+    faceFontPaths: c.fontPaths?.faces,
+    footageHashes,
+    width: c.width,
+    height: c.height,
+    fps: c.fps,
+    durationFrames: c.durationFrames,
+    renderScale: c.supersample,
+    rasterDensity: 1,
+    // `resolveComposition` read this off `build.json` and refused the
+    // bundle if there was none, so the toolchain here is the one that
+    // produced the artifact rather than the one running the trace.
+    buildRecord: c.buildRecord ?? (await recordedToolchain(c.bundlePath)).buildRecord,
+  });
 }
 
 export async function run(options: TraceOptions): Promise<CommandResult> {
@@ -79,26 +115,7 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
       onFrameBoundary: (frame) => bound.footage?.present(frame),
     });
 
-    const identity = await computeIdentity({
-      bundlePath: c.bundlePath,
-      pakPath: existsSync(c.pakPath) ? c.pakPath : undefined,
-      sidecarCanonical: sidecarCanonicalOf(c.sidecar),
-      fontPaths: c.fontPaths
-        ? [c.fontPaths.regular, c.fontPaths.bold]
-        : undefined,
-      faceFontPaths: c.fontPaths?.faces,
-      footageHashes: bound.footage?.hashes,
-      width: c.width,
-      height: c.height,
-      fps: c.fps,
-      durationFrames: c.durationFrames,
-      renderScale: c.supersample,
-      rasterDensity: 1,
-      // `resolveComposition` read this off `build.json` and refused the
-      // bundle if there was none, so the toolchain here is the one that
-      // produced the artifact rather than the one running the trace.
-      buildRecord: c.buildRecord ?? (await recordedToolchain(c.bundlePath)).buildRecord,
-    });
+    const identity = await compositionIdentity(c, bound.footage?.hashes);
 
     const trace: TraceJson = {
       frames: result.frameHashes,

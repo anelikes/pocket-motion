@@ -134,6 +134,27 @@ function writeStdout(chunk: string): Promise<void> {
   });
 }
 
+/**
+ * The object `--json` writes for a result, before `envelope`.
+ *
+ * Always an object, even if the command forgot one — agents must always get
+ * one parseable value. Separate from `applyEmit` because `src/api.ts` returns
+ * this same value instead of writing it, and a second copy of the fallback
+ * would be the one place the two could disagree.
+ */
+export function jsonPayload(result: CommandResult): unknown {
+  return result.json !== undefined
+    ? result.json
+    : {
+        ok: result.exitCode === 0,
+        exitCode: result.exitCode,
+        error:
+          result.stderrLines?.join("\n") ||
+          result.stdoutLines?.join("\n") ||
+          undefined,
+      };
+}
+
 export async function applyEmit(
   result: CommandResult,
   jsonMode: boolean,
@@ -142,20 +163,7 @@ export async function applyEmit(
     for (const line of result.stderrLines) console.error(line);
   }
   if (jsonMode) {
-    // Always print an object when in json mode, even if the command forgot —
-    // agents must always get one parseable value.
-    const payload =
-      result.json !== undefined
-        ? result.json
-        : {
-            ok: result.exitCode === 0,
-            exitCode: result.exitCode,
-            error:
-              result.stderrLines?.join("\n") ||
-              result.stdoutLines?.join("\n") ||
-              undefined,
-          };
-    await writeStdout(JSON.stringify(envelope(payload)) + "\n");
+    await writeStdout(JSON.stringify(envelope(jsonPayload(result))) + "\n");
     return;
   }
   if (result.stdoutLines) {

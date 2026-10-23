@@ -1,0 +1,29 @@
+# prototype tree fcf87fd
+Linux x86_64
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+test path_tests::dump_scenes_when_asked ... ok
+test path_tests::flattened_curve_stays_within_tolerance ... ok
+test path_tests::a_style_table_without_paths_is_the_same_bytes_and_a_truncated_one_is_refused ... ok
+test path_tests::morph_at_a_key_draws_that_key_exactly ... ok
+test path_tests::miter_tip_sits_at_its_length_and_the_limit_bevels_it ... ok
+test path_tests::a_trim_window_of_the_whole_length_is_no_trim ... ok
+test path_tests::chord_count_does_not_follow_rotation ... ok
+test path_tests::damage_tracking_decodes_path_and_bounds_it ... ok
+test path_tests::emitted_coordinates_stay_inside_the_guard_and_never_carry_nan ... ok
+test path_tests::path_table_round_trips_and_refuses_malformed_entries ... ok
+test path_tests::path_under_a_mask_is_the_rect_under_that_mask_where_it_covers ... ok
+test path_tests::bg_clip_path_paints_the_ground_gradient_into_the_fill_and_not_the_box ... ok
+test path_tests::a_path_node_draws_fill_then_stroke_and_debug_hide_removes_both ... ok
+test path_tests::opacity_and_morph_reach_the_ops ... ok
+test path_tests::trimmed_length_is_the_window_in_both_modes ... ok
+test path_tests::trim_end_only_adds_samples_as_it_grows ... ok
+test path_tests::trim_end_animates_through_the_anim_machinery_and_moves_the_draw_hash ... ok
+test path_tests::path_blends_each_pixel_at_a_times_hits_over_16 ... ok
+test path_tests::abutting_paths_partition_the_samples_of_their_shared_edge ... ok
+test path_tests::path_scene_digests_are_pinned ... ok
+test path_tests::convex_path_counts_what_poly_counts_except_samples_on_its_right_and_bottom_edges ... ok
+test path_tests::round_stroke_is_the_true_offset_within_the_tolerance ... ok
+test path_tests::stroke_outline_fills_to_exactly_the_union_of_its_pieces ... ok
+test path_tests::path_coverage_equals_the_brute_force_reference ... ok
+test result: ok. 195 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.06s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

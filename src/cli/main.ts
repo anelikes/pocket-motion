@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 /**
  * pocket-motion CLI entry.
  *
@@ -157,6 +158,8 @@ export function helpText(): string {
     "  --format <name>     render: mp4 | webm | mov | png-seq (default mp4)",
     "  --alpha             render: ask the codec for an alpha channel (not mp4)",
     "  --samples N         visibility/snapshot: how many frames to look at (default 24)",
+    "  --read exposure|tick layout/visibility/assert/verify, under a shutter: classify",
+    "                      the delivered exposure (default) or the frame's own tick",
     "  --annotate          snapshot: also write a copy with layout's boxes drawn on it",
     "  --zoom <debugName>  snapshot: also write a crop around that node",
     "  --strict            verify: count warnings towards the exit code",
@@ -168,6 +171,54 @@ export function helpText(): string {
     "  2  invocation wrong (bad flags, missing file)",
   );
   return lines.join("\n");
+}
+
+/**
+ * One command line to the result it produced, written nowhere.
+ *
+ * Everything between the argv and the bytes `main` writes: parsing, the
+ * command lookup, the command itself, and the conversion of a thrown error
+ * into the `{ ok: false, error, exitCode }` result a usage error or a failure
+ * prints. `src/api.ts` calls this and `main` calls this, so an API call and a
+ * CLI invocation with the same argv run the same code up to the point where
+ * one writes the object and the other returns it. `"help"` is returned rather
+ * than a result because help is the one output that is not an envelope.
+ */
+export async function dispatch(argv: readonly string[]): Promise<CommandResult | "help"> {
+  try {
+    const parsed = parseArgs(argv);
+    if (parsed.flags.help === true) return "help";
+
+    const name = parsed.command;
+    if (!name) {
+      throw new UsageError("missing command — try --help");
+    }
+    const cmd = COMMANDS[name];
+    if (!cmd) {
+      throw new UsageError(
+        `unknown command ${JSON.stringify(name)} — try --help`,
+      );
+    }
+
+    // Re-pass original argv without the command token so each command's
+    // parseArgs sees its own positionals + flags.
+    const rest = argv.slice(argv.indexOf(name) + 1);
+    return await cmd.run(rest);
+  } catch (e) {
+    if (e instanceof UsageError) {
+      return {
+        exitCode: EXIT_USAGE,
+        json: { ok: false, error: e.message, exitCode: EXIT_USAGE },
+        stderrLines: [e.message],
+      };
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    return {
+      exitCode: EXIT_FAIL,
+      json: { ok: false, error: message, exitCode: EXIT_FAIL },
+      stderrLines: [message],
+    };
+  }
 }
 
 /**
@@ -186,54 +237,16 @@ export async function main(argv: readonly string[]): Promise<ExitCode> {
     return EXIT_OK;
   }
 
-  let jsonMode = false;
-  try {
-    // Pre-scan for --json so usage errors can still emit JSON when asked.
-    jsonMode = argv.includes("--json") || argv.some((a) => a === "--json=true");
-
-    const parsed = parseArgs(argv);
-    if (parsed.flags.help === true) {
-      console.log(helpText());
-      return EXIT_OK;
-    }
-
-    const name = parsed.command;
-    if (!name) {
-      throw new UsageError("missing command — try --help");
-    }
-    const cmd = COMMANDS[name];
-    if (!cmd) {
-      throw new UsageError(
-        `unknown command ${JSON.stringify(name)} — try --help`,
-      );
-    }
-
-    // Re-pass original argv without the command token so each command's
-    // parseArgs sees its own positionals + flags.
-    const rest = argv.slice(argv.indexOf(name) + 1);
-    const result = await cmd.run(rest);
-    await applyEmit(result, jsonMode || parsed.global.json);
-    if (result.keepAlive) await result.keepAlive;
-    return result.exitCode;
-  } catch (e) {
-    if (e instanceof UsageError) {
-      const result: CommandResult = {
-        exitCode: EXIT_USAGE,
-        json: { ok: false, error: e.message, exitCode: EXIT_USAGE },
-        stderrLines: [e.message],
-      };
-      await applyEmit(result, jsonMode);
-      return EXIT_USAGE;
-    }
-    const message = e instanceof Error ? e.message : String(e);
-    const result: CommandResult = {
-      exitCode: EXIT_FAIL,
-      json: { ok: false, error: message, exitCode: EXIT_FAIL },
-      stderrLines: [message],
-    };
-    await applyEmit(result, jsonMode);
-    return EXIT_FAIL;
+  // Pre-scan for --json so usage errors can still emit JSON when asked.
+  const jsonMode = argv.includes("--json") || argv.some((a) => a === "--json=true");
+  const result = await dispatch(argv);
+  if (result === "help") {
+    console.log(helpText());
+    return EXIT_OK;
   }
+  await applyEmit(result, jsonMode);
+  if (result.keepAlive) await result.keepAlive;
+  return result.exitCode;
 }
 
 // Process entry — only when executed directly.

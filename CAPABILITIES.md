@@ -12,7 +12,8 @@ Sidecar rows are probed against `parseSidecar` and name the diagnostic they prod
 rows are probed against the vendored compiler, which has no diagnostic codes and refuses by
 throwing, so those rows own none. Layout findings are neither: they are read off a rendered
 frame, own no diagnostics, and are probed by handing `findingsFor` a geometry copied out of
-`compositions/layout-codes` and asserting the codes it returns.
+`compositions/layout-codes` and asserting the codes it returns. Captions rows describe a job spec
+rather than a sidecar and are probed against `parseSpec`, each with a job that breaks only its key.
 
 ## Sidecar root (`pocket-motion.json`)
 
@@ -25,7 +26,7 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | shutter | no | — | object with `angle` and `samples`; every frame is then an EXPOSURE — the integer average of `samples` renders across `angle`/360 of the frame, centred on its tick (patches/0034). Absent means no shutter, and the parser fills in nothing, so identity moves only for a composition that declares one. Part of input identity; there is no CLI flag | src/manifest/sidecar.ts:852 | probed |
 | footage | no | [] | array of track objects; default [] when absent | src/manifest/sidecar.ts:486 | probed |
 | fonts | no | — | object with regular and bold paths (the default face) and optional named `faces`, or absent for the build default face | src/manifest/sidecar.ts:435 | probed |
-| sound | no | { narration: [], dialogue: [], cues: [] } | optional object of bed / narration / dialogue / cues; absent materialises empty arrays and omits bed. ids are one namespace across narration, dialogue and cues | src/manifest/sidecar.ts:523 | probed |
+| sound | no | { narration: [], dialogue: [], cues: [] } | optional object of bed / narration / dialogue / cues / silentTailMs; absent materialises empty arrays and omits bed and silentTailMs. ids are one namespace across narration, dialogue and cues. Outside input identity: `identityProjection` drops the whole key | src/manifest/sidecar.ts:523 | probed |
 | layoutAllow | no | [] | array of { node, allow, reason }; `node` is a debugName, `allow` is one of overlap / overflow / occlusion / canvas, `reason` is a non-empty sentence. One entry per node+scope. Suppresses the matching `layout` finding codes and never changes a pixel | src/manifest/sidecar.ts:594 | probed |
 | assertions | no | [] | array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames; changes no pixel | src/manifest/sidecar.ts:750 | probed |
 
@@ -55,10 +56,14 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 
 | key | required | default | constraint | source | verified |
 |---|---|---|---|---|---|
-| bed | no | — | optional object; src required (same path rules as footage src); startAt default 0; gain default 1; fadeInMs/fadeOutMs default 0 | src/manifest/sidecar.ts:949 | probed |
+| bed | no | — | optional object; src required (same path rules as footage src); startAt default 0; gain default 1; fadeInMs/fadeOutMs default 0. Its level is gain × envelope × every ducks[] window × every narration duck while that line runs; ducks, envelope and optional have rows of their own | src/manifest/sidecar.ts:949 | probed |
 | narration | no | [] | array of lines on the composition clock; id+src+startFrame required; gain default 1; duck default 1 (no duck) | src/manifest/sidecar.ts:1035 | probed |
 | dialogue | no | [] | array of lines on the clip clock; track must be a declared footage[].id; derived composition frame must fall inside that track's window | src/manifest/sidecar.ts:1132 | probed |
 | cues | no | [] | array of beat-pinned spot effects on the composition clock; id+src+atFrame required; gain default 1 | src/manifest/sidecar.ts:1251 | probed |
+| silentTailMs | no | — | integer ms >= 1: the last silentTailMs of the delivered audio are digital silence in the s16le 48 kHz stereo decode the sound manifest hashes, MEASURED after the mux by render (which exits 1 when it is not) and by sound --verify. The mixer stops all sound 50 ms before the tail — the codec carries sound one frame window past its last input — and the bed's fade-out completes there. Refused: nothing declared to mix; tail plus 50 ms not shorter than the film; a bed fade-out that does not fit before the gate; an element starting at or after the gate. One that starts before and runs past it by its probed length is refused by render (sound.tail.overrun). A --frames render of another length carries no tail and says so | src/manifest/sidecar.ts:1742 | probed |
+| <element>.envelope | no | — | 2..64 points { frame, gain }, piecewise linear, multiplying the element's gain; the last value holds. frame counts composition frames from the ELEMENT'S OWN START (0 for the bed, startFrame, atFrame, the derived frame for dialogue), so the envelope moves with its element; the first point is at 0 and frames strictly increase; gain 0..8; no point past durationFrames. One point is refused — it is a constant, which gain says. sound --verify measures the level once per piece between breakpoints | src/manifest/sidecar.ts:1892 | probed |
+| <element>.optional | no | false | boolean. true: the element is mixed when its file is on disk and SKIPPED when it is not — lint and render do not refuse it, render prints which it was and writes `mixed` per element into the sound manifest, sound and sound --verify report it `skipped`, and init does not count it as a file the copy needs. false (the default) is a required file, parsed to an absent key | src/manifest/sidecar.ts:1861 | probed |
+| bed.ducks | no | — | array of { startFrame, endFrame, duck } windows [startFrame, endFrame) on the composition clock in which the bed is multiplied by duck (0..1), whatever is playing — a narration line's duck lasts only as long as its file. Windows multiply each other and narration ducks where they overlap; the step is within 480 samples of the frame. sound --verify measures the bed's level inside and outside each window | src/manifest/sidecar.ts:2034 | probed |
 
 ## Shutter (`pocket-motion.json` `shutter`)
 
@@ -99,6 +104,8 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | first and last keyframe | yes | — | every property an animation touches must be pinned at both from/0% and to/100%; CSS falls back to the computed style at the ends, and that is not bakeable | vendor/pocketjs/framework/compiler/animation.ts:444 | probed |
 | animate-loop-[Ns] | no | 0 (play once) | PocketJS extension, also writable as theme.animation[name].loop: restarts the whole comma list, delays included, every N ms. It needs an animate-<name> in the same class literal, and the period bakes to ticks at the realm's rate | vendor/pocketjs/framework/compiler/tailwind.ts:576 | probed |
 | --hz=N | no | 60 | the rate timelines bake at: every delay and segment endpoint is a frame count at this rate. This realm steps the core at 60, so assertBakedTickRate refuses a bundle baked at any other rate, and refuses one that declares no rate at all | src/runtime/boot.ts:152 | pinned |
+| trim-start-[f] \| trim-end-[f] \| trim-offset-[f] \| trim-each\|whole | no | 0, 1, 0; each | a `<Path>`'s stroke drawn between two fractions of its arc length, measured on the flattened outline in the path's own units: start and end are ordered and clamped to [0, 1], the offset moves the window round and wraps (a window past the end of a closed subpath is one piece through its start; of an open one, two). `trim-each` trims every subpath alike, `trim-whole` treats them as one sequence. A window of the whole length is no trim at all, byte for byte, and a path trimmed to nothing emits no geometry — invisible by declaration, not covered. The fill is never trimmed. All three animate as `trimStart`, `trimEnd`, `trimOffset`; a draw-on is one keyframe, `trimEnd` 0 -> 1. `stroke-dashoffset` is not a spelling: it is a length, and trim a fraction. patches/0042/0043, class motion | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
+| morph-[f] | no | 0 | which of a `<Path>`'s morph keys it draws: at f = k + t, the control points are key k's and key k+1's mixed as `a * (1 - t) + b * t`, which is exact at every key; past the last key it holds the last. Negative values do not parse. Animates as `morph`; between keys the shape moves point for point along the correspondence the author drew, never a resampled one. patches/0042/0043, class motion | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
 
 ## Paint (class literals — faces, text effects, gradients, filters, blend modes)
 
@@ -114,6 +121,10 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | bg-clip-text \| bg-clip-border | no | border | on a Text node, paints the node's ground into its glyphs instead of its box — the gradient (legacy or not) or the solid `bg-*` colour — and the text colour is not drawn, so the Tailwind idiom `bg-clip-text text-transparent bg-linear-90 from-… to-…` is gradient text. The gradient spans the node's box. A stroke is not painted by it. patches/0019, class motion | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
 | arc-start-[deg] \| arc-sweep-[deg] \| arc-width-[px] | no | — | `arc-width` turns the node's ground into an annular sector centred in its box: outer radius half the shorter side, the band `arc-width` wide, from `arc-start` (0 = 12 o'clock, clockwise) for `arc-sweep` degrees (negative runs counter-clockwise), in the `bg-*` colour, with a round cap on each end unless `arc-cap-butt` says otherwise. A sweep of 0 draws nothing — neither arc nor the box (patches/0025, class upstream; before it, the node's whole ground). The arc is drawn in the node's frame and follows its world transform: a rotation turns it, a mirror reverses the sweep, a scale that differs per axis stretches ring, stroke and caps into an elliptical band (patches/0026, class upstream; before it, an arc under any world that was not axis-aligned drew nothing). All three animate as `arcStart`, `arcSweep`, `arcWidth` | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
 | arc-cap-round \| arc-cap-butt | no | round | how an arc's ends finish. `arc-cap-round` puts a half-disc of the stroke's width on each end; `arc-cap-butt` ends the band on the radii through `arc-start` and `arc-start + arc-sweep`, so an arc as wide as its radius is a pie sector — a radar wedge, a pie chart. Any other cap word does not parse, which a class= attribute refuses (patches/0041). Not animatable (an enum, PROP `arcCap` 183). patches/0027, class upstream | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
+| <Path d> \| d={[key0, key1, …]} \| viewBox | no | — | a View that also draws a baked vector outline, imported from `@pocketjs/framework/components`. `d` is the whole SVG path grammar (implicit repeats, exponents, arc flags without separators), normalised at build time to move, line, cubic and close — Q and T by exact degree elevation, an arc to cubics of at most 45 degrees by unit-vector bisection and square roots only, so a pak's bytes do not depend on the host's `Math.sin`. An array is the morph keys (at most 8): a line against a cubic is promoted exactly, any other difference is refused naming the first differing command, and point counts are never equalised. `viewBox` maps the coordinates onto the box, xMidYMid meet; without it `d` is in the node's own px. The build bakes a `d` written as literals — a string, a `+` of two, an array of them, a `const` of any of those, an element of a `const` array by literal index, the parameter of a `.map` callback over one, or the arms of a ternary — on any element, paired with the viewBox written beside it, so a component that forwards `d` to a `<Path>` is baked from its call site; any other `d` (an import, a computed string) is looked up at mount, which refuses an outline the build did not bake. Fill and stroke are the `fill-*`/`stroke-*` rows; geometry is rebuilt every frame in the core, so the world transform, a mask, a paint and a filter layer all apply. Drawn by this repository's rasteriser only (patches/0042 op 71 and 0043, class motion) | vendor/pocketjs/framework/compiler/path-data.ts | probed |
+| fill-<color> \| fill-[#hex] \| fill-none \| fill-nonzero\|evenodd | no | none; nonzero | a `<Path>`'s fill: colour `fill-<palette>` or `fill-[#hex]`, transparent by default so a path draws nothing until asked; `fill-evenodd` or the default `fill-nonzero` decides which winding is inside. Coverage is POLY's 4x4 sample lattice with a top-left rule, so two paths sharing an edge split its samples between them rather than both drawing it (a seam pixel half-covered by each is still two blends). The colour animates in keyframes as `fillColor` or CSS's `fill`. patches/0042/0043, class motion | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
+| stroke-<color> \| stroke-N \| stroke-[Npx] \| stroke-join-* \| stroke-cap-* \| stroke-miter-[N] | no | none; width 1; miter join, limit 4; butt cap | a `<Path>`'s stroke, SVG's defaults: colour `stroke-<palette>`/`stroke-[#hex]` (transparent until set), width `stroke-N` or `stroke-[Npx]` in the path's own units — viewBox units under a viewBox, and stroked before the world transform, so a non-uniform scale strokes as an SVG transform does; `stroke-join-miter\|round\|bevel`, `stroke-cap-butt\|round\|square`, `stroke-miter-[N]` with N >= 1. A negative width or a limit under 1 does not parse, which a class= attribute refuses. The outline is one positively wound cycle per open subpath (two per closed one) filled nonzero, so curvature tighter than the half-width fills solid. Round joins and caps bisect without trigonometry to 1/16 px. Width and colour animate as `strokeWidth`/`stroke-width` and `strokeColor`/`stroke`. A zero-length subpath draws no dot. patches/0042/0043, class motion | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
+| bg-clip-path | no | border | on a `<Path>`, paints the node's ground into the path's fill instead of its box — the solid `bg-*` colour, or a gradient (`bg-linear-*`, `bg-radial`, and a legacy two-stop `bg-gradient-to-*`, which takes the paint path here as under `bg-clip-text`) spanning the node's box. The stroke is not painted by it. patches/0042/0043, class motion | vendor/pocketjs/framework/compiler/tailwind.ts | probed |
 
 ## Declaring footage (generator side — `src/footage/declare.ts`)
 
@@ -128,6 +139,41 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 |---|---|---|---|---|---|
 | --format | no | mp4 | mp4 \| webm \| mov \| png-seq. mp4 is libx264 yuv420p; webm is libvpx-vp9 yuv420p with `-b:v 0` so --crf means quality; mov is prores_ks, profile 3 (422 HQ, yuv422p10le); png-seq writes <out>/%06d.png with no ffmpeg in the path and is byte-identical to `frame --at N`. With no --format the --out extension decides; a --format that disagrees with the extension is refused rather than silently winning. Read back with ffprobe in tests/format.test.ts | src/render/encode.ts:106 | pinned |
 | --alpha | no | off | asks the codec for an alpha channel: mov becomes ProRes 4444 (yuva444p10le in, yuva444p12le out — the 4444 bitstream is 12-bit), webm becomes yuva420p and the container gains alpha_mode=1 while the stream's own pix_fmt stays yuv420p, png-seq always carries all four channels. Refused for mp4, whose yuv420p has no alpha plane. The channel carries the picture: the rasteriser clears to transparent black (patches/0014), so a pixel no declared ground reaches has alpha 0 and a composition with a full-bleed ground is 255 everywhere — `render` measures and prints the floor rather than restating this | src/render/encode.ts:169 | pinned |
+
+## Captions job (`render --spec`, `template: "captions"`)
+
+| key | required | default | constraint | source | verified |
+|---|---|---|---|---|---|
+| transcript | yes | — | object naming the words exactly one way: `src` with `format` (a file) or `words` (inline). Read while the spec is parsed, so a directory of jobs refuses a bad transcript before it renders any of them | src/captions/spec.ts | probed |
+| transcript.src | no | — | repo-relative path to a JSON file; same path rules as footage src | src/captions/spec.ts | probed |
+| transcript.format | no | — | required with `src`: words \| whisperx \| openai — declared, never guessed from the file's keys. words is `{ words: [{ text, start, end }] }` with unknown keys refused; whisperx reads `segments[].words[]` of `{ word, start?, end? }` and closes a page at each segment's end; openai reads a word-level `verbose_json`, whose `words[]` carry no punctuation, and puts it back from `text` — refused when a word is not found there in order or `text` holds letters `words[]` does not. Inline `words` take no other format | src/captions/ingest.ts | probed |
+| transcript.language | yes | — | a BCP-47 tag. zh, ja, yue, wuu, th, lo, km and my are written without spaces: their words join with no gap and a word wider than a line breaks between its characters, keeping 禁則 (`NO_START` / `NO_END` in src/text/fit.ts). A language the file declares (WhisperX's code, OpenAI's name) must agree | src/captions/spec.ts | probed |
+| transcript.untimed | no | refuse | refuse \| attach. A spoken token with no times — WhisperX leaves a numeral it could not align that way — is refused, naming it, or shown with the word before it. A token that is only punctuation is attached whatever this says: closing marks to the word before, opening marks to the word after | src/captions/ingest.ts | probed |
+| transcript.words | no | — | array of `{ text, start, end }`, seconds — inline, or what any format reduces to. Times are finite and >= 0, a word does not end before it starts, starts never go back; ends may overlap the next word. A word's frames are [round(start·fps), max(that + 1, round(end·fps))), clipped to its page | src/captions/ingest.ts | probed |
+| style | yes | — | object; `name` decides which other keys it may carry, and a key the named style does not read is refused | src/captions/spec.ts | probed |
+| style.name | yes | — | highlight \| pill-karaoke \| clip-wipe \| matrix-decode \| kinetic-slam — the five treatments of src/captions/styles.ts, each keeping every word in the picture at every frame of its window | src/captions/spec.ts | probed |
+| style.size | no | at a 1080 px short side, scaled to the viewport: highlight 80, pill-karaoke 72, clip-wipe 88, matrix-decode 96, kinetic-slam 160 | integer 8…240, px. The face's own ceiling is lower — Noto Sans SC bakes up to 176 — and the measurement build names it | src/captions/spec.ts | probed |
+| style.minSize | no | 0.7 × size (kinetic-slam 0.5) | integer 8…size; the last rung of a 10% ladder down from size. The track takes the largest rung at which every word fits a line on its own (kinetic-slam: each page its own), and a word of a spaced language wider than the line at this size is refused rather than broken | src/captions/spec.ts | probed |
+| style.case | no | upper (pill-karaoke lower, matrix-decode none) | upper \| lower \| none, mapped with the transcript's language | src/captions/spec.ts | probed |
+| style.ink | no | #ffffff (matrix-decode #00ff41) | `#RRGGBB` or `#RRGGBBAA`; the text, in highlight, clip-wipe, matrix-decode and kinetic-slam | src/captions/spec.ts | probed |
+| style.box | no | #ff1745 | `#RRGGBB` or `#RRGGBBAA`; highlight's box behind the word being spoken | src/captions/spec.ts | probed |
+| style.pill | no | #e7e5e7 | `#RRGGBB` or `#RRGGBBAA`; pill-karaoke's pill behind every line | src/captions/spec.ts | probed |
+| style.inactive | no | #a6a6a6 | `#RRGGBB` or `#RRGGBBAA`; pill-karaoke's words before they are spoken | src/captions/spec.ts | probed |
+| style.active | no | #1c1e1d | `#RRGGBB` or `#RRGGBBAA`; pill-karaoke's words from 50 ms before they are spoken | src/captions/spec.ts | probed |
+| style.accent | no | #ffd700 | `#RRGGBB` or `#RRGGBBAA`; a keyword, in clip-wipe and kinetic-slam | src/captions/spec.ts | probed |
+| style.spoken | no | #ffffff66 | `#RRGGBB` or `#RRGGBBAA`; clip-wipe's words once spoken | src/captions/spec.ts | probed |
+| style.keywords | no | [] | array of non-empty strings, clip-wipe and kinetic-slam only; a word matches ignoring case and the punctuation attached to it, and is painted in `accent` | src/captions/spec.ts | probed |
+| layout | no | {} | optional object. A page closes before a word when the pause before it is at least pauseMs, the word before ends a sentence or a WhisperX segment, the page holds maxWords, or the word would need more than maxLines lines — except that a word starting on the page's first frame always joins it. Lines are rebalanced to the same count with the least squared slack | src/captions/spec.ts | probed |
+| layout.position | no | bottom (kinetic-slam center) | bottom \| center \| top; bottom and top sit `margin` from that edge | src/captions/spec.ts | probed |
+| layout.maxLines | no | 2 (kinetic-slam 1) | integer 1…4 | src/captions/spec.ts | probed |
+| layout.maxWords | no | no limit (pill-karaoke 4, kinetic-slam 1) | integer 1…100 | src/captions/spec.ts | probed |
+| layout.pauseMs | no | 400 | integer 0…10000; a pause at least this long between two words closes the page | src/captions/spec.ts | probed |
+| layout.holdMs | no | 500 (pill-karaoke and kinetic-slam 300) | integer 0…10000; how long a page stays after its last word ends, cut short when the next page starts | src/captions/spec.ts | probed |
+| layout.lineWidth | no | 80% of the width at 16:9, 78% at 9:16, 84% at 1:1 | integer px 1…width: the widest the caption block may be, its boxes and pill included | src/captions/spec.ts | probed |
+| layout.margin | no | 10% of the height from the bottom (9:16: 22%); from the top, 8% (9:16: 12%) | integer px 0…height/2. The 9:16 defaults keep clear of the button column and description band short-form players draw; they are this template's numbers, not a platform's | src/captions/spec.ts | probed |
+| footage | no | — | optional `{ src, fit }`, lower-third's block: one clip drawn under the captions at the full viewport from frame 0 to durationFrames — the burned-in delivery. Absent, the tree declares no ground and the frames are transparent wherever no caption paints (`render --format mov --alpha`) | src/manifest/spec.ts | probed |
+| viewport | no | [1920, 1080] | 16:9, 9:16 or 1:1 exactly, even sides (yuv420p needs them), short side 360…2160 | src/captions/spec.ts | probed |
+| durationFrames | no | the last word's end frame plus the last page's hold | when declared, refused if any word ends after it | src/captions/spec.ts | probed |
 
 ## Layout findings (`layout --json` `findings[]`)
 
@@ -229,6 +275,21 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.shutter.oneSample | shutter.samples |
 | sidecar.shutter.samples | shutter.samples |
 | sidecar.shutter.unknownKey | sidecar.shutter |
+| sidecar.sound.bed.ducks.duck.notNumber | sound.bed.ducks |
+| sidecar.sound.bed.ducks.duck.outOfRange | sound.bed.ducks |
+| sidecar.sound.bed.ducks.duck.required | sound.bed.ducks |
+| sidecar.sound.bed.ducks.empty | sound.bed.ducks |
+| sidecar.sound.bed.ducks.endFrame.notInteger | sound.bed.ducks |
+| sidecar.sound.bed.ducks.endFrame.outOfRange | sound.bed.ducks |
+| sidecar.sound.bed.ducks.endFrame.pastDuration | sound.bed.ducks |
+| sidecar.sound.bed.ducks.endFrame.required | sound.bed.ducks |
+| sidecar.sound.bed.ducks.notArray | sound.bed.ducks |
+| sidecar.sound.bed.ducks.notObject | sound.bed.ducks |
+| sidecar.sound.bed.ducks.startFrame.notInteger | sound.bed.ducks |
+| sidecar.sound.bed.ducks.startFrame.outOfRange | sound.bed.ducks |
+| sidecar.sound.bed.ducks.startFrame.pastDuration | sound.bed.ducks |
+| sidecar.sound.bed.ducks.startFrame.required | sound.bed.ducks |
+| sidecar.sound.bed.ducks.unknownKey | sound.bed.ducks |
 | sidecar.sound.bed.fadeInMs.notInteger | sound.bed |
 | sidecar.sound.bed.fadeInMs.outOfRange | sound.bed |
 | sidecar.sound.bed.fadeOutMs.notInteger | sound.bed |
@@ -283,6 +344,20 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.sound.dialogue.track.required | sound.dialogue |
 | sidecar.sound.dialogue.track.unknown | sound.dialogue |
 | sidecar.sound.dialogue.unknownKey | sound.dialogue |
+| sidecar.sound.envelope.firstNotZero | sound.envelope |
+| sidecar.sound.envelope.frame.notInteger | sound.envelope |
+| sidecar.sound.envelope.frame.outOfRange | sound.envelope |
+| sidecar.sound.envelope.frame.required | sound.envelope |
+| sidecar.sound.envelope.gain.notNumber | sound.envelope |
+| sidecar.sound.envelope.gain.outOfRange | sound.envelope |
+| sidecar.sound.envelope.gain.required | sound.envelope |
+| sidecar.sound.envelope.notArray | sound.envelope |
+| sidecar.sound.envelope.notIncreasing | sound.envelope |
+| sidecar.sound.envelope.pastDuration | sound.envelope |
+| sidecar.sound.envelope.pointNotObject | sound.envelope |
+| sidecar.sound.envelope.tooFew | sound.envelope |
+| sidecar.sound.envelope.tooMany | sound.envelope |
+| sidecar.sound.envelope.unknownKey | sound.envelope |
 | sidecar.sound.id.duplicate | sidecar.sound |
 | sidecar.sound.narration.duck.notNumber | sound.narration |
 | sidecar.sound.narration.duck.outOfRange | sound.narration |
@@ -305,6 +380,52 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.sound.narration.startFrame.required | sound.narration |
 | sidecar.sound.narration.unknownKey | sound.narration |
 | sidecar.sound.notObject | sidecar.sound |
+| sidecar.sound.optional.notBoolean | sound.optional |
+| sidecar.sound.silentTailMs.noRoomForFade | sound.silentTailMs |
+| sidecar.sound.silentTailMs.notInteger | sound.silentTailMs |
+| sidecar.sound.silentTailMs.nothingToMix | sound.silentTailMs |
+| sidecar.sound.silentTailMs.outOfRange | sound.silentTailMs |
+| sidecar.sound.silentTailMs.pastDuration | sound.silentTailMs |
+| sidecar.sound.silentTailMs.startsInTail | sound.silentTailMs |
 | sidecar.sound.unknownKey | sidecar.sound |
 | sidecar.supersample.invalid | sidecar.supersample |
 | sidecar.unknownKey | sidecar.motion |
+| spec.layout.holdMs | captions.layout.holdMs |
+| spec.layout.lineWidth | captions.layout.lineWidth |
+| spec.layout.margin | captions.layout.margin |
+| spec.layout.maxLines | captions.layout.maxLines |
+| spec.layout.maxWords | captions.layout.maxWords |
+| spec.layout.notObject | captions.layout |
+| spec.layout.pauseMs | captions.layout.pauseMs |
+| spec.layout.position | captions.layout.position |
+| spec.layout.unknownKey | captions.layout |
+| spec.style.case | captions.style.case |
+| spec.style.hex | captions.style.ink |
+| spec.style.keywords | captions.style.keywords |
+| spec.style.minSize | captions.style.minSize |
+| spec.style.name | captions.style.name |
+| spec.style.notObject | captions.style |
+| spec.style.required | captions.style |
+| spec.style.size | captions.style.size |
+| spec.style.unknownKey | captions.style |
+| spec.transcript.empty | captions.transcript.words |
+| spec.transcript.format | captions.transcript.format |
+| spec.transcript.json | captions.transcript.src |
+| spec.transcript.language | captions.transcript.language |
+| spec.transcript.missingFile | captions.transcript.src |
+| spec.transcript.notObject | captions.transcript |
+| spec.transcript.order | captions.transcript.words |
+| spec.transcript.pastEnd | captions.durationFrames |
+| spec.transcript.required | captions.transcript |
+| spec.transcript.shape | captions.transcript.format |
+| spec.transcript.source | captions.transcript |
+| spec.transcript.src.absolute | captions.transcript.src |
+| spec.transcript.src.empty | captions.transcript.src |
+| spec.transcript.src.missing | captions.transcript.src |
+| spec.transcript.src.traversal | captions.transcript.src |
+| spec.transcript.time | captions.transcript.words |
+| spec.transcript.unaligned | captions.transcript.format |
+| spec.transcript.unknownKey | captions.transcript |
+| spec.transcript.untimed | captions.transcript.untimed |
+| spec.transcript.untimedMode | captions.transcript.untimed |
+| spec.viewport.aspect | captions.viewport |

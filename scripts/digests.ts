@@ -117,6 +117,14 @@ const ENTRIES = [
   "compositions/captions/pill-karaoke",
   "compositions/captions/clip-wipe",
   "compositions/captions/matrix-decode",
+  // captions/alpha-en, captions/burn-zh. The two samples of the `captions` job
+  // template (src/captions/template.ts): a Latin alpha track read from a
+  // WhisperX transcript, and a CJK track read from OpenAI's verbose_json and
+  // burned into a footage clip. Where a page breaks, what size it takes and
+  // which frame a word enters on are all decided by the template, so a change
+  // to the layout, the clock arithmetic or a style moves one of these first.
+  "compositions/captions/alpha-en",
+  "compositions/captions/burn-zh",
   // transitions. Nine scene-to-scene transitions ported from the HyperFrames
   // catalog in one film: a velocity-matched cut, a clip wipe, a wash, a tile
   // grid, a match cut, a rubber band, a whip pan with echoes, and two flat
@@ -174,6 +182,19 @@ const ENTRIES = [
   // and one label under `shutter-hold`. A change to where a sample sits, to
   // the jump rule or to the integer average moves this digest and no other.
   "compositions/shutter-blur",
+  // vector-paths. patches/0042-0043 over 120 frames: a signature drawn on by
+  // trimEnd, a blob morphing under a gradient fill, six wedges sharing their
+  // edges, a wireframe turning in a viewBox with a trimmed ring orbiting it,
+  // and a wave morphing under an overflow-mask window. A change to the
+  // flattening, the stroke outline, the trim, the morph, the arc conversion
+  // or the PATH coverage moves this digest and no other.
+  "compositions/vector-paths",
+  // long-track. patches/0050: a camera tour whose six transform tracks carry
+  // 2,003 segments each and a frame counter whose units glyphs carry 841 —
+  // every one past the 255 a track held before — over 2,100 frames at
+  // 320×180. A count read short, a segment found wrong by the core's search,
+  // or a kit that splits or thins a long move moves this digest and no other.
+  "compositions/long-track",
 ] as const;
 
 /**

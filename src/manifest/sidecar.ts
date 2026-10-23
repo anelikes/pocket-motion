@@ -74,7 +74,52 @@ export interface SidecarFace {
   readonly bold: string;
 }
 
-export interface SoundBed {
+/**
+ * One breakpoint of a gain envelope.
+ *
+ * `frame` counts composition frames from the ELEMENT'S OWN START — composition
+ * frame 0 for the bed, `startFrame` for a narration line, `atFrame` for a cue,
+ * the derived composition frame for a dialogue line — so an envelope moves
+ * with its element when the element is retimed, and a dialogue line's
+ * envelope stays on its clip.
+ */
+export interface EnvelopePoint {
+  readonly frame: number;
+  /** Linear factor on the element's `gain`, 0..8. */
+  readonly gain: number;
+}
+
+/**
+ * A window of the composition in which the bed is multiplied by `duck`,
+ * whatever else is or is not playing — the duck a narration line carries
+ * lasts only as long as that line's file.
+ */
+export interface BedDuck {
+  /** First composition frame of the window. */
+  readonly startFrame: number;
+  /** First composition frame after it: `[startFrame, endFrame)`, as footage. */
+  readonly endFrame: number;
+  /** Linear factor, 0..1. */
+  readonly duck: number;
+}
+
+/**
+ * The three keys below are absent unless written, and the parser fills in
+ * nothing for them: absent `envelope` is a constant `gain`, absent `optional`
+ * is a required file, absent `ducks` is no window of its own.
+ */
+interface SoundElementShapes {
+  /** Piecewise-linear factor on `gain`, held after its last point. */
+  readonly envelope?: readonly EnvelopePoint[];
+  /**
+   * Mixed when the file is on disk and SKIPPED when it is not, and `render`
+   * says which. Only `true` is stored; `false` is the default and parses to
+   * an absent key.
+   */
+  readonly optional?: true;
+}
+
+export interface SoundBed extends SoundElementShapes {
   readonly src: string;
   /** Seconds into the source. Default 0. */
   readonly startAt: number;
@@ -82,9 +127,10 @@ export interface SoundBed {
   readonly gain: number;
   readonly fadeInMs: number;
   readonly fadeOutMs: number;
+  readonly ducks?: readonly BedDuck[];
 }
 
-export interface NarrationLine {
+export interface NarrationLine extends SoundElementShapes {
   readonly id: string;
   readonly src: string;
   /** Composition frame at which this line starts. */
@@ -94,7 +140,7 @@ export interface NarrationLine {
   readonly duck: number;
 }
 
-export interface DialogueLine {
+export interface DialogueLine extends SoundElementShapes {
   readonly id: string;
   readonly src: string;
   /** A declared `footage[].id`. */
@@ -104,7 +150,7 @@ export interface DialogueLine {
   readonly gain: number;
 }
 
-export interface SoundCue {
+export interface SoundCue extends SoundElementShapes {
   readonly id: string;
   readonly src: string;
   /** Composition frame at which this cue fires. */
@@ -117,6 +163,13 @@ export interface SidecarSound {
   readonly narration: readonly NarrationLine[];
   readonly dialogue: readonly DialogueLine[];
   readonly cues: readonly SoundCue[];
+  /**
+   * The last `silentTailMs` of the delivered audio are digital silence. The
+   * mixer stops all sound `SILENT_TAIL_GUARD_MS` before it, and the bed's
+   * fade-out completes there rather than at the end of the picture. Absent
+   * means no tail.
+   */
+  readonly silentTailMs?: number;
 }
 
 /**
@@ -336,7 +389,16 @@ export const FONT_FACES_MAX = 8;
  */
 export const FONT_FILES_MAX_BYTES = 64 * 1024 * 1024;
 
-export const SOUND_KEYS = new Set(["bed", "narration", "dialogue", "cues"]);
+export const SOUND_KEYS = new Set([
+  "bed",
+  "narration",
+  "dialogue",
+  "cues",
+  "silentTailMs",
+]);
+
+/** Keys every element of every role accepts, each parsed by one function. */
+export const SOUND_ELEMENT_KEYS = new Set(["envelope", "optional"]);
 
 export const SOUND_BED_KEYS = new Set([
   "src",
@@ -344,6 +406,8 @@ export const SOUND_BED_KEYS = new Set([
   "gain",
   "fadeInMs",
   "fadeOutMs",
+  "ducks",
+  ...SOUND_ELEMENT_KEYS,
 ]);
 
 export const SOUND_NARRATION_KEYS = new Set([
@@ -352,6 +416,7 @@ export const SOUND_NARRATION_KEYS = new Set([
   "startFrame",
   "gain",
   "duck",
+  ...SOUND_ELEMENT_KEYS,
 ]);
 
 export const SOUND_DIALOGUE_KEYS = new Set([
@@ -360,9 +425,43 @@ export const SOUND_DIALOGUE_KEYS = new Set([
   "track",
   "sourceFrame",
   "gain",
+  ...SOUND_ELEMENT_KEYS,
 ]);
 
-export const SOUND_CUE_KEYS = new Set(["id", "src", "atFrame", "gain"]);
+export const SOUND_CUE_KEYS = new Set([
+  "id",
+  "src",
+  "atFrame",
+  "gain",
+  ...SOUND_ELEMENT_KEYS,
+]);
+
+export const ENVELOPE_POINT_KEYS = new Set(["frame", "gain"]);
+
+export const BED_DUCK_KEYS = new Set(["startFrame", "endFrame", "duck"]);
+
+/**
+ * One point is a constant, which `gain` already says. The ceiling bounds the
+ * filter expression the mixer writes, one term per segment, on one argv.
+ */
+export const ENVELOPE_POINTS_MIN = 2;
+export const ENVELOPE_POINTS_MAX = 64;
+
+/**
+ * How long before a declared silent tail the mixer stops all sound — the gate
+ * closes and the bed's fade-out completes there, not at the tail itself.
+ *
+ * An AAC frame that sees any non-zero input can decode to non-zero samples
+ * across the 2048-sample window it shares with the next one, and how many
+ * depends on what the encoder spent on the frames before. Measured on
+ * `compositions/sound-roles`' mix at 48 kHz, 192 kb/s, counting non-zero
+ * s16 samples in the 500 ms tail with the gate closed this far before it:
+ * 0 ms 1092, 10 ms 1130, 21 ms 194, 30 ms 112, 43 ms 0, 50 ms 0, 100 ms 0.
+ * 50 ms is two 1024-sample frames at 44.1 kHz. The tail is still MEASURED
+ * after the mux, so a mix at a lower rate, where two frames are longer, is
+ * refused rather than assumed.
+ */
+export const SILENT_TAIL_GUARD_MS = 50;
 
 /** Roles that carry a `src`, used as `pathIssue` prefixes. */
 export const SOUND_SRC_ROLES = ["bed", "narration", "dialogue", "cues"] as const;
@@ -808,6 +907,7 @@ export function parseSidecar(input: unknown): ParseResult {
     diagnostics,
     parsedFootageTracks,
     durationFrames,
+    fps,
   );
 
   // --- layoutAllow (optional, default []) ---
@@ -1567,6 +1667,7 @@ function parseSound(
   diagnostics: Diagnostic[],
   footageTracks: readonly FootageTrack[],
   durationFrames: number | undefined,
+  fps: number | undefined,
 ): SidecarSound {
   if (!("sound" in input)) {
     return { narration: [], dialogue: [], cues: [] };
@@ -1597,27 +1698,446 @@ function parseSound(
   }
 
   const seenIds = new Map<string, string>();
-  const bed = parseSoundBed(raw, diagnostics);
+  const bed = parseSoundBed(raw, diagnostics, durationFrames);
   const narration = parseNarrationLines(raw, diagnostics, seenIds, durationFrames);
   const dialogue = parseDialogueLines(
     raw,
     diagnostics,
     seenIds,
     footageTracks,
+    durationFrames,
   );
   const cues = parseSoundCues(raw, diagnostics, seenIds, durationFrames);
+  const silentTailMs = parseSilentTail(
+    raw,
+    diagnostics,
+    { bed, narration, dialogue, cues },
+    footageTracks,
+    durationFrames,
+    fps,
+  );
 
   return {
     ...(bed !== undefined ? { bed } : {}),
     narration,
     dialogue,
     cues,
+    ...(silentTailMs !== undefined ? { silentTailMs } : {}),
   };
+}
+
+/**
+ * `silentTailMs`: the last N ms of the delivered audio are digital silence.
+ *
+ * Three things are refused here because they are knowable from the sidecar
+ * alone: a tail with nothing to mix under it, a tail as long as the film, and
+ * a bed whose fade-out — which completes where the tail begins — does not fit
+ * before it. An element that STARTS inside the tail is refused too, naming
+ * the frame: the gate would remove all of it. An element that starts before
+ * the tail and runs into it is refused by `render`, which has probed the
+ * file's length (`tailOverruns`, `src/sound/mix.ts`); whether the result is
+ * silent is measured after the mux, because the encoder is the last thing
+ * that can put a sample there.
+ */
+function parseSilentTail(
+  raw: Record<string, unknown>,
+  diagnostics: Diagnostic[],
+  parsed: {
+    readonly bed: SoundBed | undefined;
+    readonly narration: readonly NarrationLine[];
+    readonly dialogue: readonly DialogueLine[];
+    readonly cues: readonly SoundCue[];
+  },
+  footageTracks: readonly FootageTrack[],
+  durationFrames: number | undefined,
+  fps: number | undefined,
+): number | undefined {
+  if (!("silentTailMs" in raw)) return undefined;
+  const value = raw.silentTailMs;
+  const at = "/sound/silentTailMs";
+  if (!isInteger(value)) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.silentTailMs.notInteger",
+        at,
+        `\`silentTailMs\` must be an integer number of milliseconds >= 1; got ${JSON.stringify(value)}`,
+      ),
+    );
+    return undefined;
+  }
+  if (value < 1) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.silentTailMs.outOfRange",
+        at,
+        `\`silentTailMs\` must be >= 1; got ${value}. Remove the key for no tail`,
+      ),
+    );
+    return undefined;
+  }
+  const declared =
+    raw.bed !== undefined ||
+    (Array.isArray(raw.narration) && raw.narration.length > 0) ||
+    (Array.isArray(raw.dialogue) && raw.dialogue.length > 0) ||
+    (Array.isArray(raw.cues) && raw.cues.length > 0);
+  if (!declared) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.silentTailMs.nothingToMix",
+        at,
+        "`silentTailMs` declares silence at the end of a mix, and this sidecar declares nothing to mix",
+      ),
+    );
+    return undefined;
+  }
+  if (durationFrames === undefined || fps === undefined) return value;
+
+  const durationMs = (durationFrames * 1000) / fps;
+  if (value + SILENT_TAIL_GUARD_MS >= durationMs) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.silentTailMs.pastDuration",
+        at,
+        `\`silentTailMs\` (${value}) and the ${SILENT_TAIL_GUARD_MS} ms the mixer stops before it ` +
+          `must be shorter than the composition (${durationMs} ms)`,
+      ),
+    );
+    return undefined;
+  }
+  const tailStartMs = durationMs - value;
+  // Sound stops SILENT_TAIL_GUARD_MS before the tail, so that is where the
+  // bed's fade-out completes and the last instant anything can start.
+  const gateMs = tailStartMs - SILENT_TAIL_GUARD_MS;
+  let ok = true;
+  if (parsed.bed !== undefined && parsed.bed.fadeOutMs > gateMs) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.silentTailMs.noRoomForFade",
+        "/sound/bed/fadeOutMs",
+        `the bed's fade-out completes ${SILENT_TAIL_GUARD_MS} ms before the ${value} ms silent tail, ` +
+          `at ${gateMs} ms, so it must be <= ${gateMs}; got ${parsed.bed.fadeOutMs}`,
+      ),
+    );
+    ok = false;
+  }
+  const startsInTail = (frame: number, path: string, label: string): void => {
+    const startMs = (frame * 1000) / fps;
+    if (startMs < gateMs) return;
+    diagnostics.push(
+      diag(
+        "sidecar.sound.silentTailMs.startsInTail",
+        path,
+        `${label} starts at composition frame ${frame} (${startMs} ms), at or after ${gateMs} ms, ` +
+          `where sound stops ${SILENT_TAIL_GUARD_MS} ms before the ${value} ms silent tail; ` +
+          "the gate would remove all of it",
+      ),
+    );
+    ok = false;
+  };
+  parsed.narration.forEach((line, i) =>
+    startsInTail(line.startFrame, `/sound/narration/${i}/startFrame`, `narration ${JSON.stringify(line.id)}`),
+  );
+  const byId = new Map(footageTracks.map((t) => [t.id, t]));
+  parsed.dialogue.forEach((line, i) => {
+    const track = byId.get(line.track);
+    if (track === undefined) return;
+    startsInTail(
+      dialogueCompositionFrame(line, track),
+      `/sound/dialogue/${i}/sourceFrame`,
+      `dialogue ${JSON.stringify(line.id)}`,
+    );
+  });
+  parsed.cues.forEach((cue, i) =>
+    startsInTail(cue.atFrame, `/sound/cues/${i}/atFrame`, `cue ${JSON.stringify(cue.id)}`),
+  );
+  return ok ? value : undefined;
+}
+
+/**
+ * `optional`: only a boolean. `true` is stored, `false` — the default, a
+ * required file — is stored as nothing, so the two spellings of "required"
+ * parse to one value.
+ */
+function parseOptional(
+  entry: Record<string, unknown>,
+  base: string,
+  diagnostics: Diagnostic[],
+): { readonly optional?: true } | undefined {
+  if (!("optional" in entry)) return {};
+  if (typeof entry.optional !== "boolean") {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.optional.notBoolean",
+        `${base}/optional`,
+        `\`optional\` must be true or false; got ${JSON.stringify(entry.optional)}`,
+      ),
+    );
+    return undefined;
+  }
+  return entry.optional ? { optional: true } : {};
+}
+
+/**
+ * `envelope`: points `{ frame, gain }` on the element's own clock.
+ *
+ * The first point is at frame 0, so the level at the element's start is
+ * written rather than extrapolated; frames strictly increase, so no instant
+ * has two values; and the last value is held, which is the one rule the
+ * reader is not shown in the data. A point past the end of the composition
+ * is refused because no frame of the film reaches it — `startFrame` is the
+ * element's composition start, or undefined when that could not be derived
+ * (a dialogue line on a track that failed to parse), and then that check is
+ * skipped rather than guessed.
+ */
+function parseEnvelope(
+  entry: Record<string, unknown>,
+  base: string,
+  startFrame: number | undefined,
+  durationFrames: number | undefined,
+  diagnostics: Diagnostic[],
+): { readonly envelope?: readonly EnvelopePoint[] } | undefined {
+  if (!("envelope" in entry)) return {};
+  const raw = entry.envelope;
+  const at = `${base}/envelope`;
+  if (!Array.isArray(raw)) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.envelope.notArray",
+        at,
+        `\`envelope\` must be an array of { frame, gain } points; got ${describeType(raw)}`,
+      ),
+    );
+    return undefined;
+  }
+  if (raw.length < ENVELOPE_POINTS_MIN) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.envelope.tooFew",
+        at,
+        `\`envelope\` needs at least ${ENVELOPE_POINTS_MIN} points; got ${raw.length}. ` +
+          "A single level is a constant — write it as `gain` and remove the envelope",
+      ),
+    );
+    return undefined;
+  }
+  if (raw.length > ENVELOPE_POINTS_MAX) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.envelope.tooMany",
+        at,
+        `\`envelope\` may have at most ${ENVELOPE_POINTS_MAX} points; got ${raw.length}`,
+      ),
+    );
+    return undefined;
+  }
+  const points: EnvelopePoint[] = [];
+  let ok = true;
+  for (let i = 0; i < raw.length; i++) {
+    const point = raw[i];
+    const p = `${at}/${i}`;
+    if (!isPlainObject(point)) {
+      diagnostics.push(
+        diag(
+          "sidecar.sound.envelope.pointNotObject",
+          p,
+          `envelope point must be an object { frame, gain }; got ${describeType(point)}`,
+        ),
+      );
+      ok = false;
+      continue;
+    }
+    for (const key of Object.keys(point)) {
+      if (!ENVELOPE_POINT_KEYS.has(key)) {
+        diagnostics.push(
+          diag(
+            "sidecar.sound.envelope.unknownKey",
+            `${p}/${key}`,
+            `unknown key ${JSON.stringify(key)}; allowed keys are ${[...ENVELOPE_POINT_KEYS].join(", ")}`,
+          ),
+        );
+        ok = false;
+      }
+    }
+    const frame = parseRequiredNonNegInt(
+      point,
+      p,
+      "frame",
+      "sidecar.sound.envelope.frame.required",
+      "sidecar.sound.envelope.frame.notInteger",
+      "sidecar.sound.envelope.frame.outOfRange",
+      diagnostics,
+    );
+    let gain: number | undefined;
+    if (!("gain" in point)) {
+      diagnostics.push(
+        diag("sidecar.sound.envelope.gain.required", `${p}/gain`, "`gain` is required"),
+      );
+    } else {
+      gain = parseGain(
+        point,
+        p,
+        "sidecar.sound.envelope.gain.notNumber",
+        "sidecar.sound.envelope.gain.outOfRange",
+        diagnostics,
+      );
+    }
+    if (frame === undefined || gain === undefined) {
+      ok = false;
+      continue;
+    }
+    if (i === 0 && frame !== 0) {
+      diagnostics.push(
+        diag(
+          "sidecar.sound.envelope.firstNotZero",
+          `${p}/frame`,
+          `the first envelope point must be at frame 0, the element's own start; got ${frame}`,
+        ),
+      );
+      ok = false;
+    }
+    const prev = points[points.length - 1];
+    if (prev !== undefined && frame <= prev.frame) {
+      diagnostics.push(
+        diag(
+          "sidecar.sound.envelope.notIncreasing",
+          `${p}/frame`,
+          `envelope frames must strictly increase; frame ${frame} follows ${prev.frame}`,
+        ),
+      );
+      ok = false;
+    }
+    if (
+      startFrame !== undefined &&
+      durationFrames !== undefined &&
+      startFrame + frame > durationFrames
+    ) {
+      diagnostics.push(
+        diag(
+          "sidecar.sound.envelope.pastDuration",
+          `${p}/frame`,
+          `envelope point at frame ${frame} of an element starting at composition frame ` +
+            `${startFrame} lands on ${startFrame + frame}, past durationFrames (${durationFrames})`,
+        ),
+      );
+      ok = false;
+    }
+    points.push({ frame, gain });
+  }
+  return ok ? { envelope: points } : undefined;
+}
+
+/**
+ * `bed.ducks`: windows `[startFrame, endFrame)` on the composition clock in
+ * which the bed is multiplied by `duck`. They multiply each other and every
+ * narration line's `duck` where they overlap.
+ */
+function parseBedDucks(
+  entry: Record<string, unknown>,
+  base: string,
+  durationFrames: number | undefined,
+  diagnostics: Diagnostic[],
+): { readonly ducks?: readonly BedDuck[] } | undefined {
+  if (!("ducks" in entry)) return {};
+  const raw = entry.ducks;
+  const at = `${base}/ducks`;
+  if (!Array.isArray(raw)) {
+    diagnostics.push(
+      diag(
+        "sidecar.sound.bed.ducks.notArray",
+        at,
+        `\`ducks\` must be an array of { startFrame, endFrame, duck }; got ${describeType(raw)}`,
+      ),
+    );
+    return undefined;
+  }
+  const ducks: BedDuck[] = [];
+  let ok = true;
+  for (let i = 0; i < raw.length; i++) {
+    const window = raw[i];
+    const p = `${at}/${i}`;
+    if (!isPlainObject(window)) {
+      diagnostics.push(
+        diag(
+          "sidecar.sound.bed.ducks.notObject",
+          p,
+          `duck window must be an object { startFrame, endFrame, duck }; got ${describeType(window)}`,
+        ),
+      );
+      ok = false;
+      continue;
+    }
+    for (const key of Object.keys(window)) {
+      if (!BED_DUCK_KEYS.has(key)) {
+        diagnostics.push(
+          diag(
+            "sidecar.sound.bed.ducks.unknownKey",
+            `${p}/${key}`,
+            `unknown key ${JSON.stringify(key)}; allowed keys are ${[...BED_DUCK_KEYS].join(", ")}`,
+          ),
+        );
+        ok = false;
+      }
+    }
+    const startFrame = parseRequiredFrame(
+      window,
+      p,
+      "startFrame",
+      durationFrames,
+      "sidecar.sound.bed.ducks.startFrame.required",
+      "sidecar.sound.bed.ducks.startFrame.notInteger",
+      "sidecar.sound.bed.ducks.startFrame.outOfRange",
+      "sidecar.sound.bed.ducks.startFrame.pastDuration",
+      diagnostics,
+    );
+    const endFrame = parseRequiredFrame(
+      window,
+      p,
+      "endFrame",
+      durationFrames,
+      "sidecar.sound.bed.ducks.endFrame.required",
+      "sidecar.sound.bed.ducks.endFrame.notInteger",
+      "sidecar.sound.bed.ducks.endFrame.outOfRange",
+      "sidecar.sound.bed.ducks.endFrame.pastDuration",
+      diagnostics,
+    );
+    let duck: number | undefined;
+    if (!("duck" in window)) {
+      diagnostics.push(
+        diag("sidecar.sound.bed.ducks.duck.required", `${p}/duck`, "`duck` is required"),
+      );
+    } else {
+      duck = parseDuck(
+        window,
+        p,
+        "sidecar.sound.bed.ducks.duck.notNumber",
+        "sidecar.sound.bed.ducks.duck.outOfRange",
+        diagnostics,
+      );
+    }
+    if (startFrame === undefined || endFrame === undefined || duck === undefined) {
+      ok = false;
+      continue;
+    }
+    if (endFrame <= startFrame) {
+      diagnostics.push(
+        diag(
+          "sidecar.sound.bed.ducks.empty",
+          `${p}/endFrame`,
+          `a duck window is [startFrame, endFrame) and must hold a frame; got [${startFrame}, ${endFrame})`,
+        ),
+      );
+      ok = false;
+      continue;
+    }
+    ducks.push({ startFrame, endFrame, duck });
+  }
+  return ok ? { ducks } : undefined;
 }
 
 function parseSoundBed(
   raw: Record<string, unknown>,
   diagnostics: Diagnostic[],
+  durationFrames: number | undefined,
 ): SoundBed | undefined {
   if (!("bed" in raw)) return undefined;
 
@@ -1688,17 +2208,25 @@ function parseSoundBed(
     "sidecar.sound.bed.fadeOutMs.outOfRange",
     diagnostics,
   );
+  // The bed starts at composition frame 0, so its envelope's frames are
+  // composition frames.
+  const envelope = parseEnvelope(entry, base, 0, durationFrames, diagnostics);
+  const ducks = parseBedDucks(entry, base, durationFrames, diagnostics);
+  const optional = parseOptional(entry, base, diagnostics);
 
   if (
     src === undefined ||
     startAt === undefined ||
     gain === undefined ||
     fadeInMs === undefined ||
-    fadeOutMs === undefined
+    fadeOutMs === undefined ||
+    envelope === undefined ||
+    ducks === undefined ||
+    optional === undefined
   ) {
     return undefined;
   }
-  return { src, startAt, gain, fadeInMs, fadeOutMs };
+  return { src, startAt, gain, fadeInMs, fadeOutMs, ...envelope, ...ducks, ...optional };
 }
 
 function parseNarrationLines(
@@ -1782,18 +2310,31 @@ function parseNarrationLines(
       "sidecar.sound.narration.gain.outOfRange",
       diagnostics,
     );
-    const duck = parseDuck(entry, base, diagnostics);
+    const duck =
+      "duck" in entry
+        ? parseDuck(
+            entry,
+            base,
+            "sidecar.sound.narration.duck.notNumber",
+            "sidecar.sound.narration.duck.outOfRange",
+            diagnostics,
+          )
+        : 1;
+    const envelope = parseEnvelope(entry, base, startFrame, durationFrames, diagnostics);
+    const optional = parseOptional(entry, base, diagnostics);
 
     if (
       id === undefined ||
       src === undefined ||
       startFrame === undefined ||
       gain === undefined ||
-      duck === undefined
+      duck === undefined ||
+      envelope === undefined ||
+      optional === undefined
     ) {
       continue;
     }
-    lines.push({ id, src, startFrame, gain, duck });
+    lines.push({ id, src, startFrame, gain, duck, ...envelope, ...optional });
   }
   return lines;
 }
@@ -1803,6 +2344,7 @@ function parseDialogueLines(
   diagnostics: Diagnostic[],
   seenIds: Map<string, string>,
   footageTracks: readonly FootageTrack[],
+  durationFrames: number | undefined,
 ): DialogueLine[] {
   if (!("dialogue" in raw)) return [];
   if (!Array.isArray(raw.dialogue)) {
@@ -1882,10 +2424,11 @@ function parseDialogueLines(
       diagnostics,
     );
 
+    let derived: number | undefined;
     if (trackId !== undefined && sourceFrame !== undefined) {
       const track = byId.get(trackId);
       if (track !== undefined) {
-        const derived = dialogueCompositionFrame(
+        derived = dialogueCompositionFrame(
           { sourceFrame },
           track,
         );
@@ -1903,16 +2446,23 @@ function parseDialogueLines(
       }
     }
 
+    // The envelope rides the line's own start, which for dialogue is the
+    // composition frame the clip mapping derives — so it moves with the clip.
+    const envelope = parseEnvelope(entry, base, derived, durationFrames, diagnostics);
+    const optional = parseOptional(entry, base, diagnostics);
+
     if (
       id === undefined ||
       src === undefined ||
       trackId === undefined ||
       sourceFrame === undefined ||
-      gain === undefined
+      gain === undefined ||
+      envelope === undefined ||
+      optional === undefined
     ) {
       continue;
     }
-    lines.push({ id, src, track: trackId, sourceFrame, gain });
+    lines.push({ id, src, track: trackId, sourceFrame, gain, ...envelope, ...optional });
   }
   return lines;
 }
@@ -1999,15 +2549,20 @@ function parseSoundCues(
       diagnostics,
     );
 
+    const envelope = parseEnvelope(entry, base, atFrame, durationFrames, diagnostics);
+    const optional = parseOptional(entry, base, diagnostics);
+
     if (
       id === undefined ||
       src === undefined ||
       atFrame === undefined ||
-      gain === undefined
+      gain === undefined ||
+      envelope === undefined ||
+      optional === undefined
     ) {
       continue;
     }
-    cues.push({ id, src, atFrame, gain });
+    cues.push({ id, src, atFrame, gain, ...envelope, ...optional });
   }
   return cues;
 }
@@ -2167,17 +2722,19 @@ function parseGain(
   return value;
 }
 
+/** `duck` when present: a linear factor in DUCK_MIN..DUCK_MAX. */
 function parseDuck(
   entry: Record<string, unknown>,
   base: string,
+  notNumberCode: string,
+  outOfRangeCode: string,
   diagnostics: Diagnostic[],
 ): number | undefined {
-  if (!("duck" in entry)) return 1;
   const value = entry.duck;
   if (typeof value !== "number" || !Number.isFinite(value)) {
     diagnostics.push(
       diag(
-        "sidecar.sound.narration.duck.notNumber",
+        notNumberCode,
         `${base}/duck`,
         `\`duck\` must be a finite number in ${DUCK_MIN}..${DUCK_MAX}; got ${JSON.stringify(value)}`,
       ),
@@ -2187,7 +2744,7 @@ function parseDuck(
   if (value < DUCK_MIN || value > DUCK_MAX) {
     diagnostics.push(
       diag(
-        "sidecar.sound.narration.duck.outOfRange",
+        outOfRangeCode,
         `${base}/duck`,
         `\`duck\` must be in ${DUCK_MIN}..${DUCK_MAX}; got ${value}`,
       ),

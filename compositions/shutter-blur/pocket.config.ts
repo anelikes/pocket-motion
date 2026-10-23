@@ -23,6 +23,14 @@ import { definePocketConfig } from "../../vendor/pocketjs/framework/src/config.t
  *          off the frame's tick sits at a whole pixel, so the pixels of a
  *          2-sample exposure can be written down in advance
  *          (`tests/shutter.test.ts`)
+ *   blade  spin2 over 2 ticks: half a revolution a tick, so at every tick the
+ *          150 × 30 blade lies at 0 or 180 degrees — the same rectangle — over
+ *          `peek`, 15 px inside it at each end and 10 px along each side. The
+ *          samples sit up to 79 degrees either side of that and uncover the
+ *          bar's ends, so `peek` is covered at the tick of every frame and in
+ *          the picture of every exposure. `layout`, `visibility` and `assert`
+ *          read the exposure and see it; `--read tick` does not
+ *          (`tests/shutter.test.ts`)
  */
 export default definePocketConfig({
   theme: {
@@ -48,6 +56,8 @@ export default definePocketConfig({
       pop: "pop 1000ms cubic-bezier(0.25,1,0.5,1) infinite",
       // 1067 ms bakes to 64 ticks (round half up of 64.02).
       known: "known 1067ms linear infinite",
+      // 34 ms bakes to 2 ticks (2.04).
+      blade: "spin2 34ms linear infinite",
     },
   },
 });
