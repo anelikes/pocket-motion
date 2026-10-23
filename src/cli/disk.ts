@@ -37,7 +37,8 @@ const ROOT = resolve(import.meta.dir, "../..");
  * Decoded RGBA a full `bun scripts/digests.ts` leaves under `dist/`.
  *
  * Measured on the date below by clearing `dist/**\/*.rgba`, running the whole
- * ledger serially (38 compositions, all matching), and totalling what was
+ * ledger serially (38 compositions, all matching; re-read 2026-10-23 at 40,
+ * after the rebase onto pin 66caf4e5, to the byte), and totalling what was
  * left: six files — four `footage-tracks` windows, one `sound-roles` clip,
  * and the clip `captions/burn-zh` burns its captions into — at 1,381,017,600
  * bytes exactly. That last one is 659,865,600 of it on its own: ingest

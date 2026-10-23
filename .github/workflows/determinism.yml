@@ -18,7 +18,7 @@
 # artifact, and the render draws it — `src/render/identity.ts` leaves ffmpeg's
 # version out of input identity for exactly that reason, because the frozen
 # artifact stands in front of it. So which ffmpeg runs here is an input to the
-# digest of every composition that declares footage — 3 of the ledger's 38
+# digest of every composition that declares footage — 3 of the ledger's 40
 # today — and it is pinned below rather than installed.
 
 name: determinism

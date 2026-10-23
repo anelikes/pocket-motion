@@ -338,7 +338,7 @@ mechanisms with the file or test beside them.
   the burial, both dissolves and the reveal side by side.
 - **What that gate actually reaches is narrower than "a named node", and a
   total hides it.** `baselines/visibility.json` carries the count per
-  composition — 137 names over the tree as it stands — and reading it by
+  composition — 153 names over the tree as it stands — and reading it by
   composition is the point: 19 of them are `footage:<track>/tile:<col>:<row>`
   (15 of bound tracks, which `src/cli/footage.ts` REFUSES a track without, and
   4 that `kenburns` and `shimmer` push into), so they are a protocol rather
@@ -750,7 +750,7 @@ mechanisms with the file or test beside them.
   checks less than its name claims. ffmpeg is pinned in the workflow rather than
   taken from whatever the image carries, because the frozen ingest artifact
   stands in front of the decoder and its bytes are an input to the digest of
-  every composition that declares footage — 3 of the ledger's 38 today. The
+  every composition that declares footage — 3 of the ledger's 40 today. The
   visibility ledger is NOT run there; it is a local step before a pull request
   and nothing on a runner would notice it going stale.
 - `CAPABILITIES.md` is generated from `src/catalog/surface.ts` by
