@@ -10,9 +10,11 @@
  * upstream's next allocation cannot land on it.
  *
  * The reason is measured, not imagined: `patches/0008` gave POLY the code 10,
- * the next free number at the pin, and upstream main has since given 10 to
- * `surfaceQuad`. Two backends reading the same word as two different ops is
- * the outcome the range exists to rule out.
+ * the next free number at the pin, and upstream gave 10 to `surfaceQuad`
+ * (add3270c); moving the pin onto that was the collision, and POLY is 11
+ * now, the number pocket-nexus/pocketjs#301 gives it. Two backends reading
+ * the same word as two different ops is the outcome the range exists to rule
+ * out.
  *
  * `tests/patches.test.ts` holds it from both sides: every `DRAW_OP` key in the
  * vendored spec that is named here is at or above the base, every other one

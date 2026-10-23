@@ -151,6 +151,12 @@ const ENTRIES = [
   // ground. A change to the blur passes, the shadow, the composite or a
   // blend function moves this digest.
   "compositions/filters",
+  // bloom. patches/0033: an alpha glow and a luma glow side by side on the
+  // same 85 % dark plate carrying a white rule and a cyan bar, two frames.
+  // The alpha glow lightens the plate; the luma glow leaves it as it is and
+  // lights the rule and the bar. A change to the luma halo, its threshold
+  // ramp, its tint or the add moves this digest and no other.
+  "compositions/bloom",
   // gradients. The gradient paint of patches/0019 over 30 frames: three
   // stops inside a rounded border, four stops at 30deg, a radial fade to
   // transparent, a rotated card, gradient text whose angle turns, CJK
@@ -161,6 +167,13 @@ const ENTRIES = [
   // and a 3x5 image drawn 40 px per texel. A stride or sampling that assumed
   // a power of two moves this digest.
   "compositions/images",
+  // shutter-blur. patches/0034: the one composition here that declares a
+  // shutter, so its digest is of exposures — 180°, 8 samples a frame. A spin
+  // through its wraps, an eased sweep, a zero-length jump and a one-tick
+  // flick the samples must not cross, opacity gates the shutter must hold,
+  // and one label under `shutter-hold`. A change to where a sample sits, to
+  // the jump rule or to the integer average moves this digest and no other.
+  "compositions/shutter-blur",
 ] as const;
 
 /**
@@ -181,6 +194,12 @@ const ENTRIES = [
  * commitment.
  */
 const EXEMPT: Readonly<Record<string, string>> = {
+  "compositions/same-frame":
+    "The calling-card film 《同一帧》, under review and recut every round; its end card carries the digest of its own first 3000 frames (digest.json), re-derived each cut. It enters ENTRIES when the cut is frozen.",
+  "compositions/mg-bauhaus":
+    "A showcase film written against mg-styles-15's Bauhaus prompt and recut after every jury round; a digest recorded now would be retired by the next cut. It enters ENTRIES when the cut is frozen.",
+  "compositions/mg-hud":
+    "A showcase film written against mg-styles-15's HUD prompt and recut after every jury round; a digest recorded now would be retired by the next cut. It enters ENTRIES when the cut is frozen.",
   "compositions/malicious":
     "The determinism rejection fixture. `trace` returns frames [], digest \"\" and a " +
     "DeterminismViolation by design; recording a digest would mean it stopped working.",

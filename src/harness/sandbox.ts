@@ -592,6 +592,18 @@ export function createSandbox(options: SandboxOptions): Sandbox {
        * this closure. Return values, throws, and (via bridges) callback args
        * all pass through marshal / rethrowHostError.
        */
+      /**
+       * An accessor's host function, called with the object it was declared on
+       * as \`this\`. wrapHostFn calls with \`this\` undefined, which is right for
+       * a contract method and wrong for a getter. The closure lives here, in
+       * the sandbox, and only ever reaches the guest inside a wrapper.
+       */
+      function bindReceiver(hostFn, receiver) {
+        return function () {
+          return hostFn.apply(receiver, arguments);
+        };
+      }
+
       function wrapHostFn(hostFn, path) {
         function wrapped() {
           var args = new Array(arguments.length);
@@ -626,6 +638,13 @@ export function createSandbox(options: SandboxOptions): Sandbox {
        * Harden a contract-slot value in place (or replace functions with wrappers).
        * Host functions become sandbox wrappers; nested objects get null prototype
        * + sentinel constructor so residual host identity cannot re-open Function.
+       *
+       * An accessor is replaced, not read: a getter-only property cannot be
+       * assigned under "use strict", and reading it once would freeze a value
+       * the host computes on every read. Its getter and setter become sandbox
+       * wrappers like any other host function, so a guest reading the
+       * descriptor gets a sandbox function and every value read through it is
+       * marshalled — the host getter itself never reaches the guest.
        */
       function harden(value, path) {
         if (value === null || (typeof value !== "object" && typeof value !== "function")) {
@@ -637,6 +656,17 @@ export function createSandbox(options: SandboxOptions): Sandbox {
         var keys = Object.keys(value);
         for (var i = 0; i < keys.length; i++) {
           var key = keys[i];
+          var desc = Object.getOwnPropertyDescriptor(value, key);
+          if (desc && (desc.get || desc.set)) {
+            var receiver = value;
+            Object.defineProperty(value, key, {
+              get: desc.get ? wrapHostFn(bindReceiver(desc.get, receiver), path + "." + key) : undefined,
+              set: desc.set ? wrapHostFn(bindReceiver(desc.set, receiver), path + "." + key) : undefined,
+              enumerable: desc.enumerable,
+              configurable: desc.configurable,
+            });
+            continue;
+          }
           value[key] = harden(value[key], path + "." + key);
         }
         Object.defineProperty(value, "constructor", {

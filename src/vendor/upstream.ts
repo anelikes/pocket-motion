@@ -11,6 +11,9 @@
  * and `patches/README.md` records which of them still apply to upstream main.
  */
 export const UPSTREAM = {
-  repo: "https://github.com/pocket-stack/pocketjs.git",
-  commit: "e0b37e2",
+  // The organisation was renamed from pocket-stack (pocket-nexus/pocketjs#505).
+  repo: "https://github.com/pocket-nexus/pocketjs.git",
+  // main on 2026-10-22: "feat(microts): show the home page counter in Solid
+  // and Vue (#602)".
+  commit: "66caf4e5",
 } as const;

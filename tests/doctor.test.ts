@@ -102,8 +102,6 @@ describe("vendorProblems", () => {
     dirtyLines: [" M framework/x.ts"],
     wasmPath: join(VENDOR, "hosts/web/pocketjs.wasm"),
     wasmPresent: true,
-    mirrorPath: join(VENDOR, "framework/src/styles.generated.ts"),
-    mirrorPresent: true,
   };
 
   test("a healthy tree has nothing to say", () => {
@@ -131,13 +129,6 @@ describe("vendorProblems", () => {
   test("a missing wasm is reported: nothing can rasterise without it", () => {
     expect(vendorProblems({ ...healthy, wasmPresent: false })).toEqual([
       `${healthy.wasmPath} is missing, so nothing can rasterise`,
-    ]);
-  });
-
-  test("a missing style mirror is reported: the next build resolves what it creates", () => {
-    expect(vendorProblems({ ...healthy, mirrorPresent: false })).toEqual([
-      `${healthy.mirrorPath} is missing, so the next build has to resolve a path ` +
-        "its own pass 1 creates (run `bun run vendor`)",
     ]);
   });
 });

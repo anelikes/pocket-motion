@@ -65,6 +65,7 @@ function composition(
     fps: 30,
     durationFrames,
     supersample: 1,
+    shutter: null,
     buildCommand: "unused",
     buildArgs: ["unused"],
   };

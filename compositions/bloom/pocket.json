@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-bloom",
+  "name": "pocketjs-motion-bloom",
+  "title": "PocketJS Motion: a bloom beside an alpha glow",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/bloom/main.tsx",
+    "output": "motion-bloom",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [640, 360], "presentation": "native" } }
+  }
+}

@@ -146,6 +146,15 @@ edge. A finer packing (quarter-pixel, 14.2) is this op's own format to change
 later; not in this patch, because sharing POLY's packing is what makes the
 equality test possible.
 
+*Changed by `0024`.* Whole-pixel vertices were the defect this paragraph
+accepted: an edge moved by up to half a pixel per axis is, along a long
+nearly axis-aligned edge, a band of pixels outside the node at full
+coverage — seen in a film as a 1 px sliver along a rolling tile. MASK_PUSH
+now carries `(x, y)` f32 pairs and `PolyScan` works in sixteenths of a
+pixel; POLY's whole pixels enter it multiplied by 16, which changes no
+sample's sign, so the equality test survives as POLY against a MASK_PUSH of
+POLY's own vertices.
+
 ## The rasteriser
 
 Every pixel the software rasteriser writes goes through two methods of the

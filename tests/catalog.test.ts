@@ -10,7 +10,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { SURFACE } from "../src/catalog/surface.ts";
@@ -27,6 +28,7 @@ import {
   SOUND_BED_KEYS,
   SOUND_CUE_KEYS,
   SOUND_DIALOGUE_KEYS,
+  SHUTTER_KEYS,
   SOUND_KEYS,
   SOUND_NARRATION_KEYS,
   SOUND_SRC_ROLES,
@@ -223,16 +225,18 @@ describe("catalog gates", () => {
       footage: SURFACE.filter((row) => row.group === "footage"),
       fonts: SURFACE.filter((row) => row.group === "fonts"),
       sound: SURFACE.filter((row) => row.group === "sound"),
+      shutter: SURFACE.filter((row) => row.group === "shutter"),
     };
     const sets = {
       sidecar: ROOT_KEYS,
       footage: FOOTAGE_KEYS,
       fonts: FONT_KEYS,
       sound: SOUND_KEYS,
+      shutter: SHUTTER_KEYS,
     } as const;
 
     const parts: string[] = [];
-    for (const group of ["sidecar", "footage", "fonts", "sound"] as const) {
+    for (const group of ["sidecar", "footage", "fonts", "sound", "shutter"] as const) {
       const setName =
         group === "sidecar"
           ? "ROOT_KEYS"
@@ -240,7 +244,9 @@ describe("catalog gates", () => {
             ? "FOOTAGE_KEYS"
             : group === "fonts"
               ? "FONT_KEYS"
-              : "SOUND_KEYS";
+              : group === "sound"
+                ? "SOUND_KEYS"
+                : "SHUTTER_KEYS";
       const declared = sets[group];
       const rows = rowsByGroup[group];
       const rowKeys = new Set(rows.map((row) => row.key));
@@ -416,6 +422,50 @@ describe("catalog gates", () => {
   });
 
   /**
+   * G6 calls `compileClasses`, so it holds what the compiler refuses and the
+   * message it throws, not what a build shows an author. Row
+   * `class.unparsed-token` also says the build names each refused literal at
+   * its file, line and column, which is `tools/build.ts`'s half of
+   * patches/0041 and is held here, on a build of a two-node module. Red with
+   * that half reverse-applied: the build still exits 1, on an uncaught
+   * `UncompiledClassError` whose stack names `tailwind.ts` and no line of
+   * `main.tsx`.
+   */
+  test("G6b — the build names a refused class= literal at its file, line and column", () => {
+    const vendor = join(ROOT, "vendor/pocketjs");
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "motion-class-refusal-")));
+    try {
+      writeFileSync(
+        join(dir, "main.tsx"),
+        [
+          'import { mount } from "@pocketjs/framework";',
+          'import { View } from "@pocketjs/framework/components";',
+          "mount(() => (",
+          '  <View class="w-full h-full">',
+          '    <View class="absolute left-[1e-14px] w-[100px] rotate--18" />',
+          "  </View>",
+          "));",
+          "",
+        ].join("\n"),
+      );
+      const run = Bun.spawnSync(
+        ["bun", "tools/build.ts", join(dir, "main.tsx"), "--no-config", `--project-root=${dir}`, `--outdir=${join(dir, "out")}`],
+        { cwd: vendor, stdout: "pipe", stderr: "pipe" },
+      );
+      const err = run.stderr.toString();
+      expect(run.exitCode).toBe(1);
+      expect(err).toContain(
+        'error: main.tsx:5:17: class "absolute left-[1e-14px] w-[100px] rotate--18" does not compile: unknown utilities left-[1e-14px], rotate--18',
+      );
+      expect(err).toContain("`left-[1e-14px]`: a number in exponent notation is not read — `left-[0.00000000000001px]` compiles.");
+      expect(err).toContain("`rotate--18`: `rotate-N` takes N >= 0 degrees with no brackets or unit, and 342 is the same angle as -18 — `rotate-342` compiles.");
+      expect(existsSync(join(dir, "out", "main.js"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 120_000);
+
+  /**
    * G6 hands `fromClassAttribute` to the parser directly, so it says what the
    * parser does with the evidence and nothing about where the evidence comes
    * from. Collecting it is the fragile half: the collector is offered EVERY
@@ -589,6 +639,12 @@ describe("catalog gates", () => {
         code: "sidecar.sound.unknownKey",
       },
       {
+        label: "shutter",
+        input: { motion: 1, durationFrames: 10, fps: 30, shutter: { angle: 180, samples: 8, nope: 1 } },
+        keys: SHUTTER_KEYS,
+        code: "sidecar.shutter.unknownKey",
+      },
+      {
         label: "assertions[0]",
         input: {
           motion: 1,
@@ -710,6 +766,7 @@ describe("catalog gates", () => {
           "fonts.faces[name]": "FONT_FACE_KEYS",
           "footage[0]": "FOOTAGE_KEYS",
           sound: "SOUND_KEYS",
+          shutter: "SHUTTER_KEYS",
           "layoutAllow[0]": "LAYOUT_ALLOW_KEYS",
           "assertions[0]": "ASSERTION_KEYS",
           "sound.bed": "SOUND_BED_KEYS",

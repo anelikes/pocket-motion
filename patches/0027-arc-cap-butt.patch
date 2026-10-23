@@ -1,0 +1,325 @@
+0027 — `arc-cap-butt`: an arc whose ends stop on the radius.
+
+An arc was round-capped and nothing else: a half-disc of the stroke's width
+on each end. An arc as wide as its radius was therefore a sector with two
+blobs on it, and a radar wedge or a pie chart had to be an image.
+`arc-cap-butt` ends the band on the two radii through `arcStart` and
+`arcStart + arcSweep`; `arc-cap-round` is the default and says so. Both arc
+paths — the screen-space one and 0026's transformed one — read it, so a
+butt-capped wedge turns with its wrapper like any arc.
+
+What it adds: PROP `arcCap` = 183, the next after 0019's `bgClip`, an enum
+`ArcCap { Round: 0, Butt: 1 }` (VALUE_KIND int, not animatable); the
+generated `spec.rs`, the microts spec and component types; `Resolved.arc_cap`
+in `style.rs`; the two tokens in `tailwind.ts`, a third (`arc-cap-square`)
+refused as an unknown utility. Class `upstream`: a declaration the core
+turns into RECT runs every backend already draws.
+
+Guard: `a_butt_capped_arc_as_wide_as_its_radius_is_a_pie_sector`
+(`engine/core/src/tests.rs`): a 40 px-wide quarter arc of radius 40 is a
+quarter disc — area within 1.5 % of pi r^2 / 4 and no ink a pixel into any
+other quadrant — unturned and under a 90 degree wrapper; with no cap
+declared, and with `arc-cap-round`, it is the round-capped arc. Red with
+the cap ignored (area 2,513 against the quarter disc's 1,257), green with
+it. `tests/tailwind.test.ts` pins the compiler side.
+
+Ledgers, against the same tree without this patch: no digest and no
+`visibility` row moves — no composition declares a cap, and the default is
+the round cap every arc had.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 07ddf4cd..61856d7d 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -347,6 +347,7 @@ export function generateRust(): string {
+     Contain: "layout containment (Strict: own layout root; Baked: Strict plus build-time rects).",
+     TextAlign: "text alignment within the node box.",
+     GradDir: "gradient direction (`bg-gradient-to-t|b|l|r`).",
++    ArcCap: "how an arc's ends finish (`arc-cap-round|butt`): Round adds a half-disc per end; Butt ends on the radius.",
+     Easing:
+       "animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.",
+   };
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 49b5b4ac..f993949f 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -466,6 +466,11 @@ export const PROP = {
+   gradVia4: 180, gradVia4Pos: 181,
+   bgClip: 182, //          enum BgClip — Text paints the ground's colour or
+   //                       gradient into the glyphs instead of the box
++  arcCap: 183, //         enum ArcCap — how an arc's ends finish: Round (the
++  //                    default) puts a half-disc of the stroke's width on
++  //                    each end; Butt ends the band on the radius through
++  //                    arcStart and arcStart + arcSweep, so an arc as wide
++  //                    as its radius is a pie sector.
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -633,6 +638,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   gradVia3: VALUE_KIND.color, gradVia3Pos: VALUE_KIND.f32,
+   gradVia4: VALUE_KIND.color, gradVia4Pos: VALUE_KIND.f32,
+   bgClip: VALUE_KIND.int,
++  arcCap: VALUE_KIND.int,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -661,6 +667,8 @@ export const ENUMS = {
+   GradKind: { Legacy: 0, Linear: 1, Radial: 2 },
+   /** What the ground paints (`bg-clip-text`, pocket-motion). */
+   BgClip: { Border: 0, Text: 1 },
++  /** How an arc's ends finish (`arc-cap-round|butt`). */
++  ArcCap: { Round: 0, Butt: 1 },
+   /**
+    * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
+    * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 985581f8..43e5651e 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -1877,8 +1877,9 @@ impl<'a> Walker<'a> {
+         }
+     }
+ 
+-    /// Rasterize an annular sector ("stroke arc" with round caps) as
+-    /// alpha-covered RECT runs — deterministic 2x2 supersampled coverage.
++    /// Rasterize an annular sector ("stroke arc", round caps unless
++    /// `arc-cap-butt`) as alpha-covered RECT runs — deterministic 2x2
++    /// supersampled coverage.
+     /// An axis-aligned world with one scale on both axes is drawn here in
+     /// screen space; any other world (rotation, mirror, skew, a scale that
+     /// differs per axis) by `emit_arc_transformed`, in the node's own frame.
+@@ -1924,6 +1925,8 @@ impl<'a> Walker<'a> {
+         let cap0 = (cx + svx * rmid, cy + svy * rmid);
+         let cap1 = (cx + evx * rmid, cy + evy * rmid);
+         let half2 = half * half;
++        // `arc-cap-butt` ends the band on the two radii: no cap discs.
++        let round = r.arc_cap != spec::ArcCap::Butt as u8;
+ 
+         let x0 = floorf(clampf(cx - outer, clip.x0, clip.x1)) as i32;
+         let x1 = ceilf(clampf(cx + outer, clip.x0, clip.x1)) as i32;
+@@ -1945,7 +1948,7 @@ impl<'a> Walker<'a> {
+                     return true;
+                 }
+             }
+-            if full {
++            if full || !round {
+                 return false;
+             }
+             // Round caps at both endpoints.
+@@ -2072,6 +2075,7 @@ impl<'a> Walker<'a> {
+         let cap0 = (svx * rmid, svy * rmid);
+         let cap1 = (evx * rmid, evy * rmid);
+         let half2 = half * half;
++        let round = r.arc_cap != spec::ArcCap::Butt as u8;
+         // Local point relative to the arc's centre.
+         let (ia, ib, ic, id) = (world.d / det, -world.b / det, -world.c / det, world.a / det);
+         let covered = |lx: f32, ly: f32| -> bool {
+@@ -2086,7 +2090,7 @@ impl<'a> Walker<'a> {
+                     return true;
+                 }
+             }
+-            if full {
++            if full || !round {
+                 return false;
+             }
+             let (d0x, d0y) = (lx - cap0.0, ly - cap0.1);
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 6e4e047e..1c148a97 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -209,6 +209,7 @@ pub mod prop {
+     pub const GRAD_VIA4: u8 = 180;
+     pub const GRAD_VIA4_POS: u8 = 181;
+     pub const BG_CLIP: u8 = 182;
++    pub const ARC_CAP: u8 = 183;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -231,7 +232,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+-    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -389,6 +390,14 @@ pub enum BgClip {
+     Text = 1,
+ }
+ 
++/// how an arc's ends finish (`arc-cap-round|butt`): Round adds a half-disc per end; Butt ends on the radius.
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum ArcCap {
++    Round = 0,
++    Butt = 1,
++}
++
+ /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
+ #[repr(u8)]
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index af6b9bb0..a92a01be 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -307,6 +307,8 @@ pub struct Resolved {
+     pub arc_start: f32,
+     pub arc_sweep: f32,
+     pub arc_width: f32,
++    /// spec::ArcCap ordinal.
++    pub arc_cap: u8,
+     /// Horizontal shear in degrees about the transform origin, composed
+     /// between rotate and scale (spec.ts PROP.skewX).
+     pub skew_x: f32,
+@@ -398,6 +400,7 @@ impl Default for Resolved {
+             arc_start: 0.0,
+             arc_sweep: 0.0,
+             arc_width: 0.0,
++            arc_cap: spec::ArcCap::Round as u8,
+             skew_x: 0.0,
+             text_stroke_width: 0.0,
+             text_stroke_color: 0,
+@@ -509,6 +512,7 @@ impl Resolved {
+             p::ARC_START => self.arc_start = f,
+             p::ARC_SWEEP => self.arc_sweep = f,
+             p::ARC_WIDTH => self.arc_width = f,
++            p::ARC_CAP => self.arc_cap = bits as u8,
+             p::SKEW_X => self.skew_x = f,
+             p::TEXT_STROKE_WIDTH => self.text_stroke_width = f,
+             p::TEXT_STROKE_COLOR => self.text_stroke_color = bits,
+@@ -610,6 +614,7 @@ impl Resolved {
+             p::ARC_START => self.arc_start.to_bits(),
+             p::ARC_SWEEP => self.arc_sweep.to_bits(),
+             p::ARC_WIDTH => self.arc_width.to_bits(),
++            p::ARC_CAP => self.arc_cap as u32,
+             p::SKEW_X => self.skew_x.to_bits(),
+             p::TEXT_STROKE_WIDTH => self.text_stroke_width.to_bits(),
+             p::TEXT_STROKE_COLOR => self.text_stroke_color,
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 3db1f708..2f5dac4d 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -2898,6 +2898,62 @@ fn an_arc_turns_mirrors_and_stretches_with_its_ancestors() {
+     assert!((bw / bh - 2.0).abs() < 0.05, "a ring under scaleX(2) is {bw}x{bh}");
+ }
+ 
++/// A quarter arc as wide as its 40 px radius, from 12 o'clock clockwise,
++/// centred on the screen, under a wrapper turned `rotate` degrees.
++fn quarter_pie(cap: Option<spec::ArcCap>, rotate: f64) -> alloc::vec::Vec<u8> {
++    let mut ui = Ui::new();
++    let wrap = place_box(&mut ui, 80.0, 80.0, 200.0, 96.0);
++    if rotate != 0.0 {
++        ui.set_prop(wrap, spec::prop::ROTATE, rotate);
++    }
++    let arc = ui.create_node(0);
++    ui.set_prop(arc, spec::prop::WIDTH, 80.0);
++    ui.set_prop(arc, spec::prop::HEIGHT, 80.0);
++    ui.set_prop(arc, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(arc, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.set_prop(arc, spec::prop::ARC_START, 0.0);
++    ui.set_prop(arc, spec::prop::ARC_SWEEP, 90.0);
++    ui.set_prop(arc, spec::prop::ARC_WIDTH, 40.0);
++    if let Some(cap) = cap {
++        ui.set_prop(arc, spec::prop::ARC_CAP, cap as u32 as f64);
++    }
++    ui.insert_before(wrap, arc, 0);
++    ui.tick();
++    raster_fb(&mut ui)
++}
++
++#[test]
++fn a_butt_capped_arc_as_wide_as_its_radius_is_a_pie_sector() {
++    // Round caps put a half-disc of the stroke's width on each end, so an
++    // arc as wide as its radius was a sector with two blobs on it, and a
++    // radar wedge or a pie chart had to be an image. `arc-cap-butt` ends the
++    // band on the two radii: the quarter from 12 to 3 o'clock, and nothing
++    // in the other three quadrants. Under a 90 degree parent the same
++    // quarter runs from 3 to 6.
++    let pie = core::f64::consts::PI * 40.0 * 40.0 / 4.0;
++    for &(turn, (qx, qy)) in &[(0.0f64, (1.0f64, -1.0f64)), (90.0, (1.0, 1.0))] {
++        let fb = quarter_pie(Some(spec::ArcCap::Butt), turn);
++        let (area, _, _) = ink_reading(&fb);
++        assert!((area - pie).abs() < pie * 0.015, "turn {turn}: area {area}, a quarter disc is {pie}");
++        for y in 0..spec::SCREEN_H as usize {
++            for x in 0..spec::SCREEN_W as usize {
++                // A pixel wholly in another quadrant (its centre at least a
++                // pixel from both axes, on the wrong side of either) is bare.
++                let (dx, dy) = (x as f64 + 0.5 - 240.0, y as f64 + 0.5 - 136.0);
++                let wrong = dx * qx < -1.0 || dy * qy < -1.0;
++                if wrong {
++                    assert_eq!(sample_rgba(&fb, x, y)[3], 0, "turn {turn}: ink at ({x},{y}) outside the sector");
++                }
++            }
++        }
++    }
++    // The default is still round, and `arc-cap-round` says so explicitly.
++    let (round, _, _) = ink_reading(&quarter_pie(None, 0.0));
++    let (named, _, _) = ink_reading(&quarter_pie(Some(spec::ArcCap::Round), 0.0));
++    assert!(round > pie * 1.5, "round caps add two half-discs: {round} against {pie}");
++    assert_eq!(round, named);
++}
++
+ // ---- POLY: convex coverage over a clipped rotated box ----------------------------
+ 
+ fn place_box(ui: &mut Ui, w: f64, h: f64, x: f64, y: f64) -> i32 {
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index 5c06bdea..b8eceae2 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -101,6 +101,7 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("gradVia4", 180, "u32"),
+     ("gradVia4Pos", 181, "f32"),
+     ("bgClip", 182, "i32"),
++    ("arcCap", 183, "i32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index 0a3e4a6d..50d9f661 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -458,6 +458,11 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+       return true;
+     }
+   }
++  // Arc ends: `arc-cap-round` (the default) or `arc-cap-butt`.
++  if (tok === "arc-cap-round" || tok === "arc-cap-butt") {
++    D.push([PROP.arcCap, int(tok === "arc-cap-butt" ? ENUMS.ArcCap.Butt : ENUMS.ArcCap.Round)]);
++    return true;
++  }
+   // 3D rotations / arc utilities: arbitrary (possibly negative) values only —
+   // `rotate-x-[N]`, `rotate-y-[N]`, `translate-z-[N]`, `arc-start-[N]`,
+   // `arc-sweep-[N]`, `arc-width-[N]`. Checked before the head switch so
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index f534d888..0cda534a 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -96,6 +96,7 @@ export interface MicroTsStyleProps {
+   gradVia4?: Color;
+   gradVia4Pos?: MicroTsFloatInput;
+   bgClip?: i32;
++  arcCap?: i32;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index bc35d109..74b3d038 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -365,6 +365,13 @@ describe("3D + arc utilities", () => {
+     expect(bitsF32(m.get(PROP.arcSweep)!)).toBe(-315);
+     expect(bitsF32(m.get(PROP.arcWidth)!)).toBe(5);
+   });
++  test("arc-cap-butt and arc-cap-round set the arc's ends", () => {
++    expect(props(parseClassLiteral("arc-width-[40] arc-cap-butt")).get(PROP.arcCap)).toBe(ENUMS.ArcCap.Butt);
++    expect(props(parseClassLiteral("arc-width-[40] arc-cap-round")).get(PROP.arcCap)).toBe(ENUMS.ArcCap.Round);
++    // Round is the default: an arc that names no cap declares none.
++    expect(props(parseClassLiteral("arc-width-[40]")).has(PROP.arcCap)).toBe(false);
++    expect(parseClassLiteral("arc-width-[40] arc-cap-square")).toBeNull();
++  });
+   test("skew-x-[deg] parses and keyframes bake skewX()", () => {
+     const m = props(parseClassLiteral("skew-x-[-12]"));
+     expect(bitsF32(m.get(PROP.skewX)!)).toBe(-12);

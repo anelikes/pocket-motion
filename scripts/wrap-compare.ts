@@ -180,6 +180,7 @@ const world = await hardenedBootWorld({
   width: VIEW.w,
   height: VIEW.h,
   hz: 30,
+  shutter: null,
 });
 world.frame(0);
 for (let t = 0; t < world.ticksPerFrame; t++) world.tick();

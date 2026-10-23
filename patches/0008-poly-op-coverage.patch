@@ -6,7 +6,7 @@ test profile and the error names `raster_fb` in this patch's tests rather than
 the patch that went away.
 
 The upstream copy carries its own six-line `raster_fb` and is otherwise
-identical: pocket-stack/pocketjs#301.
+identical: pocket-nexus/pocketjs#301.
 
 `git apply` skips everything above the first `diff --git`, which was checked
 against a tree freshly cloned at the pin rather than assumed.
@@ -20,24 +20,33 @@ measurement: 250 of 333 rotated-box scenes differed from #301's head on edge
 pixels, and with this line they all match. Everything else in the patch is
 still `759ffff`, #301's first commit.
 
+2026-10-22, rebased onto 66caf4e5: POLY is numbered 11, the number #301's
+head (`20b663c`) gives it, because main's `surfaceQuad` (add3270c) took 10.
+Main replaced `sutherland_hodgman` with the stack-buffered `clip_fan`; the
+clipped polygon a POLY needs comes from `clip_poly`, the same four passes
+split out of `clip_fan`, so its vertices are the ones the old function
+returned. Main also added two draw-list walkers — `compositor::draw_op_len`
+and the compositor-surface scan in `lib.rs` — that stop at an op they do
+not know; both know POLY's length. `validate_drawlist` counts 12 ops.
+
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index 3fd2935..9734b68 100644
+index 5a330fb8..7fecbdd6 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
-@@ -430,7 +430,7 @@ export function generateRust(): string {
-   // --- drawlist ------------------------------------------------------------------
+@@ -466,7 +466,7 @@ export function generateRust(): string {
    put("/// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).");
    put("/// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,");
--  put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7.");
-+  put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N.");
+   put("/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,");
+-  put("/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9.");
++  put("/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N.");
    put("pub mod draw_op {");
    for (const [name, v] of Object.entries(DRAW_OP)) {
      put(`    pub const ${screaming(name)}: u32 = ${v};`);
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index f4b8107..03d3ef9 100644
+index 7bb55a71..483e6ee1 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -1357,9 +1357,11 @@ export const FONT_FLAG_BOLD = 1 << 0;
+@@ -1433,9 +1433,11 @@ export const FONT_FLAG_BOLD = 1 << 0;
  //   TRI         (7 words):  op, xy0, xy1, xy2, color0, color1, color2 — one
  //                           CPU-clipped screen-space triangle (gouraud when the
  //                           corner colors differ, flat otherwise). The core
@@ -52,7 +61,7 @@ index f4b8107..03d3ef9 100644
  //   TEX_TRI     (12 words): op, texHandle, then 3 x { xy, u, v } (u/v = f32
  //                           bits, normalized 0..1), color (modulate;
  //                           0xFFFFFFFF = none). One CPU-clipped textured
-@@ -1373,6 +1375,15 @@ export const FONT_FLAG_BOLD = 1 << 0;
+@@ -1449,6 +1451,15 @@ export const FONT_FLAG_BOLD = 1 << 0;
  //                           perspective variation (projectively correct UVs
  //                           at every cell corner), so interior texture lines
  //                           do not kink at triangle diagonals.
@@ -68,78 +77,19 @@ index f4b8107..03d3ef9 100644
  //   TEXT_RUN    (8 + ceil(n/4) words):
  //                           op,
  //                           word1: bits 0-7 fontSlot,
-@@ -1408,6 +1419,7 @@ export const DRAW_OP = {
-   tri: 7,
+@@ -1495,6 +1506,7 @@ export const DRAW_OP = {
    texTri: 8,
    textRun: 9,
-+  poly: 10,
+   surfaceQuad: 10,
++  poly: 11,
  } as const;
  
  // ---------------------------------------------------------------------------
-diff --git a/engine/backends/esp32p4-ppa/src/lib.rs b/engine/backends/esp32p4-ppa/src/lib.rs
-index 53b7bac..28b5423 100644
---- a/engine/backends/esp32p4-ppa/src/lib.rs
-+++ b/engine/backends/esp32p4-ppa/src/lib.rs
-@@ -601,6 +601,23 @@ impl Renderer {
-                     }
-                     i += 7;
-                 }
-+                spec::draw_op::POLY if i + 3 <= words.len() => {
-+                    let n = words[i + 1] as usize;
-+                    if !(3..=8).contains(&n) || i + 3 + n > words.len() {
-+                        return None;
-+                    }
-+                    if !polygon_bounds(&words[i + 3..i + 3 + n], clip).is_empty() {
-+                        self.software_op(
-+                            ui,
-+                            destination,
-+                            surface,
-+                            clip,
-+                            &words[i..i + 3 + n],
-+                            stats,
-+                        );
-+                    }
-+                    i += 3 + n;
-+                }
-                 spec::draw_op::TEX_TRI if i + 12 <= words.len() => {
-                     if !triangle_bounds([words[i + 2], words[i + 5], words[i + 8]], clip).is_empty()
-                     {
-@@ -970,6 +987,30 @@ fn triangle_bounds(vertices: [u32; 3], clip: Clip) -> Clip {
-     .intersect(clip)
- }
- 
-+fn polygon_bounds(vertices: &[u32], clip: Clip) -> Clip {
-+    if vertices.is_empty() {
-+        return Clip::empty();
-+    }
-+    let mut min_x = i32::MAX;
-+    let mut min_y = i32::MAX;
-+    let mut max_x = i32::MIN;
-+    let mut max_y = i32::MIN;
-+    for &word in vertices {
-+        let (x, y) = xy(word);
-+        min_x = min_x.min(x);
-+        min_y = min_y.min(y);
-+        max_x = max_x.max(x);
-+        max_y = max_y.max(y);
-+    }
-+    Clip {
-+        x0: min_x,
-+        y0: min_y,
-+        x1: max_x,
-+        y1: max_y,
-+    }
-+    .intersect(clip)
-+}
-+
- #[inline]
- fn xy(word: u32) -> (i32, i32) {
-     (
 diff --git a/engine/backends/gpui/src/render.rs b/engine/backends/gpui/src/render.rs
-index ff0b38f..905fbaf 100644
+index 556c3146..ac36374e 100644
 --- a/engine/backends/gpui/src/render.rs
 +++ b/engine/backends/gpui/src/render.rs
-@@ -263,7 +263,7 @@ impl GpuiRenderer {
+@@ -313,7 +313,7 @@ impl GpuiRenderer {
                      *i += 1;
                      return;
                  }
@@ -148,7 +98,7 @@ index ff0b38f..905fbaf 100644
                      self.paint_tri_batch(ui, words, i, origin, window, cx);
                  }
                  spec::draw_op::TEXT_RUN => {
-@@ -493,10 +493,11 @@ impl GpuiRenderer {
+@@ -546,10 +546,11 @@ impl GpuiRenderer {
  
      // ---- triangle batches (raster fallback) -----------------------------------
  
@@ -164,7 +114,7 @@ index ff0b38f..905fbaf 100644
      fn paint_tri_batch(
          &mut self,
          ui: &Ui,
-@@ -521,21 +522,50 @@ impl GpuiRenderer {
+@@ -574,21 +575,50 @@ impl GpuiRenderer {
                      needs_raster = true;
                      end += 12;
                  }
@@ -224,7 +174,7 @@ index ff0b38f..905fbaf 100644
              }
              return;
          }
-@@ -554,15 +584,17 @@ impl GpuiRenderer {
+@@ -607,15 +637,17 @@ impl GpuiRenderer {
          let mut key_words: Vec<u32> = batch.to_vec();
          let mut j = 0usize;
          while j < batch.len() {
@@ -250,7 +200,7 @@ index ff0b38f..905fbaf 100644
              }
          }
          let hash = fnv64(&key_words);
-@@ -581,23 +613,39 @@ impl GpuiRenderer {
+@@ -634,23 +666,39 @@ impl GpuiRenderer {
          let (mut min_x, mut min_y, mut max_x, mut max_y) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
          let mut j = 0usize;
          while j < batch.len() {
@@ -306,11 +256,82 @@ index ff0b38f..905fbaf 100644
          }
          if min_x >= max_x || min_y >= max_y {
              return;
+diff --git a/engine/backends/rgb565/src/lib.rs b/engine/backends/rgb565/src/lib.rs
+index 9b0d9b57..ff915f97 100644
+--- a/engine/backends/rgb565/src/lib.rs
++++ b/engine/backends/rgb565/src/lib.rs
+@@ -610,6 +610,23 @@ impl Renderer {
+                     }
+                     i += 7;
+                 }
++                spec::draw_op::POLY if i + 3 <= words.len() => {
++                    let n = words[i + 1] as usize;
++                    if !(3..=8).contains(&n) || i + 3 + n > words.len() {
++                        return None;
++                    }
++                    if !polygon_bounds(&words[i + 3..i + 3 + n], clip).is_empty() {
++                        self.software_op(
++                            ui,
++                            destination,
++                            surface,
++                            clip,
++                            &words[i..i + 3 + n],
++                            stats,
++                        );
++                    }
++                    i += 3 + n;
++                }
+                 spec::draw_op::TEX_TRI if i + 12 <= words.len() => {
+                     if !triangle_bounds([words[i + 2], words[i + 5], words[i + 8]], clip).is_empty()
+                     {
+@@ -984,6 +1001,30 @@ fn triangle_bounds(vertices: [u32; 3], clip: Clip) -> Clip {
+     .intersect(clip)
+ }
+ 
++fn polygon_bounds(vertices: &[u32], clip: Clip) -> Clip {
++    if vertices.is_empty() {
++        return Clip::empty();
++    }
++    let mut min_x = i32::MAX;
++    let mut min_y = i32::MAX;
++    let mut max_x = i32::MIN;
++    let mut max_y = i32::MIN;
++    for &word in vertices {
++        let (x, y) = xy(word);
++        min_x = min_x.min(x);
++        min_y = min_y.min(y);
++        max_x = max_x.max(x);
++        max_y = max_y.max(y);
++    }
++    Clip {
++        x0: min_x,
++        y0: min_y,
++        x1: max_x,
++        y1: max_y,
++    }
++    .intersect(clip)
++}
++
+ #[inline]
+ fn xy(word: u32) -> (i32, i32) {
+     (
+diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
+index baaf70e6..d31fcbbc 100644
+--- a/engine/core/src/compositor.rs
++++ b/engine/core/src/compositor.rs
+@@ -27,6 +27,7 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+         crate::spec::draw_op::TEX_TRI => 12,
+         crate::spec::draw_op::TEXT_RUN => 8 + (*words.get(at + 7)? as usize).div_ceil(4),
+         crate::spec::draw_op::SURFACE_QUAD => 9,
++        crate::spec::draw_op::POLY => 3 + *words.get(at + 1)? as usize,
+         _ => return None,
+     })
+ }
 diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
-index 5c88b65..1705ff8 100644
+index 229c59b5..93354a16 100644
 --- a/engine/core/src/damage.rs
 +++ b/engine/core/src/damage.rs
-@@ -424,6 +424,13 @@ impl<'a> DamageDecoder<'a> {
+@@ -430,6 +430,13 @@ impl<'a> DamageDecoder<'a> {
              spec::draw_op::SCISSOR_POP => 1,
              spec::draw_op::TRI => 7,
              spec::draw_op::TEX_TRI => 12,
@@ -324,7 +345,7 @@ index 5c88b65..1705ff8 100644
              spec::draw_op::TEXT_RUN => {
                  // 8 header words + ceil(byteLen/4) packed UTF-8 words.
                  let bytes = *self.words.get(start + 7).ok_or(())? as usize;
-@@ -460,6 +467,7 @@ impl<'a> DamageDecoder<'a> {
+@@ -467,6 +474,7 @@ impl<'a> DamageDecoder<'a> {
              }
              spec::draw_op::TRI => triangle_bounds([words[1], words[2], words[3]], self.clip),
              spec::draw_op::TEX_TRI => triangle_bounds([words[2], words[5], words[8]], self.clip),
@@ -332,7 +353,7 @@ index 5c88b65..1705ff8 100644
              // Native-text runs carry no glyph geometry the tracker can
              // measure; the core keeps every partially-clipped run inside a
              // scissor, so the current clip is a sound (conservative) bound.
-@@ -561,6 +569,24 @@ fn triangle_bounds(vertices: [u32; 3], clip: DamageRect) -> DamageRect {
+@@ -573,6 +581,24 @@ fn triangle_bounds(vertices: [u32; 3], clip: DamageRect) -> DamageRect {
      .intersect(clip)
  }
  
@@ -358,13 +379,13 @@ index 5c88b65..1705ff8 100644
  fn xy(word: u32) -> (i32, i32) {
      (
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 4e5e6c1..ce80177 100644
+index 61640661..c2d6d4c9 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
 @@ -7,9 +7,10 @@
  //! (TEX_QUAD) and gradient endpoint colors (GRAD_RECT).
  //!
- //! Transforms (translate/scale/rotate) compose down the walk as 2D affines.
+ //! Transforms (translate/rotate/skewX/scale) compose down the walk as 2D affines.
 -//! Axis-aligned content uses RECT/GRAD_RECT/TEX_QUAD; ROTATED solid/gradient
 -//! boxes are corner-transformed, Sutherland-Hodgman-clipped and emitted as
 -//! TRI ops. v1 degradations (documented):
@@ -372,21 +393,19 @@ index 4e5e6c1..ce80177 100644
 +//! are corner-transformed, Sutherland-Hodgman-clipped and emitted as one
 +//! POLY op (coverage over the whole clipped polygon). ROTATED gradient
 +//! boxes still fan into TRI ops. v1 degradations (documented):
- //!   - rotated IMAGE quads are conservatively culled (no textured-tri op);
- //!   - glyph cells position along the rotated/scaled frame but stay upright
- //!     and unscaled (bitmap cells); glyphs whose cell top-left leaves the
-@@ -1185,9 +1186,7 @@ impl<'a> Walker<'a> {
-                         .map(|&(x, y)| ClipVert { x, y, color: unpack(color), u: 0.0, v: 0.0 })
-                         .collect();
-                     let clipped = sutherland_hodgman(&poly, clip);
--                    for i in 1..clipped.len().saturating_sub(1) {
--                        emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
--                    }
-+                    emit_poly(dl, &clipped, color, clip, self.screen);
+ //!   - rotated, skewed or mirrored IMAGE quads become clipped TEX_TRI fans;
+ //!   - rotated glyph cells stay upright and unscaled; axis-aligned scales
+ //!     use clipped, tinted atlas TEX_QUADs. Unscaled cells whose top-left leaves the
+@@ -1509,7 +1510,7 @@ impl<'a> Walker<'a> {
+             match item {
+                 Item3::Quad { pts, color } => {
+                     let poly = pts.map(|(x, y)| ClipVert { x, y, color: unpack(color), u: 0.0, v: 0.0 });
+-                    clip_fan(&poly, clip, |a, b, c| emit_tri(dl, a, b, c, clip, self.screen));
++                    clip_poly(&poly, clip, |verts| emit_poly(dl, verts, color, clip, self.screen));
                  }
                  Item3::TexMesh { cell_start, cell_end, tex, modulate } => {
                      for cell in &tex_cells[cell_start..cell_end] {
-@@ -1560,7 +1559,7 @@ impl<'a> Walker<'a> {
+@@ -1886,7 +1887,7 @@ impl<'a> Walker<'a> {
  
      /// Emit a solid/gradient local-space rect under `world`: axis-aligned
      /// path (RECT/GRAD_RECT, clipped with color re-interpolation) or the
@@ -395,7 +414,7 @@ index 4e5e6c1..ce80177 100644
      #[allow(clippy::too_many_arguments)]
      fn emit_box(&self, dl: &mut DrawList, world: &Affine, x0: f32, y0: f32, x1: f32, y1: f32, fill: Fill, clip: &Clip) {
          if x1 <= x0 || y1 <= y0 {
-@@ -1617,8 +1616,10 @@ impl<'a> Walker<'a> {
+@@ -1972,14 +1973,19 @@ impl<'a> Walker<'a> {
                  }
              }
          } else {
@@ -406,26 +425,49 @@ index 4e5e6c1..ce80177 100644
 +            // fan would double-blend the shared diagonal). Gradients still
 +            // fan into TRI ops (gouraud carries the endpoint colours).
              let corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
-             let mut poly: Vec<ClipVert> = Vec::with_capacity(8);
-             for (i, &(lx, ly)) in corners.iter().enumerate() {
-@@ -1629,8 +1630,13 @@ impl<'a> Walker<'a> {
-             if clipped.len() < 3 {
-                 return;
-             }
--            for i in 1..clipped.len() - 1 {
--                emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
+             let poly: [ClipVert; 4] = core::array::from_fn(|i| {
+                 let (sx, sy) = world.apply(corners[i].0, corners[i].1);
+                 ClipVert { x: sx, y: sy, color: unpack(corner_color(&fill, i)), u: 0.0, v: 0.0 }
+             });
+-            clip_fan(&poly, clip, |a, b, c| emit_tri(dl, a, b, c, clip, self.screen));
 +            match fill {
-+                Fill::Flat(color) => emit_poly(dl, &clipped, color, clip, self.screen),
-+                Fill::Grad { .. } => {
-+                    for i in 1..clipped.len() - 1 {
-+                        emit_tri(dl, &clipped[0], &clipped[i], &clipped[i + 1], clip, self.screen);
-+                    }
-+                }
-             }
++                Fill::Flat(color) => clip_poly(&poly, clip, |verts| emit_poly(dl, verts, color, clip, self.screen)),
++                Fill::Grad { .. } => clip_fan(&poly, clip, |a, b, c| emit_tri(dl, a, b, c, clip, self.screen)),
++            }
          }
      }
-@@ -2575,6 +2581,50 @@ fn sutherland_hodgman(poly: &[ClipVert], clip: &Clip) -> Vec<ClipVert> {
-     cur
+ 
+@@ -3227,16 +3233,22 @@ fn clip_pass(cur: &[ClipVert], edge: ClipEdge, out: &mut impl ClipSink) -> bool
+ 
+ /// Clip a convex polygon against the 4 half-planes of `clip`, interpolating
+ /// vertex colors along cut edges, and fan the result into `tri(v0, vi, vi+1)`.
+-///
+-/// Not inlined: the clip buffers live in this frame only, never in the
+-/// recursive paint walk that calls it.
+-#[inline(never)]
+ fn clip_fan(poly: &[ClipVert], clip: &Clip, mut tri: impl FnMut(&ClipVert, &ClipVert, &ClipVert)) {
+-    let mut fan = |verts: &[ClipVert]| {
++    clip_poly(poly, clip, |verts| {
+         for i in 1..verts.len().saturating_sub(1) {
+             tri(&verts[0], &verts[i], &verts[i + 1]);
+         }
+-    };
++    });
++}
++
++/// Clip a convex polygon against the 4 half-planes of `clip`, interpolating
++/// vertex colors along cut edges, and hand the clipped polygon to `fan` —
++/// `clip_fan` fans it into TRIs, a flat fill emits it as one POLY.
++///
++/// Not inlined: the clip buffers live in this frame only, never in the
++/// recursive paint walk that calls it.
++#[inline(never)]
++fn clip_poly(poly: &[ClipVert], clip: &Clip, mut fan: impl FnMut(&[ClipVert])) {
+     // Every vertex inside every half-plane: each pass would copy the polygon
+     // unchanged.
+     if poly.iter().all(|v| v.x >= clip.x0 && v.x <= clip.x1 && v.y >= clip.y0 && v.y <= clip.y1) {
+@@ -3280,6 +3292,50 @@ fn clip_fan(poly: &[ClipVert], clip: &Clip, mut tri: impl FnMut(&ClipVert, &Clip
+     fan(&cur);
  }
  
 +/// Emit one POLY op (flat colour). N is capped at 8 — Sutherland-Hodgman
@@ -475,8 +517,23 @@ index 4e5e6c1..ce80177 100644
  /// Emit one TRI op (degenerate triangles after rounding are dropped).
  fn emit_tri(
      dl: &mut DrawList,
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 6e3def8d..698bfc78 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -1273,6 +1273,10 @@ impl Ui {
+                     8 + (*bytes as usize).div_ceil(4)
+                 }
+                 x if x == spec::draw_op::SURFACE_QUAD => 9,
++                x if x == spec::draw_op::POLY => {
++                    let Some(n) = words.get(i + 1) else { break };
++                    3 + *n as usize
++                }
+                 _ => break,
+             };
+             let Some(end) = i.checked_add(len) else { break };
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index 165d51c..6527345 100644
+index 5e2ca56e..d6a9d2e7 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
 @@ -9,7 +9,9 @@
@@ -490,7 +547,7 @@ index 165d51c..6527345 100644
  //!   - The only f32 involved is gradient/texture-coordinate interpolation —
  //!     plain IEEE-754 add/mul/div on finite values (identical on every
  //!     platform; no transcendental calls, no NaN paths: every divisor is
-@@ -798,6 +800,17 @@ fn render_scaled_clipped<T: RenderTarget>(
+@@ -892,6 +894,17 @@ fn render_scaled_clipped<T: RenderTarget>(
                  tex_tri(ui, target, width, scale, clip, &words[i + 1..i + 12]);
                  i += 12;
              }
@@ -508,7 +565,7 @@ index 165d51c..6527345 100644
              draw_op::TEXT_RUN => {
                  // Native-text op (host text system shapes the run); the
                  // software rasterizer has no shaper, so hosts that raster run
-@@ -955,6 +968,188 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p:
+@@ -1049,6 +1062,188 @@ fn tri<T: RenderTarget>(target: &mut T, stride: i32, scale: i32, clip: Clip, p:
      }
  }
  
@@ -698,49 +755,49 @@ index 165d51c..6527345 100644
  
  /// Map a scaled destination pixel (relative to its glyph cell origin) to the
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 9987189..36ccb22 100644
+index 2fa023c6..68f477bb 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
-@@ -420,7 +420,7 @@ pub mod font_atlas {
- 
+@@ -449,7 +449,7 @@ pub mod font_atlas {
  /// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).
  /// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,
--/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7.
-+/// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12, TEXT_RUN 8+n, POLY 3+N.
+ /// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,
+-/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9.
++/// TEXT_RUN 8+ceil(bytes/4), SURFACE_QUAD 9, POLY 3+N.
  pub mod draw_op {
      pub const RECT: u32 = 1;
      pub const GRAD_RECT: u32 = 2;
-@@ -431,6 +431,7 @@ pub mod draw_op {
-     pub const TRI: u32 = 7;
+@@ -461,6 +461,7 @@ pub mod draw_op {
      pub const TEX_TRI: u32 = 8;
      pub const TEXT_RUN: u32 = 9;
-+    pub const POLY: u32 = 10;
+     pub const SURFACE_QUAD: u32 = 10;
++    pub const POLY: u32 = 11;
  }
  
  /// .pak container constants (byte-compatible with dreamcart's format;
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index c2e7642..56cbf58 100644
+index d09c158f..afd3643d 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
 @@ -201,7 +201,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
  /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
  /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
  /// balanced, only known ops. Returns per-op counts (indexed by op code).
--fn validate_drawlist(words: &[u32]) -> [u32; 10] {
-+fn validate_drawlist(words: &[u32]) -> [u32; 11] {
+-fn validate_drawlist(words: &[u32]) -> [u32; 11] {
++fn validate_drawlist(words: &[u32]) -> [u32; 12] {
      let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
      let xy_ok = |w: u32| {
          let (x, y) = decode_xy(w);
-@@ -213,7 +213,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 10] {
+@@ -213,7 +213,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
          let (w, h) = decode_wh(whw);
          assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
      };
--    let mut counts = [0u32; 10];
-+    let mut counts = [0u32; 11];
+-    let mut counts = [0u32; 11];
++    let mut counts = [0u32; 12];
      let mut depth = 0i32;
      let mut i = 0usize;
      while i < words.len() {
-@@ -272,6 +272,15 @@ fn validate_drawlist(words: &[u32]) -> [u32; 10] {
+@@ -280,6 +280,15 @@ fn validate_drawlist(words: &[u32]) -> [u32; 11] {
                  }
                  i += 12;
              }
@@ -756,7 +813,7 @@ index c2e7642..56cbf58 100644
              spec::draw_op::TEXT_RUN => {
                  // Native-text op: origin is f32 (exempt from the i16 clip
                  // guarantee), box width is finite and non-negative, and the
-@@ -320,6 +329,10 @@ fn tex_tri_runs(words: &[u32]) -> Vec<(u32, usize)> {
+@@ -329,6 +338,10 @@ fn tex_tri_runs(words: &[u32]) -> Vec<(u32, usize)> {
              spec::draw_op::SCISSOR => { previous_was_tex_tri = false; i += 3; }
              spec::draw_op::SCISSOR_POP => { previous_was_tex_tri = false; i += 1; }
              spec::draw_op::TRI => { previous_was_tex_tri = false; i += 7; }
@@ -767,7 +824,7 @@ index c2e7642..56cbf58 100644
              spec::draw_op::TEXT_RUN => {
                  previous_was_tex_tri = false;
                  i += 8 + (words[i + 7] as usize).div_ceil(4);
-@@ -507,12 +520,12 @@ fn fixed_dt_animation_is_deterministic() {
+@@ -594,12 +607,12 @@ fn fixed_dt_animation_is_deterministic() {
      for f in &a {
          validate_drawlist(f);
      }
@@ -784,7 +841,7 @@ index c2e7642..56cbf58 100644
  }
  
  #[test]
-@@ -642,7 +655,7 @@ fn drawlist_clip_invariant_offscreen_rects() {
+@@ -729,7 +742,7 @@ fn drawlist_clip_invariant_offscreen_rects() {
      let words = ui.draw().words.clone();
      let counts = validate_drawlist(&words);
      assert!(counts[spec::draw_op::RECT as usize] > 0);
@@ -793,7 +850,7 @@ index c2e7642..56cbf58 100644
      assert!(counts[spec::draw_op::GRAD_RECT as usize] > 0);
      // Find the gradient and check the endpoint re-interpolation: the rect
      // spans x 380..580, the clip keeps 380..480 = fractions 0.0..0.5, so the
-@@ -663,6 +676,7 @@ fn drawlist_clip_invariant_offscreen_rects() {
+@@ -750,6 +763,7 @@ fn drawlist_clip_invariant_offscreen_rects() {
                  i += 6;
              }
              spec::draw_op::TRI => i += 7,
@@ -801,7 +858,7 @@ index c2e7642..56cbf58 100644
              spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
              spec::draw_op::TEX_QUAD => i += 9,
              spec::draw_op::SCISSOR => i += 3,
-@@ -700,6 +714,7 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
+@@ -830,6 +844,7 @@ fn rounded_boxes_emit_subpixel_edge_coverage() {
              spec::draw_op::RECT => i += 4,
              spec::draw_op::GRAD_RECT => i += 6,
              spec::draw_op::TRI => i += 7,
@@ -809,15 +866,15 @@ index c2e7642..56cbf58 100644
              spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
              spec::draw_op::TEX_QUAD => {
                  corner_quads += 1;
-@@ -871,6 +886,7 @@ fn transparent_rounded_border_draws_an_outline_not_square_strips() {
+@@ -1095,6 +1110,7 @@ fn rounded_gradients_emit_rect_coverage_spans() {
+                 i += 4;
              }
-             spec::draw_op::GRAD_RECT => i += 6,
              spec::draw_op::TRI => i += 7,
 +            spec::draw_op::POLY => i += 3 + words[i + 1] as usize,
              spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
              spec::draw_op::TEX_QUAD => i += 9,
              spec::draw_op::SCISSOR => i += 3,
-@@ -944,6 +960,7 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
+@@ -1243,6 +1259,7 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
              spec::draw_op::RECT => i += 4,
              spec::draw_op::GRAD_RECT => i += 6,
              spec::draw_op::TRI => i += 7,
@@ -825,7 +882,7 @@ index c2e7642..56cbf58 100644
              spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
              spec::draw_op::TEX_QUAD => i += 9,
              _ => i += 1,
-@@ -974,6 +991,7 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
+@@ -1273,6 +1290,7 @@ fn overflow_hidden_emits_balanced_intersected_scissors() {
              }
              spec::draw_op::GRAD_RECT => i += 6,
              spec::draw_op::TRI => i += 7,
@@ -833,7 +890,7 @@ index c2e7642..56cbf58 100644
              spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
              spec::draw_op::TEX_QUAD => i += 9,
              _ => i += 1,
-@@ -1259,6 +1277,7 @@ fn zindex_orders_siblings_stably() {
+@@ -1594,6 +1612,7 @@ fn zindex_orders_siblings_stably() {
              }
              spec::draw_op::GRAD_RECT => i += 6,
              spec::draw_op::TRI => i += 7,
@@ -841,7 +898,7 @@ index c2e7642..56cbf58 100644
              spec::draw_op::GLYPH_RUN => i += 3 + 2 * ((words[i + 1] >> 16) as usize),
              spec::draw_op::TEX_QUAD => i += 9,
              _ => i += 1,
-@@ -1932,9 +1951,10 @@ fn perspective_subtree_emits_depth_sorted_tris() {
+@@ -2430,9 +2449,10 @@ fn perspective_subtree_emits_depth_sorted_tris() {
      ui.set_style(f, 1);
      ui.tick();
      let words = ui.draw().words.clone();
@@ -853,7 +910,7 @@ index c2e7642..56cbf58 100644
      while i < words.len() {
          let op = words[i];
          i += match op {
-@@ -1944,6 +1964,10 @@ fn perspective_subtree_emits_depth_sorted_tris() {
+@@ -2442,6 +2462,10 @@ fn perspective_subtree_emits_depth_sorted_tris() {
                  tris += 1;
                  7
              }
@@ -864,7 +921,7 @@ index c2e7642..56cbf58 100644
              x if x == spec::draw_op::GLYPH_RUN => {
                  let n = (words[i + 1] >> 16) as usize;
                  3 + 2 * n
-@@ -1953,7 +1977,8 @@ fn perspective_subtree_emits_depth_sorted_tris() {
+@@ -2451,7 +2475,8 @@ fn perspective_subtree_emits_depth_sorted_tris() {
              _ => 1, // SCISSOR_POP
          };
      }
@@ -874,7 +931,7 @@ index c2e7642..56cbf58 100644
  }
  
  #[test]
-@@ -2039,6 +2064,7 @@ fn arc_primitive_emits_coverage_rects() {
+@@ -2537,6 +2562,7 @@ fn arc_primitive_emits_coverage_rects() {
              }
              x if x == spec::draw_op::GRAD_RECT => 6,
              x if x == spec::draw_op::TRI => 7,
@@ -882,7 +939,7 @@ index c2e7642..56cbf58 100644
              x if x == spec::draw_op::GLYPH_RUN => {
                  let c = (words[i + 1] >> 16) as usize;
                  3 + 2 * c
-@@ -2052,6 +2078,216 @@ fn arc_primitive_emits_coverage_rects() {
+@@ -2550,6 +2576,216 @@ fn arc_primitive_emits_coverage_rects() {
      assert!(rects > 20, "expected arc coverage runs, got {rects}");
  }
  
@@ -1100,20 +1157,19 @@ index c2e7642..56cbf58 100644
  
  #[test]
 diff --git a/engine/crates/pocket-ui-wgpu/src/render.rs b/engine/crates/pocket-ui-wgpu/src/render.rs
-index f4da3b1..4437a32 100644
+index 6f5bbf56..56a4644e 100644
 --- a/engine/crates/pocket-ui-wgpu/src/render.rs
 +++ b/engine/crates/pocket-ui-wgpu/src/render.rs
 @@ -1,6 +1,7 @@
  //! DrawList → wgpu. The third DrawList backend (after the PSP GE and the
--//! wasm software rasterizer), executing the closed 7-op set pinned in
+ //! wasm software rasterizer), executing the DrawList operations pinned in
 -//! spec.ts "DRAWLIST op format".
-+//! wasm software rasterizer), executing the closed DrawList op set pinned
-+//! in spec.ts "DRAWLIST op format". Hardware has no per-pixel coverage, so
++//! spec.ts "DRAWLIST op format". Hardware has no per-pixel coverage, so
 +//! POLY degrades to a triangle fan — today's binary fill.
  //!
  //! The core's CPU clip stage guarantees every coordinate is inside
  //! [0, viewport] — this backend only batches: one vertex stream, draw calls
-@@ -640,6 +641,45 @@ impl UiRenderer {
+@@ -717,6 +718,45 @@ impl UiRenderer {
                      self.verts.extend_from_slice(&v);
                      i += 7;
                  }
@@ -1159,11 +1215,11 @@ index f4da3b1..4437a32 100644
                  spec::draw_op::TEXT_RUN => {
                      // Native-text op: emitted only when the host installed a
                      // native measurer, which the portable wgpu backend never
-diff --git a/engine/symbian/src/gl/mod.rs b/engine/symbian/src/gl/mod.rs
-index 0b54bd2..e0d498f 100644
---- a/engine/symbian/src/gl/mod.rs
-+++ b/engine/symbian/src/gl/mod.rs
-@@ -791,6 +791,39 @@ impl Renderer {
+diff --git a/engine/ui-cabi/src/gl/mod.rs b/engine/ui-cabi/src/gl/mod.rs
+index 32a9dd6a..f6f2bfde 100644
+--- a/engine/ui-cabi/src/gl/mod.rs
++++ b/engine/ui-cabi/src/gl/mod.rs
+@@ -768,6 +768,39 @@ impl Renderer {
                      }
                      index += 7;
                  }
@@ -1204,11 +1260,11 @@ index 0b54bd2..e0d498f 100644
                      self.flush(texture, clip, &mut start);
                      clip_stack.push(clip);
 diff --git a/hosts/psp/src/ge.rs b/hosts/psp/src/ge.rs
-index c41a02b..19a0e5e 100644
+index 1fc830b1..b988830e 100644
 --- a/hosts/psp/src/ge.rs
 +++ b/hosts/psp/src/ge.rs
-@@ -552,6 +552,24 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
-                 flush(GuPrimitive::Triangles, VTYPE_C, (count * 3) as i32, verts as *const c_void, bytes);
+@@ -505,6 +505,24 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
+                 );
                  i = end;
              }
 +            spec::draw_op::POLY if i + 3 <= n => {
@@ -1233,10 +1289,10 @@ index c41a02b..19a0e5e 100644
                  let w1 = words[i + 1];
                  let slot = (w1 & 0xff) as u8;
 diff --git a/hosts/vita/src/graphics.rs b/hosts/vita/src/graphics.rs
-index fc05805..a5df934 100644
+index 16702642..063441a0 100644
 --- a/hosts/vita/src/graphics.rs
 +++ b/hosts/vita/src/graphics.rs
-@@ -627,6 +627,36 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
+@@ -695,6 +695,36 @@ pub unsafe fn render_over(ui: &Ui, words: &[u32]) {
                  color_vertices(&vertices, SceGxmPrimitiveType_SCE_GXM_PRIMITIVE_TRIANGLES);
                  i += 7;
              }
@@ -1273,7 +1329,7 @@ index fc05805..a5df934 100644
              spec::draw_op::GLYPH_RUN if i + 3 <= words.len() => {
                  let meta = words[i + 1];
                  let slot = (meta & 0xff) as u8;
-@@ -764,6 +794,9 @@ fn validate_texture_residency(ui: &Ui, words: &[u32]) -> io::Result<()> {
+@@ -835,6 +865,9 @@ fn validate_texture_residency(ui: &Ui, words: &[u32]) -> io::Result<()> {
              spec::draw_op::RECT => i.checked_add(4),
              spec::draw_op::GRAD_RECT => i.checked_add(6),
              spec::draw_op::TRI => i.checked_add(7),

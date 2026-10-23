@@ -38,7 +38,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { annotateFrame, cropFrame, type Surface } from "../../render/annotate.ts";
 import { active } from "../../render/findings.ts";
-import { pocketjsRoot } from "../../runtime/boot.ts";
+import { describeShutter, pocketjsRoot } from "../../runtime/boot.ts";
 import { WasmFrameSource } from "../../runtime/frame-source.ts";
 import {
   UsageError,
@@ -142,7 +142,7 @@ export async function run(options: SnapshotOptions): Promise<CommandResult> {
   let source: WasmFrameSource | undefined;
   let footage: Awaited<ReturnType<typeof openFootage>> = null;
   try {
-    const { encodePNG } = (await import(`${pocketjsRoot()}/tests/png.ts`)) as {
+    const { encodePNG } = (await import(`${pocketjsRoot()}/tools/png.ts`)) as {
       encodePNG: (rgba: Uint8Array, w: number, h: number) => Buffer;
     };
 
@@ -155,6 +155,7 @@ export async function run(options: SnapshotOptions): Promise<CommandResult> {
       hz: c.fps,
       durationFrames: c.durationFrames,
       renderScale: c.supersample,
+      shutter: c.shutter,
       buildCommand: c.buildCommand,
     });
     source.audit();
@@ -263,6 +264,7 @@ export async function run(options: SnapshotOptions): Promise<CommandResult> {
         height: physicalH,
         annotated: options.annotate,
         ...(options.zoom === undefined ? {} : { zoom: options.zoom }),
+        ...(c.shutter ? { shutter: c.shutter } : {}),
         files: written,
       },
       stdoutLines: [
@@ -277,6 +279,9 @@ export async function run(options: SnapshotOptions): Promise<CommandResult> {
         "",
         "The un-annotated PNG is the same bytes `frame --at N` writes. The overlay",
         "is drawn host-side on a copy and never through the composition.",
+        ...(c.shutter
+          ? [`Shutter ${describeShutter(c.shutter)}: each PNG is an exposure; boxes are the frame's own tick.`]
+          : []),
       ],
     };
   } catch (e) {

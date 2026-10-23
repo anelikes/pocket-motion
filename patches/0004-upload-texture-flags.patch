@@ -1,8 +1,8 @@
 diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
-index 4292d59..7eaadd1 100644
+index 2ffd2d3a..48576cbf 100644
 --- a/engine/wasm/src/lib.rs
 +++ b/engine/wasm/src/lib.rs
-@@ -138,6 +138,26 @@ pub extern "C" fn ui_upload_texture(ptr: *const u8, len: usize, w: u32, h: u32,
+@@ -271,6 +271,26 @@ pub extern "C" fn ui_upload_texture(ptr: *const u8, len: usize, w: u32, h: u32,
      ui().upload_texture(unsafe { bytes(ptr, len) }, w, h, psm)
  }
  
@@ -30,10 +30,10 @@ index 4292d59..7eaadd1 100644
  /// framework/compiler/pak.ts layout — v2 PSM_T8 palette + optional RLE + filter flags
  /// parsed core-side). Returns the generation-tagged handle or -1.
 diff --git a/framework/src/host.ts b/framework/src/host.ts
-index 266d9c9..b34ab62 100644
+index f0327dee..2156fcf3 100644
 --- a/framework/src/host.ts
 +++ b/framework/src/host.ts
-@@ -130,6 +130,11 @@ export interface HostOps {
+@@ -182,6 +182,11 @@ export interface HostOps {
    /** Upload a self-contained IMG entry blob (framework/compiler/pak.ts layout, incl.
     *  PSM_T8 palette + RLE/filter flags). → handle or -1. */
    uploadImgEntry?(blob: Uint8Array): number;
@@ -46,10 +46,10 @@ index 266d9c9..b34ab62 100644
    // -- host service channel + video plane (spec ops 30..37). Optional: only
    //    native hosts with a tethered companion process (PSPLINK usbhostfs,
 diff --git a/hosts/web/wasm-ops.js b/hosts/web/wasm-ops.js
-index 40d3a89..8a3b43c 100644
+index 99199e5e..fa2ea853 100644
 --- a/hosts/web/wasm-ops.js
 +++ b/hosts/web/wasm-ops.js
-@@ -113,6 +113,14 @@ export async function createWasmUi(wasm, options = {}) {
+@@ -182,6 +182,14 @@ export async function createWasmUi(wasm, options = {}) {
      ops.uploadImgEntry = (blob) => withBytes(blob, (p, l) => ex.ui_upload_img_entry(p, l));
    }
  

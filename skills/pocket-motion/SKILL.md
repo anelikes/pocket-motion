@@ -53,7 +53,10 @@ literal. Class strings must be static literals — the compiler reads them at
 build time. A misspelt `animate-*` written as the whole value of a `class=`
 attribute is a build error listing the names that exist; one assembled out of
 pieces (`"animate-lid-" + which()`) carries no evidence and is silently
-dropped, so write whole literals.
+dropped, so write whole literals. Any other token the compiler does not read,
+in such a literal, is a build error too, located and with the form that
+compiles where the token says it: `left-[1e-14px]` (a generator's
+`String(n)`) is `left-[0.00000000000001px]`, `rotate--18` is `rotate-342`.
 
 **A window has a shape.** `overflow-mask` clips a node's children and its own
 ground to its outline (rounded corners, rotation) where `overflow-hidden`
@@ -77,7 +80,9 @@ and text wider than its box draws past it or is clipped by an
 `app.tsx` exists, by measuring with the renderer's own advance tables
 (`src/text/measure.ts`, `src/text/fit.ts`); `compositions/copy/gen.ts` is the
 worked example. Every font size is baked, so only sizes that appear in class
-literals get an atlas. `scale` transforms move glyphs but never resize them.
+literals get an atlas. An axis-aligned `scale` resizes glyphs by resampling
+the baked size, softer when magnified, so bake the size text is shown at; a
+rotated run, or one with a text stroke, moves without resizing.
 
 **Paint beyond boxes and text**: `overflow-mask` (a window shaped by its
 outline), named font faces (`font-[name]` over the sidecar's `fonts.faces`),
@@ -87,6 +92,15 @@ subtree as one unit, and gradients of up to six stops at any angle, radial, or
 clipped to text (`via-*`, `bg-linear-*`, `bg-radial`, `bg-clip-text`). All
 paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
 `0016`–`0019`).
+
+**Motion blur is the sidecar's `shutter`** (`{ "angle": 180, "samples": 8 }`):
+each frame is the integer average of that many renders across the open
+fraction of the frame, centred on its tick (`patches/0034`). Only translate,
+scale, rotate and skew move between samples — opacity and colour keep the
+frame's tick, and no sample crosses a keyframe jump, so gates and cuts stay
+sharp. `shutter-hold` keeps one node's own timelines at the tick; it is not
+inherited, so hold the moving group, not the caption inside it. It is part of
+identity and costs `samples` rasters a frame.
 
 **What does not exist**: backdrop blur, conic gradients, footage effects at
 render time (grading and filtering belong to the ingest).
@@ -114,6 +128,7 @@ catalogue of every key and every diagnostic.
   "durationFrames": 240,
   "fps": 30,                  // must divide 60
   "supersample": 1,           // 1 | 2 | 4
+  "shutter": { "angle": 180, "samples": 8 },  // optional; absent = no blur
   "fonts": { "regular": "assets/fonts/NotoSansSC-Regular.otf",
              "bold":    "assets/fonts/NotoSansSC-Bold.otf" },
   "footage": [ /* host-owned tile grids */ ],
@@ -264,3 +279,8 @@ Each of these is a decision with a reason, not a gap to fill.
   checks — declared, resolvable, correctly placed — and not digest coverage.
 - **A missing still picture is refused rather than substituted.** Upstream's
   build bakes a checkerboard and succeeds; `lint` and `check` say no.
+- **An SVG bakes as written or stops the build.** Paths with arcs, circles,
+  ellipses, rounded rects, lines, polylines and polygons, fills and strokes
+  with joins and caps, and `<g transform>` are drawn; `<text>`, `<use>`,
+  `<image>`, `clip-path`, `stroke-dasharray` and the rest are refused by
+  name. The table is in AUTHORING.md under "Still pictures".

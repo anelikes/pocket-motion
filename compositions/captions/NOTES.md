@@ -53,9 +53,12 @@ sized for 187. AUTHORING.md was corrected in the same commit.
   and `scale-x` exist and would grow a box from its left edge too; a `width`
   was chosen because it bakes to the measured pixel, so the box's edge is a
   number `layout --at` reads back, where a scale is a factor over a rect.
-- **Scale never resizes glyphs**, so the one entrance that scales text in the
-  catalog is a translation here, and every fitted size is a real atlas slot
-  from a ladder rather than a scaled glyph.
+- **Scale never resized glyphs** when these were ported, so the one entrance
+  that scales text in the catalog is a translation here, and every fitted
+  size is a real atlas slot from a ladder rather than a scaled glyph. Since
+  the pin moved to 66caf4e5 an axis-aligned scale resamples glyphs
+  (AUTHORING.md, "Text"); a resampled glyph is softer than a baked one, so
+  the ladder is still the sharper choice.
 
 ## What the engine would need for the other eleven
 
@@ -70,10 +73,10 @@ one primitive that would unlock it:
 | Glitch RGB | three colour-separated copies added together, plus scanlines | an additive or screen blend; alpha is the only blend |
 | Particle Burst | ~40 particles per keyword | nothing missing — it is rectangles on keyframes, and was left out only for size |
 | Emoji Pop | colour emoji glyphs | a colour-bitmap font path; the atlas is coverage only |
-| Parallax Layers | text behind a subject with a vertical stretch | `scaleY` on text resizes nothing (glyphs are bitmaps); a subject cut-out needs a mask |
-| Camera Follow Captions | a camera pulling back at a steady rate over text growing geometrically | text at continuous scale — every size is a baked slot, so a zoom on text is a step through a ladder |
+| Parallax Layers | text behind a subject with a vertical stretch | a subject cut-out needs a mask; `scaleY` on text stretches it since the pin moved to 66caf4e5 (it resized nothing before) |
+| Camera Follow Captions | a camera pulling back at a steady rate over text growing geometrically | nothing since the pin moved to 66caf4e5: an axis-aligned scale resamples glyphs, softer than a baked size when magnified; before, a zoom on text was a step through a ladder of baked slots |
 | Editorial Emphasis, Weight Shift | italic and light faces; a weight that tweens | more faces in the sidecar (two are allowed); a variable-font axis is out of reach |
-| Kinetic Slam's fourth entrance | `scale` 0.4 → 1 on a word | the same: scale on text moves glyphs and never resizes them |
+| Kinetic Slam's fourth entrance | `scale` 0.4 → 1 on a word | nothing since the pin moved to 66caf4e5, for the same reason; it was ported as a rise and still is |
 
 Three of those rows are one change — a mask primitive — and two more are
 one change — a blur. A `text-shadow` baked into the atlas as a second

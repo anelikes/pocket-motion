@@ -8,6 +8,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/bloom": {
+      "failures": [],
+      "nodes": 6,
+      "named": 6,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/captions/clip-wipe": {
       "failures": [],
       "nodes": 28,
@@ -231,6 +238,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/shutter-blur": {
+      "failures": [],
+      "nodes": 13,
+      "named": 10,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/smoke": {
       "failures": [],
       "nodes": 7,
@@ -295,7 +309,7 @@
       "nodes": 91,
       "named": 0,
       "neverShown": 0,
-      "buriedAfterShown": 0
+      "buriedAfterShown": 2
     },
     "compositions/transitions": {
       "failures": [],

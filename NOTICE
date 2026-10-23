@@ -36,6 +36,25 @@ Both are pinned rather than resolved from the system, because a render's
 identity includes the exact font bytes (`src/render/identity.ts`).
 See `assets/fonts/README.md`.
 
+Poppins (Black) — checked in at `compositions/mg-bauhaus/fonts/`, fetched from
+  github.com/google/fonts (ofl/poppins), sha256 d82aaaf98a9283f9a8edd24e51173337d8eaf09e25cd3d98831f8ec8461748a1.
+  Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins).
+  SIL Open Font License, Version 1.1, vendored verbatim beside it as `OFL-Poppins.txt`.
+
+Rajdhani (SemiBold, Bold) — checked in at `compositions/mg-hud/fonts/`.
+  Copyright (c) 2014 Indian Type Foundry.
+  SIL Open Font License, Version 1.1, vendored verbatim beside it as `OFL.txt`.
+
+Both are a composition's own faces, declared in its sidecar, and live beside
+it for the same reason the others are pinned.
+
+
+## Map data
+
+`compositions/mg-hud/data/` carries Natural Earth vector data: the 1:110m land
+polygons and the 1:50m coastline clipped to 100–140°E, 15–45°N. Natural Earth
+is in the public domain (https://www.naturalearthdata.com/about/terms-of-use/).
+
 
 ## Audio
 

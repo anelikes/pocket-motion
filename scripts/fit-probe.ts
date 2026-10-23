@@ -43,7 +43,7 @@ import { bands, VIEW, type Block, type Spec } from "../compositions/fit/gen.ts";
 import { readAtlases } from "../src/text/atlas.ts";
 import { cachedWidth, fitToBox, glyphCount, segments, wrapLines } from "../src/text/fit.ts";
 import { hardenedBootWorld, type BootedWorld } from "../src/runtime/boot.ts";
-import { withBuildLock } from "../src/vendor/build-lock.ts";
+import { buildEnv } from "../src/vendor/cache.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname.replace(/\/$/, "");
 const VENDOR = join(ROOT, "vendor/pocketjs");
@@ -96,7 +96,7 @@ const LADDER = [64, 56, 48, 42, 38, 34, 30, 26, 22] as const;
 // ---------------------------------------------------------------------------
 
 async function run(cmd: string[]): Promise<void> {
-  const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", cwd: ROOT });
+  const p = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", cwd: ROOT, env: buildEnv() });
   const [out, err] = await Promise.all([
     new Response(p.stdout).text(),
     new Response(p.stderr).text(),
@@ -153,28 +153,20 @@ async function stage(spec: Spec, name: string, face = FACE): Promise<Stage> {
   await run(["bun", join(ROOT, "compositions/fit/gen.ts"), specPath]);
 
   const dist = join(ROOT, `dist/fit-${name}`);
-  // The build and the read of the mirror are ONE critical section, for the
-  // reason `src/vendor/build-lock.ts` sets out: any other build landing between
-  // them replaces the slot table this pak is about to be paired against. This
-  // probe has no `verifySlots`, so it would not notice — it would print the
-  // advances of a different font size, which is the failure mode this whole
-  // file exists to rule out one level down.
-  const { gen, metrics } = await withBuildLock(`fit-probe ${name}`, async () => {
-    await run([
-      "bun", join(VENDOR, "tools/build.ts"), join(ROOT, "compositions/fit/main.tsx"),
-      `--outdir=${dist}`, "--framework=solid",
-      `--font-regular=${face.regular}`, `--font-bold=${face.bold}`,
-    ]);
-    // styles.generated.ts is rewritten by every build (an ignored mirror — see
-    // tools/build.ts). The cache buster is what makes the second build see its
-    // own slot assignment rather than the first build's.
-    return {
-      gen: (await import(
-        `${VENDOR}/framework/src/styles.generated.ts?fit=${++builds}`
-      )) as { FONT_SLOTS: Record<number, { px: number; bold: boolean }> },
-      metrics: await atlasMetrics(join(dist, "main.pak")),
-    };
-  });
+  await run([
+    "bun", join(VENDOR, "tools/build.ts"), join(ROOT, "compositions/fit/main.tsx"),
+    `--outdir=${dist}`, "--framework=solid",
+    `--font-regular=${face.regular}`, `--font-bold=${face.bold}`,
+  ]);
+  // The slot table this pak is paired against is the style module the same
+  // build wrote beside it. This probe has no `verifySlots`, so another build's
+  // table would not be noticed — it would print the advances of a different
+  // font size — which is why it is read from `dist` and nowhere shared. The
+  // query defeats the module cache when a stage name is built twice.
+  const gen = (await import(`${join(dist, "main.styles.ts")}?fit=${++builds}`)) as {
+    FONT_SLOTS: Record<number, { px: number; bold: boolean }>;
+  };
+  const metrics = await atlasMetrics(join(dist, "main.pak"));
 
   const pakPath = join(dist, "main.pak");
   const slots: SlotInfo[] = Object.entries(gen.FONT_SLOTS).map(([k, v]) => {
@@ -196,6 +188,7 @@ async function stage(spec: Spec, name: string, face = FACE): Promise<Stage> {
     width: VIEW.w,
     height: VIEW.h,
     hz: 30,
+    shutter: null,
   });
   world.frame(0);
   for (let t = 0; t < world.ticksPerFrame; t++) world.tick();

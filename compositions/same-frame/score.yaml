@@ -1,0 +1,164 @@
+# 《同一帧》配乐 —— onbgm 乐谱。画面在 gen.ts，音乐在这里，都是文本。
+# 120 BPM：一拍 0.5 秒 = 画面的 30 帧，一小节 2 秒 = 120 帧，所以每个段落边界都是画面的一刀。
+# 段落边界由 `onbgm fit 0:04=build 0:12=groove 0:18=drop 0:26=rewind 0:30=proof 0:46=climax 0:50=outro
+#   --length 0:56 --bpm 120-120` 算出，全部落在小节第一拍上，偏差 0%。
+#
+# 0:00 冷开场：光标按拍子闪 → 0:04 四记重击（没有浏览器/没有时钟/没有随机/只有帧）
+# → 0:12 函数 → 0:18 第一次高潮（同一帧）→ 0:26 倒带 → 0:30 证明（两台机器、速度）
+# → 0:46 第二次高潮 → 0:50 结尾卡：哈希落定，和声落在 C 上
+title: Same Frame
+meta:
+  bpm: 120
+  key: A minor
+  loop: false
+  seed: 0
+
+sections:
+  - { name: intro,  bars: 2, energy: 0.25 }                       # 0:00–0:04
+  - { name: build,  bars: 4, energy: "0.45->0.75", at: "0:04" }   # 0:04–0:12
+  - { name: groove, bars: 3, energy: 0.7,  at: "0:12" }           # 0:12–0:18
+  - { name: drop,   bars: 4, energy: 0.95, at: "0:18" }           # 0:18–0:26
+  - { name: rewind, bars: 2, energy: 0.25, at: "0:26" }           # 0:26–0:30
+  - { name: proof,  bars: 8, energy: "0.45->0.8", at: "0:30" }    # 0:30–0:46
+  - { name: climax, bars: 2, energy: 1.0,  at: "0:46" }           # 0:46–0:50
+  - { name: outro,  bars: 3, energy: "0.5->0.25", at: "0:50" }    # 0:50–0:56
+
+harmony:
+  intro:  "Am9 | Am9"
+  build:  "Fmaj7 | G6 | Em7 | Am"
+  groove: "Am | F | G"
+  drop:   "Am | F | C | G"
+  rewind: "Fmaj7 | Esus4 E"
+  proof:  "Am9 | Fmaj7 | Cmaj7 | G6 | Am9 | Fmaj7 | Dm9 | Esus4 E"
+  climax: "Am | F G"
+  outro:  "Fmaj7 | C | C"
+
+tracks:
+  pad:
+    sound: synth-pad
+    texture: pad
+    in: all
+
+  # 时钟：开场每拍一下（光标的闪烁就是这个拍子），倒带时一路往下走
+  tick:
+    sound: synth-bell
+    texture: line
+    in: [intro, rewind]
+    notes:
+      intro: "A6/4' A6/4' A6/4' A6/4' | A6/4' A6/4' A6/4' E6/4'"
+      rewind: >-
+        E7/8' D7/8' C7/8' B6/8' A6/8' G6/8' F6/8' E6/8' |
+        D6/8' C6/8' B5/8' A5/8' G5/8' F5/8' E5/8' D5/8'
+
+  sub:
+    sound: sub-bass
+    texture: bass-sustain
+    in: [intro, build, rewind, outro]
+
+  # build 每小节第一拍一记：四句话各一下
+  hit:
+    sound: supersaw
+    texture: comp
+    in: [build, climax]
+    rhythm: "X--- ---- ---- ----"
+    by_section:
+      climax: {rhythm: "X-X- X-X- X-X- X-X-"}
+
+  boom:
+    sound: bass-808
+    texture: line
+    in: [build]
+    notes:
+      build: "F2/1> | G2/1> | E2/1> | A2/2> A2/16> A2/16> A2/16> A2/16> A2/8> A2/8>"
+
+  bass:
+    sound: synth-bass
+    texture: bassline
+    in: [groove, drop, proof, climax]
+    rhythm: "1.1. 1.1. 1.1. 1.8."
+    by_section:
+      proof: {rhythm: "1--- ---. 1--- 5---"}
+
+  arp:
+    sound: synth-pluck
+    texture: arp
+    in: [groove, drop, proof, climax]
+    mode: updown
+    range: [57, 81]
+    rhythm: "xxxx xxxx xxxx xxxx"
+    by_section:
+      proof: {rhythm: "x.x. x.x. x.x. x.x."}
+
+  saw:
+    sound: supersaw
+    texture: comp
+    in: [drop]
+    rhythm: "X--- ---- X--- ----"
+
+  lead:
+    sound: synth-lead
+    texture: melody
+    in: [drop, climax]
+    notes:
+      drop: >-
+        A5/8 C6/8 E6/4 D6/8 C6/8 B5/8 C6/8 |
+        A5/4. G5/8 A5/4 C6/4 |
+        G5/8 E5/8 G5/8 C6/8 E6/4 D6/4 |
+        B5/4. A5/8 G5/2
+      climax: >-
+        E6/8 E6/8 D6/8 C6/8 B5/8 C6/8 D6/8 E6/8 |
+        F6/4 E6/4 D6/4 B5/4
+
+  # 结尾卡：哈希落定，钟声停在 C 上
+  bell:
+    sound: synth-bell
+    texture: line
+    in: [outro]
+    notes:
+      outro: "E6/2 G6/2 | C7/1 | r/1"
+
+  drums:
+    sound: drums-synth
+    texture: groove
+    in: [build, groove, drop, proof, climax]
+    pattern:
+      kick:     "x... x... x... x..."
+      clap:     ".... x... .... x..."
+      hat:      "xgxg xgxg xgxg xgxg"
+      open-hat: "..x. ..x. ..x. ..x."
+    by_section:
+      build:
+        pattern:
+          kick:  "X... .... .... .... | X... .... .... .... | X... .... x... .... | X... x... x... x..."
+          snare: ".... .... .... .... | .... .... .... .... | .... .... .... x... | x.x. x.x. xxxx xxxx"
+          hat:   ".... .... .... .... | x.x. x.x. x.x. x.x. | xgxg xgxg xgxg xgxg | xgxg xgxg xgxg xgxg"
+      groove:
+        pattern:
+          kick: "x... x... x... x..."
+          clap: ".... x... .... x..."
+          hat:  "..x. ..x. ..x. ..x."
+      proof:
+        pattern:
+          kick:  "x... .... ..x. ...."
+          snare: ".... .... x... ...."
+          hat:   "x.x. x.x. x.x. x.x."
+      climax:
+        pattern:
+          kick:     "X... x... x... x..."
+          clap:     ".... x... .... x..."
+          hat:      "xxxx xxxx xxxx xxxx"
+          open-hat: "..x. ..x. ..x. ..x."
+          crash:    "X... .... .... ...."
+
+sfx:
+  - { type: impact, at: build, duck: 3 }
+  - { type: whoosh, at: "0:06", level: 0.6 }
+  - { type: whoosh, at: "0:08", level: 0.6 }
+  - { type: whoosh, at: "0:10", level: 0.6 }
+  - { type: riser, at: drop, length: 8 }
+  - { type: impact, at: drop, duck: 4 }
+  - { type: downlifter, at: rewind, level: 0.45 }
+  - { type: reverse-cymbal, at: proof, level: 0.4 }
+  - { type: riser, at: climax, length: 8 }
+  - { type: impact, at: climax, duck: 4 }
+  - { type: ding, at: "0:52.2", level: 0.35 }

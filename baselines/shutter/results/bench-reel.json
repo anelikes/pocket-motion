@@ -1,0 +1,42 @@
+{
+  "label": "reel",
+  "platform": "darwin/arm64",
+  "size": [
+    1920,
+    1080
+  ],
+  "from": 400,
+  "frames": 12,
+  "reps": 3,
+  "angle": 180,
+  "rows": [
+    {
+      "n": 1,
+      "exposureMedianMs": 1.19,
+      "exposureMinMs": 0.96,
+      "rasterMedianMs": 1.16,
+      "averagingMedianMs": 0.03
+    },
+    {
+      "n": 4,
+      "exposureMedianMs": 14.34,
+      "exposureMinMs": 12.7,
+      "rasterMedianMs": 4.71,
+      "averagingMedianMs": 9.63
+    },
+    {
+      "n": 8,
+      "exposureMedianMs": 26.32,
+      "exposureMinMs": 21.82,
+      "rasterMedianMs": 11.02,
+      "averagingMedianMs": 15.29
+    },
+    {
+      "n": 16,
+      "exposureMedianMs": 52.41,
+      "exposureMinMs": 40.2,
+      "rasterMedianMs": 19.63,
+      "averagingMedianMs": 32.78
+    }
+  ]
+}

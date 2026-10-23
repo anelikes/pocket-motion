@@ -1,8 +1,8 @@
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index a38d08c..dbe3757 100644
+index ee30898c..6296f24e 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
-@@ -1032,8 +1032,9 @@ impl<'a> Walker<'a> {
+@@ -1375,8 +1375,9 @@ impl<'a> Walker<'a> {
  
          // -- image / animated sprite -------------------------------------------
          if node.node_type == spec::NodeType::Image as u8 && node.tex >= 0 {
@@ -14,7 +14,7 @@ index a38d08c..dbe3757 100644
              let (fu0, fv0, fu1, fv1) = if node.sprite_frames > 0 {
                  let cols = node.sprite_cols.max(1) as u32;
                  let rows = (node.sprite_frames as u32).div_ceil(cols);
-@@ -1048,7 +1049,7 @@ impl<'a> Walker<'a> {
+@@ -1391,7 +1392,7 @@ impl<'a> Walker<'a> {
                      (cy + 1) as f32 / rows as f32,
                  )
              } else {
@@ -24,10 +24,10 @@ index a38d08c..dbe3757 100644
              self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip, fu0, fv0, fu1, fv1);
          }
 diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
-index fd71ee6..6c3ddc1 100644
+index 2cf8b7c0..c461f356 100644
 --- a/engine/core/src/lib.rs
 +++ b/engine/core/src/lib.rs
-@@ -644,6 +644,45 @@ impl Ui {
+@@ -1169,6 +1169,45 @@ impl Ui {
          if node.node_type == spec::NodeType::Image as u8 {
              node.tex = if tex < 0 { -1 } else { tex };
              node.sprite_frames = 0; // set_image reverts a sprite to a static image
@@ -74,10 +74,10 @@ index fd71ee6..6c3ddc1 100644
      }
  
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index ec7a45a..6dc837c 100644
+index 1a690d9d..a0ed657c 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -1243,6 +1243,62 @@ fn image_tex_quad_clips_with_uv_reinterpolation() {
+@@ -1642,6 +1642,62 @@ fn image_tex_quad_clips_with_uv_reinterpolation() {
      assert_eq!(f32::from_bits(words[i + 7]), 1.0); // v1
  }
  
@@ -141,13 +141,13 @@ index ec7a45a..6dc837c 100644
  fn root_is_a_full_screen_flex_column() {
      let mut ui = Ui::new();
 diff --git a/engine/core/src/tree.rs b/engine/core/src/tree.rs
-index 6de7052..70f50c9 100644
+index 7dff1276..01ef7e89 100644
 --- a/engine/core/src/tree.rs
 +++ b/engine/core/src/tree.rs
-@@ -67,6 +67,13 @@ pub struct Node {
-     /// Uploaded texture handle (image nodes only; -1 = none). For an animated
-     /// sprite this is the ATLAS texture; the drawn frame is a UV sub-rect of it.
-     pub tex: i32,
+@@ -83,6 +83,13 @@ pub struct Node {
+     pub compositor_surface: i32,
+     /// Shell focus fact carried by SURFACE_QUAD for native scheduling/input.
+     pub compositor_focused: bool,
 +    /// Sub-rect of `tex` a PLAIN image samples, normalized (u0, v0, u1, v1).
 +    /// Defaults to the whole texture; a bound sprite computes its own cell and
 +    /// ignores this. Sticky across `set_image`, like a style property and unlike
@@ -158,19 +158,19 @@ index 6de7052..70f50c9 100644
      /// Animated-sprite frame count over `tex` (0 = plain image, no animation).
      pub sprite_frames: u16,
      /// Atlas grid columns (frame i sits at col i%cols, row i/cols).
-@@ -99,6 +106,7 @@ impl Node {
-             anim_values: Vec::new(),
-             text: String::new(),
+@@ -130,6 +137,7 @@ impl Node {
              tex: -1,
+             compositor_surface: -1,
+             compositor_focused: false,
 +            uv: [0.0, 0.0, 1.0, 1.0],
              sprite_frames: 0,
              sprite_cols: 0,
              sprite_step: 0,
 diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
-index 7eaadd1..47664a8 100644
+index 48576cbf..e5b1b717 100644
 --- a/engine/wasm/src/lib.rs
 +++ b/engine/wasm/src/lib.rs
-@@ -180,6 +180,13 @@ pub extern "C" fn ui_set_image(id: i32, tex: i32) {
+@@ -313,6 +313,13 @@ pub extern "C" fn ui_set_image(id: i32, tex: i32) {
      ui().set_image(id, tex)
  }
  
@@ -182,13 +182,13 @@ index 7eaadd1..47664a8 100644
 +}
 +
  #[no_mangle]
- pub extern "C" fn ui_set_sprite(id: i32, atlas: i32, frames: u32, cols: u32, step: u32) {
-     ui().set_sprite(id, atlas, frames, cols, step)
+ pub extern "C" fn ui_set_compositor_surface(id: i32, surface: i32, focused: i32) {
+     ui().set_compositor_surface(id, surface, focused != 0)
 diff --git a/framework/src/host.ts b/framework/src/host.ts
-index b34ab62..50f675a 100644
+index 2156fcf3..3ad6be23 100644
 --- a/framework/src/host.ts
 +++ b/framework/src/host.ts
-@@ -135,6 +135,10 @@ export interface HostOps {
+@@ -187,6 +187,10 @@ export interface HostOps {
     *  the pixel stream PackBits-RLE. The only route to filtered sampling for
     *  pixels the caller produced rather than baked into a pak entry. */
    uploadTextureFlags?(buf: Uint8Array, w: number, h: number, psm: number, flags: number): number;
@@ -200,10 +200,10 @@ index b34ab62..50f675a 100644
    // -- host service channel + video plane (spec ops 30..37). Optional: only
    //    native hosts with a tethered companion process (PSPLINK usbhostfs,
 diff --git a/hosts/web/wasm-ops.js b/hosts/web/wasm-ops.js
-index 8a3b43c..2c09321 100644
+index fa2ea853..8b4b5fc2 100644
 --- a/hosts/web/wasm-ops.js
 +++ b/hosts/web/wasm-ops.js
-@@ -121,6 +121,13 @@ export async function createWasmUi(wasm, options = {}) {
+@@ -190,6 +190,13 @@ export async function createWasmUi(wasm, options = {}) {
        withBytes(buf, (p, l) => ex.ui_upload_texture_flags(p, l, w, h, psm, flags));
    }
  

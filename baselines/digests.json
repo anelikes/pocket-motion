@@ -6,6 +6,10 @@
       "frames": 2,
       "digest": "627bcc51ad8963e8e832881fbc9c2a69e82adb8ac13103ceb9e85f918e104119"
     },
+    "compositions/bloom": {
+      "frames": 2,
+      "digest": "6e3f2d48b0d7b23ba9b8e6956e765f1eba4a27e6ac5079ec9b9f6a1f9da375c8"
+    },
     "compositions/captions/clip-wipe": {
       "frames": 240,
       "digest": "9aa91339233aa1ed105de49526427778638958b23afd13bfb6026205248e3d33"
@@ -44,7 +48,7 @@
     },
     "compositions/filters": {
       "frames": 30,
-      "digest": "2ccf040bd296d6c3015550e9ff6a23bd8a52785820f98ac45217eb3d221232b9"
+      "digest": "d283d3cb4b09ae0479d2279e9995dc0cb95109012d3ee94cd94c3728155ecb0b"
     },
     "compositions/footage-tracks": {
       "frames": 150,
@@ -60,7 +64,7 @@
     },
     "compositions/gradients": {
       "frames": 30,
-      "digest": "c4509f225a0834b61432bef2bf83a9a228889e25cb42c2504c12673e53b10572"
+      "digest": "bcc4f390bca5bceb7e0d032c4326f4f9c53a1f6c611edc249a897960b12dbdec"
     },
     "compositions/images": {
       "frames": 1,
@@ -76,7 +80,7 @@
     },
     "compositions/masked": {
       "frames": 90,
-      "digest": "2b43d5e8c0ea600cbbfc378d7d08545d1e1eefe8a54f8836814050e3bc8a5722"
+      "digest": "c973c551e80e85c787f1551a955e82ff80b34b535d15dd6f02ea343c776f8047"
     },
     "compositions/nested/a/9x16": {
       "frames": 30,
@@ -92,7 +96,7 @@
     },
     "compositions/probe": {
       "frames": 2,
-      "digest": "8ab67785aef742d44753f43b40257963264927d7fedac0ec4902d580653967ca"
+      "digest": "e400e20b2d067063bf315dc38ee2032885139dbbb3ce2657354163d15f426ac6"
     },
     "compositions/reel": {
       "frames": 1071,
@@ -100,15 +104,19 @@
     },
     "compositions/rename-card": {
       "frames": 180,
-      "digest": "a3c67eeb18e2e137366015c10723ee28b5db30609ce77f73c1391b6391a3f452"
+      "digest": "1ce28215c8be8385ea3bff41f75b3d9164b09c8f7cdc6e7fc7894a7a7ec1bdfb"
     },
     "compositions/shutter": {
       "frames": 150,
       "digest": "1de1098e2e4f95984bb4e4f98bbbeb34638bc6b37e3259befdbef4304add8841"
     },
+    "compositions/shutter-blur": {
+      "frames": 90,
+      "digest": "cb2a8c7ee001cb45a4929660e3a8d37dd5e3b72239470c1aa408d38df7d35fd2"
+    },
     "compositions/smoke": {
       "frames": 450,
-      "digest": "947ec6d2c3b946802ea3e7be16d9c1412c6fc28b2225ba5ca7e60af9ee21f36f"
+      "digest": "17bc445ebf250da679371277cbec985bef8a68ec0c6f53157a3b24cd9afec163"
     },
     "compositions/sound-roles": {
       "frames": 180,
@@ -136,11 +144,11 @@
     },
     "compositions/timeline": {
       "frames": 854,
-      "digest": "3f35d493ebccaada56cc68fb13dbb22c1df17b60f336581ef85f5cce7d93383c"
+      "digest": "b632622509e268f62e570e779df38c4298fb1f9fa9d7c721c90604ae7f254bf9"
     },
     "compositions/transitions": {
       "frames": 756,
-      "digest": "890cace729e050c47ff3b67e1c215459a3f9ab7b6e135356938ba3c466a2606e"
+      "digest": "66a8c5dcdee488e5babc3cc7a1b5554bac39a1766f35462a681c52b276f48e36"
     },
     "compositions/typography": {
       "frames": 30,

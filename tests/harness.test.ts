@@ -964,3 +964,70 @@ describe("G. boundary marshalling", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// H. an accessor on a contract slot
+// ---------------------------------------------------------------------------
+// Upstream's `hosts/web/wasm-ops.js` publishes `get __auxiliarySurface()` on
+// the ops object. harden() assigned every key back to itself, which throws on
+// a getter-only property under "use strict" — the sandbox did not boot.
+
+describe("H. an accessor on a contract slot", () => {
+  let reads = 0;
+  let surface: { root: number } | undefined;
+  const make = () =>
+    createSandbox({
+      slots: {
+        ui: {
+          base: 21,
+          createNode(x: number) {
+            return x + 1;
+          },
+          get __auxiliarySurface() {
+            reads++;
+            return surface;
+          },
+          get doubled() {
+            return (this as { base: number }).base * 2;
+          },
+        },
+      },
+    });
+
+  test("boots without reading it, and each guest read reaches the host getter", () => {
+    reads = 0;
+    surface = undefined;
+    const sb = make();
+    expect(reads).toBe(0);
+    expect(sb.eval("ui.__auxiliarySurface")).toBeUndefined();
+    surface = { root: 7 };
+    expect(sb.eval<number>("ui.__auxiliarySurface.root")).toBe(7);
+    expect(reads).toBe(2);
+  });
+
+  test("a getter runs with the object it was declared on as `this`", () => {
+    expect(make().eval<number>("ui.doubled")).toBe(42);
+  });
+
+  test("the value is marshalled: its constructor chain stays in the sandbox", () => {
+    surface = { root: 7 };
+    const result = make().eval<string>(
+      `(function () {
+        try { return ui.__auxiliarySurface.constructor.constructor("return typeof process")(); }
+        catch (_e) { return "blocked"; }
+      })()`,
+    );
+    expect(result).not.toBe("object");
+  });
+
+  test("the descriptor's getter is a sandbox wrapper, not the host function", () => {
+    const result = make().eval<string>(
+      `(function () {
+        var d = Object.getOwnPropertyDescriptor(ui, "__auxiliarySurface");
+        try { return d.get.constructor("return typeof process")(); }
+        catch (_e) { return "blocked"; }
+      })()`,
+    );
+    expect(result).not.toBe("object");
+  });
+});

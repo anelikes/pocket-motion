@@ -49,7 +49,7 @@ export interface RenderOptions extends Omit<WasmFrameSourceOptions, "composition
    * For `png-seq`: how to turn one RGBA buffer into PNG bytes.
    *
    * Injected rather than imported because the encoder is upstream's
-   * (`<pocketjs>/tests/png.ts`), reached through a computed specifier the way
+   * (`<pocketjs>/tools/png.ts`), reached through a computed specifier the way
    * `frame` reaches it, and `src/render/` should not know where the vendored
    * tree is.
    */

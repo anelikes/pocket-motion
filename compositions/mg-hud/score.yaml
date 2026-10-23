@@ -1,0 +1,132 @@
+# VEGA-7 · 织女-7 —— darksynth 脉冲 + HUD 提示音。120 BPM，一个十六分音符 = 0.125 s = 画面 3.75 帧。
+# 和 gen.ts 的时间点对齐：
+#   0.375–1.375 s 自检日志五行，每行一声 beep（奇数十六分音符）
+#   2.0–5.5 s 底层让开（能量压低），雷达扫到 C-01/02/03 各一声，视距每拍滚动一次各一声轻 chirp
+#   4.0 s 扫描第一圈扫过 C-04：双响 + ding
+#   5.5 s 括号张开 · 5.9–6.5 s 括号转正、锁定读数 0→100%：锁定音每个十六分音符升一级，6.0 s 起音乐被压出一个洞
+#   6.5 s 括号落定 = 一道橙色波前从目标扫出、全画面翻橙：冲击 + 低频下潜 + 双音警报；6.9 s 俯冲 whoosh
+#   6.5 s 括号以速度咬上目标点，「目标锁定」在同一帧落下（白热两帧） · 7.5 s 推进落在船的雷达图像上，船体勾边、开尔文角画上尾迹、拦截矢量画进来
+#   7.57 / 9.3 s 两次告警扫频，画面边缘随之闪橙 · 8.1 s CONFIRMED，航向虚线往黄浦江延伸 · 9.0 s 拦截已下达
+#   9.2 s 括号闪白，系统按搭建的反序在十二帧里撤下：面板、环，镜头压暗，只留下锁定框、船和结论，HANDOFF 打字
+title: Vega-7
+meta:
+  bpm: 120
+  key: D minor
+  loop: false
+  seed: 0
+
+sections:
+  - { name: boot,   bars: 1, energy: 0.2 }                       # 0:00–0:02 只有提示音和一点空气
+  - { name: search, bars: 1, energy: 0.25, at: "0:02" }           # 0:02–0:04 踩镲进来
+  - { name: track,  bars: 1, energy: "0.3->0.5", at: "0:04" }     # 0:04–0:06 底鼓和贝斯进来，向锁定蓄力
+  - { name: alert,  bars: 2, energy: "1.0->0.85", at: "0:06" }    # 0:06–0:10 全部进来
+
+harmony:
+  boot:   "Dm"
+  search: "Bb"
+  track:  "Gm"
+  alert:  "Dm Bb | Gm A"
+
+tracks:
+  # the bed is built a section at a time, so the hit on 6.5 s stands well above what led to it
+  pad:
+    sound: synth-pad
+    texture: pad
+    in: [track, alert]
+
+  pulse:
+    sound: synth-bass
+    texture: bassline
+    # in the search too, so the bed never drops out under the sweep
+    in: [search, track, alert]
+    articulation: staccato
+    rhythm: "1111 1111 1111 1111"
+    by_section:
+      # the bar before the lock flash drops out for a beat, so the hit lands in a hole
+      alert: {rhythm: ".... 1111 1111 1111 | 1111 1111 1111 1111"}
+
+  beep:
+    sound: chip-pulse
+    texture: line
+    gain: 7
+    in: [boot, search, track, alert]
+    notes:
+      # the five MODE rows type in on sixteenths 4, 6, 8, 10 and 12, each a step higher
+      boot:   "r/16 r/16 r/16 r/16 D6/16' r/16 E6/16' r/16 F6/16' r/16 A6/16' r/16 D7/16' r/16 r/16 r/16"
+      # C-01 / C-02 / C-03 flare as the sweep crosses them; the survey grid's own blip on the last 16th
+      search: "r/16 r/16 r/16 A6/16' r/16 r/16 r/16 F6/16' r/16 r/16 r/16 A6/16' r/16 r/16 r/16 D7/16'"
+      # the lock tone: one step up every 16th from the brackets opening (5.5 s) to the snap landing (6.5 s)
+      track:  "D7/16' r/16 D7/16' r/16 r/4 r/4 D6/16' F6/16' A6/16' D7/16'"
+      # …then the tail: the intercept vector at 7.5, TASKED at 9.0, the brackets' white flash at 9.5
+      alert:  "E7/16' F7/16' A7/16' A7/16' r/4 r/4 C7/16' r/16 r/8 | r/4 r/4 A6/16' r/16 r/8 D7/16' r/16 r/8"
+
+  # the distance readout rolls on every beat of the search: a short high chirp each time it settles
+  chirp:
+    sound: chip-pulse
+    texture: line
+    gain: -3
+    in: [search, track]
+    notes:
+      search: "r/16 r/16 r/16 E7/16' r/16 r/16 r/16 E7/16' r/16 r/16 r/16 E7/16' r/16 r/16 r/16 E7/16'"
+      track:  "r/16 r/16 r/16 E7/16' r/16 r/16 r/16 E7/16' r/16 r/16 r/16 E7/16' r/4"
+
+  # the alarm sounds twice at full voice, then sits ten dB down under the hold
+  siren:
+    sound: synth-lead
+    texture: melody
+    in: [alert]
+    notes:
+      alert: "r/4 A5/8 F5/8 A5/8 F5/8 r/4 | r/1"
+  siren_low:
+    sound: synth-lead
+    texture: line
+    gain: -10
+    in: [alert]
+    notes:
+      alert: "r/2 r/4 A5/8 F5/8 | A5/8 F5/8 A5/8 F5/8 A5/8 F5/8 A5/4"
+
+  drums:
+    sound: drums-synth
+    texture: groove
+    in: [search, track, alert]
+    pattern:
+      kick:  "x... x... x... x..."
+      snare: ".... x... .... x..."
+      hat:   "xgxg xgxg xgxg xgxg"
+    by_section:
+      search:
+        pattern:
+          hat:  "g.g. g.g. g.g. g.g."
+      track:
+        pattern:
+          kick:  "x... x... x... x..."
+          hat:   "xgxg xgxg xgxg xgxg"
+      alert:
+        pattern:
+          kick:  ".... X... x... x... | x... x... x... x..."
+          snare: ".... .... .... x... | .... x... .... x..."
+          hat:   ".... xgxg xgxg xgxg | xgxg xgxg xgxg xgxg"
+          crash: ".... X... .... .... | .... .... .... ...."
+
+sfx:
+  - { type: impact, at: boot, level: 0.4 }
+  - { type: whoosh, at: "0:02.0", level: 0.35 }
+  - { type: ding, at: "0:04.0", level: 0.45 }
+  # the lock counts up under a two-beat riser that arrives on the flip; the snap itself clacks
+  - { type: riser, at: "0:06.5", length: 2, level: 0.6 }
+  - { type: pop, at: "0:06.33", level: 0.5 }
+  # a near-silent pop whose only job is its duck: the bed drops out for the beat before the hit
+  - { type: pop, at: "0:06.02", level: 0.02, duck: 18 }
+  - { type: impact, at: "0:06.5", duck: 6, level: 1.0 }
+  - { type: sub-drop, at: "0:06.5", level: 0.8 }
+  - { type: whoosh, at: "0:06.8", level: 0.5 }
+  # the push lands on the vessel, the Kelvin V is drawn, the evidence is confirmed, the cutter's vector comes in
+  - { type: pop, at: "0:07.5", level: 0.45 }                     # 括号第二次咬上船体
+  - { type: pop, at: "0:07.57", level: 0.35 }
+  - { type: ding, at: "0:08.1", level: 0.4 }
+  - { type: whoosh, at: "0:08.5", level: 0.3 }
+  # the brackets flash white, then the picture collapses like a tube switched off
+  - { type: impact, at: "0:09.2", level: 0.5 }
+  # the glitch the frame before the hit gets its own tick
+  - { type: pop, at: "0:06.4", level: 0.3 }
+  - { type: downlifter, at: "0:09.0", length: 2, level: 0.4 }

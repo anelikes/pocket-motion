@@ -139,6 +139,8 @@ Worked examples, roughly in reading order:
   glow, a hard shadow, a rack focus keyframed as a CSS `filter`, and the five
   blend modes over a split ground; multi-stop, angled, radial and clipped-to-
   text gradients with a turning angle and a sweeping stop.
+- `compositions/bloom` — an alpha glow and a luma glow (`glow-mode-luma`)
+  side by side on the same dark translucent plate.
 - `compositions/rename-card` — shutter's opening carried six seconds further:
   a dialog, a name typed into it with the caret at each prefix's *measured*
   width (`openMeasurer` again, one `Text` per prefix), and a close built from
@@ -151,7 +153,8 @@ Worked examples, roughly in reading order:
   for the zoom, one `translateX` with 29 stops for the strip, a `scale` per
   card for the pop — timed against each other by arithmetic alone. The
   captions are two `Text` nodes at two sizes outside the scaled body, because
-  a scale moves glyphs and never resizes them. Its `NOTES.md` records every
+  when it was made a scale moved glyphs without resizing them; a resampled
+  caption would now grow, softer than a baked one. Its `NOTES.md` records every
   number tracked off a recording: the ruler ticks for cadence and zoom, one
   card followed through its whole pass for the pop.
 - `compositions/captions/*` — five caption styles ported from the HyperFrames
@@ -252,6 +255,25 @@ typo (e.g. `items-baseline` does not exist; `rounded-full` needs a
 build-time-known width/height in the same class literal — use `rounded-[Npx]`
 when the size is content-driven).
 
+A class literal compiles whole or not at all, so one token the compiler does
+not read would cost the node every utility beside it. Written as the whole
+value of a `class=` attribute, such a literal stops the build, and the error
+names every bad token at its file, line and column. Where the token alone
+says why, the message says so, and offers a rewrite only when the rewrite
+compiles:
+
+```
+error: compositions/my-film/app.tsx:5:19: class "absolute left-[1e-14px] w-[300px] rotate--18" does not compile: unknown utilities left-[1e-14px], rotate--18
+  `left-[1e-14px]`: a number in exponent notation is not read — `left-[0.00000000000001px]` compiles.
+  `rotate--18`: `rotate-N` takes N >= 0 degrees with no brackets or unit, and 342 is the same angle as -18 — `rotate-342` compiles.
+```
+
+The first is what a generator gets from `String(n)` or a template literal
+for a number below 1e-6 in magnitude; round before printing
+(`n.toFixed(3)`). The rule, its messages and the located error are
+`patches/0041-loud-unparseable-class-token.patch`, held by
+`tests/catalog.test.ts` G6 and G6b.
+
 **Motion comes from baked keyframe timelines, not from code.** Declare
 keyframes and named animations in `pocket.config.ts`:
 
@@ -351,10 +373,33 @@ animated window), while a px radius is clamped to half the box at draw time;
 there is no spelling for a negative angle, and `rotate-340` is −20; and to
 keep a scene still inside a rotated window, rotate it back about the SAME
 point (`origin-left` on both, with the two origins placed on one pixel). A
-square-cornered, unrotated `overflow-mask` window is `overflow-hidden` word
-for word. The op is this repository's own (`patches/0013`, the design beside
+square-cornered, unrotated `overflow-mask` window whose box lands on whole
+pixels is `overflow-hidden` word for word; anywhere else the outline is exact
+to a sixteenth of a pixel (`patches/0024`), so content whose edge lies on the
+window's edge — a poster seen through a tile of itself — stops at that edge
+however the window turns. Content drawn inside it is still placed on whole
+pixels (POLY and TEX_TRI are upstream's formats), so a plate offset by a pixel
+on purpose rolls away with its tile, a pixel wide. The op is this repository's own (`patches/0013`, the design beside
 it): no upstream backend draws it, so a composition that must stay portable to
 one keeps to `overflow-hidden`.
+
+**A rounded box keeps its corners when it turns.** A `rounded-*` node under
+a rotation, skew or mirror is drawn under its own rounded outline — the one
+`overflow-mask` uses — so a turning `rounded-full` circle stays a circle
+rather than turning as a square (`patches/0028`). Unturned, it is drawn as it
+always was.
+
+**An arc is a stroke.** `arc-width-[px]` turns a node's ground into an
+annular sector centred in its box — outer radius half the shorter side,
+`arc-start-[deg]` from 12 o'clock clockwise, `arc-sweep-[deg]` long, in the
+`bg-*` colour, with a round cap on each end; `arc-cap-butt` ends it on the
+radius instead, so an arc as wide as its radius is a pie sector — a radar
+wedge, a slice of a pie chart (`patches/0027`). A sweep of 0 draws nothing, neither arc nor box, so a drawn-on
+stroke animates `arcSweep` from 0 (`patches/0025`). The arc is drawn in its
+node's frame and follows the world transform like any other paint
+(`patches/0026`): a ring of arcs on a rotating wrapper turns with it, a
+mirror reverses the sweep, and a scale that differs per axis stretches ring,
+stroke and caps into an elliptical band.
 
 **Text can carry an outline.** `text-stroke-[6px] text-stroke-[#7c2d12]`
 draws a 6 px outline around a Text node's glyphs; `text-stroke-outside` (the
@@ -377,7 +422,15 @@ composited by blend mode when the node is done — CSS's `filter` and
 third length is the blur RADIUS, as in CSS, and a shadow draws only with a
 colour. `text-shadow-*` is the same shadow under the name CSS uses for text;
 `glow-[B]` is a shadow at offset 0, and `glow-gain-[N]` multiplies its
-alpha, which is how a thin line of text gets a glow that reads. Everything
+alpha, which is how a thin line of text gets a glow that reads. A shadow is
+made from alpha, so a dark translucent plate inside a glow gets a halo under
+its whole area and reads lighter than the ground; for light emitted by the
+bright pixels only — a bloom — add `glow-mode-luma`: the glow is then made
+from each pixel's own colour where its brightest channel is above
+`glow-threshold-[t]` (0..1, default 0.5) and added over the content, so the
+plate stays dark and a white rule or a cyan bar on it glows in its own
+colour (`glow-white` keeps it; another colour tints it; `patches/0033`,
+`compositions/bloom`). Everything
 but the blend mode animates: write `filter: "blur(16px) drop-shadow(0px 0px
 4px #38bdf8)"` in a keyframe, or `blur` / `dropShadowBlur` / `dropShadowGain`
 and friends one at a time — `compositions/filters` does both. Like a stroke,
@@ -398,12 +451,58 @@ always was, drawn the way it always was. Add `via-white` (50% unless
 `bg-[radial-gradient(#fef08a,#f97316_45%,#f9731600)]` — and the node is
 painted by a gradient paint instead: up to six stops, `#hex` or palette
 colours, `_` for a space, interpolated premultiplied so a fade to
-transparent keeps its colour. Radial is the farthest-corner ellipse about
-the centre and nothing else. `bg-clip-text text-transparent` with any of
+transparent keeps its colour. Radial is about the box centre: the
+farthest-corner ellipse by default, `bg-radial-circle` the farthest-corner
+circle, and `bg-radial-[circle_closest-side]` or
+`bg-[radial-gradient(circle_closest-side,#fff,#0000)]` any of CSS's shapes and
+sizes (`patches/0029`) — a round glow on a wide box is `bg-radial-circle`, not
+a square box around it. `bg-clip-text text-transparent` with any of
 these is gradient text. The angle, every stop colour and every position
 animate (`gradAngle`, `gradVia1Pos`, …; `compositions/gradients` turns a
 headline's angle and sweeps a via across a bar). Drawn by this repository's
 rasteriser only (`patches/0019`).
+
+**Motion blur is a sidecar key, not a filter.** Each frame is otherwise one
+tick drawn sharp, so a form crossing 180 px between two frames is shown at
+two places with nothing between them. Declare a shutter in
+`pocket-motion.json`:
+
+```json
+"shutter": { "angle": 180, "samples": 8 }
+```
+
+and every frame becomes an exposure: eight renders spread over half the
+frame's duration (180 of 360 degrees), centred on the frame's own tick, and
+averaged in integers by the core (`patches/0034`). What a sample moves is
+narrow, and each limit is a rule rather than a tuning:
+
+- Only translate, scale, rotate and skew timelines are evaluated between
+  ticks. Opacity, colour, size, insets and every paint value keep the frame's
+  own tick in every sample, so a 34 ms gate opens on the frame it opens on
+  without a shutter, and a fade reads the same.
+- A sample never crosses a jump: a one-tick segment, a zero-length keyframe
+  interval (`50%` beside `50.01%`), a start or end with no fill, a loop or
+  iteration wrap whose two sides differ. A cut stays a cut. `keyframes` lists
+  every jump a declared shutter will not blur across. A spin through 360
+  degrees is not a jump and blurs through its wrap.
+- `shutter-hold` keeps the node's OWN timelines at the tick in every sample —
+  a fast caption that has to read in every frame. It is not inherited: a node
+  is drawn under its ancestors' transforms, so text inside a sliding group
+  blurs with the group, and the hold belongs on the group. `lint` warns about
+  a hold the source text shows cannot work (`shutter.holdUnderAnimatedAncestor`,
+  `shutter.holdsNothing`).
+- Tracks started by `animate()`, springs and physics are not baked timelines
+  and keep their tick value.
+
+The shutter is an input to identity, `trace` prints it beside the digest, and
+there is no flag that could stand in for it. `samples: 1` is refused — it is
+the unblurred frame under another identity; remove the key instead. A frame
+costs `samples` rasters plus about 1 ms a sample to average at 1080p
+(`baselines/shutter.md`); samples sit `speed · angle/360 / samples` pixels
+apart, so a fast move wants more of them before the steps stop showing.
+`layout`, `visibility` and `assert` ask whether a node is in the picture of
+the exposure, and read rects and ink at the tick; `check` renders none and
+says so. `compositions/shutter-blur` is the fixture.
 
 **What does not exist** (the checker will catch most of these, but knowing
 saves a round trip): per-frame callbacks (`onFrame`), timers (`after`),
@@ -419,8 +518,8 @@ just a number your `gen.ts` turns into an animation delay. Anything you know
 at build time — a beat grid, a transcript, a data series, a per-item stagger —
 bakes. What cannot exist is timing that only becomes known while the frames
 are being produced, and for a renderer that is not a real case. No backdrop
-blur, no conic gradients or radial shapes other than the centred
-farthest-corner ellipse, no `SCREEN_W`/`SCREEN_H` imports (read the
+blur, no conic gradients, no radial gradient centred anywhere but the box
+centre or sized by a length, no `SCREEN_W`/`SCREEN_H` imports (read the
 viewport, or just lay out with flex).
 
 ## Text
@@ -433,12 +532,17 @@ Two constraints, both absolute:
 2. **Every font size is baked at build time.** Any `text-[Npx]` works, but
    only sizes that appear in class literals get an atlas.
 
-A third edge worth knowing before you animate: **`scale` transforms move
-glyphs but never resize them** — glyph bitmaps come from the baked atlas at
-one size, so a `scale`-in on a node containing text draws full-size glyphs
-bunched toward the origin mid-animation. Scale-pop geometry only; fade text
-in after the geometry lands — `compositions/reel` does that everywhere it
-scales a card that carries copy.
+A third edge worth knowing before you animate: **an axis-aligned `scale`
+resizes glyphs by resampling the size that was baked.** The run is drawn as
+cells sampled bilinearly out of the atlas (upstream 119297b3, on the pin
+since 66caf4e5), so a scale above 1 magnifies a bitmap and softens it: for
+text that is shown large, bake the large size. `compositions/probe` is the
+measurement — at `scale-150` a 64 px bold run's ink goes from 48 to 72 px
+tall. Two runs still move without resizing, their cells kept at the baked
+size: a rotated or skewed one, and one with a text stroke (`patches/0017`
+draws its outline from unscaled cells, so its fill stays unscaled too).
+Before the pin moved every scaled run behaved like those two, which is why
+`compositions/reel` fades its copy in after a card's scale lands.
 
 So multi-line or fitted text is decided *before* `app.tsx` exists, by
 measuring with the renderer's own advance tables. That is what
@@ -611,6 +715,53 @@ the pak: a 2048×2048 picture is 16 MiB there and 16 MiB again in the core.
 SVG is rasterised at the composition's density. `compositions/images` draws a
 900×506 picture and a 3×5 one.
 
+**An SVG is drawn by the build's own baker, and it draws a subset of SVG**
+(`framework/compiler/bake-svg.ts`, `patches/0040`). Its `width` and `height`
+are the picture's size in pixels before density, and the `viewBox` is
+stretched onto them on each axis independently — `preserveAspectRatio="none"`;
+any other value is refused rather than reinterpreted.
+
+| | what is drawn |
+|---|---|
+| shapes | `<path>` (`M L H V C S Q T A Z`, absolute and relative), `<circle>`, `<ellipse>`, `<rect>` with `rx`/`ry`, `<line>`, `<polyline>`, `<polygon>` |
+| paint | `fill` and `stroke`, each `#rgb`, `#rrggbb`, `#rrggbbaa`, `white`, `black`, `none`, or `hole`, which erases what is under it; `fill-opacity`, `stroke-opacity`, `opacity`; `fill-rule` `nonzero` or `evenodd` |
+| stroke | `stroke-width`; `stroke-linejoin` `miter`, `round`, `bevel`; `stroke-linecap` `butt`, `round`, `square`; `stroke-miterlimit` |
+| structure | `<g>` passes fill and stroke properties to its children; `transform` (`matrix`, `translate`, `scale`, `rotate`, `skewX`, `skewY`) on a shape or a `<g>`, applied in SVG order — the rightmost function first, then each enclosing `<g>` outward; `opacity` on a `<g>`, or on a shape with both a fill and a stroke, composites them as one layer; `style="…"` declarations; `display="none"`; `visibility` |
+
+**What would paint and is not in that table stops the build** with a message
+naming it: `<text>`, `<image>`, `<use>`, a `<style>` sheet, `clip-path`,
+`mask`, `filter`, `stroke-dasharray`, markers, a gradient `fill="url(#…)"`.
+`<defs>`, gradients themselves, `<title>`, comments and editor metadata are
+skipped. Two differences from a browser are kept because the icons the engine
+ships were drawn against them: a `<path>`, `<polyline>` or `<polygon>` with no
+`fill` on it or above it is not filled (a browser fills it black), and a
+circle's radius under a non-uniform viewBox takes the smaller of the two
+scales.
+
+**Coverage is 16 samples per pixel, and the count is exact.** Each sample row
+is crossed once per edge, with the crossing arithmetic of the per-sample
+point-in-polygon test the baker used before, so every pixel gets the integer
+it always got. `tests/svg-bake.test.ts` holds that against the old baker,
+kept verbatim in the vendored tree as `tests/fixtures/bake-svg-reference.ts`:
+every SVG the engine and this repository ship that the old baker accepted
+bakes to its old bytes at densities 1 to 3 — except two benchmark charts in
+the engine's `docs/bench`, whose `<text>` the old baker dropped and this one
+refuses — and 1,500 random fills, and 500 whose edges pass exactly through
+sample positions, get the same counts. The cost is the edges crossing each
+row plus the pixels in each shape's box, not their product: one path of
+11,424 edges over 1400×1000 (a 952-cell hex grid) bakes in 63 ms, where
+the per-sample test took 23 minutes of CPU.
+
+**A stroke is flattened into fill contours** — a quad per segment, a join on
+the outer side of each corner, a cap at each end of an open subpath — and
+filled under nonzero, so its edges get the same coverage as a fill. `A` arcs,
+circles, ellipses, rounded corners and round joins and caps are subdivided
+until each chord is within 1/32 px of the curve. **A cubic or quadratic
+segment is always 16 straight steps**, as it was before, and that is coarse
+for a large curve: a quarter circle written as one cubic is off the circle by
+up to 0.32 px at a 250 px radius and 1.27 px at 1000 px. Draw a large circle
+or arc as `<circle>`, `<ellipse>` or `A`, which are not.
+
 **A file that is not found does not stop the BUILD.** It prints
 
 ```
@@ -639,6 +790,41 @@ the fixture, and it traces green on purpose.
 `<compositionDir>/images.json` sets a per-image pixel format (`psm`) where
 8888 is not wanted, and a sprite manifest in the same directory bakes an image
 as an animated sprite atlas instead of a still.
+
+### Pictures and motion a generator computes
+
+A composition with a `gen.ts` can compute its pictures and its motion
+instead of declaring them by hand. Four modules hold what
+`compositions/mg-hud` and `compositions/mg-bauhaus` needed, each with a test
+whose cases are the defects that reached a film first:
+
+- **`src/anim/sampled.ts`** samples an element's centre, angle, scale and
+  opacity on the 60 Hz tick with the easing applied there, and writes linear
+  keyframes, so a turn about any pivot is an exact arc and a landing is where
+  it was computed to be. `Reg` collects keyframe sets and named animations
+  for `pocket.config.ts`; `El` is one element over the film. It refuses what
+  would otherwise surface later or not at all: more than 250 keys in a track
+  (the baker holds 255 segments), a `step` whose changes do not strictly
+  increase (its `t − 1` and `t` keys cross and bake as a ramp from tick 0),
+  and an empty `window`. `El.path` after `set` on the same tick keeps the
+  state before the change. `tests/sampled.test.ts`.
+- **`src/image/raster.ts`** paints line art and imagery analytically into
+  plates — rings, discs, wedges, hex grids, traces, polylines with a soft
+  edge, speed lines, a synthetic SAR chip — at a cost of the pixel count,
+  where the build's SVG baker tests every subsample against every contour.
+  `encodePlate` writes the PNG through upstream's encoder; `turnPlate` turns a
+  plate by quarter turns as an exact permutation. **A turn a picture keeps
+  belongs in its pixels:** the core draws a turned textured quad as two
+  triangles whose shared diagonal shows as a faint line. `tests/raster.test.ts`.
+- **`src/image/print.ts`** rasterises printed forms — box, disc, quarter,
+  half, triangle — from signed distances with a press's wandering edge and
+  uneven ink, and cuts a poster made of them into cells from the same fields,
+  so cells placed side by side are the poster again with no seam.
+  `tests/raster.test.ts`.
+- **`src/text/outline.ts`** sets a word in a face's own outlines, scaled so
+  its ink fills an exact box, reading across or up, and cuts it between
+  glyphs into one plate per letter. Glyph positions come from the same
+  kerning `getPath` applies, GPOS included. `tests/outline.test.ts`.
 
 ## Sound
 

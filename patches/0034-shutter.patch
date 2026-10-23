@@ -1,0 +1,1039 @@
+pocket-motion-only: an exposure renders one frame N times and averages the rasters, which is a delivered film's cost and a delivered film's look; every upstream target presents to a live display one tick per frame, at a rate the display sets, where N rasters per frame is time the PSP GE, the ESP32 and the browser host do not have and a display does not show.
+
+0034 — a shutter: one frame rendered as an exposure, the average of N
+renders with every playing baked timeline's transform tracks evaluated
+between ticks. The design is `docs/shutter.design.md` in this repository;
+the prototype it was measured on is `baselines/shutter/prototype.diff`.
+
+What the patch adds, by file:
+
+- `engine/core/src/shutter.rs` (new): `integrates` (translate X/Y/Z,
+  scale, scaleX/Y, rotate, rotateX/Y, skewX — every one paint-time),
+  `value_at` (the expression `tick_timelines` evaluates), and `sampled`,
+  which takes a track at `tc + num/den` ticks. Between two ticks it is the
+  segment's own eased curve, only where the realm shows that motion in
+  progress; a zero-length keyframe interval, a one-tick segment, a
+  fill-less start or end, a choreography loop wrap and an iteration wrap
+  whose ends differ (rotations compare modulo 360) are jumps, and a sample
+  never crosses one: it clamps to the tick on the frame's side.
+- `engine/core/src/lib.rs`: `Ui::shutter_sample(num, den)` folds the
+  integrated tracks of every playing timeline the way `tick_timelines`
+  folds them and writes `anim_values`. No clock moves and no relayout is
+  marked. `num = 0` writes back what the tick wrote. A node whose style
+  carries `shutter-hold` is skipped; the flag is not inherited.
+- `engine/core/src/anim.rs`: `ease` is crate-visible.
+- `engine/core/src/style.rs`: `resolve_shutter_hold` (style and overrides).
+- `contracts/spec/spec.ts` and the generated `spec.rs`, microts
+  `spec.rs` and `component-types-microts.ts`: prop `shutterHold` (198,
+  int, not animatable, not layout-dirtying). 198 because `0027` took 183
+  (`arcCap`), `0029` 184 (`gradShape`) and `0033` 185-186 (`glowMode`,
+  `glowThreshold`), and the vector-paths design has pencilled thirteen
+  props after the last one allocated.
+- `framework/compiler/tailwind.ts`: the `shutter-hold` utility.
+- `engine/wasm/src/lib.rs`: `ui_render_exposure(scale, spanNum, spanDen,
+  samples)` renders sample k at `span * (2k + 1 - n) / 2n` ticks (centred,
+  exact in i64), accumulates straight-alpha RGBA as premultiplied u32 sums
+  (simd128, the scalar loop's bytes), writes the tick's values back, walks
+  the DrawList once more so it and the inspector latch are the frame's,
+  and resolves `a = (2Σa + n) / 2n`, `c = (2Σca + Σa) / 2Σa`, rounding half
+  up. `samples <= 1` or a zero span is `ui_render_scaled`.
+  `ui_draw_hash_exposure` folds the per-sample DrawList hashes.
+  `ui_exposure_reserve(scale)` sizes the scratch before a host's first
+  snapshot, and `ui_exposure_scratch_ptr`/`_len` name it so a snapshot can
+  skip it. `ui_shutter_sample` is for a host that renders the samples
+  itself (the reference test does).
+- `hosts/web/wasm-ops.js`: `renderExposure`, `drawHashExposure`,
+  `reserveExposure`, `exposureScratch`. The first three throw on a wasm
+  without the export rather than falling back to an unblurred render.
+- `engine/core/src/tests.rs`: offset 0 writes back the tick across every
+  jump shape and a comma list; a sample inside a segment; each jump; a
+  spin through its wraps; opacity and width held while translate moves;
+  the hold, at the style and at the override layer, not inherited;
+  `value_at` against `tick_timelines` at every clock.
+- `tests/tailwind.test.ts`: `shutter-hold` compiles to the flag alone.
+
+Red cases, each a one-line edit to the patch, each turning the named core
+test red and nothing else: a one-tick segment read as motion (`len < 1`),
+the right tick's value not checked against the segment's end, rotations
+not compared modulo 360, a fill-less start or end read as a constant, the
+choreography loop wrap not treated as a jump, the hold flag ignored, and
+opacity or width added to `integrates`.
+
+2026-10-23, regenerated on top of `0024`–`0030` and `0032`–`0033` (the
+rasteriser-defect fixes) and renumbered from `0031` so it applies after
+them: the spec tables and the end of the core's tests grew there, so the
+hunks moved and the generated spec files were regenerated; the code is the
+same.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index f6fed66d..15bb1654 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -485,6 +485,13 @@ export const PROP = {
+   glowThreshold: 186, //  f32 0..1, Luma only: the brightest-channel level at
+   //                    which a pixel starts to emit, ramping to full at 1
+   //                    (default 0.5).
++  // Shutter (pocket-motion): a host may render one frame as an exposure,
++  // the average of the frame re-drawn with every playing baked timeline's
++  // transform tracks evaluated between ticks. 1 holds THIS node's own
++  // timelines at the frame's tick in every sample; not inherited. 198
++  // rather than 187: the vector-paths design has pencilled thirteen props
++  // after the last one allocated.
++  shutterHold: 198, //     int 0/1 (`shutter-hold`)
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -655,6 +662,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   arcCap: VALUE_KIND.int,
+   gradShape: VALUE_KIND.int,
+   glowMode: VALUE_KIND.int, glowThreshold: VALUE_KIND.f32,
++  shutterHold: VALUE_KIND.int,
+ };
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/engine/core/src/anim.rs b/engine/core/src/anim.rs
+index a4228da7..220f0997 100644
+--- a/engine/core/src/anim.rs
++++ b/engine/core/src/anim.rs
+@@ -67,7 +67,9 @@ fn absf(x: f32) -> f32 {
+ }
+ 
+ /// Polynomial easing curves (t in [0,1]; OutBack overshoots ~10%).
+-fn ease(easing: u8, t: f32) -> f32 {
++/// Crate-visible for the shutter (`shutter.rs`), which evaluates a segment's
++/// own curve between two ticks.
++pub(crate) fn ease(easing: u8, t: f32) -> f32 {
+     const E_IN: u8 = spec::Easing::EaseIn as u8;
+     const E_OUT: u8 = spec::Easing::EaseOut as u8;
+     const E_IN_OUT: u8 = spec::Easing::EaseInOut as u8;
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 21af81d4..44d51277 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -57,6 +57,7 @@ pub mod physics;
+ pub mod plan_facts;
+ pub mod raster;
+ pub mod sha256;
++pub mod shutter;
+ pub mod compositor;
+ pub mod spec;
+ pub mod stream;
+@@ -1898,6 +1899,73 @@ impl Ui {
+         self.timelines.retain(|t| t.alive);
+     }
+ 
++    /// pocket-motion (patches/0034): re-evaluate every playing baked
++    /// timeline's TRANSFORM tracks at `num/den` ticks from the clock the last
++    /// `tick()` sampled, and write them into the nodes' `anim_values`. No
++    /// clock moves and nothing is marked for relayout: every integrated prop
++    /// is paint-time (`shutter::integrates`). `num == 0` writes back exactly
++    /// what `tick_timelines` wrote, which is how an exposure returns the core
++    /// to the frame's own state. A node whose style carries `shutter-hold`
++    /// keeps its own timelines at the tick; the flag is not inherited.
++    pub fn shutter_sample(&mut self, num: i64, den: i64) {
++        if den <= 0 {
++            return;
++        }
++        let mut writes: Vec<(u8, Option<u32>)> = Vec::new();
++        let mut i = 0usize;
++        while i < self.timelines.len() {
++            let node_id = self.timelines[i].node;
++            let mut end = i;
++            while end < self.timelines.len() && self.timelines[end].node == node_id {
++                end += 1;
++            }
++            let Some(slot) = self.tree.resolve(node_id) else {
++                i = end;
++                continue;
++            };
++            if style::resolve_shutter_hold(&self.tree.slots[slot as usize], &self.styles) {
++                i = end;
++                continue;
++            }
++            // The same fold as `tick_timelines`, over the integrated props
++            // only: the LAST animation writing a prop wins, and one that is
++            // not writing at the sampled instant yields to earlier entries.
++            writes.clear();
++            for j in i..end {
++                let inst = &self.timelines[j];
++                if !inst.alive || inst.clock == 0 {
++                    continue;
++                }
++                let Some(tl) = self.styles.anims.get(inst.anim as usize) else {
++                    continue;
++                };
++                for track in &tl.tracks {
++                    if !shutter::integrates(track.prop) {
++                        continue;
++                    }
++                    let value =
++                        shutter::sampled(tl, inst.loop_frames, track, inst.clock - 1, num, den);
++                    match writes.iter_mut().find(|(p, _)| *p == track.prop) {
++                        Some(entry) => {
++                            if value.is_some() {
++                                entry.1 = value;
++                            }
++                        }
++                        None => writes.push((track.prop, value)),
++                    }
++                }
++            }
++            let node = &mut self.tree.slots[slot as usize];
++            for &(prop, value) in &writes {
++                match value {
++                    Some(bits) => tree::Node::put_entry(&mut node.anim_values, prop, bits),
++                    None => tree::Node::remove_entry(&mut node.anim_values, prop),
++                }
++            }
++            i = end;
++        }
++    }
++
+     /// After a style application on `slot`: stop the node's playing timelines
+     /// and start the new record's animation block (if any) from frame 0.
+     fn restart_timelines(&mut self, slot: u32) {
+diff --git a/engine/core/src/shutter.rs b/engine/core/src/shutter.rs
+new file mode 100644
+index 00000000..2d4499cd
+--- /dev/null
++++ b/engine/core/src/shutter.rs
+@@ -0,0 +1,202 @@
++//! A baked timeline evaluated at a sub-tick instant, for a shutter
++//! (pocket-motion, patches/0034).
++//!
++//! The realm samples a timeline at whole ticks. A shutter renders one frame as
++//! the average of several samples spread over an exposure, and a sample needs
++//! the value between two ticks. This module defines it, narrowly:
++//!
++//! - Only TRANSFORM props are ever evaluated off the tick (`integrates`).
++//!   Opacity, colours, layout and paint props keep the value of the frame's
++//!   own tick in every sample, so a gate stays a gate and a fade reads as it
++//!   does unblurred.
++//! - Between ticks `n` and `n + 1` the value is the segment's own eased curve
++//!   at the fraction, and ONLY when both ticks sit on one segment that has at
++//!   least one interior tick and whose curve the realm's value at `n + 1`
++//!   continues. Everything else is a JUMP: a zero-length keyframe interval, a
++//!   one-tick segment, a fill-less start or end, a choreography loop wrap, and
++//!   an iteration wrap whose end differs from its start (rotations compare
++//!   modulo 360). A sample never reaches across a jump: it is clamped to the
++//!   tick on the canonical side, so no two samples of one frame straddle one.
++//! - Offset 0 takes `sample_track` at the canonical tick — the expression
++//!   `tick_timelines` uses — so a one-sample shutter is the unblurred frame.
++//!
++//! Tracks spawned by `animate()` and transitions, springs and physics are not
++//! timelines and keep their tick value in every sample.
++
++use crate::anim;
++use crate::spec;
++use crate::spec::style_table as st;
++use crate::style::{Timeline, TimelineTrack};
++
++/// Props the shutter evaluates off the tick. All are paint-time (none is
++/// layout-dirtying), so a sample costs a draw and a raster, never a relayout.
++pub fn integrates(prop: u8) -> bool {
++    use spec::prop as p;
++    matches!(
++        prop,
++        p::TRANSLATE_X
++            | p::TRANSLATE_Y
++            | p::TRANSLATE_Z
++            | p::SCALE
++            | p::SCALE_X
++            | p::SCALE_Y
++            | p::ROTATE
++            | p::ROTATE_X
++            | p::ROTATE_Y
++            | p::SKEW_X
++    )
++}
++
++fn rotary(prop: u8) -> bool {
++    use spec::prop as p;
++    matches!(prop, p::ROTATE | p::ROTATE_X | p::ROTATE_Y)
++}
++
++/// Two raw f32 payloads the realm draws identically.
++fn same_picture(prop: u8, a: u32, b: u32) -> bool {
++    let (x, y) = (f32::from_bits(a), f32::from_bits(b));
++    if x == y {
++        return true;
++    }
++    if rotary(prop) {
++        let k = (x - y) / 360.0;
++        return k == (k as i32) as f32;
++    }
++    false
++}
++
++/// The value `tick_timelines` writes for `track` when the instance's clock
++/// reads `n` (None = the timeline does not write the prop at `n`).
++pub fn value_at(tl: &Timeline, loop_frames: u16, track: &TimelineTrack, n: u32) -> Option<u32> {
++    let is_color = spec::PROP_VALUE_KIND[track.prop as usize] == spec::value_kind::COLOR;
++    let t_abs = if loop_frames > 0 { n % loop_frames as u32 } else { n };
++    let rel = t_abs as i64 - tl.delay_frames as i64;
++    let total = tl.period_frames as i64 * tl.iterations as i64;
++    if rel < 0 {
++        (tl.fill & st::ANIM_FILL_BACKWARDS != 0).then(|| anim::sample_track(track, 0, is_color))
++    } else if tl.iterations != 0 && rel >= total {
++        (tl.fill & st::ANIM_FILL_FORWARDS != 0)
++            .then(|| anim::sample_track(track, tl.period_frames as u32, is_color))
++    } else {
++        let lt = (rel % tl.period_frames as i64) as u32;
++        Some(anim::sample_track(track, lt, is_color))
++    }
++}
++
++/// The value at `lt + p/q` (iteration-local ticks, `0 <= p < q`) if the unit
++/// interval `[lt, lt + 1]` is continuous, given the realm's value at its right
++/// tick; `None` if it is a jump. `wrap`: the right tick is the next
++/// iteration's first.
++fn within_iteration(track: &TimelineTrack, lt: u32, p: i64, q: i64, right: u32, wrap: bool) -> Option<u32> {
++    let prop = track.prop;
++    let seg = track.segments.iter().find(|s| s.t0 as u32 <= lt && lt + 1 <= s.t1 as u32);
++    let Some(s) = seg else {
++        // A hold: constant across the interval only if the right tick holds too.
++        let v = anim::sample_track(track, lt, false);
++        let holds = f32::from_bits(v) == f32::from_bits(right) || (wrap && same_picture(prop, v, right));
++        return holds.then_some(v);
++    };
++    let len = (s.t1 - s.t0) as i64;
++    if len < 2 {
++        return None; // no tick of the realm ever shows this segment in progress
++    }
++    if lt + 1 == s.t1 as u32 {
++        let continues = f32::from_bits(right) == f32::from_bits(s.to)
++            || (wrap && same_picture(prop, s.to, right));
++        if !continues {
++            return None;
++        }
++    }
++    if p == 0 {
++        return Some(anim::sample_track(track, lt, false));
++    }
++    let x = (((lt as i64 - s.t0 as i64) * q + p) as f64 / (len * q) as f64) as f32;
++    const BEZIER: u8 = spec::Easing::CubicBezier as u8;
++    let f = if s.easing == BEZIER {
++        let [x1, y1, x2, y2] = s.bezier;
++        anim::cubic_bezier(x1, y1, x2, y2, x)
++    } else {
++        anim::ease(s.easing, x)
++    };
++    Some(anim::interp(s.from, s.to, f, false))
++}
++
++/// Value at instance clock `m + p/q` (`m >= 0`, `0 <= p < q`) when `[m, m+1]`
++/// is continuous; `None` when it is a jump. Outer Some(None) = not written
++/// across the whole interval.
++fn interval(tl: &Timeline, loop_frames: u16, track: &TimelineTrack, m: u32, p: i64, q: i64) -> Option<Option<u32>> {
++    let va = value_at(tl, loop_frames, track, m);
++    let vb = value_at(tl, loop_frames, track, m + 1);
++    let eq = |a: Option<u32>, b: Option<u32>| match (a, b) {
++        (None, None) => true,
++        (Some(x), Some(y)) => f32::from_bits(x) == f32::from_bits(y),
++        _ => false,
++    };
++    if loop_frames > 0 && (m + 1) % loop_frames as u32 == 0 {
++        // The whole choreography restarts here.
++        return eq(va, vb).then_some(va);
++    }
++    let a = if loop_frames > 0 { m % loop_frames as u32 } else { m };
++    let rel_a = a as i64 - tl.delay_frames as i64;
++    let total = tl.period_frames as i64 * tl.iterations as i64;
++    if rel_a + 1 < 0 || (tl.iterations != 0 && rel_a >= total) {
++        return Some(va); // before the start or after the end: constant
++    }
++    if rel_a < 0 {
++        return eq(va, vb).then_some(va); // the start tick
++    }
++    let period = tl.period_frames as i64;
++    let lt = (rel_a % period) as u32;
++    let right = vb?; // written -> not written is a jump
++    let wrap = lt as i64 + 1 == period && (tl.iterations == 0 || rel_a + 1 < total);
++    within_iteration(track, lt, p, q, right, wrap).map(Some)
++}
++
++/// The value the shutter samples for `track` at instance clock `tc + num/den`
++/// (`den > 0`), where `tc` is the clock the realm last sampled. Clamped to the
++/// tick on `tc`'s side of the first jump between the two.
++pub fn sampled(tl: &Timeline, loop_frames: u16, track: &TimelineTrack, tc: u32, num: i64, den: i64) -> Option<u32> {
++    let at = |n: i64| value_at(tl, loop_frames, track, n as u32);
++    if num == 0 {
++        return at(tc as i64);
++    }
++    let whole = num.div_euclid(den);
++    let p = num.rem_euclid(den);
++    let target = tc as i64 + whole;
++    let continuous = |m: i64| interval(tl, loop_frames, track, m as u32, 0, 1).is_some();
++    if num > 0 {
++        let mut m = tc as i64;
++        while m < target {
++            if !continuous(m) {
++                return at(m);
++            }
++            m += 1;
++        }
++        if p == 0 {
++            return at(target);
++        }
++        match interval(tl, loop_frames, track, target as u32, p, den) {
++            Some(v) => v,
++            None => at(target),
++        }
++    } else {
++        let stop = if p > 0 { target + 1 } else { target };
++        let mut m = tc as i64 - 1;
++        while m >= stop {
++            if m < 0 || !continuous(m) {
++                return at(m + 1);
++            }
++            m -= 1;
++        }
++        if p == 0 {
++            return at(target);
++        }
++        if target < 0 {
++            return at(target + 1); // before the instance existed
++        }
++        match interval(tl, loop_frames, track, target as u32, p, den) {
++            Some(v) => v,
++            None => at(target + 1),
++        }
++    }
++}
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index fd835129..fc18ed9f 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -213,6 +213,7 @@ pub mod prop {
+     pub const GRAD_SHAPE: u8 = 184;
+     pub const GLOW_MODE: u8 = 185;
+     pub const GLOW_THRESHOLD: u8 = 186;
++    pub const SHUTTER_HOLD: u8 = 198;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -236,7 +237,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index ae3f37b5..912890ad 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -690,6 +690,13 @@ pub fn resolve_contain(node: &Node, table: &StyleTable) -> u8 {
+         .map_or(spec::Contain::None as u8, |bits| bits as u8)
+ }
+ 
++/// Whether the node holds its own baked timelines at the frame's tick in every
++/// shutter sample (`shutter-hold`, pocket-motion), from the style record and
++/// the dynamic overrides — the layers a class literal reaches.
++pub fn resolve_shutter_hold(node: &Node, table: &StyleTable) -> bool {
++    last_entry(node, table, Layers::Styled, spec::prop::SHUTTER_HOLD).is_some_and(|bits| bits != 0)
++}
++
+ /// Style, overrides and (with `with_anim`) animation tracks, without the
+ /// physics layer: the values animations and transitions start from, so a
+ /// body's pose never leaks into a view's own animation state.
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index cd833faa..589539ed 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -7214,3 +7214,239 @@ fn an_image_of_any_size_up_to_img_max_dim_uploads_and_samples_by_its_own_size()
+     }
+ }
+ 
++// ---- shutter: timelines between ticks (pocket-motion patch 0034) -------------
++
++/// One node playing `anims` (comma-list order) under a choreography loop of
++/// `loop_frames` (0 = none), with `base` on its style.
++fn shutter_world(anims: Vec<AnimSpec>, loop_frames: u16, base: Vec<(u8, u32)>) -> (Ui, i32) {
++    let mut s = StyleSpec::new();
++    s.base = base;
++    s.animation = Some((loop_frames, (0..anims.len() as u16).collect()));
++    let mut ui = Ui::new();
++    assert!(ui.load_styles(&encode_styles_with_anims(&[s], &anims)));
++    let n = ui.create_node(0);
++    ui.insert_before(spec::ROOT_ID, n, 0);
++    ui.set_style(n, 0);
++    (ui, n)
++}
++
++fn one_track(delay: u16, period: u16, iterations: u16, fill: u8, prop: u8, segs: Vec<SegSpec>) -> AnimSpec {
++    AnimSpec { delay_frames: delay, period_frames: period, iterations, fill, tracks: alloc::vec![(prop, segs)] }
++}
++
++const FILL_BOTH: u8 = spec::style_table::ANIM_FILL_BACKWARDS | spec::style_table::ANIM_FILL_FORWARDS;
++const LINEAR: u8 = spec::Easing::Linear as u8;
++
++fn lin(t0: u16, t1: u16, from: f32, to: f32) -> SegSpec {
++    SegSpec(t0, t1, from.to_bits(), to.to_bits(), LINEAR, None)
++}
++
++fn tx(ui: &Ui, n: i32) -> f32 {
++    ui.resolved_style(n).unwrap().translate_x
++}
++
++/// Tick until the clock the last tick sampled reads `c`, then return the
++/// tick's value and the value sampled at `c + num/den` (the core is put back
++/// to the tick before returning).
++fn sampled_around(ui: &mut Ui, n: i32, num: i64, den: i64) -> (f32, f32) {
++    let at_tick = tx(ui, n);
++    ui.shutter_sample(num, den);
++    let sampled = tx(ui, n);
++    ui.shutter_sample(0, 1);
++    assert_eq!(tx(ui, n).to_bits(), at_tick.to_bits(), "offset 0 restores the tick");
++    (at_tick, sampled)
++}
++
++#[test]
++fn shutter_offset_zero_is_what_the_tick_wrote() {
++    // Every jump shape and a comma list over one prop: at every clock, a
++    // sample at offset 0 writes back the tick's own value, and value_at agrees
++    // with tick_timelines.
++    let anims = alloc::vec![
++        one_track(5, 12, 0, 0, spec::prop::TRANSLATE_X, alloc::vec![lin(0, 6, 0.0, 60.0), lin(6, 7, 60.0, 10.0), lin(7, 12, 200.0, 0.0)]),
++        one_track(30, 10, 1, spec::style_table::ANIM_FILL_FORWARDS, spec::prop::TRANSLATE_X, alloc::vec![lin(0, 10, -50.0, 50.0)]),
++        one_track(0, 9, 0, FILL_BOTH, spec::prop::ROTATE, alloc::vec![lin(0, 9, 0.0, 360.0)]),
++    ];
++    let (mut ui, n) = shutter_world(anims, 50, alloc::vec![]);
++    for _ in 0..140 {
++        ui.tick();
++        let r = ui.resolved_style(n).unwrap();
++        for (num, den) in [(1, 2), (-1, 2), (3, 4), (-7, 3)] {
++            ui.shutter_sample(num, den);
++            ui.shutter_sample(0, 1);
++            let back = ui.resolved_style(n).unwrap();
++            assert_eq!(back.translate_x.to_bits(), r.translate_x.to_bits());
++            assert_eq!(back.rotate.to_bits(), r.rotate.to_bits());
++        }
++    }
++}
++
++#[test]
++fn shutter_samples_a_segment_between_its_ticks() {
++    // translateX 0 -> 60 over 60 frames after a 30-frame delay (slide_anim).
++    let (mut ui, n) = shutter_world(alloc::vec![slide_anim()], 0, alloc::vec![]);
++    for _ in 0..61 {
++        ui.tick(); // last sampled clock 60: 30 frames into the segment
++    }
++    let (at, ahead) = sampled_around(&mut ui, n, 1, 2);
++    assert_eq!((at, ahead), (30.0, 30.5));
++    let (_, behind) = sampled_around(&mut ui, n, -3, 2);
++    assert_eq!(behind, 28.5, "one and a half ticks back, inside the segment");
++}
++
++#[test]
++fn shutter_never_crosses_a_jump() {
++    // A zero-length keyframe interval: the realm shows 0 -> 100 over ticks
++    // 0..10 and then 200 at tick 10 — the stop the baker kept.
++    let zero_length = one_track(0, 20, 1, FILL_BOTH, spec::prop::TRANSLATE_X, alloc::vec![lin(0, 10, 0.0, 100.0), lin(10, 20, 200.0, 300.0)]);
++    let (mut ui, n) = shutter_world(alloc::vec![zero_length], 0, alloc::vec![]);
++    for _ in 0..10 {
++        ui.tick(); // clock 9: 90
++    }
++    assert_eq!(sampled_around(&mut ui, n, 1, 2), (90.0, 90.0), "the sample ahead clamps to tick 9");
++    assert_eq!(sampled_around(&mut ui, n, -1, 2).1, 85.0, "the sample behind is inside the ramp");
++    ui.tick(); // clock 10: 200
++    assert_eq!(sampled_around(&mut ui, n, -1, 2), (200.0, 200.0), "the sample behind clamps to tick 10");
++    assert_eq!(sampled_around(&mut ui, n, 1, 2).1, 205.0);
++
++    // A one-tick segment: no tick of the realm ever shows it in progress.
++    let flick = one_track(0, 20, 1, FILL_BOTH, spec::prop::TRANSLATE_X, alloc::vec![lin(10, 11, 0.0, 100.0)]);
++    let (mut ui, n) = shutter_world(alloc::vec![flick], 0, alloc::vec![]);
++    for _ in 0..11 {
++        ui.tick(); // clock 10: the segment's first tick shows 0
++    }
++    assert_eq!(sampled_around(&mut ui, n, 1, 2), (0.0, 0.0));
++    ui.tick(); // clock 11: 100
++    assert_eq!(sampled_around(&mut ui, n, -1, 2), (100.0, 100.0));
++
++    // A fill-less start (delay 5) and a fill-less end (period 10).
++    let bare = one_track(5, 10, 1, 0, spec::prop::TRANSLATE_X, alloc::vec![lin(0, 10, 10.0, 110.0)]);
++    let (mut ui, n) = shutter_world(alloc::vec![bare], 0, alloc::vec![]);
++    for _ in 0..6 {
++        ui.tick(); // clock 5: the first tick that writes, 10
++    }
++    assert_eq!(sampled_around(&mut ui, n, -1, 2), (10.0, 10.0), "nothing written before it");
++    assert_eq!(sampled_around(&mut ui, n, 1, 2).1, 15.0);
++    for _ in 0..9 {
++        ui.tick(); // clock 14: the last tick that writes, 100
++    }
++    assert_eq!(sampled_around(&mut ui, n, 1, 2), (100.0, 100.0), "nothing written after it");
++    assert_eq!(sampled_around(&mut ui, n, -1, 2).1, 95.0);
++    ui.tick(); // clock 15: not written, so the style's 0 shows
++    assert_eq!(sampled_around(&mut ui, n, -1, 2), (0.0, 0.0), "no ghost of the last written tick");
++
++    // A choreography loop that cuts a segment part-way: the realm shows 90 at
++    // clock 9 and the loop's 0 at clock 10, though the segment runs to 20.
++    let looped = one_track(0, 20, 1, FILL_BOTH, spec::prop::TRANSLATE_X, alloc::vec![lin(0, 20, 0.0, 200.0)]);
++    let (mut ui, n) = shutter_world(alloc::vec![looped], 10, alloc::vec![]);
++    for _ in 0..10 {
++        ui.tick(); // clock 9: 90
++    }
++    assert_eq!(sampled_around(&mut ui, n, 1, 2), (90.0, 90.0));
++    ui.tick(); // clock 10 (wrapped 0): 0
++    assert_eq!(sampled_around(&mut ui, n, -1, 2), (0.0, 0.0));
++
++    // An iteration wrap whose end differs from its start.
++    let repeat = one_track(0, 10, 0, FILL_BOTH, spec::prop::TRANSLATE_X, alloc::vec![lin(0, 10, 0.0, 100.0)]);
++    let (mut ui, n) = shutter_world(alloc::vec![repeat], 0, alloc::vec![]);
++    for _ in 0..10 {
++        ui.tick(); // clock 9: 90; clock 10 starts the next iteration at 0
++    }
++    assert_eq!(sampled_around(&mut ui, n, 1, 2), (90.0, 90.0));
++}
++
++#[test]
++fn shutter_keeps_a_spin_through_its_wraps() {
++    // rotate 0 -> 360 every 10 ticks, forever: the wrap is the same picture.
++    let spin = one_track(0, 10, 0, FILL_BOTH, spec::prop::ROTATE, alloc::vec![lin(0, 10, 0.0, 360.0)]);
++    let (mut ui, n) = shutter_world(alloc::vec![spin], 0, alloc::vec![]);
++    for _ in 0..10 {
++        ui.tick(); // clock 9: 324
++    }
++    assert_eq!(ui.resolved_style(n).unwrap().rotate, 324.0);
++    ui.shutter_sample(1, 2);
++    assert_eq!(ui.resolved_style(n).unwrap().rotate, 342.0, "half a tick on, inside the wrap");
++    ui.shutter_sample(0, 1);
++    ui.tick(); // clock 10: 0
++    ui.shutter_sample(-1, 2);
++    assert_eq!(ui.resolved_style(n).unwrap().rotate, 342.0, "half a tick back, the other side of it");
++}
++
++#[test]
++fn shutter_holds_everything_but_transforms() {
++    // One timeline fading opacity and sliding translateX together.
++    let both = AnimSpec {
++        delay_frames: 0,
++        period_frames: 16,
++        iterations: 1,
++        fill: FILL_BOTH,
++        tracks: alloc::vec![
++            (spec::prop::OPACITY, alloc::vec![lin(0, 16, 0.0, 1.0)]),
++            (spec::prop::TRANSLATE_X, alloc::vec![lin(0, 16, 0.0, 160.0)]),
++            (spec::prop::WIDTH, alloc::vec![lin(0, 16, 10.0, 26.0)]),
++        ],
++    };
++    let (mut ui, n) = shutter_world(alloc::vec![both], 0, alloc::vec![]);
++    for _ in 0..9 {
++        ui.tick(); // clock 8
++    }
++    let before = ui.resolved_style(n).unwrap();
++    ui.shutter_sample(1, 2);
++    let after = ui.resolved_style(n).unwrap();
++    assert_eq!(after.translate_x, 85.0);
++    assert_eq!(after.opacity.to_bits(), before.opacity.to_bits(), "opacity is the frame's");
++    assert_eq!(after.width.to_bits(), before.width.to_bits(), "layout is the frame's");
++}
++
++#[test]
++fn shutter_hold_keeps_a_node_at_its_tick_and_is_not_inherited() {
++    let mut held = StyleSpec::new();
++    held.base = alloc::vec![(spec::prop::SHUTTER_HOLD, 1)];
++    held.animation = Some((0, alloc::vec![0]));
++    let mut free = StyleSpec::new();
++    free.animation = Some((0, alloc::vec![0]));
++    let mut ui = Ui::new();
++    assert!(ui.load_styles(&encode_styles_with_anims(&[held, free], &[slide_anim()])));
++    let a = ui.create_node(0);
++    ui.insert_before(spec::ROOT_ID, a, 0);
++    ui.set_style(a, 0);
++    let child = ui.create_node(0);
++    ui.insert_before(a, child, 0);
++    ui.set_style(child, 1);
++    for _ in 0..61 {
++        ui.tick();
++    }
++    ui.shutter_sample(1, 2);
++    assert_eq!(tx(&ui, a), 30.0, "held");
++    assert_eq!(tx(&ui, child), 30.5, "a child of a held node blurs its own timelines");
++    ui.shutter_sample(0, 1);
++    // The same flag set at runtime (the overrides layer) holds too.
++    ui.set_prop(child, spec::prop::SHUTTER_HOLD, 1.0);
++    ui.shutter_sample(1, 2);
++    assert_eq!(tx(&ui, child), 30.0);
++}
++
++#[test]
++fn shutter_value_at_is_tick_timelines() {
++    // value_at is the expression tick_timelines evaluates, at every clock.
++    let anim = one_track(3, 7, 2, spec::style_table::ANIM_FILL_FORWARDS, spec::prop::TRANSLATE_X, alloc::vec![lin(0, 4, 0.0, 40.0), lin(5, 7, 0.0, -20.0)]);
++    let (mut ui, n) = shutter_world(alloc::vec![anim], 0, alloc::vec![]);
++    let tl = crate::style::Timeline {
++        delay_frames: 3,
++        period_frames: 7,
++        iterations: 2,
++        fill: spec::style_table::ANIM_FILL_FORWARDS,
++        tracks: alloc::vec![crate::style::TimelineTrack {
++            prop: spec::prop::TRANSLATE_X,
++            segments: alloc::vec![
++                crate::style::Segment { t0: 0, t1: 4, from: 0f32.to_bits(), to: 40f32.to_bits(), easing: LINEAR, bezier: [0.0; 4] },
++                crate::style::Segment { t0: 5, t1: 7, from: 0f32.to_bits(), to: (-20f32).to_bits(), easing: LINEAR, bezier: [0.0; 4] },
++            ],
++        }],
++    };
++    for c in 0..30u32 {
++        ui.tick();
++        let expect = crate::shutter::value_at(&tl, 0, &tl.tracks[0], c).map_or(0.0, f32::from_bits);
++        assert_eq!(tx(&ui, n).to_bits(), expect.to_bits(), "clock {c}");
++    }
++}
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index a5a994a6..1ef1088f 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -105,6 +105,7 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("gradShape", 184, "i32"),
+     ("glowMode", 185, "i32"),
+     ("glowThreshold", 186, "f32"),
++    ("shutterHold", 198, "i32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
+index 11b3ba7e..a35e0ead 100644
+--- a/engine/wasm/src/lib.rs
++++ b/engine/wasm/src/lib.rs
+@@ -759,6 +759,243 @@ pub extern "C" fn ui_render_scaled(scale: u32) -> *const u8 {
+     render_at_scale(scale)
+ }
+ 
++// ---- pocket-motion: shutter (patches/0034) -----------------------------------
++//
++// An exposure is `samples` renders of the current state with every playing
++// baked timeline's transform tracks re-evaluated between ticks
++// (`Ui::shutter_sample`), averaged here in integers. Nothing in it moves a
++// clock or runs guest code; it ends by writing the frame's own values back
++// and walking the draw list once more, so the core, its DrawList and the
++// inspector latches are what a plain render leaves behind.
++
++/// Per physical pixel: four u32 sums (r*a, g*a, b*a, a) over the samples, then
++/// the resolved exposure as RGBA8 in the words after them. One allocation, so
++/// a host that snapshots linear memory can skip it as one range
++/// (`ui_exposure_scratch_ptr`/`_len`): every exposure writes all of it before
++/// reading any of it.
++static mut EXPOSURE_SCRATCH: Vec<u32> = Vec::new();
++/// `(2*sum_c + n) / 2n` for every opaque sum `sum_c`, for the `n` it was built for.
++static mut EXPOSURE_LUT: Vec<u8> = Vec::new();
++static mut EXPOSURE_LUT_N: u32 = 0;
++
++/// Physical pixel count at `scale`, or None when the scale is out of range.
++fn exposure_pixels(scale: u32) -> Option<usize> {
++    if !(1..=raster::MAX_RENDER_SCALE).contains(&scale) {
++        return None;
++    }
++    let (w, h) = ui().viewport();
++    (w as usize)
++        .checked_mul(scale as usize)?
++        .checked_mul((h as usize).checked_mul(scale as usize)?)
++}
++
++/// Size the exposure scratch for `scale` now rather than at the first
++/// exposure. A host that snapshots linear memory calls this before its first
++/// snapshot: the allocation is then part of every snapshot's heap, and a
++/// restore never allocates it again beyond the restored watermark. Returns 1,
++/// or 0 for a scale out of range.
++#[no_mangle]
++pub extern "C" fn ui_exposure_reserve(scale: u32) -> i32 {
++    let Some(pixels) = exposure_pixels(scale) else {
++        return 0;
++    };
++    unsafe {
++        EXPOSURE_SCRATCH.resize(pixels * 5, 0);
++    }
++    1
++}
++
++/// Start of the exposure scratch in linear memory (0 before any is sized).
++#[no_mangle]
++pub extern "C" fn ui_exposure_scratch_ptr() -> u32 {
++    unsafe {
++        if EXPOSURE_SCRATCH.is_empty() {
++            0
++        } else {
++            EXPOSURE_SCRATCH.as_ptr() as u32
++        }
++    }
++}
++
++/// Length of the exposure scratch in bytes.
++#[no_mangle]
++pub extern "C" fn ui_exposure_scratch_len() -> u32 {
++    unsafe { (EXPOSURE_SCRATCH.len() * 4) as u32 }
++}
++
++/// Write the transform timelines at `num/den` ticks from the frame's tick into
++/// the tree (`Ui::shutter_sample`). `num = 0` restores the frame's own values.
++/// For a host that renders the samples itself — the reference the core's
++/// average is checked against.
++#[no_mangle]
++pub extern "C" fn ui_shutter_sample(num: i32, den: i32) {
++    if den > 0 {
++        ui().shutter_sample(num as i64, den as i64)
++    }
++}
++
++/// Sample k of n, centred on the frame's tick and evenly spaced over a span of
++/// `span_num/span_den` ticks: `span * (2k + 1 - n) / 2n`, as a numerator over
++/// a denominator, both exact in i64.
++fn exposure_offset(span_num: u32, span_den: u32, k: i64, n: i64) -> (i64, i64) {
++    (span_num as i64 * (2 * k + 1 - n), span_den as i64 * 2 * n)
++}
++
++/// Back to the frame's own state: the tick's values, and a DrawList (and
++/// inspector latch) walked from them.
++fn exposure_restore() {
++    let u = ui();
++    u.shutter_sample(0, 1);
++    u.draw();
++}
++
++/// Add one straight-alpha RGBA8 sample into the premultiplied accumulator:
++/// per pixel the sums of r*a, g*a, b*a and a, exact in u32 for <= 256 samples
++/// (255 * 255 * 256 < 2^32). Four pixels per step: each channel byte is
++/// multiplied by its pixel's alpha (the alpha byte by 1) into u16, then
++/// widened and added. Same bytes as the scalar loop.
++#[cfg(target_feature = "simd128")]
++fn exposure_accumulate(src: &[u8], acc: &mut [u32]) {
++    use core::arch::wasm32::*;
++    let quads = src.len() / 16;
++    let rgb = u32x4_splat(0x00ff_ffff);
++    let one = u32x4_splat(0x0100_0000);
++    for i in 0..quads {
++        // SAFETY: i*16+16 <= src.len() and acc.len() == src.len(); wasm loads
++        // and stores need no alignment.
++        unsafe {
++            let v = v128_load(src.as_ptr().add(i * 16) as *const v128);
++            let a = i8x16_shuffle::<3, 3, 3, 3, 7, 7, 7, 7, 11, 11, 11, 11, 15, 15, 15, 15>(v, v);
++            let m = v128_bitselect(a, one, rgb);
++            let lo = u16x8_extmul_low_u8x16(v, m);
++            let hi = u16x8_extmul_high_u8x16(v, m);
++            let p = acc.as_mut_ptr().add(i * 16) as *mut v128;
++            v128_store(p, i32x4_add(v128_load(p), u32x4_extend_low_u16x8(lo)));
++            v128_store(p.add(1), i32x4_add(v128_load(p.add(1)), u32x4_extend_high_u16x8(lo)));
++            v128_store(p.add(2), i32x4_add(v128_load(p.add(2)), u32x4_extend_low_u16x8(hi)));
++            v128_store(p.add(3), i32x4_add(v128_load(p.add(3)), u32x4_extend_high_u16x8(hi)));
++        }
++    }
++    exposure_accumulate_scalar(&src[quads * 16..], &mut acc[quads * 16..]);
++}
++
++#[cfg(not(target_feature = "simd128"))]
++fn exposure_accumulate(src: &[u8], acc: &mut [u32]) {
++    exposure_accumulate_scalar(src, acc)
++}
++
++fn exposure_accumulate_scalar(src: &[u8], acc: &mut [u32]) {
++    for (px, a) in src.chunks_exact(4).zip(acc.chunks_exact_mut(4)) {
++        let al = px[3] as u32;
++        a[0] += px[0] as u32 * al;
++        a[1] += px[1] as u32 * al;
++        a[2] += px[2] as u32 * al;
++        a[3] += al;
++    }
++}
++
++/// Resolve `n` accumulated samples to straight-alpha RGBA8, rounding half up:
++/// a = (2*sum_a + n) / 2n, c = (2*sum_ca + sum_a) / (2*sum_a). A pixel opaque
++/// in every sample takes the table, which is the same expression; one no
++/// sample covered is transparent black, the clear colour. A pixel every sample
++/// agrees on resolves to itself, so a region the shutter does not move is
++/// byte-identical at any n.
++fn exposure_resolve(acc: &[u32], out: &mut [u8], n: u32, lut: &[u8]) {
++    let full = 255 * n;
++    for (a, o) in acc.chunks_exact(4).zip(out.chunks_exact_mut(4)) {
++        let sa = a[3];
++        if sa == full {
++            // Opaque: sum_ca = 255 * sum_c exactly.
++            o[0] = lut[(a[0] / 255) as usize];
++            o[1] = lut[(a[1] / 255) as usize];
++            o[2] = lut[(a[2] / 255) as usize];
++            o[3] = 255;
++        } else if sa == 0 {
++            o.copy_from_slice(&[0, 0, 0, 0]);
++        } else {
++            for c in 0..3 {
++                o[c] = ((2 * a[c] as u64 + sa as u64) / (2 * sa as u64)).min(255) as u8;
++            }
++            o[3] = ((2 * sa + n) / (2 * n)) as u8;
++        }
++    }
++}
++
++/// Render one exposure at `scale`: `samples` renders at offsets centred on the
++/// frame's tick, spread over `span_num/span_den` ticks, averaged. Returns the
++/// RGBA8 exposure (physical size, straight alpha), valid until the next
++/// exposure. `samples <= 1` or a zero span is `ui_render_scaled` and nothing
++/// else. Null for a scale out of range, `samples > 256`, or `span_den == 0`.
++#[no_mangle]
++pub extern "C" fn ui_render_exposure(scale: u32, span_num: u32, span_den: u32, samples: u32) -> *const u8 {
++    if samples <= 1 || span_num == 0 {
++        return render_at_scale(scale);
++    }
++    if samples > 256 || span_den == 0 {
++        return core::ptr::null();
++    }
++    let Some(pixels) = exposure_pixels(scale) else {
++        return core::ptr::null();
++    };
++    let n = samples as i64;
++    unsafe {
++        if EXPOSURE_SCRATCH.len() != pixels * 5 {
++            EXPOSURE_SCRATCH.clear();
++            EXPOSURE_SCRATCH.resize(pixels * 5, 0);
++        }
++        let (acc, tail) = EXPOSURE_SCRATCH.split_at_mut(pixels * 4);
++        acc.fill(0);
++        for k in 0..n {
++            let (num, den) = exposure_offset(span_num, span_den, k, n);
++            ui().shutter_sample(num, den);
++            let ptr = render_at_scale(scale);
++            if ptr.is_null() {
++                exposure_restore();
++                return ptr;
++            }
++            exposure_accumulate(&FRAMEBUFFER[..pixels * 4], acc);
++        }
++        exposure_restore();
++        if EXPOSURE_LUT_N != samples {
++            EXPOSURE_LUT.clear();
++            for sc in 0..=255 * samples {
++                EXPOSURE_LUT.push(((2 * sc + samples) / (2 * samples)) as u8);
++            }
++            EXPOSURE_LUT_N = samples;
++        }
++        let out = core::slice::from_raw_parts_mut(tail.as_mut_ptr() as *mut u8, pixels * 4);
++        exposure_resolve(acc, out, samples, &EXPOSURE_LUT);
++        out.as_ptr()
++    }
++}
++
++/// `ui_draw_hash` over an exposure: the per-sample DrawList hashes, in sample
++/// order, folded into one. Hiding a node changes it exactly when the node
++/// emitted geometry in at least one sample. `samples <= 1` or a zero span is
++/// `ui_draw_hash`; 0 for what `ui_render_exposure` refuses.
++#[no_mangle]
++pub extern "C" fn ui_draw_hash_exposure(span_num: u32, span_den: u32, samples: u32) -> u64 {
++    if samples <= 1 || span_num == 0 {
++        return draw_hash(&ui().draw().words);
++    }
++    if samples > 256 || span_den == 0 {
++        return 0;
++    }
++    let n = samples as i64;
++    let mut folded: u64 = 0xcbf2_9ce4_8422_2325;
++    for k in 0..n {
++        let (num, den) = exposure_offset(span_num, span_den, k, n);
++        ui().shutter_sample(num, den);
++        let h = draw_hash(&ui().draw().words);
++        for byte in h.to_le_bytes() {
++            folded ^= byte as u64;
++            folded = folded.wrapping_mul(0x0000_0100_0000_01b3);
++        }
++    }
++    exposure_restore();
++    folded
++}
++
+ /// Rasterize the primary DrawList at an integer physical scale into RGBA8 that
+ /// keeps coverage: the buffer starts transparent, and each pixel ends as
+ /// premultiplied R,G,B with the alpha its ops accumulated. The R,G,B bytes
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index 1bc6f788..fde357d1 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -415,6 +415,9 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+     case "contain-strict": D.push([PROP.contain, int(ENUMS.Contain.Strict)]); return true;
+     case "layout-baked": D.push([PROP.contain, int(ENUMS.Contain.Baked)]); return true;
+     case "overflow-mask": D.push([PROP.overflow, int(ENUMS.Overflow.Mask)]); return true;
++    // pocket-motion: a shutter holds this node's own timelines at the frame's
++    // tick in every sample (engine/core/src/shutter.rs). Not inherited.
++    case "shutter-hold": D.push([PROP.shutterHold, int(1)]); return true;
+     case "w-full": D.push([PROP.width, px(SIZE_FULL)]); return true;
+     case "h-full": D.push([PROP.height, px(SIZE_FULL)]); return true;
+     case "rounded": D.push([PROP.radius, px(4)]); acc.sawRounded = true; return true;
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index 17740a36..00d7c58c 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -100,6 +100,7 @@ export interface MicroTsStyleProps {
+   gradShape?: i32;
+   glowMode?: i32;
+   glowThreshold?: MicroTsFloatInput;
++  shutterHold?: i32;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
+diff --git a/hosts/web/wasm-ops.js b/hosts/web/wasm-ops.js
+index 8b4b5fc2..e96b3e48 100644
+--- a/hosts/web/wasm-ops.js
++++ b/hosts/web/wasm-ops.js
+@@ -354,6 +354,41 @@ export async function createWasmUi(wasm, options = {}) {
+         : ex.ui_render();
+       return framebufferView(ptr, 1);
+     },
++    /**
++     * pocket-motion (patches/0034): one exposure — `samples` renders with the
++     * transform timelines evaluated over a span of `spanNum/spanDen` ticks
++     * centred on the frame's tick, averaged in the core. Throws on a wasm
++     * without the export: falling back to renderScaled would deliver an
++     * unblurred frame with nothing reporting it.
++     */
++    renderExposure(scale, spanNum, spanDen, samples) {
++      if (!ex.ui_render_exposure) {
++        throw new Error("this pocketjs.wasm predates ui_render_exposure — rebuild it: bun tools/wasm.ts");
++      }
++      scale = integerInRange(scale, "render scale", 1, 4);
++      const ptr = ex.ui_render_exposure(scale, spanNum, spanDen, samples);
++      if (!ptr) throw new Error(`pocketjs.wasm rejected exposure ${spanNum}/${spanDen} x ${samples} at scale ${scale}`);
++      return framebufferView(ptr, scale);
++    },
++    /** drawHash() over the same exposure's samples, folded into one. */
++    drawHashExposure(spanNum, spanDen, samples) {
++      if (!ex.ui_draw_hash_exposure) {
++        throw new Error("this pocketjs.wasm predates ui_draw_hash_exposure — rebuild it: bun tools/wasm.ts");
++      }
++      return ex.ui_draw_hash_exposure(spanNum, spanDen, samples);
++    },
++    /** Size the exposure scratch now; `exposureScratch()` is its byte range. */
++    reserveExposure(scale) {
++      if (!ex.ui_exposure_reserve) {
++        throw new Error("this pocketjs.wasm predates ui_exposure_reserve — rebuild it: bun tools/wasm.ts");
++      }
++      scale = integerInRange(scale, "render scale", 1, 4);
++      if (!ex.ui_exposure_reserve(scale)) throw new Error(`pocketjs.wasm rejected exposure scale ${scale}`);
++    },
++    exposureScratch() {
++      if (!ex.ui_exposure_scratch_ptr) return { ptr: 0, len: 0 };
++      return { ptr: ex.ui_exposure_scratch_ptr() >>> 0, len: ex.ui_exposure_scratch_len() >>> 0 };
++    },
+     /** Incremental equivalent of renderScaled(). */
+     renderScaledIncremental(scale) {
+       scale = integerInRange(scale, "render scale", 1, 4);
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index 8b50bc71..9ecc7b50 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -852,3 +852,15 @@ describe("gradient paint (pocket-motion)", () => {
+     expect(tl.tracks.map((t) => t.prop).sort((a, b) => a - b)).toEqual([PROP.gradAngle, PROP.gradVia1Pos].sort((a, b) => a - b));
+   });
+ });
++
++describe("shutter-hold (pocket-motion)", () => {
++  test("compiles to the shutterHold flag and nothing else", () => {
++    const m = props(parseClassLiteral("shutter-hold"));
++    expect([...m.entries()]).toEqual([[PROP.shutterHold, 1]]);
++    const withMotion = props(parseClassLiteral("absolute left-[10px] shutter-hold text-white"));
++    expect(withMotion.get(PROP.shutterHold)).toBe(1);
++  });
++  test("a node without it carries no flag", () => {
++    expect(props(parseClassLiteral("absolute left-[10px]")).has(PROP.shutterHold)).toBe(false);
++  });
++});

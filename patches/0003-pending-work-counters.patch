@@ -1,8 +1,42 @@
+0003 — pending-work counters: read-only counts of every queue the frame pump
+drains, published as `globalThis.__pocketPendingWork`, so a host can ask
+what a mounted app still holds without counting native ops.
+
+Rebased onto 66caf4e5 (2026-10-22). At e0b37e2 the pump drained five
+registries; main drains eleven, and `pendingWork()` claims "all zero" about
+whatever it reads, so each of the six new ones is counted: the system
+layer's frame registry (`SystemFrameContext`, which runs while the app is
+suspended), live model tasks, model deliveries and queued model commands
+(`model-tasks.ts`), native animations a model task awaits
+(`model-animation.ts`), model regions written and not yet reacted
+(`model-reactive.ts`), and lifecycle hooks registered or destroyed and not
+yet flushed (`aot-lifecycle.ts`). `tests/pending-work.test.ts` drives each
+through the real frame pump, and each case is red with its counter removed
+from `pendingWork()`.
+
+diff --git a/framework/src/aot-lifecycle.ts b/framework/src/aot-lifecycle.ts
+index 7e551955..1236cba8 100644
+--- a/framework/src/aot-lifecycle.ts
++++ b/framework/src/aot-lifecycle.ts
+@@ -58,6 +58,13 @@ export function createLifecycleScheduler(batch: (run: () => void) => void, updat
+         throw error;
+       } finally { running = false; }
+     },
++    /** Hooks registered and not yet mounted, or destroyed and not yet
++     *  unmounted: what the next flush runs. Read-only. */
++    pending(): number {
++      let n = 0;
++      for (const hook of hooks) if (hook.destroyed || !hook.mounted) n++;
++      return n;
++    },
+     flushUnmounted(): void {
+       batch(() => destroy(dead()));
+     },
 diff --git a/framework/src/clock.ts b/framework/src/clock.ts
-index cd0a080..467a7b1 100644
+index 3e08808e..7da10e80 100644
 --- a/framework/src/clock.ts
 +++ b/framework/src/clock.ts
-@@ -80,6 +80,18 @@ export function after(seconds: number, cb: () => void): () => void {
+@@ -114,6 +114,18 @@ export function after(seconds: number, cb: () => void): () => void {
    };
  }
  
@@ -22,7 +56,7 @@ index cd0a080..467a7b1 100644
  export function resetClock(): void {
    const raw = (globalThis as { __simHz?: unknown }).__simHz;
 diff --git a/framework/src/effects.ts b/framework/src/effects.ts
-index f117c78..d859a6f 100644
+index f117c78b..d859a6fb 100644
 --- a/framework/src/effects.ts
 +++ b/framework/src/effects.ts
 @@ -91,6 +91,17 @@ export function runEffect<T>(kind: string, payload: unknown, onResult: (result:
@@ -43,39 +77,64 @@ index f117c78..d859a6f 100644
  /** Fresh queues for a fresh mount. Keeps the installed driver: demo bundles
   *  install theirs at module scope, before render() runs. */
  export function resetEffects(): void {
+diff --git a/framework/src/frame-dispatch.ts b/framework/src/frame-dispatch.ts
+index e1341f27..65187994 100644
+--- a/framework/src/frame-dispatch.ts
++++ b/framework/src/frame-dispatch.ts
+@@ -36,6 +36,12 @@ export class FrameRegistry {
+     };
+   }
+ 
++  /** Callbacks registered right now, placed or not. Read-only, for hosts and
++   *  DevTools: a registered callback runs every frame. */
++  get size(): number {
++    return this.callbacks.size + this.placed.size;
++  }
++
+   clear(): void {
+     this.callbacks.clear();
+     this.placed.clear();
 diff --git a/framework/src/frame.ts b/framework/src/frame.ts
-index 9f2538d..030d1cc 100644
+index e59d1c83..7263e94f 100644
 --- a/framework/src/frame.ts
 +++ b/framework/src/frame.ts
-@@ -24,6 +24,18 @@ export function runFrameHooks(buttons: number): void {
-   for (const cb of [...callbacks]) cb(buttons);
+@@ -87,6 +87,19 @@ export function runFrameHooks(buttons: number, axisDeltas?: readonly AxisDelta[]
+   } finally { __endAxisFrame(); __endMotionFrame(); }
  }
  
 +/**
-+ * How many app frame callbacks are registered right now.
++ * How many frame callbacks are registered right now: the app's, and the system
++ * layer's, which keep running while the app is suspended.
 + *
 + * Read-only, for hosts and DevTools that need to assert a mounted app has no
 + * per-frame work outstanding (docs/DETERMINISM.md). A registered callback runs
 + * every frame whether or not it reaches a native op, so counting ops cannot
 + * see it.
 + */
-+export function __frameHookCount(): number {
-+  return callbacks.size;
++export function __frameHookCount(): { app: number; system: number } {
++  return { app: registry.size, system: systemRegistry.size };
 +}
 +
- export function onFrame(callback: FrameCallback): void {
-   callbacks.add(callback);
-   onCleanup(() => callbacks.delete(callback));
+ function registerFrame(callback: FrameCallback, placement?: NodeMirror): () => void {
+   const row = useContext(RowContext);
+   const target = useContext(SystemFrameContext) ? systemRegistry : registry;
 diff --git a/framework/src/index.ts b/framework/src/index.ts
-index 0d79aea..4c6d89e 100644
+index 005248af..c3d25970 100644
 --- a/framework/src/index.ts
 +++ b/framework/src/index.ts
-@@ -43,11 +43,11 @@ import { registerStyles, resolveStyle } from "./styles.ts";
- import { handleFrame, setHitRoot, setInputRoot } from "./input.ts";
+@@ -44,14 +44,17 @@ import { registerStyles, resolveStyle } from "./styles.ts";
+ import { handleFrame, setAuxiliaryHitRoot, setHitRoot, setInputRoot, withDeferredPress, type DeferredPress } from "./input.ts";
  import { __runGestures, resetGestures } from "./gesture.ts";
  import { installTouchActivation } from "./touch-activation.ts";
 -import { __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
 +import { __frameHookCount, __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
+ import type { AxisDelta } from "./relative-axis.ts";
+ import type { MotionState } from "./motion.ts";
+-import { flushLifecycleHooks, flushUnmountedHooks, disposeRootModelRegions } from "./lifecycle-solid-aot.ts";
++import { __pendingLifecycleHookCount, flushLifecycleHooks, flushUnmountedHooks, disposeRootModelRegions } from "./lifecycle-solid-aot.ts";
++import { __modelTaskDepth } from "./model-tasks.ts";
++import { __modelAnimationCount } from "./model-animation.ts";
++import { __dirtyModelRegionCount } from "./model-reactive.ts";
  import { __resetTouches, __setTouches } from "./touch.ts";
 -import { __advanceClock, resetClock } from "./clock.ts";
 -import { __drainEffects, resetEffects } from "./effects.ts";
@@ -83,12 +142,12 @@ index 0d79aea..4c6d89e 100644
 +import { __advanceClock, __pendingTimerCount, resetClock } from "./clock.ts";
 +import { __drainEffects, __effectDepth, resetEffects } from "./effects.ts";
 +import { __servicePumpCount, runServicePumps } from "./services.ts";
+ import { filterFrameInput, mountSystemLayers } from "./system-layers.ts";
  import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
  import { STYLE_IDS as DEFAULT_STYLE_IDS } from "./styles.generated.ts";
- import { ENUMS, SCREEN_H, SCREEN_W } from "../../contracts/spec/spec.ts";
-@@ -165,6 +165,44 @@ export function resizeViewport(w: number, h: number): void {
-   ops.__viewport = { w, h };
- }
+@@ -173,6 +176,72 @@ export function resizeViewport(w: number, h: number): void {
+ /** Gesture recognition for one frame's deferred presses; shared across frames. */
+ const runDeferredGestures = (defer: DeferredPress): void => withDeferredPress(defer, __runGestures);
  
 +/**
 + * Work a mounted app still has outstanding, by registry.
@@ -100,6 +159,9 @@ index 0d79aea..4c6d89e 100644
 +export interface PendingWork {
 +  /** App callbacks registered via onFrame/onButtonPress — run every frame. */
 +  frameHooks: number;
++  /** System-layer callbacks (`SystemFrameContext`) — run every frame, the
++   *  app suspended or not. */
++  systemFrameHooks: number;
 +  /** after() timers awaiting their deadline frame. */
 +  timers: number;
 +  /** Effect commands awaiting a driver result. */
@@ -108,30 +170,55 @@ index 0d79aea..4c6d89e 100644
 +  effectsQueued: number;
 +  /** Modules with async work outstanding. */
 +  servicePumps: number;
++  /** Model tasks still live: each is suspended on a wait a later frame resolves. */
++  modelTasks: number;
++  /** Model results delivered and not yet consumed by a frame boundary. */
++  modelDeliveries: number;
++  /** Model host commands queued for the next drain. */
++  modelCommands: number;
++  /** Native animations a model task is waiting to see complete. */
++  modelAnimations: number;
++  /** Model regions written to and not yet reacted. */
++  modelRegions: number;
++  /** Lifecycle hooks registered or destroyed and not yet flushed. */
++  lifecycleHooks: number;
 +}
 +
 +/**
-+ * Read every scheduled-work registry the frame pump drains.
++ * Read every scheduled-work registry the frame pump drains: `__advanceClock`
++ * (timers), `runServicePumps`, `__drainEffects`, and inside `runFrameHooks`
++ * the model animations, model tasks, both frame registries, the model
++ * regions and the lifecycle scheduler with its model command drain.
 + *
-+ * Deliberately excludes gesture and focus state: those hold no scheduled work
-+ * and can only act in response to contacts or button edges, which are input,
-+ * not something the world does on its own.
++ * Deliberately excludes gesture and focus state and the system layers' input
++ * filter: those hold no scheduled work and can only act in response to
++ * contacts or button edges, which are input, not something the world does on
++ * its own.
 + */
 +export function pendingWork(): PendingWork {
 +  const effects = __effectDepth();
++  const hooks = __frameHookCount();
++  const model = __modelTaskDepth();
 +  return {
-+    frameHooks: __frameHookCount(),
++    frameHooks: hooks.app,
++    systemFrameHooks: hooks.system,
 +    timers: __pendingTimerCount(),
 +    effectsPending: effects.pending,
 +    effectsQueued: effects.queued,
 +    servicePumps: __servicePumpCount(),
++    modelTasks: model.tasks,
++    modelDeliveries: model.deliveries,
++    modelCommands: model.commands,
++    modelAnimations: __modelAnimationCount(),
++    modelRegions: __dirtyModelRegionCount(),
++    lifecycleHooks: __pendingLifecycleHookCount(),
 +  };
 +}
 +
  /**
   * Mount the app into the native root node and wire the frame loop. Returns a
   * disposer that unmounts and destroys the app subtree.
-@@ -263,6 +301,11 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
+@@ -274,6 +343,11 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
    installTouchActivation();
    resetClock(); // latches the host's __simHz clock policy (docs/DETERMINISM.md)
    resetEffects();
@@ -143,8 +230,93 @@ index 0d79aea..4c6d89e 100644
    initDevtools(host.ops); // DevTools shim (docs/DEVTOOLS.md): flight recorder +
    // debug channel; one branch per frame when no transport is connected.
    installFrameHandler(
+diff --git a/framework/src/lifecycle-solid-aot.ts b/framework/src/lifecycle-solid-aot.ts
+index 0468cde9..98d6e1b9 100644
+--- a/framework/src/lifecycle-solid-aot.ts
++++ b/framework/src/lifecycle-solid-aot.ts
+@@ -33,6 +33,8 @@ function register(callback: () => void, phase: "mount" | "unmount"): void {
+ export function onMount(callback: () => void): void { register(callback, "mount"); }
+ export function onCleanup(callback: () => void): void { register(callback, "unmount"); }
+ export function flushLifecycleHooks(): void { scheduler.flush(); drainModelCommands(); }
++/** Lifecycle hooks the next flush runs. Read-only, for hosts and DevTools. */
++export function __pendingLifecycleHookCount(): number { return scheduler.pending(); }
+ export function flushUnmountedHooks(): void { scheduler.flushUnmounted(); drainModelCommands(); }
+ export function resetLifecycleHooks(): void {
+   scheduler.reset(); roots = new WeakSet();
+diff --git a/framework/src/model-animation.ts b/framework/src/model-animation.ts
+index 7e21aefb..266fe28b 100644
+--- a/framework/src/model-animation.ts
++++ b/framework/src/model-animation.ts
+@@ -24,6 +24,10 @@ export function installModelAnimationCommands(): void { registerModelCommandHand
+ }); }
+ installModelAnimationCommands();
+ 
++/** Native animations a model task is waiting to see complete. Read-only, for
++ *  hosts and DevTools. */
++export function __modelAnimationCount(): number { return pending.size; }
++
+ /** Called once at the input boundary, before readiness is frozen. */
+ export function pollModelAnimations(): void {
+   if (!pending.size) return;
+diff --git a/framework/src/model-reactive.ts b/framework/src/model-reactive.ts
+index 4e86b189..21fccd01 100644
+--- a/framework/src/model-reactive.ts
++++ b/framework/src/model-reactive.ts
+@@ -142,6 +142,13 @@ export function reactModelRegions(): void {
+     if (!region.initial && region.dirty) { region.react(); region.settle(); }
+   }
+ }
++/** Live regions written to and not yet reacted: the next frame's
++ *  `reactModelRegions` runs their effects. Read-only, for hosts and DevTools. */
++export function __dirtyModelRegionCount(): number {
++  let n = 0;
++  for (const region of regions) if (!region.disposed && !region.initial && region.dirty) n++;
++  return n;
++}
+ export function initialModelRegions(): boolean {
+   let ran = false;
+   for (const region of liveModelRegions()) if (region.initial) { region.react(true); region.settle(); ran = true; }
+diff --git a/framework/src/model-tasks.ts b/framework/src/model-tasks.ts
+index 963741df..e011b218 100644
+--- a/framework/src/model-tasks.ts
++++ b/framework/src/model-tasks.ts
+@@ -95,6 +95,12 @@ export class ModelTasks {
+     for (const fn of this.tasks.keys()) this.cancel(fn, "unmount");
+     taskRuntimes.delete(this);
+   }
++  /** Tasks still live. Read-only, for `__modelTaskDepth`. */
++  liveCount(): number {
++    let n = 0;
++    for (const task of this.tasks.values()) if (task.status === "live") n++;
++    return n;
++  }
+   private awaitingCancelled(wait: RegisteredWait, task: Task): boolean {
+     return !wait.released && (wait.source.kind === "join" && wait.source.task === task && !wait.source.wrapped || !!wait.members?.some(member => this.awaitingCancelled(member, task)));
+   }
+@@ -209,6 +215,21 @@ export class ModelTasks {
+     });
+   }
+ }
++/**
++ * Model work still outstanding: live tasks in every runtime (a disposed
++ * region's are cancelled on the next boundary, which queues host commands),
++ * results delivered and not yet consumed, and host commands queued for the
++ * next drain.
++ *
++ * Read-only, for hosts and DevTools. A task suspended on `frames(600)` or
++ * `after(10_000)` issues nothing until it resumes, so counting native ops
++ * cannot see it; this can.
++ */
++export function __modelTaskDepth(): { tasks: number; deliveries: number; commands: number } {
++  let tasks = 0;
++  for (const runtime of taskRuntimes) tasks += runtime.liveCount();
++  return { tasks, deliveries: deliveries.length, commands: commands.length };
++}
+ /** Reset the boundary when a host starts a fresh application clock. */
+ export function resetModelTaskClock(): void {
+   lastBoundary = undefined;
 diff --git a/framework/src/services.ts b/framework/src/services.ts
-index e90f044..f9f1143 100644
+index e90f044c..f9f1143c 100644
 --- a/framework/src/services.ts
 +++ b/framework/src/services.ts
 @@ -14,6 +14,17 @@ export function registerServicePump(pump: ServicePump): () => void {
@@ -165,3 +337,273 @@ index e90f044..f9f1143 100644
  export function runServicePumps(): void {
    if (pumps.size === 0) return;
    // A pump may remove itself while running; Set iteration safely advances to
+diff --git a/tests/pending-work.test.ts b/tests/pending-work.test.ts
+new file mode 100644
+index 00000000..f7c8a1b7
+--- /dev/null
++++ b/tests/pending-work.test.ts
+@@ -0,0 +1,252 @@
++// pendingWork() (framework/src/index.ts): every registry the frame pump drains
++// is counted, so "all zero" is a claim about each of them rather than about the
++// ones that happened to exist when the reader was written. Driven through the
++// public render() and the real frame handler, one registry per test; each
++// assertion is red with its counter removed from pendingWork().
++//
++// Run: bun test --conditions=browser tests/pending-work.test.ts
++
++import { afterEach, beforeEach, describe, expect, test } from "bun:test";
++
++if (Bun.resolveSync("solid-js", import.meta.dir).endsWith("server.js")) {
++  throw new Error("solid-js resolved to its SSR build — run: bun test --conditions=browser");
++}
++
++import { createComponent, createRoot } from "solid-js";
++import { installHost, type Host, type HostOps } from "../framework/src/host.ts";
++import { pendingWork, render as publicRender, type PendingWork } from "../framework/src/index.ts";
++import { resetRendererState, type NodeMirror } from "../framework/src/renderer.ts";
++import { resetStyles } from "../framework/src/styles.ts";
++import { resetInput } from "../framework/src/input.ts";
++import { resetPack } from "../framework/src/pak.ts";
++import { View } from "../framework/src/components.ts";
++import { onFrame, SystemFrameContext } from "../framework/src/frame.ts";
++import { after } from "../framework/src/clock.ts";
++import { installEffectDriver, runEffect } from "../framework/src/effects.ts";
++import { registerServicePump } from "../framework/src/services.ts";
++import { ModelRegion, registerModelRegion } from "../framework/src/model-reactive.ts";
++import { ModelTasks, deliverModelResult, disposeModelTasks, drainModelCommands, registerModelCommandHandler } from "../framework/src/model-tasks.ts";
++import { onMount } from "../framework/src/lifecycle-solid-aot.ts";
++import { ROOT_ID } from "../contracts/spec/spec.ts";
++
++function makeHost(): Host {
++  let nextId = ROOT_ID + 1;
++  const noop = () => {};
++  const ops: HostOps = {
++    createNode: () => nextId++,
++    destroyNode: noop,
++    insertBefore: noop,
++    removeChild: noop,
++    setStyle: noop,
++    setProp: noop,
++    setText: noop,
++    replaceText: noop,
++    uploadTexture: () => 900,
++    setImage: noop,
++    setSprite: noop,
++    animate: () => 7,
++    cancelAnim: noop,
++    setFocus: noop,
++    setActive: noop,
++    loadStyles: noop,
++    loadFontAtlas: noop,
++    measureText: () => 0,
++  };
++  return { kind: "injected", target: "test", strict: true, ops };
++}
++
++const g = globalThis as Record<string, unknown>;
++const ZERO: PendingWork = {
++  frameHooks: 0,
++  systemFrameHooks: 0,
++  timers: 0,
++  effectsPending: 0,
++  effectsQueued: 0,
++  servicePumps: 0,
++  modelTasks: 0,
++  modelDeliveries: 0,
++  modelCommands: 0,
++  modelAnimations: 0,
++  modelRegions: 0,
++  lifecycleHooks: 0,
++};
++const storage = <T>(value: T): [() => T, (next: T) => void] => [() => value, next => { value = next; }];
++
++let host: Host;
++let dispose: (() => void) | null = null;
++const cleanups: (() => void)[] = [];
++
++function frame(): void {
++  (g.frame as (buttons: number) => void)(0);
++}
++
++function mount(body: () => void): void {
++  dispose = publicRender(
++    () => {
++      body();
++      return View({ style: { width: 10, height: 10 } }) as unknown as NodeMirror;
++    },
++    { ops: host.ops, styles: {} },
++  );
++}
++
++/** Exactly one registry non-zero, and it is `key`. */
++function only(key: keyof PendingWork, n = 1): PendingWork {
++  return { ...ZERO, [key]: n };
++}
++
++beforeEach(() => {
++  host = makeHost();
++  installHost(host);
++  resetRendererState();
++  resetStyles();
++  resetPack();
++  resetInput();
++});
++
++afterEach(() => {
++  for (const cleanup of cleanups.splice(0).reverse()) cleanup();
++  dispose?.();
++  dispose = null;
++  drainModelCommands();
++  g.frame = undefined;
++});
++
++describe("pendingWork counts every registry the frame pump drains", () => {
++  test("a mounted app with nothing booked reads all zero", () => {
++    mount(() => {});
++    frame();
++    expect(pendingWork()).toEqual(ZERO);
++    expect((g.__pocketPendingWork as () => PendingWork)()).toEqual(ZERO);
++  });
++
++  test("an app frame callback", () => {
++    mount(() => onFrame(() => {}));
++    frame();
++    expect(pendingWork()).toEqual(only("frameHooks"));
++  });
++
++  test("a system-layer frame callback, which runs while the app is suspended", () => {
++    mount(() => {
++      createComponent(SystemFrameContext.Provider, {
++        value: true,
++        get children() {
++          onFrame(() => {});
++          return null;
++        },
++      });
++    });
++    frame();
++    expect(pendingWork()).toEqual(only("systemFrameHooks"));
++  });
++
++  test("a timer whose deadline is far away", () => {
++    mount(() => { after(10, () => {}); });
++    frame();
++    expect(pendingWork()).toEqual(only("timers"));
++  });
++
++  test("an effect awaiting its driver", () => {
++    installEffectDriver(() => {});
++    mount(() => { runEffect("never", null, () => {}); });
++    frame();
++    expect(pendingWork()).toEqual(only("effectsPending"));
++  });
++
++  test("a driver result awaiting the next frame boundary", () => {
++    let deliver: ((result: unknown) => void) | undefined;
++    installEffectDriver((_cmd, done) => { deliver = done; });
++    mount(() => { runEffect("later", null, () => {}); });
++    frame();
++    deliver!(1);
++    expect(pendingWork()).toEqual({ ...only("effectsQueued"), effectsPending: 1 });
++    frame();
++    expect(pendingWork()).toEqual(ZERO);
++  });
++
++  test("a service pump", () => {
++    mount(() => { cleanups.push(registerServicePump(() => {})); });
++    frame();
++    expect(pendingWork()).toEqual(only("servicePumps"));
++  });
++
++  test("a model task suspended for 600 frames, which issues nothing until it resumes", () => {
++    mount(() => {});
++    frame();
++    const region = new ModelRegion(storage);
++    region.finish([]);
++    const tasks = new ModelTasks(region);
++    tasks.start(1, [], () => ({ next: 1, suspend: { kind: "frames", count: 600 } }));
++    cleanups.push(() => { disposeModelTasks(region); region.dispose(); });
++    frame();
++    expect(pendingWork()).toEqual(only("modelTasks"));
++  });
++
++  test("a model result delivered and not yet consumed", () => {
++    mount(() => {});
++    frame();
++    deliverModelResult({ task: { region: 0, function: 0, call: 0 }, wait: 0, member: 0 }, null);
++    expect(pendingWork()).toEqual(only("modelDeliveries"));
++    frame();
++    expect(pendingWork()).toEqual(ZERO);
++  });
++
++  test("a model host command queued for the next drain", () => {
++    mount(() => {});
++    frame();
++    const region = new ModelRegion(storage);
++    region.finish([]);
++    const tasks = new ModelTasks(region);
++    cleanups.push(() => { disposeModelTasks(region); region.dispose(); });
++    cleanups.push(registerModelCommandHandler(() => {}));
++    tasks.command("jump", ["x", "width", 1]);
++    expect(pendingWork()).toEqual(only("modelCommands"));
++    frame();
++    expect(pendingWork()).toEqual(ZERO);
++  });
++
++  test("a native animation a model task is waiting on", () => {
++    mount(() => {});
++    frame();
++    const region = new ModelRegion(storage);
++    region.refs.set("bar", { current: { id: ROOT_ID + 50 } });
++    region.finish([]);
++    const tasks = new ModelTasks(region);
++    cleanups.push(() => { disposeModelTasks(region); region.dispose(); });
++    (host.ops as HostOps & { takeAnimationCompletions?: () => string }).takeAnimationCompletions = () => "[]";
++    tasks.start(1, [], () => ({ next: 1, suspend: { kind: "animate", args: ["bar", "width", 50, { dur: 1000 }] } }));
++    drainModelCommands();
++    const work = pendingWork();
++    expect(work.modelAnimations).toBe(1);
++    expect(work).toEqual({ ...only("modelTasks"), modelAnimations: 1 });
++  });
++
++  test("a model region written to and not yet reacted", () => {
++    mount(() => {});
++    frame();
++    const region = registerModelRegion(new ModelRegion(storage));
++    region.signal(1, "n", 0);
++    region.finish([]);
++    region.react(true);
++    cleanups.push(() => region.dispose());
++    region.write(1, 5);
++    expect(pendingWork()).toEqual(only("modelRegions"));
++    frame();
++    expect(pendingWork()).toEqual(ZERO);
++  });
++
++  test("a lifecycle hook registered and not yet flushed", () => {
++    mount(() => {});
++    frame();
++    // A hook registered outside the mount pass waits for the next flush.
++    let ran = 0;
++    createRoot(disposeRoot => {
++      cleanups.push(disposeRoot);
++      onMount(() => { ran++; });
++    });
++    expect(pendingWork()).toEqual(only("lifecycleHooks"));
++    frame();
++    expect(ran).toBe(1);
++    expect(pendingWork()).toEqual(ZERO);
++  });
++});
+diff --git a/tools/test.ts b/tools/test.ts
+index c9d75c1b..153db980 100644
+--- a/tools/test.ts
++++ b/tools/test.ts
+@@ -192,6 +192,7 @@ const SUITE: readonly Stage[] = [
+       "tests/resource-view.test.ts",
+       "tests/virtual-list.test.ts",
+       "tests/touch-activation.test.ts",
++      "tests/pending-work.test.ts",
+       "tests/portal-hit.test.ts",
+       "tests/cursor.test.ts",
+       "tests/action-handler-vue-vapor.test.ts",

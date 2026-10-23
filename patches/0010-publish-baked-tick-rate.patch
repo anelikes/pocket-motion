@@ -1,17 +1,17 @@
 diff --git a/framework/src/index.ts b/framework/src/index.ts
-index 4c6d89e..24393b5 100644
+index c3d25970..aca571c2 100644
 --- a/framework/src/index.ts
 +++ b/framework/src/index.ts
-@@ -45,7 +45,7 @@ import { __runGestures, resetGestures } from "./gesture.ts";
- import { installTouchActivation } from "./touch-activation.ts";
- import { __frameHookCount, __setAnalog, resetFrameHooks, runFrameHooks } from "./frame.ts";
+@@ -52,7 +52,7 @@ import { __modelTaskDepth } from "./model-tasks.ts";
+ import { __modelAnimationCount } from "./model-animation.ts";
+ import { __dirtyModelRegionCount } from "./model-reactive.ts";
  import { __resetTouches, __setTouches } from "./touch.ts";
 -import { __advanceClock, __pendingTimerCount, resetClock } from "./clock.ts";
 +import { __advanceClock, __pendingTimerCount, TICKS_PER_SECOND, resetClock } from "./clock.ts";
  import { __drainEffects, __effectDepth, resetEffects } from "./effects.ts";
  import { __servicePumpCount, runServicePumps } from "./services.ts";
- import { entries as pakEntries, get as pakGet, hasPack, loadPack } from "./pak.ts";
-@@ -306,6 +306,16 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
+ import { filterFrameInput, mountSystemLayers } from "./system-layers.ts";
+@@ -348,6 +348,16 @@ export function render(code: () => unknown, opts: RenderOptions = {}): () => voi
    // "this mounted app has nothing outstanding" has no way to look. One property
    // and one closure, installed once at mount.
    (globalThis as { __pocketPendingWork?: () => PendingWork }).__pocketPendingWork = pendingWork;

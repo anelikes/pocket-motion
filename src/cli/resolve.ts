@@ -15,6 +15,7 @@ import {
   parseSidecar,
   type Diagnostic,
   type MotionSidecar,
+  type SidecarShutter,
 } from "../manifest/sidecar.ts";
 import {
   assertBuildRecord,
@@ -22,6 +23,7 @@ import {
   type BuildRecord,
 } from "../render/build-record.ts";
 import { TICKS_PER_SECOND, pocketjsRoot } from "../runtime/boot.ts";
+import { buildEnv } from "../vendor/cache.ts";
 import { readAtlases, type AtlasHeader } from "../text/atlas.ts";
 import { UsageError } from "./args.ts";
 import type { GlobalFlags } from "./types.ts";
@@ -58,6 +60,12 @@ export interface ResolvedComposition {
   readonly fps: number;
   readonly durationFrames: number;
   readonly supersample: 1 | 2 | 4;
+  /**
+   * The sidecar's `shutter`, or null. Only the sidecar sets it — there is no
+   * flag — and every command that boots a world passes it on, because
+   * `BootOptions.shutter` has no default.
+   */
+  readonly shutter: SidecarShutter | null;
   /** Absolute paths to the declared faces, or undefined for the build default.
    *  `faces` holds the named faces (`fonts.faces`), present only when declared. */
   readonly fontPaths?: {
@@ -424,6 +432,7 @@ export async function resolveComposition(
       fps,
       durationFrames,
       supersample,
+      shutter: parsed.value.shutter ?? null,
       ...(fontPaths ? { fontPaths } : {}),
       buildCommand,
       buildArgs,
@@ -463,11 +472,16 @@ export function quoteArg(s: string): string {
  * used to choose between the two fields themselves; taking the composition
  * leaves nothing to choose, so reaching for the printed string is a type error
  * instead of a build that runs against shredded paths.
+ *
+ * `cwd` is the repository root, and upstream's builder hands
+ * `root: process.cwd()` to `Bun.build` since 66caf4e5, so the module paths a
+ * bundle carries are relative to the repository rather than to wherever the
+ * caller stood. `env` names the transform cache (`src/vendor/cache.ts`).
  */
 export function buildSpawn(
   c: Pick<ResolvedComposition, "buildArgs" | "dir">,
-): { readonly argv: string[]; readonly cwd: string } {
-  return { argv: [...c.buildArgs], cwd: repoRootOf(c.dir) };
+): { readonly argv: string[]; readonly cwd: string; readonly env: Record<string, string> } {
+  return { argv: [...c.buildArgs], cwd: repoRootOf(c.dir), env: buildEnv() };
 }
 
 /**

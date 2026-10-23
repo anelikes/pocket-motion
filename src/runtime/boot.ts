@@ -15,6 +15,7 @@
  */
 
 import { createSandbox, type AuditReport, type Sandbox } from "../harness/sandbox.ts";
+import type { SidecarShutter } from "../manifest/sidecar.ts";
 import { parseAtlases } from "../text/atlas.ts";
 import { fileURLToPath } from "node:url";
 
@@ -53,6 +54,14 @@ export interface BootOptions {
    *  which is a blank frame with a clean realm and a stable digest. Only
    *  `src/text/measure.ts` passes it. */
   readonly allowMetricsOnly?: boolean;
+  /**
+   * The composition's declared shutter, or null for none. REQUIRED, with no
+   * default: a caller that renders frames and forgot to pass it would deliver
+   * the unblurred picture of a composition that declares one, with nothing
+   * reporting it — so every boot site says which it is. Callers that never
+   * produce a frame (the measurer, a tree read) pass null and say why.
+   */
+  readonly shutter: SidecarShutter | null;
   /** Wrap the ops object before it is handed to the guest (the mount-only oracle). */
   readonly wrapOps?: (ops: Record<string, unknown>) => Record<string, unknown>;
   /** The command that rebuilds this bundle, quoted back when the bundle's baked
@@ -66,8 +75,28 @@ export interface BootedWorld {
   readonly frame: (buttons: number) => void;
   /** One core tick: animations advance, layout if dirty. */
   readonly tick: () => void;
-  /** Rasterise the current core state. Returns RGBA at physical size. */
+  /**
+   * Rasterise the current core state. Returns RGBA at physical size.
+   *
+   * Under a declared shutter this is the EXPOSURE (`ui_render_exposure`): the
+   * frame every command that produces or hashes pixels delivers. The view is
+   * into wasm memory and the next render overwrites it.
+   */
   readonly render: () => Uint8Array;
+  /**
+   * The frame's own tick, unblurred, whatever the shutter. What `layout`'s
+   * rects and ink boxes read: geometry at the centre of the exposure. Equal to
+   * `render` when no shutter is declared.
+   */
+  readonly renderTick: () => Uint8Array;
+  /** The declared shutter as the core takes it, or null. */
+  readonly exposure: Exposure | null;
+  /**
+   * The exposure scratch's byte range in linear memory — `{ ptr: 0, len: 0 }`
+   * with no shutter. A snapshot skips it: every exposure writes all of it
+   * before reading any of it (`src/runtime/checkpoint.ts`).
+   */
+  readonly exposureScratch: () => { readonly ptr: number; readonly len: number };
   readonly ticksPerFrame: number;
   readonly physicalWidth: number;
   readonly physicalHeight: number;
@@ -113,6 +142,8 @@ export interface BootedWorld {
 export interface PendingWork {
   /** App callbacks registered via onFrame/onButtonPress — run every frame. */
   readonly frameHooks: number;
+  /** System-layer callbacks — run every frame, the app suspended or not. */
+  readonly systemFrameHooks: number;
   /** after() timers awaiting their deadline frame. */
   readonly timers: number;
   /** Effect commands awaiting a driver result. */
@@ -121,17 +152,121 @@ export interface PendingWork {
   readonly effectsQueued: number;
   /** Modules with async work outstanding. */
   readonly servicePumps: number;
+  /** Model tasks still live, each suspended on a wait a later frame resolves. */
+  readonly modelTasks: number;
+  /** Model results delivered and not yet consumed. */
+  readonly modelDeliveries: number;
+  /** Model host commands queued for the next drain. */
+  readonly modelCommands: number;
+  /** Native animations a model task is waiting to see complete. */
+  readonly modelAnimations: number;
+  /** Model regions written to and not yet reacted. */
+  readonly modelRegions: number;
+  /** Lifecycle hooks registered or destroyed and not yet flushed. */
+  readonly lifecycleHooks: number;
+  /**
+   * Registries the guest reported that this mirror does not name. A bundle
+   * whose framework counts a queue this file has not been taught still has
+   * that queue counted, and the key that did it is in the report.
+   */
+  readonly unrecognised: Readonly<Record<string, number>>;
+  /**
+   * Registries this mirror names and the guest did not report. Each counts
+   * as outstanding in `totalPendingWork`: a queue nothing examined is not a
+   * queue known to be empty.
+   */
+  readonly missing: readonly string[];
 }
+
+/** The registries this mirror names, in the guest's order. */
+export const PENDING_WORK_KEYS = [
+  "frameHooks",
+  "systemFrameHooks",
+  "timers",
+  "effectsPending",
+  "effectsQueued",
+  "servicePumps",
+  "modelTasks",
+  "modelDeliveries",
+  "modelCommands",
+  "modelAnimations",
+  "modelRegions",
+  "lifecycleHooks",
+] as const satisfies readonly Exclude<keyof PendingWork, "unrecognised" | "missing">[];
 
 /** Sum of every registry — zero means nothing is scheduled anywhere. */
 export function totalPendingWork(w: PendingWork): number {
-  return w.frameHooks + w.timers + w.effectsPending + w.effectsQueued + w.servicePumps;
+  let total = 0;
+  for (const key of PENDING_WORK_KEYS) total += w[key];
+  for (const n of Object.values(w.unrecognised)) total += n;
+  return total + w.missing.length;
+}
+
+/**
+ * Copy a guest-realm pending-work object into plain host numbers.
+ *
+ * Every own key is read, not only the ones named above: `check` reports
+ * "nothing scheduled" from this, and a registry the guest counts and the host
+ * dropped would be a claim about a queue nobody examined. A key this mirror
+ * names and the guest omits reads 0 and is listed in `missing`.
+ */
+export function copyPendingWork(w: Record<string, unknown>): PendingWork {
+  const named = {} as Record<(typeof PENDING_WORK_KEYS)[number], number>;
+  const missing: string[] = [];
+  for (const key of PENDING_WORK_KEYS) {
+    if (!(key in w)) missing.push(key);
+    named[key] = Number(w[key]) || 0;
+  }
+  const unrecognised: Record<string, number> = {};
+  for (const key of Object.keys(w)) {
+    if ((PENDING_WORK_KEYS as readonly string[]).includes(key)) continue;
+    unrecognised[key] = Number(w[key]) || 0;
+  }
+  return { ...named, unrecognised, missing };
 }
 
 const VALID_HZ = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60] as const;
 /** Core ticks per second. The realm's rate, fixed: `ticksPerFrame` is
  *  `TICKS_PER_SECOND / hz`, and a bundle must be baked at this rate. */
 export const TICKS_PER_SECOND = 60;
+
+/**
+ * A declared shutter as the core takes it.
+ *
+ * The shutter is open for `angle/360` of a frame, which is
+ * `angle/360 · 60/hz` ticks. That is passed as an exact fraction,
+ * `angle · (60/hz)` over 360 — `60/hz` is a whole number for every rate the
+ * realm accepts — and the core forms each sample's offset from it in i64, so
+ * no sample time is a float two hosts could round differently.
+ */
+export interface Exposure {
+  readonly angle: number;
+  readonly samples: number;
+  /** Ticks the shutter is open: `spanNum / spanDen`. */
+  readonly spanNum: number;
+  readonly spanDen: number;
+}
+
+export function exposureOf(shutter: SidecarShutter, hz: number): Exposure {
+  const ticksPerFrame = TICKS_PER_SECOND / hz;
+  if (!Number.isInteger(ticksPerFrame)) {
+    throw new Error(`PocketJS Motion: hz must divide ${TICKS_PER_SECOND}; got ${hz}`);
+  }
+  return {
+    angle: shutter.angle,
+    samples: shutter.samples,
+    spanNum: shutter.angle * ticksPerFrame,
+    spanDen: 360,
+  };
+}
+
+/** `180° × 8` — how every command prints a shutter beside what it read. */
+export function describeShutter(shutter: SidecarShutter | null | undefined): string {
+  return shutter ? `${shutter.angle}° × ${shutter.samples} samples` : "none";
+}
+
+/** The exports a declared shutter needs, all from `patches/0034-shutter.patch`. */
+const EXPOSURE_EXPORTS = ["ui_render_exposure", "ui_draw_hash_exposure", "ui_exposure_reserve"] as const;
 
 /**
  * Refuse a bundle whose baked tick rate is not the one this realm drives.
@@ -202,6 +337,29 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
   const wasmBytes = await Bun.file(wasmPath).arrayBuffer();
   const wasm = await createWasmUi(wasmBytes, { width, height, rasterDensity });
 
+  // A declared shutter on a core that cannot expose is refused here, not at
+  // the first frame: `renderExposure` would throw then too, but a command that
+  // only asks for the tick (a rect) would otherwise answer about a film this
+  // core cannot render.
+  const exposure = options.shutter ? exposureOf(options.shutter, hz) : null;
+  if (exposure) {
+    const missing = EXPOSURE_EXPORTS.filter(
+      (name) => typeof (wasm.exports as unknown as Record<string, unknown>)[name] !== "function",
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `PocketJS Motion: this composition declares a shutter (${describeShutter(options.shutter)}) ` +
+          `and ${wasmPath} has no ${missing.join(", ")} (patches/0034-shutter.patch). ` +
+          "Rebuild the core:\n  bun scripts/vendor.ts",
+      );
+    }
+    // Sized before anything is snapshotted, so the scratch is in every
+    // snapshot's heap and a restore never allocates it again past the
+    // restored watermark; and before the boot reading preview's rebuild
+    // threshold multiplies.
+    wasm.reserveExposure(renderScale);
+  }
+
   const rawOps = wasm.ops as unknown as Record<string, unknown>;
   const ops = options.wrapOps ? options.wrapOps(rawOps) : rawOps;
 
@@ -254,7 +412,12 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
   return {
     frame: guestFrame,
     tick: wasm.tick,
-    render: () => wasm.renderScaled(renderScale),
+    render: exposure
+      ? () => wasm.renderExposure(renderScale, exposure.spanNum, exposure.spanDen, exposure.samples)
+      : () => wasm.renderScaled(renderScale),
+    renderTick: () => wasm.renderScaled(renderScale),
+    exposure,
+    exposureScratch: () => (exposure ? wasm.exposureScratch() : { ptr: 0, len: 0 }),
     ticksPerFrame: TICKS_PER_SECOND / hz,
     physicalWidth: width * renderScale,
     physicalHeight: height * renderScale,
@@ -262,16 +425,9 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
     pendingWork: () => {
       const read = sandbox.get<(() => PendingWork) | undefined>("__pocketPendingWork");
       if (typeof read !== "function") return undefined;
-      const w = read();
       // Copy the numbers out. The object itself is a guest-realm value and the
       // host has no business holding a reference to one.
-      return {
-        frameHooks: Number(w.frameHooks) || 0,
-        timers: Number(w.timers) || 0,
-        effectsPending: Number(w.effectsPending) || 0,
-        effectsQueued: Number(w.effectsQueued) || 0,
-        servicePumps: Number(w.servicePumps) || 0,
-      };
+      return copyPendingWork(read() as unknown as Record<string, unknown>);
     },
     getTree: () => {
       outbox.length = 0;
@@ -294,6 +450,9 @@ interface WasmUi {
   readonly ops: unknown;
   readonly tick: () => void;
   readonly renderScaled: (scale: number) => Uint8Array;
+  readonly renderExposure: (scale: number, spanNum: number, spanDen: number, samples: number) => Uint8Array;
+  readonly reserveExposure: (scale: number) => void;
+  readonly exposureScratch: () => { readonly ptr: number; readonly len: number };
   readonly exports: { readonly memory: WebAssembly.Memory };
 }
 

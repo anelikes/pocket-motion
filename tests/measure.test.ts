@@ -2,7 +2,7 @@
  * `openMeasurer`'s metrics cache: a metrics-only bake of a charset, built once
  * and booted per call, measuring what a full per-text bake measures.
  *
- * Four claims, each with a red case that was checked by hand:
+ * Five claims, each with a red case that was checked by hand:
  *
  * - the cached measurer returns the SAME widths and line heights as a full
  *   bake over the same strings — the measurement comes from the core's own
@@ -11,6 +11,10 @@
  *   different, e.g. `advance + 1` in bake-font.ts);
  * - a second call is a HIT: nothing is built, the pak on disk is the same
  *   file (red with the key made to include `Bun.nanoseconds()`);
+ * - two misses on ONE key in one process both measure and leave one copy (red
+ *   with the build directory named `<dir>.tmp-<pid>`, which is per process,
+ *   now that no build lock serialises them; a timing guard, so it runs four
+ *   rounds);
  * - a string with a character outside the charset FALLS BACK to a full bake
  *   and still measures (red with `textsOutside` returning `[]`);
  * - a render boot REFUSES a metrics-only pak, so the cache can never be drawn
@@ -18,7 +22,7 @@
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -31,7 +35,7 @@ const FACE = {
   regular: join(ROOT, "assets/fonts/HarmonyOS_Sans_Regular.ttf"),
   bold: join(ROOT, "assets/fonts/HarmonyOS_Sans_Bold.ttf"),
 };
-/** Sizes no composition bakes, so a stale mirror cannot satisfy them. */
+/** Sizes no composition bakes, so another build's table cannot satisfy them. */
 const SIZES: readonly { px: number; bold?: boolean }[] = [{ px: 41 }, { px: 67, bold: true }];
 const CHARSET = "ÀÉÎàéîïñü—“”…";
 const CORPUS = ["Wave", "To Type AV", "café — “naïve” ñu", "…", "ÎLE"];
@@ -89,6 +93,36 @@ describe("the metrics cache", () => {
     expect(after.size).toBeLessThan(64 * 1024);
   }, 120_000);
 
+  test("two misses on one key in one process both measure, and leave one copy", async () => {
+    // Nothing serialises measurement builds any more (tests/style-table.test.ts),
+    // so two misses on one key race each other for real. Four rounds, each on
+    // an empty cache: with the per-process directory one round failed 4 times
+    // in 9, so a single round would pass a regression about half the time.
+    for (let round = 0; round < 4; round++) {
+      const dir = await mkdtemp(join(tmpdir(), "pocketjs-measure-race-"));
+      try {
+        const opts = { face: FACE, sizes: [...SIZES], texts: CORPUS, cache: { charset: CHARSET, dir } };
+        const settled = await Promise.allSettled([openMeasurer(opts), openMeasurer(opts)]);
+        const failed = settled.flatMap((s) =>
+          s.status === "rejected" ? [String((s.reason as Error).message).split("\n")[0]] : [],
+        );
+        expect(`round ${round}: ${failed.join("; ") || "both measured"}`).toBe(`round ${round}: both measured`);
+        const [a, b] = settled.map(
+          (s) => (s as PromiseFulfilledResult<Awaited<ReturnType<typeof openMeasurer>>>).value,
+        );
+        try {
+          expect(b!.measure(41)("Wave")).toBe(a!.measure(41)("Wave"));
+        } finally {
+          await a!.close();
+          await b!.close();
+        }
+        expect(readdirSync(dir)).toHaveLength(1);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    }
+  }, 120_000);
+
   test("a character outside the charset falls back to a full bake", async () => {
     expect(textsOutside(["plain ascii\n", "é"], CHARSET)).toEqual([]);
     expect(textsOutside(["中文"], CHARSET)).toEqual(["中", "文"]);
@@ -107,10 +141,11 @@ describe("the metrics cache", () => {
     const entries = (await import("node:fs")).readdirSync(cacheDir).filter((e) => !e.includes(".tmp-"));
     const dist = join(cacheDir, entries[0]!, "dist");
     await expect(
-      hardenedBootWorld({ bundlePath: join(dist, "main.js"), pakPath: join(dist, "main.pak"), width: 64, height: 64, hz: 30 }),
+      hardenedBootWorld({ bundlePath: join(dist, "main.js"), pakPath: join(dist, "main.pak"), width: 64, height: 64, shutter: null, hz: 30 }),
     ).rejects.toThrow(/metrics-only/);
     const ok = await hardenedBootWorld({
       bundlePath: join(dist, "main.js"), pakPath: join(dist, "main.pak"), width: 64, height: 64, hz: 30,
+      shutter: null,
       allowMetricsOnly: true,
     });
     expect(typeof ok.frame).toBe("function");

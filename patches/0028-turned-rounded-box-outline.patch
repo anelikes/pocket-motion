@@ -1,0 +1,186 @@
+pocket-motion-only: a rounded box under a rotation is drawn through MASK_PUSH (0013), this repository's op, which no upstream backend draws; upstream's own backends keep the plain-box degradation for a turned rounded box.
+
+0028 — a turned rounded box keeps its corners.
+
+`emit_rounded_box` drew any rounded box under a world that was not
+axis-aligned as the plain box: a turning `rounded-full` circle was a turning
+square, and films drew turning circles as images. Under such a world it now
+emits the box's AABB as a SCISSOR, the rounded rectangle `mask_outline`
+flattens for `overflow-mask` as a MASK_PUSH (0024's sub-pixel outline), the
+box's fill, and the two pops. The coverage at the edge is the outline's,
+sampled as a mask is. A flat fill is drawn two screen pixels past the box
+on every side, so its own edge never multiplies the outline's; a two-stop
+gradient keeps its own box so its colours stay the box's, and its straight
+edges are the TRI fan's, as a turned square gradient's are. The
+axis-aligned path is untouched, so every unturned rounded box is
+byte-identical and the ledger is the check.
+
+Guard: `a_turned_rounded_box_keeps_its_corners`
+(`engine/core/src/tests.rs`): a 100 px `rounded-full` box turned 30 and 45
+degrees has the unturned circle's area (within 1.5 % of pi r^2) and no ink
+at 0.9 of the half-diagonal along the square's turned corners; radius 0
+turned is still the square. Red before (turned 30: area 9,896, the square),
+green after.
+
+Ledgers, against the same tree without this patch: no digest and no
+`visibility` row moves — every rounded box in the ledger is unturned, which
+is the byte-identity the axis-aligned path owes, and no composition turns
+one, so the core test is this change's only guard.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 43e5651e..eb00a662 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -2751,10 +2751,14 @@ impl<'a> Walker<'a> {
+         fill: Fill,
+         clip: &Clip,
+     ) {
+-        if radius <= 0.0 || !world.is_axis_aligned() {
++        if radius <= 0.0 {
+             self.emit_box(dl, world, x0, y0, x1, y1, fill, clip);
+             return;
+         }
++        if !world.is_axis_aligned() {
++            self.emit_rounded_box_turned(dl, world, x0, y0, x1, y1, radius, fill, clip);
++            return;
++        }
+         let (sx0, sy0) = world.apply(x0, y0);
+         let (sx1, sy1) = world.apply(x1, y1);
+         if sx1 <= sx0 || sy1 <= sy0 {
+@@ -3004,6 +3008,70 @@ impl<'a> Walker<'a> {
+         }
+     }
+ 
++    /// A rounded box under a world that is not axis-aligned. It used to be
++    /// drawn as the plain box — a turning `rounded-full` circle was a turning
++    /// square. Its outline is the rounded rectangle `overflow-mask` flattens
++    /// (`mask_outline`), pushed as a MASK_PUSH inside the box's AABB, and the
++    /// box's fill drawn under it: the coverage at its edge is the outline's,
++    /// sampled exactly as a mask is. A flat fill is drawn two screen pixels
++    /// past the box on every side, so its own edge never multiplies the
++    /// outline's; a two-stop gradient keeps its own box, so its colours stay
++    /// those of the box (its straight edges are the TRI fan's, as a turned
++    /// square gradient's are).
++    #[allow(clippy::too_many_arguments)]
++    fn emit_rounded_box_turned(
++        &mut self,
++        dl: &mut DrawList,
++        world: &Affine,
++        x0: f32,
++        y0: f32,
++        x1: f32,
++        y1: f32,
++        radius: f32,
++        fill: Fill,
++        clip: &Clip,
++    ) {
++        let (w, h) = (x1 - x0, y1 - y0);
++        if w <= 0.0 || h <= 0.0 {
++            return;
++        }
++        let local = world.then(&Affine::translate(x0, y0));
++        let aabb = clip.intersect(&self.world_aabb(&local, w, h));
++        if aabb.is_empty() {
++            return;
++        }
++        let verts = match mask_outline(&local, w, h, radius, &Clip::viewport(self.screen), self.screen) {
++            MaskOutline::Poly(verts) => verts,
++            MaskOutline::Empty => return,
++            MaskOutline::Aabb => {
++                self.emit_box(dl, world, x0, y0, x1, y1, fill, clip);
++                return;
++            }
++        };
++        dl.words.push(spec::draw_op::SCISSOR);
++        dl.words.push(xy_word(aabb.x0, aabb.y0));
++        dl.words.push(wh_word(aabb.x1 - aabb.x0, aabb.y1 - aabb.y0));
++        dl.words.push(spec::draw_op::MASK_PUSH);
++        dl.words.push(verts.len() as u32);
++        for &(x, y) in &verts {
++            dl.words.push(x.to_bits());
++            dl.words.push(y.to_bits());
++        }
++        match fill {
++            Fill::Flat(_) => {
++                // Two screen pixels past each edge: a local step along x moves
++                // a point |det| / |(c, d)| across the edges parallel to local y.
++                let det = (world.a * world.d - world.b * world.c).abs();
++                let ex = if det > 0.0 { 2.0 * sqrtf(world.c * world.c + world.d * world.d) / det } else { 0.0 };
++                let ey = if det > 0.0 { 2.0 * sqrtf(world.a * world.a + world.b * world.b) / det } else { 0.0 };
++                self.emit_box(dl, world, x0 - ex, y0 - ey, x1 + ex, y1 + ey, fill, &aabb);
++            }
++            Fill::Grad { .. } => self.emit_box(dl, world, x0, y0, x1, y1, fill, &aabb),
++        }
++        dl.words.push(spec::draw_op::MASK_POP);
++        dl.words.push(spec::draw_op::SCISSOR_POP);
++    }
++
+     fn emit_shadow(&mut self, dl: &mut DrawList, world: &Affine, w: f32, h: f32, radius: f32, level: u32, opacity: f32, clip: &Clip) {
+         if !world.is_axis_aligned() {
+             return;
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 2f5dac4d..7fff1c60 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -5978,6 +5978,59 @@ fn a_mask_pop_with_no_push_stops_the_stream_like_any_corrupt_op() {
+ }
+ 
+ 
++/// A 100 px `rounded-full` white box centred on the screen, turned `rotate`
++/// degrees about its centre, over black.
++fn turned_circle(rotate: f64, radius: f64) -> alloc::vec::Vec<u8> {
++    let mut ui = Ui::new();
++    ui.set_prop(spec::ROOT_ID, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
++    let n = place_box(&mut ui, 100.0, 100.0, 190.0, 86.0);
++    ui.set_prop(n, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.set_prop(n, spec::prop::RADIUS, radius);
++    if rotate != 0.0 {
++        ui.set_prop(n, spec::prop::ROTATE, rotate);
++    }
++    ui.tick();
++    let words = ui.draw().words.clone();
++    validate_drawlist(&words);
++    raster_fb(&mut ui)
++}
++
++#[test]
++fn a_turned_rounded_box_keeps_its_corners() {
++    // A rounded box under a rotation was drawn as the plain box: a turning
++    // `rounded-full` circle was a turning square. It is drawn under its
++    // rounded outline now, so the turned circle is the circle: the same
++    // area as the unturned one, and nothing in the square's corners.
++    let r = 50.0f64;
++    let disc = core::f64::consts::PI * r * r;
++    let lum = |fb: &[u8]| -> f64 {
++        let mut a = 0.0;
++        for y in 0..spec::SCREEN_H as usize {
++            for x in 0..spec::SCREEN_W as usize {
++                a += sample_rgba(fb, x, y)[0] as f64 / 255.0;
++            }
++        }
++        a
++    };
++    let flat = lum(&turned_circle(0.0, r));
++    assert!((flat - disc).abs() < disc * 0.015, "unturned circle: {flat} against {disc}");
++    for &turn in &[30.0f64, 45.0] {
++        let fb = turned_circle(turn, r);
++        let area = lum(&fb);
++        assert!((area - disc).abs() < disc * 0.015, "turned {turn}: area {area}, a circle is {disc}");
++        // The square's corners, turned with it: 0.9 of the half-diagonal out.
++        for k in 0..4 {
++            let t = (turn + 45.0 + 90.0 * k as f64).to_radians();
++            let d = 0.9 * r * core::f64::consts::SQRT_2;
++            let (x, y) = ((240.0 + d * t.cos()) as usize, (136.0 + d * t.sin()) as usize);
++            assert_eq!(sample_rgba(&fb, x, y)[0], 0, "turned {turn}: ink at the square's corner ({x},{y})");
++        }
++    }
++    // A turned square keeps its corners: radius 0 is still the plain box.
++    let square = lum(&turned_circle(30.0, 0.0));
++    assert!((square - 100.0 * 100.0).abs() < 200.0, "turned square: {square}");
++}
++
+ // ---- pocket-motion patch 0014: the framebuffer carries alpha -------------------
+ 
+ /// One absolutely positioned box at (10,10) 40x40 on a root that may or may

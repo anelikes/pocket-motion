@@ -31,7 +31,6 @@ import { mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { UPSTREAM } from "../src/vendor/upstream.ts";
-import { seedMirror } from "../src/vendor/mirror.ts";
 import { patchFiles, vendorStatus } from "../src/vendor/status.ts";
 
 /**
@@ -54,6 +53,13 @@ async function sh(cmd: string[], cwd: string, env?: Record<string, string>): Pro
   ]);
   if (code !== 0) throw new Error(`${cmd.join(" ")} failed (${code})\n${err.trim()}`);
   return out.trim();
+}
+
+/** Repository-relative paths a patch creates, from `git apply --summary`. */
+async function createdBy(patch: string): Promise<string[]> {
+  const summary = await sh(["git", "apply", "--summary", patch], VENDOR);
+  // `sh` trims, so the first line has lost its leading space.
+  return [...summary.matchAll(/^\s*create mode \d+ (.+)$/gm)].map((m) => m[1]!);
 }
 
 /**
@@ -80,6 +86,25 @@ async function cargoBin(): Promise<{ cargo: string; dir: string } | undefined> {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Where a clone or a fetch reads from. A local checkout, when present, is a
+ * far faster source than the network and resolves to the same objects. It is
+ * named by `POCKETJS_ROOT` and nowhere else: a path baked in here is one
+ * machine's layout, and on every other machine it is a directory that does
+ * not exist, silently falling back to the network — so the fast path worked
+ * for exactly one person and nothing said why.
+ */
+function cloneSource(): string {
+  const local = process.env.POCKETJS_ROOT;
+  return local && existsSync(join(local, ".git")) ? local : UPSTREAM.repo;
+}
+
+/** Whether `commit` names a commit object the clone at `dir` holds. */
+async function hasCommit(dir: string, commit: string): Promise<boolean> {
+  const p = Bun.spawn(["git", "cat-file", "-e", `${commit}^{commit}`], { cwd: dir, stdout: "ignore", stderr: "ignore" });
+  return (await p.exited) === 0;
 }
 
 async function buildWasm(): Promise<void> {
@@ -127,44 +152,50 @@ async function main(): Promise<void> {
 
   if (!existsSync(VENDOR)) {
     await mkdir(join(ROOT, "vendor"), { recursive: true });
-    // A local checkout, when present, is a far faster clone source than the
-    // network and resolves to the same objects. It is named by `POCKETJS_ROOT`
-    // and nowhere else: a path baked in here is one machine's layout, and on
-    // every other machine it is a directory that does not exist, silently
-    // falling back to the network — so the fast path worked for exactly one
-    // person and nothing said why.
-    const local = process.env.POCKETJS_ROOT;
-    const source =
-      local && existsSync(join(local, ".git")) ? local : UPSTREAM.repo;
-    console.log(`vendor: cloning ${source}`);
-    await sh(["git", "clone", "--quiet", source, VENDOR], ROOT);
+    console.log(`vendor: cloning ${cloneSource()}`);
+    await sh(["git", "clone", "--quiet", cloneSource(), VENDOR], ROOT);
   }
 
+  // A tree cloned at an older pin holds that pin's history and not
+  // necessarily the new one's: every checkout vendored before a bump would
+  // fail the checkout below with "reference is not a tree". Fetch every head
+  // of the same source a fresh clone would use, then check out.
+  if (!(await hasCommit(VENDOR, UPSTREAM.commit))) {
+    console.log(`vendor: ${UPSTREAM.commit} is not in the tree — fetching ${cloneSource()}`);
+    await sh(["git", "fetch", "--quiet", cloneSource(), "+refs/heads/*:refs/remotes/vendor/*"], VENDOR);
+  }
   await sh(["git", "checkout", "--quiet", "--force", UPSTREAM.commit], VENDOR);
   await sh(["git", "clean", "-qfd"], VENDOR);
 
   // The compiler this project drives is upstream's own, and it imports
-  // upstream's dependencies (`opentype.js` in framework/compiler/bake-font.ts).
-  // `git clean -fd` leaves ignored files alone, so this only bites after
-  // --refresh — which is exactly when it is easiest to misread as a patch fault.
-  if (!existsSync(join(VENDOR, "node_modules"))) {
-    console.log("vendor: installing upstream dependencies");
-    await sh(["bun", "install", "--frozen-lockfile"], VENDOR);
-  }
+  // upstream's dependencies (`opentype.js` in framework/compiler/bake-font.ts,
+  // `@babel/generator` since the pin moved to 66caf4e5). Run on every
+  // vendor, not only when node_modules is absent: `git clean -fd` leaves
+  // ignored files alone, so a tree vendored at an older pin keeps a
+  // node_modules that predates the lockfile the new pin checked out, and the
+  // first build to import a new dependency fails far from here. Against an
+  // up-to-date node_modules this is a no-op that costs well under a second.
+  console.log("vendor: installing upstream dependencies (bun install --frozen-lockfile)");
+  await sh(["bun", "install", "--frozen-lockfile"], VENDOR);
 
   const patches = await patchFiles();
+  // `git apply` refuses to create a file that is already there, and the
+  // checkout and clean above leave one behind exactly when the pin IGNORES
+  // it: `git clean -fd` keeps ignored files. The backport of #591 created
+  // `framework/src/styles.generated.ts`, which the old pin's `.gitignore`
+  // covered and every build before it wrote, so a re-run over an existing
+  // tree stopped there; any patch that creates an ignored file meets the same
+  // wall. Each file a patch creates is removed first; the patch is what
+  // supplies it. Not `git clean -x`, which would also take
+  // node_modules, the cargo target and the wasm.
+  for (const name of patches) {
+    for (const path of await createdBy(join(PATCHES, name))) {
+      await rm(join(VENDOR, path), { force: true });
+    }
+  }
   for (const name of patches) {
     console.log(`vendor: applying ${name}`);
     await sh(["git", "apply", join(PATCHES, name)], VENDOR);
-  }
-  // A tree with no `framework/src/styles.generated.ts` is a tree whose FIRST
-  // build has to resolve a path its own pass 1 creates, and upstream's
-  // `tools/site-build.ts` seeds this same stub rather than depend on Bun
-  // noticing. `src/vendor/mirror.ts` carries the mechanism and the CI run it
-  // came from. `git clean -qfd` above leaves ignored files alone, so a re-run
-  // over an existing tree keeps whatever table the last build wrote.
-  if (seedMirror(VENDOR)) {
-    console.log("vendor: seeded framework/src/styles.generated.ts (placeholder)");
   }
 
   if (!args.includes("--no-wasm")) await buildWasm();
