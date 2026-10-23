@@ -1,34 +1,54 @@
 /**
- * Sound resolver and the lint / frame-path seam.
+ * Sound resolver and the lint / frame-path seam, the mix graph, `sound
+ * --verify`, and the four shapes the schema gained after its four roles.
  *
  * lint refuses a declared file that is not on disk. resolveComposition —
  * what check / frame / trace / render share — does not look at sound.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { sidecar as soundRolesSidecar } from "../compositions/sound-roles/gen.ts";
+import { runBuild } from "../src/cli/build.ts";
 import { run as runLint } from "../src/cli/commands/lint.ts";
 import { run as runSound } from "../src/cli/commands/sound.ts";
 import { resolveComposition } from "../src/cli/resolve.ts";
 import { EXIT_FAIL, EXIT_OK } from "../src/cli/types.ts";
-import { parseSidecar } from "../src/manifest/sidecar.ts";
+import {
+  SILENT_TAIL_GUARD_MS,
+  parseSidecar,
+  type MotionSidecar,
+} from "../src/manifest/sidecar.ts";
 import {
   sidecarCanonicalOf,
 } from "../src/render/identity.ts";
 import {
+  VOLUME_STEP_SAMPLES,
   bedVolumeExpression,
+  elementLevel,
   formatFilterNumber,
   framesToMs,
+  levelRange,
   mixGraph,
   soundDeclared,
+  tailGateSec,
+  tailOverruns,
 } from "../src/sound/mix.ts";
-import { muxSound } from "../src/sound/mux.ts";
-import { resolveSound, type ResolvedSoundElement } from "../src/sound/resolve.ts";
+import { muxArgs, muxSound } from "../src/sound/mux.ts";
 import {
+  probeSoundDurations,
+  resolveSound,
+  type ResolvedSoundElement,
+} from "../src/sound/resolve.ts";
+import { DELIVERED_PCM, measureSilentTail, silentTailOf } from "../src/sound/tail.ts";
+import {
+  VERIFY_LEVEL_TOLERANCE_DB,
   VERIFY_RESIDUAL_FLOOR_DB,
   VERIFY_RMS_FLOOR_DB,
   elementSampleStartSec,
+  levelWindowOk,
+  levelWindowStarts,
   isBelowFloor,
   clipSpans,
   measureRmsDb,
@@ -1430,4 +1450,587 @@ describe("verify does not read a pause inside a line as an absence", () => {
     expect(sourceTimeAt(line, parsed.value, 1.2, 15)).toBeCloseTo(0.2, 10);
     expect(sourceTimeAt(line, parsed.value, 0, 15)).toBe(0);
   });
+});
+
+// ---------------------------------------------------------------------------
+// The four shapes the schema gained: an envelope on any element, a duck
+// window on the bed, an optional element, and a silent tail.
+// ---------------------------------------------------------------------------
+
+const SYNTH = join(ROOT, "assets/synthetic");
+const ROLES = join(ROOT, "compositions/sound-roles");
+
+function parsed(input: unknown): MotionSidecar {
+  const p = parseSidecar(input);
+  if (!p.ok) throw new Error(`sidecar did not parse: ${JSON.stringify(p.diagnostics)}`);
+  return p.value;
+}
+
+/** The fixture's own sidecar, as its generator writes it. */
+function rolesRaw(): Record<string, any> {
+  return JSON.parse(soundRolesSidecar()) as Record<string, any>;
+}
+
+describe("parse: the four shapes", () => {
+  test("an envelope parses on every role, on the element's own clock", () => {
+    const sc = parsed(rolesRaw());
+    const line = sc.sound.dialogue[0]!;
+    expect(line.envelope).toEqual([
+      { frame: 0, gain: 0 },
+      { frame: 3, gain: 1 },
+      { frame: 36, gain: 1 },
+      { frame: 45, gain: 0 },
+    ]);
+    // The line lands on composition frame 90, so its envelope's frame 0 is
+    // 3.0 s on the film, not 0 s.
+    const resolved = resolveSound(sc, ROLES).elements;
+    const level = elementLevel("/sound/dialogue/0/src", sc.sound, resolved, 30);
+    expect(level.base.map((p) => p.t)).toEqual([3, 3.1, 4.2, 4.5]);
+    expect(level.ducks).toEqual([]);
+  });
+
+  test("`optional: false` is the default and parses to the same value as absent", () => {
+    const a = parsed({ ...MIN, sound: { cues: [{ id: "c", src: "c.wav", atFrame: 0 }] } });
+    const b = parsed({ ...MIN, sound: { cues: [{ id: "c", src: "c.wav", atFrame: 0, optional: false }] } });
+    expect(b.sound).toEqual(a.sound);
+    expect("optional" in b.sound.cues[0]!).toBe(false);
+  });
+
+  test("the tail's gate is SILENT_TAIL_GUARD_MS before it, and the parser measures from the gate", () => {
+    // 90 frames at 30 fps is 3000 ms; a 500 ms tail starts at 2500 and the
+    // gate is the guard before that.
+    const gate = 2500 - SILENT_TAIL_GUARD_MS;
+    const fits = parseSidecar({
+      ...MIN,
+      sound: { bed: { src: "b.wav", fadeOutMs: gate }, silentTailMs: 500 },
+    });
+    expect(fits.ok).toBe(true);
+    const over = parseSidecar({
+      ...MIN,
+      sound: { bed: { src: "b.wav", fadeOutMs: gate + 1 }, silentTailMs: 500 },
+    });
+    expect(over.ok).toBe(false);
+    if (over.ok) throw new Error("unreachable");
+    expect(over.diagnostics.map((d) => d.code)).toEqual(["sidecar.sound.silentTailMs.noRoomForFade"]);
+    // A dialogue line is placed by its clip mapping, and that derived frame is
+    // what the gate is compared with: clip frame 85 of a track that shows
+    // clip frame 20 on composition frame 10 lands on 75, 2500 ms — after the
+    // 2450 ms gate, though its sourceFrame alone would say nothing.
+    const late = parseSidecar({
+      ...MIN,
+      footage: [{ id: "a-roll", src: "clip.mp4", nodePrefix: "n", tile: 512, grid: [2, 2], startFrame: 10, endFrame: 90, sourceFrame: 20 }],
+      sound: { dialogue: [{ id: "dl", src: "l.wav", track: "a-roll", sourceFrame: 85 }], silentTailMs: 500 },
+    });
+    expect(late.ok).toBe(false);
+    if (late.ok) throw new Error("unreachable");
+    expect(late.diagnostics[0]!.code).toBe("sidecar.sound.silentTailMs.startsInTail");
+    expect(late.diagnostics[0]!.path).toBe("/sound/dialogue/0/sourceFrame");
+  });
+
+  test("none of the four moves the sidecar's identity", () => {
+    const raw = rolesRaw();
+    const silent = { ...raw };
+    delete silent.sound;
+    expect(sidecarCanonicalOf(parsed(raw))).toBe(sidecarCanonicalOf(parsed(silent)));
+  });
+});
+
+describe("mixGraph: the four shapes, as strings", () => {
+  const cue = (over: Record<string, unknown> = {}) =>
+    parsed({ motion: 1, durationFrames: 90, fps: 15, sound: { cues: [{ id: "hit", src: "x.wav", atFrame: 15, ...over }] } });
+  const cueEl = (over: Partial<ResolvedSoundElement> = {}): ResolvedSoundElement =>
+    resolvedEl({ id: "hit", role: "cue", src: "x.wav", pointer: "/sound/cues/0/src", path: "/abs/x.wav", durationSec: 0.5, ...over });
+
+  test("an envelope is one flat term per segment, in composition seconds, after asetnsamples", () => {
+    // Frame 15 at 15 fps is 1 s; the envelope's frames count from there.
+    const sc = cue({ gain: 0.5, envelope: [{ frame: 0, gain: 1 }, { frame: 15, gain: 0 }] });
+    const graph = mixGraph(sc.sound, [cueEl()], 15, 90);
+    expect(graph.filter).toBe(
+      "[1:a]adelay=1000:all=1," +
+        `asetnsamples=n=${VOLUME_STEP_SAMPLES}:p=0,` +
+        "volume=volume='(lt(t\\,1)*0.5+gte(t\\,1)*lt(t\\,2)*(0.5+(0-0.5)*(t-1)/(2-1))+gte(t\\,2)*0)':eval=frame[c0];" +
+        "[c0]amix=inputs=1:normalize=0:dropout_transition=0[a]",
+    );
+    // A constant level writes no expression and no asetnsamples.
+    expect(mixGraph(cue().sound, [cueEl()], 15, 90).filter).toContain("adelay=1000:all=1,volume=1[c0]");
+  });
+
+  test("a bed duck window is half-open; a narration line's stays `between`", () => {
+    const sc = parsed({
+      motion: 1,
+      durationFrames: 90,
+      fps: 15,
+      sound: {
+        bed: { src: "b.wav", gain: 0.4, ducks: [{ startFrame: 30, endFrame: 60, duck: 0.5 }] },
+        narration: [{ id: "vo", src: "v.wav", startFrame: 15, duck: 0.25 }],
+      },
+    });
+    const graph = mixGraph(
+      sc.sound,
+      [
+        resolvedEl({ role: "bed", src: "b.wav", pointer: "/sound/bed/src", path: "/abs/b.wav" }),
+        resolvedEl({ id: "vo", role: "narration", src: "v.wav", pointer: "/sound/narration/0/src", path: "/abs/v.wav", durationSec: 1.5 }),
+      ],
+      15,
+      90,
+    );
+    expect(graph.filter).toContain(
+      `asetnsamples=n=${VOLUME_STEP_SAMPLES}:p=0,volume=volume='0.4*if(between(t\\,1\\,2.5)\\,0.25\\,1)*if(gte(t\\,2)*lt(t\\,4)\\,0.5\\,1)':eval=frame`,
+    );
+  });
+
+  test("a silent tail gates the mix SILENT_TAIL_GUARD_MS early, and the bed's fade-out completes there", () => {
+    const sc = parsed({
+      motion: 1,
+      durationFrames: 90,
+      fps: 15,
+      sound: { bed: { src: "b.wav", fadeOutMs: 1000 }, silentTailMs: 500 },
+    });
+    const gate = tailGateSec(sc.sound, 15, 90)!;
+    expect(gate).toBeCloseTo(6 - 0.5 - SILENT_TAIL_GUARD_MS / 1000, 12);
+    const graph = mixGraph(
+      sc.sound,
+      [resolvedEl({ role: "bed", src: "b.wav", pointer: "/sound/bed/src", path: "/abs/b.wav" })],
+      15,
+      90,
+    );
+    expect(graph.filter).toContain(`afade=t=out:st=${formatFilterNumber(gate - 1)}:d=1[bed]`);
+    expect(graph.filter).toEndWith(
+      `[bed]amix=inputs=1:normalize=0:dropout_transition=0[mix];` +
+        `[mix]atrim=end=${formatFilterNumber(gate)},apad=whole_dur=6[a]`,
+    );
+  });
+
+  test("an optional element not on disk is left out and recorded; a required one still throws", () => {
+    const sc = parsed({
+      motion: 1,
+      durationFrames: 90,
+      fps: 15,
+      sound: {
+        bed: { src: "b.wav" },
+        cues: [{ id: "hit", src: "x.wav", atFrame: 15, optional: true }],
+      },
+    });
+    const bedEl = resolvedEl({ role: "bed", src: "b.wav", pointer: "/sound/bed/src", path: "/abs/b.wav" });
+    const graph = mixGraph(sc.sound, [bedEl, cueEl({ path: null, optional: true })], 15, 90);
+    expect(graph.inputArgs).toEqual(["-i", "/abs/b.wav"]);
+    expect(graph.filter).not.toContain("[c0]");
+    expect(graph.elements.map((e) => [e.pointer, e.optional, e.mixed])).toEqual([
+      ["/sound/bed/src", false, true],
+      ["/sound/cues/0/src", true, false],
+    ]);
+    // Every element optional and absent: an audio stream of silence, and the
+    // record says why.
+    const none = mixGraph(cue({ optional: true }).sound, [cueEl({ path: null, optional: true })], 15, 90);
+    expect(none.inputArgs).toContain("anullsrc=r=48000:cl=stereo");
+    expect(none.elements[0]!.mixed).toBe(false);
+    // Without the flag the same absence is refused, as it always was.
+    expect(() => mixGraph(cue().sound, [cueEl({ path: null })], 15, 90)).toThrow("not on disk");
+  });
+
+  test("an element still sounding at the gate is refused, unless its envelope has ended it", () => {
+    // 6 s film, 500 ms tail: the gate is at 5.45 s. A cue at 5.0 s for 0.5 s
+    // is still sounding there.
+    const late = (over: Record<string, unknown> = {}) =>
+      parsed({ motion: 1, durationFrames: 90, fps: 15, sound: { cues: [{ id: "hit", src: "x.wav", atFrame: 75, ...over }], silentTailMs: 500 } });
+    const overruns = tailOverruns(late().sound, [cueEl()], 15, 90);
+    expect(overruns.map((d) => [d.code, d.path])).toEqual([["sound.tail.overrun", "/sound/cues/0/src"]]);
+    expect(overruns[0]!.message).toContain("5.450 s");
+    expect(() => mixGraph(late().sound, [cueEl()], 15, 90)).toThrow("the gate would cut it");
+    // The same cue faded to 0 by frame 6 of its own clock (5.4 s) ends itself.
+    const faded = late({ envelope: [{ frame: 0, gain: 1 }, { frame: 6, gain: 0 }] });
+    expect(tailOverruns(faded.sound, [cueEl()], 15, 90)).toEqual([]);
+    // A counterfactual for verify is not refused: it measures what exists.
+    expect(() => mixGraph(late().sound, [cueEl()], 15, 90, "/sound/cues/0/src")).not.toThrow();
+  });
+
+  test("levelRange sees both sides of a step and the ends of a ramp", () => {
+    const level = { base: [{ t: 0, gain: 1 }, { t: 2, gain: 0 }], ducks: [{ startSec: 1, endSec: 3, duck: 0.5, halfOpen: true }] };
+    const r = levelRange(level, 0.9, 1.1);
+    expect(r.max).toBeCloseTo(0.55, 9); // just before the duck, ramp at 0.55
+    expect(r.min).toBeCloseTo(0.225, 9); // just after it, 0.45 × 0.5
+    // Breaks at 1 (the duck) and 2 (the ramp's end): three pieces, each with
+    // a window at its middle.
+    expect(levelWindowStarts(level, 0, 3)).toEqual({ starts: [0.45, 1.45, 2.45], unexamined: 0 });
+    // A piece shorter than a window and its margins is counted, not read.
+    expect(levelWindowStarts(level, 0.9, 2)).toEqual({ starts: [1.45], unexamined: 1 });
+  });
+
+  test("a level window's verdict: inside the declared range ± tolerance, or silent where declared silent", () => {
+    const tol = VERIFY_LEVEL_TOLERANCE_DB;
+    expect(levelWindowOk(-6.02 - tol + 0.01, -30, { min: 0.5, max: 0.5 })).toBe(true);
+    expect(levelWindowOk(-6.02 - tol - 0.01, -30, { min: 0.5, max: 0.5 })).toBe(false);
+    expect(levelWindowOk(0, -30, { min: 0.5, max: 1 })).toBe(true);
+    expect(levelWindowOk(0.02 + tol, -30, { min: 0.5, max: 1 })).toBe(false);
+    expect(levelWindowOk(Number.NaN, Number.NEGATIVE_INFINITY, { min: 0, max: 0 })).toBe(true);
+    expect(levelWindowOk(Number.NaN, -30, { min: 0, max: 0 })).toBe(false);
+  });
+});
+
+describe("silentTailOf", () => {
+  const { rate, channels } = DELIVERED_PCM;
+  function pcm(seconds: number, nonZeroAt?: number): Uint8Array {
+    const view = new Int16Array(Math.round(seconds * rate) * channels);
+    if (nonZeroAt !== undefined) view[Math.round(nonZeroAt * rate) * channels + 1] = -3;
+    return new Uint8Array(view.buffer);
+  }
+
+  test("every sample from the tail to the end of the decode is read", () => {
+    const quiet = silentTailOf(pcm(6.016), 6, 500);
+    expect(quiet.ok).toBe(true);
+    expect(quiet.samples).toBe((Math.round(6.016 * rate) - Math.round(5.5 * rate)) * channels);
+    // One sample in the decoder's own padding past the film's end still counts.
+    const padding = silentTailOf(pcm(6.016, 6.01), 6, 500);
+    expect(padding.ok).toBe(false);
+    expect(padding.nonZero).toBe(1);
+    expect(padding.peak).toBe(3);
+    expect(padding.firstNonZeroAfterSec).toBeCloseTo(0.51, 6);
+    // A sample before the tail is not the tail's business.
+    expect(silentTailOf(pcm(6.016, 5.49), 6, 500).ok).toBe(true);
+  });
+
+  test("a decode that stops short of the film is not a pass", () => {
+    const short = silentTailOf(pcm(5.8), 6, 500);
+    expect(short.nonZero).toBe(0);
+    expect(short.ok).toBe(false);
+  });
+});
+
+/**
+ * Mux a declaration under a black picture and verify it against another.
+ * `mixed` is what the file carries; `declared` is what verify is told.
+ */
+async function muxAndVerify(
+  dir: string,
+  name: string,
+  mixed: MotionSidecar,
+  declared: MotionSidecar,
+  compositionDir: string = ROLES,
+) {
+  const fps = mixed.fps;
+  const durationSec = framesToMs(mixed.durationFrames, fps) / 1000;
+  const out = join(dir, `${name}.mp4`);
+  const r = resolveSound(mixed, compositionDir);
+  if (!r.ok) throw new Error(JSON.stringify(r.diagnostics));
+  const mux = await muxSound({
+    videoPath: join(dir, `picture-${fps}.mp4`),
+    outputPath: out,
+    graph: mixGraph(mixed.sound, await probeSoundDurations(r.elements), fps, mixed.durationFrames),
+    durationSec,
+    ...(mixed.sound.silentTailMs !== undefined ? { silentTailMs: mixed.sound.silentTailMs } : {}),
+  });
+  const verify = await verifyMix({
+    sidecar: declared,
+    elements: resolveSound(declared, compositionDir).elements,
+    producedPath: out,
+    fps,
+  });
+  return { out, mux, verify };
+}
+
+async function blackPicture(dir: string, fps: number, frames: number): Promise<void> {
+  await runFfmpeg([
+    "-f", "lavfi", "-i", `color=c=black:s=32x32:r=${fps}`, "-frames:v", String(frames),
+    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-an", join(dir, `picture-${fps}.mp4`),
+  ]);
+}
+
+/** RMS in dBFS of decoded s16 PCM between two instants, all channels. */
+function rmsDb(pcmBytes: Uint8Array, rate: number, channels: number, from: number, to: number): number {
+  const view = new Int16Array(pcmBytes.buffer, pcmBytes.byteOffset, pcmBytes.byteLength / 2);
+  let sum = 0;
+  let n = 0;
+  for (let i = Math.round(from * rate) * channels; i < Math.round(to * rate) * channels; i++) {
+    const v = view[i]! / 32768;
+    sum += v * v;
+    n++;
+  }
+  return 10 * Math.log10(sum / n);
+}
+
+describe("the four shapes, measured", () => {
+  const T = "/tmp/pocketjs-motion-sound-shapes-test";
+
+  beforeAll(async () => {
+    rmSync(T, { recursive: true, force: true });
+    mkdirSync(T, { recursive: true });
+    await blackPicture(T, 30, 180);
+    await blackPicture(T, 15, 30);
+  });
+  afterAll(() => {
+    rmSync(T, { recursive: true, force: true });
+  });
+
+  test("the fixture's mix: four present, the optional cue skipped, every level window in range, the tail silent", async () => {
+    const sc = parsed(rolesRaw());
+    const { mux, verify } = await muxAndVerify(T, "roles", sc, sc);
+    expect(verify.elements.map((e) => [e.id ?? "bed", e.status])).toEqual([
+      ["bed", "present"],
+      ["narration-1", "present"],
+      ["dialogue-1", "present"],
+      ["cue-1", "present"],
+      ["cue-2", "skipped"],
+    ]);
+    // Measured 2026-10-23, AAC 192 kb/s: the bed's two examined windows sat
+    // 0.018 and 0.009 dB from the declared level (under the narration duck,
+    // and under the cut duck alone); the dialogue's 0.001 dB in its hold and
+    // inside the range on its ramp. The piece where both ducks overlap is
+    // 0.3 × 0.2 × 0.5 = 0.03, −51.5 dBFS, under the floor: unexamined.
+    const bed = verify.elements[0]!;
+    expect(bed.level!.windows.map((w) => w.atSec)).toEqual([0.75, 3.325]);
+    expect(bed.level!.unexamined).toBe(1);
+    for (const e of verify.elements) {
+      for (const w of e.level?.windows ?? []) {
+        const outside = Math.max(0, w.expectedMinDb - w.measuredDb, w.measuredDb - w.expectedMaxDb);
+        expect(outside, `${e.id ?? "bed"} @ ${w.atSec}`).toBeLessThan(0.1);
+        expect(w.ok).toBe(true);
+      }
+    }
+    expect(verify.tail!.ok).toBe(true);
+    expect(verify.tail!.nonZero).toBe(0);
+    expect(verify.ok).toBe(true);
+    // The manifest says the same about the same decode.
+    expect(mux.tail).toEqual(verify.tail);
+    expect(mux.elements.find((e) => e.id === "cue-2")).toEqual({
+      pointer: "/sound/cues/1/src",
+      id: "cue-2",
+      role: "cue",
+      optional: true,
+      mixed: false,
+    });
+  }, 120_000);
+
+  test("a mix without the dialogue envelope is a level-mismatch on that line", async () => {
+    // Red case: with the envelope dropped from the mix the ramp window at
+    // 4.3 s measures 0 dB against a declared −9.5..−3.1 — 3.06 dB outside.
+    // Every other element stays present.
+    const declared = parsed(rolesRaw());
+    const raw = rolesRaw();
+    delete raw.sound.dialogue[0].envelope;
+    const { verify } = await muxAndVerify(T, "no-envelope", parsed(raw), declared);
+    expect(verify.elements.map((e) => [e.id ?? "bed", e.status])).toEqual([
+      ["bed", "present"],
+      ["narration-1", "present"],
+      ["dialogue-1", "level-mismatch"],
+      ["cue-1", "present"],
+      ["cue-2", "skipped"],
+    ]);
+    expect(verify.ok).toBe(false);
+  }, 120_000);
+
+  test("a mix without the cut duck is a level-mismatch on the bed", async () => {
+    // 6.0 dB outside at the window under the cut duck alone.
+    const declared = parsed(rolesRaw());
+    const raw = rolesRaw();
+    delete raw.sound.bed.ducks;
+    const { verify } = await muxAndVerify(T, "no-duck", parsed(raw), declared);
+    const bed = verify.elements[0]!;
+    expect(bed.status).toBe("level-mismatch");
+    const miss = bed.level!.windows.find((w) => !w.ok)!;
+    expect(miss.measuredDb - miss.expectedMaxDb).toBeGreaterThan(5);
+  }, 120_000);
+
+  test("without its gate the mix is not silent in the tail, and the measurement says so", async () => {
+    // The same declaration, mixed with no `silentTailMs`, so the graph has no
+    // gate: the bed fades out at the end of the picture instead.
+    const declared = parsed(rolesRaw());
+    const raw = rolesRaw();
+    delete raw.sound.silentTailMs;
+    const { verify } = await muxAndVerify(T, "no-gate", parsed(raw), declared);
+    expect(verify.tail!.ok).toBe(false);
+    expect(verify.tail!.nonZero).toBeGreaterThan(1000);
+    expect(verify.ok).toBe(false);
+  }, 120_000);
+
+  test("a gate AT the tail leaves the codec's overlap in it; SILENT_TAIL_GUARD_MS early leaves none", async () => {
+    // A hard cut (no fade-out) is the case with the most for the codec to
+    // carry over, and the one where the gate is the only thing silencing the
+    // bed: with a fade-out the bed is already at zero there. Measured before
+    // the guard existed: gated exactly at the tail, 871 non-zero s16 samples,
+    // peak 8, in its first 21 ms.
+    const sc = parsed({ ...rolesRaw(), sound: { ...rolesRaw().sound, bed: { ...rolesRaw().sound.bed, fadeOutMs: 0 } } });
+    const r = resolveSound(sc, ROLES);
+    const graph = mixGraph(sc.sound, await probeSoundDurations(r.elements), 30, 180);
+    const measure = async (name: string, filter: string) => {
+      const out = join(T, `gate-${name}.mp4`);
+      const p = Bun.spawn(muxArgs(join(T, "picture-30.mp4"), out, { ...graph, filter }, 6), { stderr: "pipe" });
+      expect(await p.exited).toBe(0);
+      return await measureSilentTail(out, 6, 500);
+    };
+    // Red case: with the gate removed from `mixGraph` the bed plays on at
+    // full level through the tail.
+    expect((await measure("guarded", graph.filter)).nonZero).toBe(0);
+    const gate = tailGateSec(sc.sound, 30, 180)!;
+    const atTail = graph.filter.replace(`atrim=end=${formatFilterNumber(gate)},`, "atrim=end=5.5,");
+    expect(atTail).not.toBe(graph.filter);
+    expect((await measure("at-tail", atTail)).nonZero).toBeGreaterThan(0);
+  }, 120_000);
+
+  test("a duck engages within one asetnsamples block of its frame", async () => {
+    // A WAV leg arrives in 4096-sample frames, 85.3 ms at 48 kHz, and
+    // `eval=frame` reads `t` once per frame. Frame 26 at 30 fps is 866.7 ms,
+    // just after the boundary at 853.3, so without asetnsamples the duck
+    // waits for 938.7 and 875–925 ms reads at the unducked level.
+    const sc = parsed({
+      motion: 1,
+      durationFrames: 60,
+      fps: 30,
+      sound: { bed: { src: "assets/synthetic/bed-220hz-8000ms.wav", ducks: [{ startFrame: 26, endFrame: 50, duck: 0.25 }] } },
+    });
+    const graph = mixGraph(sc.sound, resolveSound(sc, ROLES).elements, 30, 60);
+    const pcm = await decodeGraph(graph.inputArgs, graph.filter, 2);
+    const before = rmsDb(pcm, 48000, 2, 0.5, 0.8);
+    const during = rmsDb(pcm, 48000, 2, 0.875, 0.925);
+    // A quarter is −12.04 dB.
+    expect(during - before).toBeCloseTo(-12.04, 0);
+  }, 60_000);
+
+  test("an envelope that takes a line to 0 is not read as the line stopping", async () => {
+    // A 2 s tone declared audible for its first second only. Muxed as
+    // declared, the presence window at 1.9 s is where the DECLARED level is 0,
+    // so it carries no evidence and is dropped; read anyway, it called the
+    // line `truncated`. The piece declared silent is still checked — as
+    // silent — and a mix that ignores the envelope fails it.
+    const declared = parsed({
+      motion: 1,
+      durationFrames: 30,
+      fps: 15,
+      sound: {
+        narration: [{
+          id: "vo",
+          src: "assets/synthetic/narration-440hz-2000ms.wav",
+          startFrame: 0,
+          envelope: [{ frame: 0, gain: 1 }, { frame: 15, gain: 1 }, { frame: 16, gain: 0 }],
+        }],
+      },
+    });
+    const asDeclared = await muxAndVerify(T, "env-to-zero", declared, declared);
+    const vo = asDeclared.verify.elements[0]!;
+    expect(vo.status).toBe("present");
+    expect(vo.level!.windows.map((w) => [w.atSec, w.expectedMaxDb, w.ok])).toEqual([
+      [0.45, 0, true],
+      [expect.closeTo(1.48333, 4), Number.NEGATIVE_INFINITY, true],
+    ]);
+
+    const ignored = parsed({
+      motion: 1,
+      durationFrames: 30,
+      fps: 15,
+      sound: { narration: [{ id: "vo", src: "assets/synthetic/narration-440hz-2000ms.wav", startFrame: 0 }] },
+    });
+    const wrong = await muxAndVerify(T, "env-ignored", ignored, declared);
+    expect(wrong.verify.elements[0]!.status).toBe("level-mismatch");
+  }, 120_000);
+});
+
+describe("an optional element, end to end", () => {
+  const OPT = join(TMP, "assets", "audio", "opt.wav");
+  const MT = "/tmp/pocketjs-motion-sound-optional-test";
+  const declare = () => ({
+    narration: [{ id: "vo-1", src: "assets/audio/line.wav", startFrame: 0 }],
+    cues: [{ id: "sting", src: "assets/audio/opt.wav", atFrame: 9, optional: true }],
+  });
+
+  beforeAll(async () => {
+    mkdirSync(join(TMP, "assets", "audio"), { recursive: true });
+    copyFileSync(join(SYNTH, "narration-440hz-2000ms.wav"), join(TMP, "assets", "audio", "line.wav"));
+    rmSync(MT, { recursive: true, force: true });
+    mkdirSync(MT, { recursive: true });
+    await blackPicture(MT, 15, 30);
+  });
+  afterAll(() => {
+    rmSync(MT, { recursive: true, force: true });
+  });
+
+  test("absent: lint and sound pass, the mix leaves it out, render's record and verify say `skipped`", async () => {
+    rmSync(OPT, { force: true });
+    writeSidecar(declare());
+    // Red case: with the `optional` exception removed from `resolveOne`, lint
+    // exits 1 here with sound.src.missing, as it does for a required file.
+    const lint = await runLint({ dir: COMP, flags: { json: true } });
+    expect(lint.exitCode).toBe(EXIT_OK);
+    const listed = await runSound({ dir: COMP, flags: { json: false } });
+    expect(listed.exitCode).toBe(EXIT_OK);
+    expect(listed.stdoutLines!.some((l) => l.includes("SKIPPED") && l.includes("assets/audio/opt.wav"))).toBe(true);
+
+    const sc = parsed({ ...MIN, durationFrames: 30, fps: 15, sound: declare() });
+    const { mux, verify } = await muxAndVerify(MT, "absent", sc, sc, COMP);
+    expect(mux.elements.map((e) => [e.id, e.mixed])).toEqual([["vo-1", true], ["sting", false]]);
+    expect(verify.elements.map((e) => [e.id, e.status])).toEqual([["vo-1", "present"], ["sting", "skipped"]]);
+    expect(verify.ok).toBe(true);
+  }, 60_000);
+
+  test("present: mixed, recorded as mixed, and verified present like any element", async () => {
+    copyFileSync(join(SYNTH, "cue-880hz-300ms.wav"), OPT);
+    writeSidecar(declare());
+    const sc = parsed({ ...MIN, durationFrames: 30, fps: 15, sound: declare() });
+    const { mux, verify } = await muxAndVerify(MT, "present", sc, sc, COMP);
+    expect(mux.elements.map((e) => [e.id, e.mixed])).toEqual([["vo-1", true], ["sting", true]]);
+    expect(verify.elements.map((e) => [e.id, e.status])).toEqual([["vo-1", "present"], ["sting", "present"]]);
+    rmSync(OPT, { force: true });
+  }, 60_000);
+});
+
+describe("compositions/sound-roles, rendered", () => {
+  const VENDOR = join(ROOT, "vendor", "pocketjs");
+  const OUT = "/tmp/pocketjs-motion-sound-roles-render";
+
+  async function cli(argv: readonly string[]): Promise<{ out: string; code: number }> {
+    const proc = Bun.spawn(["bun", "src/cli/main.ts", ...argv], {
+      cwd: ROOT,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    });
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { out: stdout + stderr, code };
+  }
+
+  beforeAll(async () => {
+    rmSync(OUT, { recursive: true, force: true });
+    mkdirSync(OUT, { recursive: true });
+    // `render` does not build; the bundle has to exist, as format.test.ts says.
+    const resolved = await resolveComposition({ dir: ROLES, flags: { json: false }, requireBundle: false });
+    if (!resolved.ok) throw new Error(resolved.message);
+    await runBuild(resolved.value);
+  }, 600_000);
+  afterAll(() => {
+    rmSync(OUT, { recursive: true, force: true });
+  });
+
+  test("render reports the skipped cue and the measured tail; sound --verify agrees, levels included", async () => {
+    const out = join(OUT, "roles.mp4");
+    const render = await cli(["render", "compositions/sound-roles", "--out", out, "--json"]);
+    expect(render.code, render.out).toBe(EXIT_OK);
+    const payload = JSON.parse(render.out.slice(render.out.indexOf("{"))) as {
+      digest: string;
+      sound: { elements: Array<{ id: string | null; mixed: boolean }>; tail: { ok: boolean; nonZero: number } };
+    };
+    // The picture is the ledger's: none of the sound added moved a frame.
+    const ledger = JSON.parse(readFileSync(join(ROOT, "baselines/digests.json"), "utf8")) as {
+      compositions: Record<string, { digest: string }>;
+    };
+    expect(payload.digest).toBe(ledger.compositions["compositions/sound-roles"]!.digest);
+    expect(payload.sound.elements.map((e) => [e.id, e.mixed])).toEqual([
+      [null, true],
+      ["narration-1", true],
+      ["dialogue-1", true],
+      ["cue-1", true],
+      ["cue-2", false],
+    ]);
+    expect(payload.sound.tail.ok).toBe(true);
+
+    const verify = await cli(["sound", "compositions/sound-roles", "--verify", out, "--json"]);
+    expect(verify.code, verify.out).toBe(EXIT_OK);
+    const v = JSON.parse(verify.out.slice(verify.out.indexOf("{"))) as {
+      verify: { ok: boolean; elements: Array<{ status: string; level?: { windows: Array<{ ok: boolean }> } }>; tail: { ok: boolean } };
+    };
+    expect(v.verify.elements.map((e) => e.status)).toEqual(["present", "present", "present", "present", "skipped"]);
+    expect(v.verify.elements.flatMap((e) => e.level?.windows ?? []).length).toBeGreaterThanOrEqual(4);
+    expect(v.verify.tail.ok).toBe(true);
+  }, 900_000);
 });

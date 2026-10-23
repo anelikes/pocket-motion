@@ -5,6 +5,12 @@
  * list and no bed-only fallback: that is the shape that let a film ship
  * without the voice its brief called load-bearing.
  *
+ * The one exception is written in the sidecar, per element: `optional: true`
+ * says the element is mixed when its file is present and skipped when it is
+ * not. Such an element resolves with `path: null` and no diagnostic, and the
+ * mix graph records it as not mixed, which `render` prints and writes into
+ * the sound manifest. Nothing else makes a file optional.
+ *
  * Paths are repo-relative, the same way `footage[].src` and `fonts.*` are.
  */
 
@@ -25,6 +31,8 @@ export interface ResolvedSoundElement {
   readonly src: string;
   /** Absolute path when the file is on disk; null when it is not. */
   readonly path: string | null;
+  /** Declared `optional: true` — a missing file is skipped, not refused. */
+  readonly optional?: true;
   /** JSON pointer to the `src` that produced this element. */
   readonly pointer: string;
   /** Dialogue only: composition frame the line starts at. */
@@ -65,14 +73,20 @@ function resolveOne(
   src: string,
   pointer: string,
   label: string,
+  optional: true | undefined,
   diagnostics: Diagnostic[],
 ): string | null {
   const abs = resolve(repoRoot, src);
   if (existsSync(abs)) return abs;
+  if (optional === true) return null;
   diagnostics.push(
     diag("sound.src.missing", pointer, missingMessage(label, abs, src)),
   );
   return null;
+}
+
+function optionalOf(el: { readonly optional?: true }): { readonly optional?: true } {
+  return el.optional === true ? { optional: true } : {};
 }
 
 export function resolveSound(
@@ -91,6 +105,7 @@ export function resolveSound(
       sound.bed.src,
       "/sound/bed/src",
       "the bed",
+      sound.bed.optional,
       diagnostics,
     );
     elements.push({
@@ -98,6 +113,7 @@ export function resolveSound(
       role: "bed",
       src: sound.bed.src,
       path,
+      ...optionalOf(sound.bed),
       pointer: "/sound/bed/src",
     });
   }
@@ -110,6 +126,7 @@ export function resolveSound(
       line.src,
       pointer,
       `the narration line ${JSON.stringify(line.id)}`,
+      line.optional,
       diagnostics,
     );
     elements.push({
@@ -117,6 +134,7 @@ export function resolveSound(
       role: "narration",
       src: line.src,
       path,
+      ...optionalOf(line),
       pointer,
     });
   }
@@ -129,6 +147,7 @@ export function resolveSound(
       line.src,
       pointer,
       `the dialogue line ${JSON.stringify(line.id)}`,
+      line.optional,
       diagnostics,
     );
     const track = footageById.get(line.track);
@@ -140,6 +159,7 @@ export function resolveSound(
       role: "dialogue",
       src: line.src,
       path,
+      ...optionalOf(line),
       pointer,
       ...(compositionFrame !== undefined ? { compositionFrame } : {}),
       track: line.track,
@@ -155,6 +175,7 @@ export function resolveSound(
       cue.src,
       pointer,
       `the cue ${JSON.stringify(cue.id)}`,
+      cue.optional,
       diagnostics,
     );
     elements.push({
@@ -162,6 +183,7 @@ export function resolveSound(
       role: "cue",
       src: cue.src,
       path,
+      ...optionalOf(cue),
       pointer,
     });
   }

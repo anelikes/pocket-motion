@@ -916,6 +916,55 @@ line is the linear factor applied to the bed's gain while that line
 runs; the window is the line's `startFrame` plus the file's probed
 duration. A `sidechaincompress` would make the mix depend on content.
 
+Four more shapes are declared in the same block, each in place of a mix
+that used to be built by hand around the schema:
+
+- **`envelope` on any element** — points `{ "frame", "gain" }`, linear
+  between them, multiplying that element's `gain`, the last value held.
+  `frame` counts composition frames from **the element's own start**: frame
+  0 is composition frame 0 for the bed, `startFrame` for a narration line,
+  `atFrame` for a cue, and the derived frame for a dialogue line — so an
+  envelope moves with its element, and a dialogue line's stays on its clip.
+  The first point is at 0, frames strictly increase, 2 to 64 points.
+- **`bed.ducks`** — windows `{ "startFrame", "endFrame", "duck" }`, half-open
+  like footage's, in which the bed is multiplied by `duck` whatever is
+  playing: a whole cut at one level, where a narration line's `duck` lasts
+  only as long as its file. Windows multiply each other and narration ducks
+  where they overlap. The bed's level is `gain` × `envelope` × every window.
+- **`optional: true` on any element** — mixed when its file is on disk,
+  skipped when it is not. `lint` does not refuse it; `render` prints which it
+  was and writes `mixed` per element into the `*.sound.json` record; `sound`
+  and `sound --verify` report it `skipped`. Without the flag a missing file
+  is refused, exactly as before.
+- **`silentTailMs`** — the last N ms of the delivered audio are digital
+  silence. The mixer stops all sound 50 ms before the tail and the bed's
+  fade-out completes there, because the encoder carries sound one frame
+  window past its last input. `render` measures the tail **after the mux**,
+  every sample of the s16le / 48 kHz / stereo decode the record hashes, and
+  exits 1 when one is not zero. An element that starts at or after the point
+  where sound stops is refused by the parser, and one whose file runs past
+  it by `render`, which has probed its length. A `--frames` render of
+  another length carries no tail.
+
+```jsonc
+"sound": {
+  "bed": { "src": "assets/synthetic/bed-220hz-8000ms.wav", "gain": 0.3,
+           "fadeInMs": 600, "fadeOutMs": 1200,
+           "ducks": [{ "startFrame": 30, "endFrame": 150, "duck": 0.5 }] },
+  "dialogue": [{ "id": "dialogue-1", "src": "assets/synthetic/dialogue-660hz-1500ms.wav",
+                 "track": "clip", "sourceFrame": 80,
+                 "envelope": [{ "frame": 0, "gain": 0 }, { "frame": 3, "gain": 1 },
+                              { "frame": 36, "gain": 1 }, { "frame": 45, "gain": 0 }] }],
+  "cues": [{ "id": "cue-2", "src": "assets/synthetic/sting-not-shipped.wav",
+             "atFrame": 120, "optional": true }],
+  "silentTailMs": 500
+}
+```
+
+A varying level is evaluated every 480 samples (`asetnsamples` ahead of the
+`volume`), so a duck or a ramp lands within 10 ms of its frame; a WAV leg
+otherwise arrives in 85 ms frames and a duck engaged up to that late.
+
 `bun src/cli/main.ts sound compositions/<name>` prints what the sidecar
 declares, whether each file is on disk, and the composition frame every
 dialogue line lands on. `sound compositions/<name> --verify <file.mp4>`
@@ -930,22 +979,35 @@ stops early reports `truncated` and one that never arrives reports
 a correctly muxed bed is legitimately near silence — at gain 0.14 it
 measures −69 dBFS at the top of a 1.5 s fade, well under the floor —
 so sampling from the declared start reports a present bed as
-`truncated`. It **does not** check levels, ducking depth, overlap, or
-that the file is the right audio: a wrong file at the right offset
-produces a residual and passes, and a gap shorter than the spacing
-between windows is not seen. A source that is itself silent is
-reported as `source-silent`, not as a pass.
+`truncated`. For the same reason a window where the element's
+**declared** level leaves it under the floor — an envelope at 0 — is
+dropped rather than read as the element stopping.
+
+Where the declaration **varies** a level — an `envelope`, a `ducks`
+window, a narration `duck` — it measures that level once per piece
+between breakpoints: the residual less the source, read through the mix's
+own channel layout, must lie within the declared range over that window,
+±1 dB. The expected level comes from the sidecar's numbers, not from
+rendering the graph, so a graph that dropped the envelope is a
+`level-mismatch` rather than agreeing with itself. A declared silent tail
+is read sample by sample. It **does not** check a constant level, the
+fades, overlap, or that the file is the right audio: a wrong file at the
+right offset produces a residual and passes, and a gap shorter than the
+spacing between windows is not seen. A source that is itself silent is
+reported as `source-silent` and a declared level that leaves nothing above
+the floor as `declared-silent`; neither is a pass.
 
 `compositions/sound-roles` declares one element of each of the four roles
-and is the worked example: its tones are `assets/synthetic/`, and its
-dialogue line sits at clip frame 80 of a track that starts at composition
-frame 30 from clip frame 20, so `sound` prints composition frame 90 and
-`sound --verify` on a rendered mix reports four `present`.
-`compositions/reel` declares its bed in the sidecar and is mixed by
-`render`. Four things the schema still cannot express, so a mix that needs
-one of them has to be built outside it: a gain ramp across a window, a
-piecewise-linear envelope, an enforced silent tail, and a role that is
-mixed if its file is present and skipped if it is not.
+and one of each shape above, and is the worked example: its tones are
+`assets/synthetic/`, and its dialogue line sits at clip frame 80 of a track
+that starts at composition frame 30 from clip frame 20, so `sound` prints
+composition frame 90. Its bed is ducked to 0.5 for the cut the clip is on
+screen, its dialogue line carries an envelope, its second cue is optional
+and deliberately not in the tree, and its last 500 ms are silent. `render`
+reports the cue skipped and the tail silent; `sound --verify` on that mix
+reports four `present`, one `skipped`, every level window in range and the
+tail met. `compositions/reel` declares its bed in the sidecar and is mixed
+by `render`.
 
 ## Build, then verify
 

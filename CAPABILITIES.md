@@ -25,7 +25,7 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | shutter | no | — | object with `angle` and `samples`; every frame is then an EXPOSURE — the integer average of `samples` renders across `angle`/360 of the frame, centred on its tick (patches/0034). Absent means no shutter, and the parser fills in nothing, so identity moves only for a composition that declares one. Part of input identity; there is no CLI flag | src/manifest/sidecar.ts:852 | probed |
 | footage | no | [] | array of track objects; default [] when absent | src/manifest/sidecar.ts:486 | probed |
 | fonts | no | — | object with regular and bold paths (the default face) and optional named `faces`, or absent for the build default face | src/manifest/sidecar.ts:435 | probed |
-| sound | no | { narration: [], dialogue: [], cues: [] } | optional object of bed / narration / dialogue / cues; absent materialises empty arrays and omits bed. ids are one namespace across narration, dialogue and cues | src/manifest/sidecar.ts:523 | probed |
+| sound | no | { narration: [], dialogue: [], cues: [] } | optional object of bed / narration / dialogue / cues / silentTailMs; absent materialises empty arrays and omits bed and silentTailMs. ids are one namespace across narration, dialogue and cues. Outside input identity: `identityProjection` drops the whole key | src/manifest/sidecar.ts:523 | probed |
 | layoutAllow | no | [] | array of { node, allow, reason }; `node` is a debugName, `allow` is one of overlap / overflow / occlusion / canvas, `reason` is a non-empty sentence. One entry per node+scope. Suppresses the matching `layout` finding codes and never changes a pixel | src/manifest/sidecar.ts:594 | probed |
 | assertions | no | [] | array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames; changes no pixel | src/manifest/sidecar.ts:750 | probed |
 
@@ -55,10 +55,14 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 
 | key | required | default | constraint | source | verified |
 |---|---|---|---|---|---|
-| bed | no | — | optional object; src required (same path rules as footage src); startAt default 0; gain default 1; fadeInMs/fadeOutMs default 0 | src/manifest/sidecar.ts:949 | probed |
+| bed | no | — | optional object; src required (same path rules as footage src); startAt default 0; gain default 1; fadeInMs/fadeOutMs default 0. Its level is gain × envelope × every ducks[] window × every narration duck while that line runs; ducks, envelope and optional have rows of their own | src/manifest/sidecar.ts:949 | probed |
 | narration | no | [] | array of lines on the composition clock; id+src+startFrame required; gain default 1; duck default 1 (no duck) | src/manifest/sidecar.ts:1035 | probed |
 | dialogue | no | [] | array of lines on the clip clock; track must be a declared footage[].id; derived composition frame must fall inside that track's window | src/manifest/sidecar.ts:1132 | probed |
 | cues | no | [] | array of beat-pinned spot effects on the composition clock; id+src+atFrame required; gain default 1 | src/manifest/sidecar.ts:1251 | probed |
+| silentTailMs | no | — | integer ms >= 1: the last silentTailMs of the delivered audio are digital silence in the s16le 48 kHz stereo decode the sound manifest hashes, MEASURED after the mux by render (which exits 1 when it is not) and by sound --verify. The mixer stops all sound 50 ms before the tail — the codec carries sound one frame window past its last input — and the bed's fade-out completes there. Refused: nothing declared to mix; tail plus 50 ms not shorter than the film; a bed fade-out that does not fit before the gate; an element starting at or after the gate. One that starts before and runs past it by its probed length is refused by render (sound.tail.overrun). A --frames render of another length carries no tail and says so | src/manifest/sidecar.ts:1742 | probed |
+| <element>.envelope | no | — | 2..64 points { frame, gain }, piecewise linear, multiplying the element's gain; the last value holds. frame counts composition frames from the ELEMENT'S OWN START (0 for the bed, startFrame, atFrame, the derived frame for dialogue), so the envelope moves with its element; the first point is at 0 and frames strictly increase; gain 0..8; no point past durationFrames. One point is refused — it is a constant, which gain says. sound --verify measures the level once per piece between breakpoints | src/manifest/sidecar.ts:1892 | probed |
+| <element>.optional | no | false | boolean. true: the element is mixed when its file is on disk and SKIPPED when it is not — lint and render do not refuse it, render prints which it was and writes `mixed` per element into the sound manifest, sound and sound --verify report it `skipped`, and init does not count it as a file the copy needs. false (the default) is a required file, parsed to an absent key | src/manifest/sidecar.ts:1861 | probed |
+| bed.ducks | no | — | array of { startFrame, endFrame, duck } windows [startFrame, endFrame) on the composition clock in which the bed is multiplied by duck (0..1), whatever is playing — a narration line's duck lasts only as long as its file. Windows multiply each other and narration ducks where they overlap; the step is within 480 samples of the frame. sound --verify measures the bed's level inside and outside each window | src/manifest/sidecar.ts:2034 | probed |
 
 ## Shutter (`pocket-motion.json` `shutter`)
 
@@ -229,6 +233,21 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.shutter.oneSample | shutter.samples |
 | sidecar.shutter.samples | shutter.samples |
 | sidecar.shutter.unknownKey | sidecar.shutter |
+| sidecar.sound.bed.ducks.duck.notNumber | sound.bed.ducks |
+| sidecar.sound.bed.ducks.duck.outOfRange | sound.bed.ducks |
+| sidecar.sound.bed.ducks.duck.required | sound.bed.ducks |
+| sidecar.sound.bed.ducks.empty | sound.bed.ducks |
+| sidecar.sound.bed.ducks.endFrame.notInteger | sound.bed.ducks |
+| sidecar.sound.bed.ducks.endFrame.outOfRange | sound.bed.ducks |
+| sidecar.sound.bed.ducks.endFrame.pastDuration | sound.bed.ducks |
+| sidecar.sound.bed.ducks.endFrame.required | sound.bed.ducks |
+| sidecar.sound.bed.ducks.notArray | sound.bed.ducks |
+| sidecar.sound.bed.ducks.notObject | sound.bed.ducks |
+| sidecar.sound.bed.ducks.startFrame.notInteger | sound.bed.ducks |
+| sidecar.sound.bed.ducks.startFrame.outOfRange | sound.bed.ducks |
+| sidecar.sound.bed.ducks.startFrame.pastDuration | sound.bed.ducks |
+| sidecar.sound.bed.ducks.startFrame.required | sound.bed.ducks |
+| sidecar.sound.bed.ducks.unknownKey | sound.bed.ducks |
 | sidecar.sound.bed.fadeInMs.notInteger | sound.bed |
 | sidecar.sound.bed.fadeInMs.outOfRange | sound.bed |
 | sidecar.sound.bed.fadeOutMs.notInteger | sound.bed |
@@ -283,6 +302,20 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.sound.dialogue.track.required | sound.dialogue |
 | sidecar.sound.dialogue.track.unknown | sound.dialogue |
 | sidecar.sound.dialogue.unknownKey | sound.dialogue |
+| sidecar.sound.envelope.firstNotZero | sound.envelope |
+| sidecar.sound.envelope.frame.notInteger | sound.envelope |
+| sidecar.sound.envelope.frame.outOfRange | sound.envelope |
+| sidecar.sound.envelope.frame.required | sound.envelope |
+| sidecar.sound.envelope.gain.notNumber | sound.envelope |
+| sidecar.sound.envelope.gain.outOfRange | sound.envelope |
+| sidecar.sound.envelope.gain.required | sound.envelope |
+| sidecar.sound.envelope.notArray | sound.envelope |
+| sidecar.sound.envelope.notIncreasing | sound.envelope |
+| sidecar.sound.envelope.pastDuration | sound.envelope |
+| sidecar.sound.envelope.pointNotObject | sound.envelope |
+| sidecar.sound.envelope.tooFew | sound.envelope |
+| sidecar.sound.envelope.tooMany | sound.envelope |
+| sidecar.sound.envelope.unknownKey | sound.envelope |
 | sidecar.sound.id.duplicate | sidecar.sound |
 | sidecar.sound.narration.duck.notNumber | sound.narration |
 | sidecar.sound.narration.duck.outOfRange | sound.narration |
@@ -305,6 +338,13 @@ frame, own no diagnostics, and are probed by handing `findingsFor` a geometry co
 | sidecar.sound.narration.startFrame.required | sound.narration |
 | sidecar.sound.narration.unknownKey | sound.narration |
 | sidecar.sound.notObject | sidecar.sound |
+| sidecar.sound.optional.notBoolean | sound.optional |
+| sidecar.sound.silentTailMs.noRoomForFade | sound.silentTailMs |
+| sidecar.sound.silentTailMs.notInteger | sound.silentTailMs |
+| sidecar.sound.silentTailMs.nothingToMix | sound.silentTailMs |
+| sidecar.sound.silentTailMs.outOfRange | sound.silentTailMs |
+| sidecar.sound.silentTailMs.pastDuration | sound.silentTailMs |
+| sidecar.sound.silentTailMs.startsInTail | sound.silentTailMs |
 | sidecar.sound.unknownKey | sidecar.sound |
 | sidecar.supersample.invalid | sidecar.supersample |
 | sidecar.unknownKey | sidecar.motion |

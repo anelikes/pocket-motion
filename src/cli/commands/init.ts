@@ -176,7 +176,7 @@ export function rewritePocketJson(text: string, toRel: string): string {
   return `${JSON.stringify(manifest, null, 2)}\n`;
 }
 
-/** Every repo-relative file the sidecar names — fonts, footage, sound. */
+/** Every repo-relative file the sidecar names and needs — fonts, footage, sound that is not `optional`. */
 export function declaredAssets(sidecar: MotionSidecar): string[] {
   const out: string[] = [];
   if (sidecar.fonts) {
@@ -184,11 +184,15 @@ export function declaredAssets(sidecar: MotionSidecar): string[] {
     for (const face of Object.values(sidecar.fonts.faces ?? {})) out.push(face.regular, face.bold);
   }
   for (const track of sidecar.footage) out.push(track.src);
+  // An element declared `optional` is mixed when its file is present and
+  // skipped when it is not, so its absence does not stop the copy building.
   const sound = sidecar.sound;
   if (sound) {
-    if (sound.bed) out.push(sound.bed.src);
+    if (sound.bed && sound.bed.optional !== true) out.push(sound.bed.src);
     for (const role of [sound.narration, sound.dialogue, sound.cues]) {
-      for (const element of role ?? []) out.push(element.src);
+      for (const element of role ?? []) {
+        if (element.optional !== true) out.push(element.src);
+      }
     }
   }
   return [...new Set(out)].sort();

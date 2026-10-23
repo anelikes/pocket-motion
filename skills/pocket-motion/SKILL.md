@@ -136,7 +136,7 @@ catalogue of every key and every diagnostic.
   "fonts": { "regular": "assets/fonts/NotoSansSC-Regular.otf",
              "bold":    "assets/fonts/NotoSansSC-Bold.otf" },
   "footage": [ /* host-owned tile grids */ ],
-  "sound":   { /* bed, narration, dialogue, cues */ },
+  "sound":   { /* bed, narration, dialogue, cues, silentTailMs */ },
   "layoutAllow": [
     { "node": "wing", "allow": "overflow",
       "reason": "the cap is drawn wider than the frame it hangs on" }
@@ -287,6 +287,10 @@ Each of these is a decision with a reason, not a gap to fill.
 - **Sound is outside input identity by construction.** Audio is a separate mux
   pass and the frame hash never opens an audio file. The schema buys static
   checks — declared, resolvable, correctly placed — and not digest coverage.
+  A gain envelope on any element, duck windows on the bed, an element that is
+  `optional` (mixed when present, skipped and reported when not) and a silent
+  tail are all declared there; `render` measures the tail after the mux and
+  `sound --verify` measures the levels where the declaration varies them.
 - **A missing still picture is refused rather than substituted.** Upstream's
   build bakes a checkerboard and succeeds; `lint` and `check` say no.
 - **An SVG bakes as written or stops the build.** Paths with arcs, circles,

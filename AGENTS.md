@@ -81,8 +81,11 @@ that is said rather than implied.
   Sound is now a sidecar schema of four roles, resolved and built into a mix
   graph by `src/sound/mix.ts` and muxed by `render`;
   `compositions/sound-roles` declares one element of each and
-  `tests/sound.test.ts` holds it. Four shapes the schema still cannot express
-  are in the next section.
+  `tests/sound.test.ts` holds it. The four shapes that were still built by
+  hand — a gain envelope, a silent tail, an element mixed only if present, a
+  duck for a whole cut — are declared in the same schema now, and the entry
+  for them is in the next section; what the schema still cannot say is in
+  the one after.
 - **Digests that no fresh build reproduced.** Recorded digests that rebuilt
   from the bundle they were taken against and from no newly built one —
   declared, because what produced the artifact was written down nowhere. Every
@@ -517,6 +520,39 @@ mechanisms with the file or test beside them.
   frames of `mg-hud` and of `shutter-blur`, where something always moves. A
   coarser default grid under a shutter narrows the default claim to buy what
   `--samples` already buys on request.
+- **The four mix shapes that used to be hand-rolled are sidecar keys, and
+  each is measured where it can be.** `envelope` on any element (points on
+  the element's own clock, so a dialogue line's stays on its clip),
+  `bed.ducks` (windows on the composition clock, independent of any line),
+  `optional` on any element, and `silentTailMs` on the sound block —
+  parsed in `src/manifest/sidecar.ts`, catalogued as probed rows, rendered
+  by `src/sound/mix.ts`. Every element's level is ONE piece of data,
+  `elementLevel` (gain × envelope × ducks), which the graph renders as a
+  `volume` expression and `sound --verify` reads as the level it expects —
+  so a graph that drops a term is a measured mismatch rather than agreeing
+  with itself: with the dialogue envelope left out of the fixture's mix a
+  window sits 3.06 dB outside its range, with the cut duck left out 6.0 dB,
+  against at most 0.018 dB for the correct mix, and the tolerance is 1 dB.
+  Three properties were measured before they were written down. A WAV leg
+  arrives in 4096-sample frames and `eval=frame` reads `t` once per frame,
+  so a duck engaged up to 85 ms late; `asetnsamples=n=480` ahead of a
+  varying `volume` makes it 10 ms. The codec carries sound one frame window
+  past its last input — a gate exactly at the tail left 1092 non-zero s16
+  samples in the fixture's 500 ms tail, 43 ms before it none — so the mixer
+  stops sound `SILENT_TAIL_GUARD_MS` (50) early and the bed's fade-out
+  completes there; the tail itself is still MEASURED after the mux, on the
+  decode the manifest hashes, and `render` exits 1 when a sample is not zero.
+  And a mono leg in a stereo mix is upmixed at −3.01 dB, so the level check
+  reads the source through the mix's own layout. `optional` is a flag, never
+  an inference: `render` prints which way each went and writes `mixed` into
+  `*.sound.json`, `sound --verify` says `skipped`, and an element without the
+  flag is refused when absent exactly as before. A window where the DECLARED
+  level puts an element under the floor carries no evidence and is dropped,
+  which is why an envelope that takes a line to 0 is not read as the line
+  stopping. `compositions/sound-roles` declares one of each and its frame
+  digest did not move, sound being outside identity; `tests/sound.test.ts`
+  holds every guard above and each was seen red on its defect, the CLI
+  render of the fixture included.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -1001,20 +1037,27 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   checks — declared, resolvable, correctly placed, refused by `lint` when the
   file is absent — and it does not buy digest coverage. Say so wherever it is
   documented.
-- **`render` mixes from the sound schema, and four shapes it cannot express
-  have each had to be built by hand against it.** `compositions/reel` declares
-  its bed in the sidecar and `render` muxes that graph;
-  `compositions/sound-roles` declares one element of each role. A mix that
-  needs any of the following has to be written outside the schema:
-  - a gain ramp across a window, or a piecewise-linear gain envelope; the
-    schema has one `gain` per element
-  - an enforced digital silence at the tail, measured after the mux, with the
-    fade-out completing *before* it rather than at the end of the picture
-  - a role that is mixed if its file is present and skipped if it is not; the
-    schema refuses a missing declared file and has no "if present"
-  - a duck applied to a bed for a whole cut, rather than for the span of one
-    narration line
-  The decision about which of these to add belongs upstream of the mixer.
+- **What the sound schema still cannot say, and what `sound --verify` still
+  does not read.** The four hand-rolled shapes are declared now (previous
+  section). What remains:
+  - a duck with an attack and a release: `ducks[]` and a narration `duck`
+    switch at their edges, within one 480-sample block. A ramped dip is
+    expressible only as the bed's `envelope`, which sets the bed's level
+    rather than attenuating whatever the level is
+  - more than one bed: a second music track can be placed as a cue with an
+    `envelope`, but `ducks[]` and narration ducks act on the bed alone, so a
+    cross-fade between two tracks that a voice must also duck cannot be said
+  - `optional` makes the delivered audio depend on whether a file was in the
+    tree when `render` ran. That is recorded in `*.sound.json` and nowhere
+    else — sound is outside identity, so no ledger notices an optional element
+    going missing between two renders of the same sidecar
+  - `sound --verify` checks a level only where the declaration varies it,
+    one window per piece; a constant `gain`, the bed's fades and a piece
+    shorter than a window and its margins are not read, and the windows
+    where two ducks overlap below the floor are counted as unexamined
+  - the 50 ms guard is two AAC frames at 44.1 kHz. A mix at a lower rate,
+    where two frames are longer, is not prevented — the measurement after the
+    mux is what would refuse it
 - **The two ProRes/VP9 facts a reader would get wrong from the argv**, both
   pinned so they are not rediscovered: ProRes 4444 is asked for as
   `yuva444p10le` and DECODES as `yuva444p12le`, because the 4444 bitstream is

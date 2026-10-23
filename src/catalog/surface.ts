@@ -11,6 +11,8 @@
 import {
   DURATION_FRAMES_MAX,
   DURATION_FRAMES_MIN,
+  ENVELOPE_POINTS_MAX,
+  ENVELOPE_POINTS_MIN,
   FOOTAGE_FIT_VALUES,
   GRID_PRODUCT_MAX,
   ID_RE,
@@ -18,6 +20,7 @@ import {
   SHUTTER_ANGLE_MIN,
   SHUTTER_SAMPLES_MAX,
   SHUTTER_SAMPLES_MIN,
+  SILENT_TAIL_GUARD_MS,
   SUPERSAMPLE_VALUES,
   TEX_MAX_DIM,
   VALID_FPS,
@@ -305,6 +308,29 @@ function cueLine(overrides: Record<string, unknown> = {}): Record<string, unknow
   return { id: "hit-1", src: "assets/audio/sfx/x.mp3", atFrame: 0, ...overrides };
 }
 
+/** A cue carrying `envelope`, the element every role's envelope is parsed like. */
+function withEnvelope(envelope: unknown, cue: Record<string, unknown> = {}): Record<string, unknown> {
+  return withCue({ envelope, ...cue });
+}
+
+function withDucks(ducks: unknown): Record<string, unknown> {
+  return withSound({ bed: bed({ ducks }) });
+}
+
+function duckWindow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return { startFrame: 0, endFrame: 10, duck: 0.5, ...overrides };
+}
+
+function duckWindowWithout(...keys: readonly string[]): Record<string, unknown> {
+  const out = duckWindow();
+  for (const key of keys) delete out[key];
+  return out;
+}
+
+function withTail(silentTailMs: unknown, sound: Record<string, unknown> = { bed: bed() }): Record<string, unknown> {
+  return withSound({ ...sound, silentTailMs });
+}
+
 function withNarration(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return withSound({ narration: [narrationLine(overrides)] });
 }
@@ -471,7 +497,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "{ narration: [], dialogue: [], cues: [] }",
     constraint:
-      "optional object of bed / narration / dialogue / cues; absent materialises empty arrays and omits bed. ids are one namespace across narration, dialogue and cues",
+      "optional object of bed / narration / dialogue / cues / silentTailMs; absent materialises empty arrays and omits bed and silentTailMs. ids are one namespace across narration, dialogue and cues. Outside input identity: `identityProjection` drops the whole key",
     source: "src/manifest/sidecar.ts:523",
     verification: "probed",
     diagnostics: [
@@ -946,7 +972,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "optional object; src required (same path rules as footage src); startAt default 0; gain default 1; fadeInMs/fadeOutMs default 0",
+      "optional object; src required (same path rules as footage src); startAt default 0; gain default 1; fadeInMs/fadeOutMs default 0. Its level is gain × envelope × every ducks[] window × every narration duck while that line runs; ducks, envelope and optional have rows of their own",
     source: "src/manifest/sidecar.ts:949",
     verification: "probed",
     diagnostics: [
@@ -1269,6 +1295,242 @@ export const SURFACE: readonly CapabilityRow[] = [
       { code: "sidecar.sound.cues.atFrame.pastDuration", input: withCue({ atFrame: 91 }) },
       { code: "sidecar.sound.cues.gain.notNumber", input: withCue({ gain: NaN }) },
       { code: "sidecar.sound.cues.gain.outOfRange", input: withCue({ gain: 9 }) },
+    ],
+    pinned: [],
+  },
+
+  {
+    id: "sound.silentTailMs",
+    group: "sound",
+    declaredIn: "pocket-motion.json",
+    key: "silentTailMs",
+    required: false,
+    defaultValue: null,
+    constraint:
+      `integer ms >= 1: the last silentTailMs of the delivered audio are digital silence in the s16le 48 kHz stereo decode the sound manifest hashes, MEASURED after the mux by render (which exits 1 when it is not) and by sound --verify. The mixer stops all sound ${SILENT_TAIL_GUARD_MS} ms before the tail — the codec carries sound one frame window past its last input — and the bed's fade-out completes there. Refused: nothing declared to mix; tail plus ${SILENT_TAIL_GUARD_MS} ms not shorter than the film; a bed fade-out that does not fit before the gate; an element starting at or after the gate. One that starts before and runs past it by its probed length is refused by render (sound.tail.overrun). A --frames render of another length carries no tail and says so`,
+    source: "src/manifest/sidecar.ts:1742",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.sound.silentTailMs.notInteger",
+      "sidecar.sound.silentTailMs.outOfRange",
+      "sidecar.sound.silentTailMs.nothingToMix",
+      "sidecar.sound.silentTailMs.pastDuration",
+      "sidecar.sound.silentTailMs.noRoomForFade",
+      "sidecar.sound.silentTailMs.startsInTail",
+    ],
+    probes: [
+      { code: "sidecar.sound.silentTailMs.notInteger", input: withTail(1.5) },
+      { code: "sidecar.sound.silentTailMs.notInteger", input: withTail("500") },
+      { code: "sidecar.sound.silentTailMs.outOfRange", input: withTail(0) },
+      { code: "sidecar.sound.silentTailMs.nothingToMix", input: withSound({ silentTailMs: 500 }) },
+      // 90 frames at 30 fps is 3000 ms; 2960 + the guard is not shorter.
+      { code: "sidecar.sound.silentTailMs.pastDuration", input: withTail(2960) },
+      // The gate is at 3000 - 500 - guard = 2450 ms.
+      {
+        code: "sidecar.sound.silentTailMs.noRoomForFade",
+        input: withTail(500, { bed: bed({ fadeOutMs: 2500 }) }),
+      },
+      {
+        code: "sidecar.sound.silentTailMs.startsInTail",
+        input: withTail(500, { cues: [cueLine({ atFrame: 74 })] }),
+      },
+      {
+        code: "sidecar.sound.silentTailMs.startsInTail",
+        input: withTail(500, { narration: [narrationLine({ startFrame: 89 })] }),
+      },
+    ],
+    pinned: [],
+  },
+  {
+    id: "sound.envelope",
+    group: "sound",
+    declaredIn: "pocket-motion.json, on bed, narration[], dialogue[] and cues[]",
+    key: "<element>.envelope",
+    required: false,
+    defaultValue: null,
+    constraint:
+      `${ENVELOPE_POINTS_MIN}..${ENVELOPE_POINTS_MAX} points { frame, gain }, piecewise linear, multiplying the element's gain; the last value holds. frame counts composition frames from the ELEMENT'S OWN START (0 for the bed, startFrame, atFrame, the derived frame for dialogue), so the envelope moves with its element; the first point is at 0 and frames strictly increase; gain 0..8; no point past durationFrames. One point is refused — it is a constant, which gain says. sound --verify measures the level once per piece between breakpoints`,
+    source: "src/manifest/sidecar.ts:1892",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.sound.envelope.notArray",
+      "sidecar.sound.envelope.tooFew",
+      "sidecar.sound.envelope.tooMany",
+      "sidecar.sound.envelope.pointNotObject",
+      "sidecar.sound.envelope.unknownKey",
+      "sidecar.sound.envelope.frame.required",
+      "sidecar.sound.envelope.frame.notInteger",
+      "sidecar.sound.envelope.frame.outOfRange",
+      "sidecar.sound.envelope.gain.required",
+      "sidecar.sound.envelope.gain.notNumber",
+      "sidecar.sound.envelope.gain.outOfRange",
+      "sidecar.sound.envelope.firstNotZero",
+      "sidecar.sound.envelope.notIncreasing",
+      "sidecar.sound.envelope.pastDuration",
+    ],
+    probes: [
+      { code: "sidecar.sound.envelope.notArray", input: withEnvelope({ frame: 0, gain: 1 }) },
+      { code: "sidecar.sound.envelope.tooFew", input: withEnvelope([{ frame: 0, gain: 1 }]) },
+      {
+        code: "sidecar.sound.envelope.tooMany",
+        input: withEnvelope(
+          Array.from({ length: ENVELOPE_POINTS_MAX + 1 }, (_, frame) => ({ frame, gain: 1 })),
+        ),
+      },
+      {
+        code: "sidecar.sound.envelope.pointNotObject",
+        input: withEnvelope([1, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.unknownKey",
+        input: withEnvelope([{ frame: 0, gain: 1, curve: "exp" }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.frame.required",
+        input: withEnvelope([{ gain: 1 }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.frame.notInteger",
+        input: withEnvelope([{ frame: 0, gain: 1 }, { frame: 1.5, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.frame.outOfRange",
+        input: withEnvelope([{ frame: 0, gain: 1 }, { frame: -1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.gain.required",
+        input: withEnvelope([{ frame: 0 }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.gain.notNumber",
+        input: withEnvelope([{ frame: 0, gain: "1" }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.gain.outOfRange",
+        input: withEnvelope([{ frame: 0, gain: 9 }, { frame: 1, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.firstNotZero",
+        input: withEnvelope([{ frame: 1, gain: 1 }, { frame: 2, gain: 1 }]),
+      },
+      {
+        code: "sidecar.sound.envelope.notIncreasing",
+        input: withEnvelope([{ frame: 0, gain: 1 }, { frame: 0, gain: 0.5 }]),
+      },
+      // A cue at frame 80 with a point 20 frames in lands on 100 of 90.
+      {
+        code: "sidecar.sound.envelope.pastDuration",
+        input: withEnvelope([{ frame: 0, gain: 1 }, { frame: 20, gain: 0 }], { atFrame: 80 }),
+      },
+      // The same parse on every role: the bed, a narration line, and a
+      // dialogue line whose start is the clip mapping's.
+      {
+        code: "sidecar.sound.envelope.pastDuration",
+        input: withSound({ bed: bed({ envelope: [{ frame: 0, gain: 1 }, { frame: 91, gain: 0 }] }) }),
+      },
+      {
+        code: "sidecar.sound.envelope.firstNotZero",
+        input: withNarration({ envelope: [{ frame: 3, gain: 1 }, { frame: 4, gain: 0 }] }),
+      },
+      {
+        code: "sidecar.sound.envelope.pastDuration",
+        input: withDialogue(
+          { sourceFrame: 15, envelope: [{ frame: 0, gain: 1 }, { frame: 80, gain: 0 }] },
+          { startFrame: 10, endFrame: 20, sourceFrame: 10 },
+        ),
+      },
+    ],
+    pinned: [],
+  },
+  {
+    id: "sound.optional",
+    group: "sound",
+    declaredIn: "pocket-motion.json, on bed, narration[], dialogue[] and cues[]",
+    key: "<element>.optional",
+    required: false,
+    defaultValue: "false",
+    constraint:
+      "boolean. true: the element is mixed when its file is on disk and SKIPPED when it is not — lint and render do not refuse it, render prints which it was and writes `mixed` per element into the sound manifest, sound and sound --verify report it `skipped`, and init does not count it as a file the copy needs. false (the default) is a required file, parsed to an absent key",
+    source: "src/manifest/sidecar.ts:1861",
+    verification: "probed",
+    diagnostics: ["sidecar.sound.optional.notBoolean"],
+    probes: [
+      { code: "sidecar.sound.optional.notBoolean", input: withCue({ optional: "yes" }) },
+      { code: "sidecar.sound.optional.notBoolean", input: withSound({ bed: bed({ optional: 1 }) }) },
+    ],
+    pinned: [],
+  },
+  {
+    id: "sound.bed.ducks",
+    group: "sound",
+    declaredIn: "pocket-motion.json",
+    key: "bed.ducks",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "array of { startFrame, endFrame, duck } windows [startFrame, endFrame) on the composition clock in which the bed is multiplied by duck (0..1), whatever is playing — a narration line's duck lasts only as long as its file. Windows multiply each other and narration ducks where they overlap; the step is within 480 samples of the frame. sound --verify measures the bed's level inside and outside each window",
+    source: "src/manifest/sidecar.ts:2034",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.sound.bed.ducks.notArray",
+      "sidecar.sound.bed.ducks.notObject",
+      "sidecar.sound.bed.ducks.unknownKey",
+      "sidecar.sound.bed.ducks.startFrame.required",
+      "sidecar.sound.bed.ducks.startFrame.notInteger",
+      "sidecar.sound.bed.ducks.startFrame.outOfRange",
+      "sidecar.sound.bed.ducks.startFrame.pastDuration",
+      "sidecar.sound.bed.ducks.endFrame.required",
+      "sidecar.sound.bed.ducks.endFrame.notInteger",
+      "sidecar.sound.bed.ducks.endFrame.outOfRange",
+      "sidecar.sound.bed.ducks.endFrame.pastDuration",
+      "sidecar.sound.bed.ducks.empty",
+      "sidecar.sound.bed.ducks.duck.required",
+      "sidecar.sound.bed.ducks.duck.notNumber",
+      "sidecar.sound.bed.ducks.duck.outOfRange",
+    ],
+    probes: [
+      { code: "sidecar.sound.bed.ducks.notArray", input: withDucks(duckWindow()) },
+      { code: "sidecar.sound.bed.ducks.notObject", input: withDucks(["whole cut"]) },
+      { code: "sidecar.sound.bed.ducks.unknownKey", input: withDucks([duckWindow({ rampMs: 200 })]) },
+      {
+        code: "sidecar.sound.bed.ducks.startFrame.required",
+        input: withDucks([duckWindowWithout("startFrame")]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.startFrame.notInteger",
+        input: withDucks([duckWindow({ startFrame: 1.5 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.startFrame.outOfRange",
+        input: withDucks([duckWindow({ startFrame: -1 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.startFrame.pastDuration",
+        input: withDucks([duckWindow({ startFrame: 91, endFrame: 92 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.endFrame.required",
+        input: withDucks([duckWindowWithout("endFrame")]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.endFrame.notInteger",
+        input: withDucks([duckWindow({ endFrame: 10.5 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.endFrame.outOfRange",
+        input: withDucks([duckWindow({ endFrame: -1 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.endFrame.pastDuration",
+        input: withDucks([duckWindow({ endFrame: 91 })]),
+      },
+      {
+        code: "sidecar.sound.bed.ducks.empty",
+        input: withDucks([duckWindow({ startFrame: 10, endFrame: 10 })]),
+      },
+      { code: "sidecar.sound.bed.ducks.duck.required", input: withDucks([duckWindowWithout("duck")]) },
+      { code: "sidecar.sound.bed.ducks.duck.notNumber", input: withDucks([duckWindow({ duck: "0.5" })]) },
+      { code: "sidecar.sound.bed.ducks.duck.outOfRange", input: withDucks([duckWindow({ duck: 1.5 })]) },
     ],
     pinned: [],
   },
