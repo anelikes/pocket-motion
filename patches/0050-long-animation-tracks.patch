@@ -1,0 +1,537 @@
+0050 — a baked track holds up to 65,535 segments, where the ANIM TABLE's
+one-byte segment count stopped it at 255, and the core finds the segment a
+tick falls in by binary search instead of walking from the first.
+
+Where the limit was, measured on the pin with 0001-0041 applied: `segCount`
+is the second byte of a track header (`contracts/spec/spec.ts`, ANIM TABLE).
+`encodeStyleTable` throws "animation track needs 1..255 segments" above it,
+and `StyleTable::parse` (`engine/core/src/style.rs`) reads the byte and
+refuses 0. The baker (`framework/compiler/animation.ts`) has no limit of its
+own: a keyframe set of 1,000 stops over 20 s bakes 1,000 segments, and the
+build then fails at the encoder. The next ceiling is the timeline itself —
+period, delay, t0 and t1 are u16 frame counts, 65,535 ticks or 18 min 12 s
+at 60 Hz — and it bounds the segment count as well, because every segment
+spans at least one frame. So the count is widened to exactly that and no
+further.
+
+The format. A `segCount` byte of 0 (`ANIM_SEG_COUNT_WIDE`), which every core
+before this refuses, is followed by a u16 count. The encoder writes the wide
+form only above 255, and both decoders refuse a wide count of 255 or less,
+so a table has one encoding and a table with no track over 255 segments is
+byte for byte what it was: every bundle and pak of the motion repository's
+38-composition digest ledger built identical before and after this patch.
+A core without it refuses a table carrying a wide track as a whole rather
+than reading the bytes as something else.
+
+The lookup. `sample_track` walked from the first segment on every tick, so a
+track's per-tick cost grew with its length and a film's total with the
+square of its length. It now takes `partition_point` on `t1`: the first
+segment ending after the tick is the only one that can hold it. That is the
+walk's answer only for sorted, disjoint segments, which spec.ts has always
+required and the baker has always produced, so `StyleTable::parse` now
+refuses a track whose segments overlap, run backwards or have zero length
+instead of trusting the order. No table the baker writes is refused: every
+core test and every composition in the motion repository loads. Measured on
+a 7.5-minute 320x180 composition with one camera track (six tracks of
+13,500 segments) and nothing else long: a full trace took 4.0 s of user CPU
+walking and 2.4 s searching, every frame hash equal.
+
+Tests, each seen red under the edit named:
+
+- `engine/core/src/tests.rs` `a_track_over_255_segments_plays_every_segment`:
+  255, 256 and 30,000 two-tick segments, the value checked at every tick.
+  Red with the parser refusing the wide form.
+- `a_wide_segment_count_that_fits_one_byte_is_refused`: red with the
+  one-encoding check removed.
+- `sample_track_finds_what_a_walk_from_the_start_finds`: 200 seeded tracks
+  of 1..600 segments with gaps, one-tick, eased and bezier segments, colour
+  and scalar payloads, every tick against the walk kept verbatim in the
+  test. Red with the search's predicate `t1 < lt` in place of `t1 <= lt`.
+- `a_track_whose_segments_overlap_or_run_backwards_is_refused`: red with
+  the order check removed.
+- `tests/anim-long-tracks.test.ts`: the 2-byte header at 255 and the 4-byte
+  one at 256, the decoder reading back 1,000 and 32,767 segments, the
+  refusals at 65,536 and at a wide 255, and a 1,000-stop theme keyframe set
+  through the baker, the encoder and the decoder. Three of the four red
+  with the encoder writing the one-byte form for every count.
+
+`engine/core/src/spec.rs` is regenerated (`bun contracts/spec/gen-rust.ts`)
+for the one new constant; `tests/contract.ts` is green.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 4f66be0f..09414125 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -85,6 +85,7 @@ import {
+   ANIM_FILL_BACKWARDS,
+   ANIM_FILL_FORWARDS,
+   ANIM_SEGMENT_SIZE,
++  ANIM_SEG_COUNT_WIDE,
+   BTN,
+   IMG_FLAG_LINEAR,
+   IMG_FLAG_RLE,
+@@ -461,6 +462,7 @@ export function generateRust(): string {
+   put(`    pub const ANIM_BEZIER_EXTRA_SIZE: usize = ${ANIM_BEZIER_EXTRA_SIZE};`);
+   put(`    pub const ANIM_FILL_BACKWARDS: u8 = ${ANIM_FILL_BACKWARDS};`);
+   put(`    pub const ANIM_FILL_FORWARDS: u8 = ${ANIM_FILL_FORWARDS};`);
++  put(`    pub const ANIM_SEG_COUNT_WIDE: u8 = ${ANIM_SEG_COUNT_WIDE};`);
+   put("}");
+   put("");
+ 
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 15bb1654..9bb35a46 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -1145,7 +1145,13 @@ export const MAX_FONT_SLOTS = 128;
+ //     +7  u8   trackCount
+ //     then trackCount x Track:
+ //       +0  u8   propId      (PROP value; must be ANIMATABLE)
+-//       +1  u8   segCount    (>= 1)
++//       +1  u8   segCount    (1..255; 0 = ANIM_SEG_COUNT_WIDE, below)
++//       [if segCount == 0] +2 u16 segCount (256..65535); the track header
++//                            is then 4 bytes. A track of 255 segments or
++//                            fewer is always written in the 2-byte form, so
++//                            one table has one encoding. The count cannot
++//                            usefully exceed periodFrames: t1 > t0 on whole
++//                            frames, and periodFrames is a u16.
+ //       then segCount x Segment (14 bytes, +16 when easing == CubicBezier):
+ //         +0  u16  t0        segment start frame (within the iteration)
+ //         +2  u16  t1        segment end frame (t1 > t0)
+@@ -1176,6 +1182,10 @@ export const ANIM_SEGMENT_SIZE = 14;
+ export const ANIM_BEZIER_EXTRA_SIZE = 16;
+ export const ANIM_FILL_BACKWARDS = 1 << 0;
+ export const ANIM_FILL_FORWARDS = 1 << 1;
++/** Track `segCount` byte meaning "a u16 count follows" (counts above 255). */
++export const ANIM_SEG_COUNT_WIDE = 0;
++/** Most segments one track can hold (the wide count is a u16). */
++export const ANIM_MAX_SEGMENTS = 0xffff;
+ 
+ // ---- style table TS encoder/decoder (used by compiler + tests) ------------
+ 
+@@ -1293,10 +1303,10 @@ export function encodeStyleTable(
+     if (a.tracks.length > 0xff) throw new Error("styles.bin: >255 tracks in an animation");
+     size += ANIM_ENTRY_HEADER_SIZE;
+     for (const t of a.tracks) {
+-      if (t.segments.length === 0 || t.segments.length > 0xff) {
+-        throw new Error("styles.bin: animation track needs 1..255 segments");
++      if (t.segments.length === 0 || t.segments.length > ANIM_MAX_SEGMENTS) {
++        throw new Error(`styles.bin: animation track needs 1..${ANIM_MAX_SEGMENTS} segments`);
+       }
+-      size += 2;
++      size += t.segments.length > 0xff ? 4 : 2;
+       for (const seg of t.segments) size += segmentSize(seg);
+     }
+   }
+@@ -1354,8 +1364,14 @@ export function encodeStyleTable(
+     o += ANIM_ENTRY_HEADER_SIZE;
+     for (const t of a.tracks) {
+       out[o] = t.prop & 0xff;
+-      out[o + 1] = t.segments.length;
+-      o += 2;
++      if (t.segments.length > 0xff) {
++        out[o + 1] = ANIM_SEG_COUNT_WIDE;
++        dv.setUint16(o + 2, t.segments.length, true);
++        o += 4;
++      } else {
++        out[o + 1] = t.segments.length;
++        o += 2;
++      }
+       for (const seg of t.segments) {
+         dv.setUint16(o, seg.t0, true);
+         dv.setUint16(o + 2, seg.t1, true);
+@@ -1441,8 +1457,13 @@ export function decodeStyleTable(bytes: Uint8Array): DecodedStyleTable {
+     o += ANIM_ENTRY_HEADER_SIZE;
+     for (let t = 0; t < trackCount; t++) {
+       const prop = bytes[o];
+-      const segCount = bytes[o + 1];
++      let segCount = bytes[o + 1];
+       o += 2;
++      if (segCount === ANIM_SEG_COUNT_WIDE) {
++        segCount = dv.getUint16(o, true);
++        o += 2;
++        if (segCount <= 0xff) throw new Error(`styles.bin: wide segment count ${segCount} fits the 1-byte form`);
++      }
+       const segments: AnimSegment[] = [];
+       for (let sIdx = 0; sIdx < segCount; sIdx++) {
+         const seg: AnimSegment = {
+diff --git a/engine/core/src/anim.rs b/engine/core/src/anim.rs
+index 220f0997..f251011b 100644
+--- a/engine/core/src/anim.rs
++++ b/engine/core/src/anim.rs
+@@ -156,28 +156,30 @@ pub fn cubic_bezier(x1: f32, y1: f32, x2: f32, y2: f32, x: f32) -> f32 {
+ /// Sample one baked timeline track at `lt` frames into the iteration.
+ /// Holds segments[0].from before the first segment, the previous segment's
+ /// `to` in gaps, and last.to at/after the final segment end.
++///
++/// `StyleTable::parse` refuses a track whose segments are not sorted and
++/// disjoint, so the first segment ending after `lt` is the only one that can
++/// hold it, and a binary search finds the segment a walk from the start
++/// would: the cost is O(log n) per tick in the track's length, which a
++/// film-length track (thousands of segments) needs.
+ pub fn sample_track(track: &crate::style::TimelineTrack, lt: u32, is_color: bool) -> u32 {
+     let segs = &track.segments;
+-    let mut value = segs[0].from;
+-    for seg in segs.iter() {
+-        if lt < seg.t0 as u32 {
+-            break;
+-        }
+-        if lt >= seg.t1 as u32 {
+-            value = seg.to;
+-            continue;
+-        }
+-        let t = (lt - seg.t0 as u32) as f32 / (seg.t1 - seg.t0) as f32;
+-        const BEZIER: u8 = spec::Easing::CubicBezier as u8;
+-        let f = if seg.easing == BEZIER {
+-            let [x1, y1, x2, y2] = seg.bezier;
+-            cubic_bezier(x1, y1, x2, y2, t)
+-        } else {
+-            ease(seg.easing, t)
+-        };
+-        return interp(seg.from, seg.to, f, is_color);
++    let k = segs.partition_point(|s| s.t1 as u32 <= lt);
++    let Some(seg) = segs.get(k) else {
++        return segs[segs.len() - 1].to;
++    };
++    if lt < seg.t0 as u32 {
++        return if k == 0 { segs[0].from } else { segs[k - 1].to };
+     }
+-    value
++    let t = (lt - seg.t0 as u32) as f32 / (seg.t1 - seg.t0) as f32;
++    const BEZIER: u8 = spec::Easing::CubicBezier as u8;
++    let f = if seg.easing == BEZIER {
++        let [x1, y1, x2, y2] = seg.bezier;
++        cubic_bezier(x1, y1, x2, y2, t)
++    } else {
++        ease(seg.easing, t)
++    };
++    interp(seg.from, seg.to, f, is_color)
+ }
+ 
+ /// Interpolate between two raw payloads by eased progress `f` (may exceed
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index fc18ed9f..7376aabf 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -529,6 +529,7 @@ pub mod style_table {
+     pub const ANIM_BEZIER_EXTRA_SIZE: usize = 16;
+     pub const ANIM_FILL_BACKWARDS: u8 = 1;
+     pub const ANIM_FILL_FORWARDS: u8 = 2;
++    pub const ANIM_SEG_COUNT_WIDE: u8 = 0;
+ }
+ 
+ /// FONT ATLAS blob format constants — full layout in spec.ts.
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index 912890ad..0c797eb2 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -185,9 +185,19 @@ impl StyleTable {
+             let mut tracks = Vec::with_capacity(track_count);
+             for _ in 0..track_count {
+                 let prop = *bytes.get(o)?;
+-                let seg_count = *bytes.get(o + 1)? as usize;
++                let mut seg_count = *bytes.get(o + 1)? as usize;
+                 o += 2;
+-                if seg_count == 0 || !spec::is_animatable(prop) {
++                if seg_count == st::ANIM_SEG_COUNT_WIDE as usize {
++                    // A track over 255 segments: a u16 count follows. A count
++                    // that fits the 1-byte form is refused, so one table has
++                    // one encoding.
++                    seg_count = rd_u16(bytes, o)? as usize;
++                    o += 2;
++                    if seg_count <= 0xff {
++                        return None;
++                    }
++                }
++                if !spec::is_animatable(prop) {
+                     return None;
+                 }
+                 let mut segments = Vec::with_capacity(seg_count);
+@@ -208,6 +218,12 @@ impl StyleTable {
+                         }
+                         o += st::ANIM_BEZIER_EXTRA_SIZE;
+                     }
++                    // Sorted and disjoint, as spec.ts states: `sample_track`
++                    // searches by `t1` and would read another order wrongly.
++                    let after_prev = segments.last().map_or(true, |p: &Segment| p.t1 <= seg.t0);
++                    if seg.t1 <= seg.t0 || !after_prev {
++                        return None;
++                    }
+                     segments.push(seg);
+                 }
+                 tracks.push(TimelineTrack { prop, segments });
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 589539ed..d3d07732 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -104,7 +104,12 @@ fn encode_styles_with_anims(styles: &[StyleSpec], anims: &[AnimSpec]) -> Vec<u8>
+         out.push(a.tracks.len() as u8);
+         for (prop, segs) in &a.tracks {
+             out.push(*prop);
+-            out.push(segs.len() as u8);
++            if segs.len() > 0xff {
++                out.push(spec::style_table::ANIM_SEG_COUNT_WIDE);
++                out.extend_from_slice(&(segs.len() as u16).to_le_bytes());
++            } else {
++                out.push(segs.len() as u8);
++            }
+             for SegSpec(t0, t1, from, to, easing, bezier) in segs {
+                 out.extend_from_slice(&t0.to_le_bytes());
+                 out.extend_from_slice(&t1.to_le_bytes());
+@@ -2528,6 +2533,146 @@ fn timeline_list_precedence_matches_css() {
+     assert_eq!(ui.resolved_style(n).unwrap().opacity, 0.0);
+ }
+ 
++/// translateX through `n` two-tick linear segments, segment i going from
++/// i to i + 1 px over ticks [2i, 2i + 2]: the value at tick t is t / 2.
++fn long_anim(n: u16) -> AnimSpec {
++    let segs = (0..n)
++        .map(|i| {
++            SegSpec(2 * i, 2 * i + 2, (i as f32).to_bits(), ((i + 1) as f32).to_bits(), spec::Easing::Linear as u8, None)
++        })
++        .collect();
++    AnimSpec {
++        delay_frames: 0,
++        period_frames: 2 * n,
++        iterations: 1,
++        fill: spec::style_table::ANIM_FILL_BACKWARDS | spec::style_table::ANIM_FILL_FORWARDS,
++        tracks: alloc::vec![(spec::prop::TRANSLATE_X, segs)],
++    }
++}
++
++#[test]
++fn a_track_over_255_segments_plays_every_segment() {
++    // 255 is the last count the 1-byte form holds and 256 the first that
++    // needs the wide one; 30000 is a film-length track, past the point where
++    // a count truncated to its low byte (30000 & 0xff = 48) would stop.
++    for n in [255u16, 256, 30000] {
++        let mut s = StyleSpec::new();
++        s.animation = Some((0, alloc::vec![0]));
++        let blob = encode_styles_with_anims(&[s], &[long_anim(n)]);
++        let mut ui = Ui::new();
++        assert!(ui.load_styles(&blob), "{n} segments");
++        let node = ui.create_node(0);
++        ui.insert_before(spec::ROOT_ID, node, 0);
++        ui.set_style(node, 0);
++        for t in 0..=(2 * n as u32 + 4) {
++            ui.tick();
++            let want = (t.min(2 * n as u32) as f32) / 2.0;
++            assert_eq!(ui.resolved_style(node).unwrap().translate_x, want, "{n} segments, tick {t}");
++        }
++    }
++}
++
++#[test]
++fn a_wide_segment_count_that_fits_one_byte_is_refused() {
++    // One table, one encoding: the wide form is for counts above 255 only.
++    let mut s = StyleSpec::new();
++    s.animation = Some((0, alloc::vec![0]));
++    let mut blob = encode_styles_with_anims(&[s], &[long_anim(256)]);
++    let track = blob.len() - 256 * spec::style_table::ANIM_SEGMENT_SIZE - 4;
++    assert_eq!(blob[track + 1], spec::style_table::ANIM_SEG_COUNT_WIDE);
++    assert_eq!(u16::from_le_bytes([blob[track + 2], blob[track + 3]]), 256);
++    assert!(Ui::new().load_styles(&blob));
++    // Same bytes, count rewritten to 255 and the last segment dropped.
++    blob[track + 2..track + 4].copy_from_slice(&255u16.to_le_bytes());
++    blob.truncate(blob.len() - spec::style_table::ANIM_SEGMENT_SIZE);
++    assert!(!Ui::new().load_styles(&blob));
++}
++
++/// `anim::sample_track` as it was before the search: a walk from the first
++/// segment, kept verbatim as the reference the search is held to.
++fn sample_track_by_walking(track: &style::TimelineTrack, lt: u32, is_color: bool) -> u32 {
++    let segs = &track.segments;
++    let mut value = segs[0].from;
++    for seg in segs.iter() {
++        if lt < seg.t0 as u32 {
++            break;
++        }
++        if lt >= seg.t1 as u32 {
++            value = seg.to;
++            continue;
++        }
++        let t = (lt - seg.t0 as u32) as f32 / (seg.t1 - seg.t0) as f32;
++        const BEZIER: u8 = spec::Easing::CubicBezier as u8;
++        let f = if seg.easing == BEZIER {
++            let [x1, y1, x2, y2] = seg.bezier;
++            crate::anim::cubic_bezier(x1, y1, x2, y2, t)
++        } else {
++            crate::anim::ease(seg.easing, t)
++        };
++        return crate::anim::interp(seg.from, seg.to, f, is_color);
++    }
++    value
++}
++
++#[test]
++fn sample_track_finds_what_a_walk_from_the_start_finds() {
++    // Seeded tracks of 1..600 segments with gaps between them, one-tick
++    // segments, eased and bezier segments, colour and scalar payloads,
++    // each sampled at every tick from before the first segment to past
++    // the last, against the walk.
++    let mut seed = 0x9e37_79b9u32;
++    let mut next = move |m: u32| {
++        seed ^= seed << 13;
++        seed ^= seed >> 17;
++        seed ^= seed << 5;
++        seed % m
++    };
++    for case in 0..200 {
++        let n = 1 + next(if case % 10 == 0 { 600 } else { 40 }) as usize;
++        let mut t = next(4) as u16;
++        let mut segs = Vec::new();
++        for _ in 0..n {
++            let t0 = t + next(3) as u16; // a gap of 0..2 ticks
++            let t1 = t0 + 1 + next(5) as u16;
++            let easing = [spec::Easing::Linear as u8, spec::Easing::EaseInOut as u8, spec::Easing::CubicBezier as u8][next(3) as usize];
++            let bezier = [0.25, 0.1, 0.25, 1.0];
++            segs.push(style::Segment { t0, t1, from: next(u32::MAX), to: next(u32::MAX), easing, bezier });
++            t = t1;
++        }
++        let track = style::TimelineTrack { prop: spec::prop::TRANSLATE_X, segments: segs };
++        for is_color in [false, true] {
++            for lt in 0..(t as u32 + 3) {
++                assert_eq!(
++                    crate::anim::sample_track(&track, lt, is_color),
++                    sample_track_by_walking(&track, lt, is_color),
++                    "case {case}, {n} segments, tick {lt}"
++                );
++            }
++        }
++    }
++}
++
++#[test]
++fn a_track_whose_segments_overlap_or_run_backwards_is_refused() {
++    let seg = |t0: u16, t1: u16| SegSpec(t0, t1, 0f32.to_bits(), 1f32.to_bits(), spec::Easing::Linear as u8, None);
++    let table = |segs: Vec<SegSpec>| {
++        let mut s = StyleSpec::new();
++        s.animation = Some((0, alloc::vec![0]));
++        let a = AnimSpec {
++            delay_frames: 0,
++            period_frames: 40,
++            iterations: 1,
++            fill: spec::style_table::ANIM_FILL_FORWARDS,
++            tracks: alloc::vec![(spec::prop::TRANSLATE_X, segs)],
++        };
++        Ui::new().load_styles(&encode_styles_with_anims(&[s], &[a]))
++    };
++    assert!(table(alloc::vec![seg(0, 10), seg(10, 20), seg(25, 30)]), "touching and gapped");
++    assert!(!table(alloc::vec![seg(0, 10), seg(9, 20)]), "overlapping");
++    assert!(!table(alloc::vec![seg(10, 20), seg(0, 10)]), "out of order");
++    assert!(!table(alloc::vec![seg(0, 10), seg(10, 10)]), "zero length");
++}
++
+ #[test]
+ fn set_style_restarts_timelines() {
+     let mut ui = Ui::new();
+diff --git a/tests/anim-long-tracks.test.ts b/tests/anim-long-tracks.test.ts
+new file mode 100644
+index 00000000..be7115bf
+--- /dev/null
++++ b/tests/anim-long-tracks.test.ts
+@@ -0,0 +1,105 @@
++// A baked track of more than 255 segments (contracts/spec/spec.ts ANIM TABLE,
++// `ANIM_SEG_COUNT_WIDE`): the encoder writes the wide count only above 255,
++// the decoder reads it back, and the keyframe baker no longer stops at the
++// 1-byte count.
++// Run: bun test tests/anim-long-tracks.test.ts
++
++import { describe, expect, test } from "bun:test";
++import {
++  ANIM_FILL_BACKWARDS,
++  ANIM_FILL_FORWARDS,
++  ANIM_MAX_SEGMENTS,
++  ANIM_SEG_COUNT_WIDE,
++  ANIM_SEGMENT_SIZE,
++  ENUMS,
++  PROP,
++  STYLE_HEADER_SIZE,
++  decodeStyleTable,
++  encodeStyleTable,
++  f32Bits,
++  type AnimTimeline,
++} from "../contracts/spec/spec.ts";
++import { parseClassLiteral } from "../framework/compiler/tailwind.ts";
++import { bakedTimelines, registerAnimationTheme } from "../framework/compiler/animation.ts";
++
++/** translateX through `n` two-frame linear segments, segment i from i to i + 1. */
++function longTimeline(n: number): AnimTimeline {
++  return {
++    delayFrames: 0,
++    periodFrames: 2 * n,
++    iterations: 1,
++    fill: ANIM_FILL_BACKWARDS | ANIM_FILL_FORWARDS,
++    tracks: [
++      {
++        prop: PROP.translateX,
++        segments: Array.from({ length: n }, (_, i) => ({
++          t0: 2 * i,
++          t1: 2 * i + 2,
++          from: f32Bits(i),
++          to: f32Bits(i + 1),
++          easing: ENUMS.Easing.Linear,
++        })),
++      },
++    ],
++  };
++}
++
++/** Offset of the one track header in a table holding one style record that
++ *  references one timeline: header, record (flags + 3 + 2), anim entry header. */
++const TRACK = STYLE_HEADER_SIZE + 1 + 3 + 2 + 8;
++
++function table(n: number): Uint8Array {
++  return encodeStyleTable([{ animation: { anims: [0], loopFrames: 0 } }], [longTimeline(n)]);
++}
++
++describe("ANIM TABLE tracks over 255 segments", () => {
++  test("255 segments keep the 1-byte count; 256 take the wide one", () => {
++    const short = table(255);
++    expect(short[TRACK + 1]).toBe(255);
++    expect(short.length).toBe(TRACK + 2 + 255 * ANIM_SEGMENT_SIZE);
++    const wide = table(256);
++    expect(wide[TRACK + 1]).toBe(ANIM_SEG_COUNT_WIDE);
++    expect(wide[TRACK + 2] | (wide[TRACK + 3] << 8)).toBe(256);
++    expect(wide.length).toBe(TRACK + 4 + 256 * ANIM_SEGMENT_SIZE);
++  });
++
++  test("the decoder reads back every segment of a wide track", () => {
++    for (const n of [255, 256, 1000, ANIM_MAX_SEGMENTS >> 1]) {
++      const back = decodeStyleTable(table(n)).anims[0]!.tracks[0]!.segments;
++      expect(back.length).toBe(n);
++      expect(back[n - 1]).toEqual(longTimeline(n).tracks[0]!.segments[n - 1]!);
++    }
++  });
++
++  test("a count past the u16 is refused, and so is a wide count that fits one byte", () => {
++    const tl = longTimeline(1);
++    tl.tracks[0]!.segments = Array.from({ length: ANIM_MAX_SEGMENTS + 1 }, (_, i) => ({
++      t0: i,
++      t1: i + 1,
++      from: 0,
++      to: 0,
++      easing: ENUMS.Easing.Linear,
++    }));
++    expect(() => encodeStyleTable([], [tl])).toThrow(/1\.\.65535 segments/);
++    const wide = table(256);
++    wide[TRACK + 2] = 255;
++    wide[TRACK + 3] = 0;
++    expect(() => decodeStyleTable(wide.slice(0, wide.length - ANIM_SEGMENT_SIZE))).toThrow(/fits the 1-byte form/);
++  });
++
++  test("a theme keyframe set of 1,000 stops bakes 1,000 segments", () => {
++    const stops: Record<string, Record<string, string>> = {};
++    for (let i = 0; i <= 1000; i++) stops[`${i / 10}%`] = { transform: `translateX(${i}px)` };
++    // 20 s at 60 Hz: stops 1.2 frames apart, so no two round onto one frame
++    registerAnimationTheme({ keyframes: { walk: stops }, animation: { walk: "walk 20000ms linear 0ms both" } });
++    try {
++      const rec = parseClassLiteral("animate-walk")!;
++      const tl = bakedTimelines()[rec.animation!.anims[0]!]!;
++      expect(tl.tracks.find((t) => t.prop === PROP.translateX)!.segments.length).toBe(1000);
++      const back = decodeStyleTable(encodeStyleTable([rec], bakedTimelines())).anims[0]!;
++      expect(back).toEqual(tl);
++    } finally {
++      registerAnimationTheme(undefined);
++    }
++  });
++});
