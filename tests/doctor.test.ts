@@ -209,7 +209,7 @@ async function spawnDoctor(
     cwd: ROOT,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, PATH: path, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env, PATH: path },
   });
   const [stdout, code] = await Promise.all([
     new Response(proc.stdout).text(),

@@ -23,11 +23,6 @@ import { hardenedBootWorld } from "../src/runtime/boot.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
-// Boot takes its core from POCKETJS_ROOT when it is set (src/runtime/boot.ts).
-// Pinned to the tree whose build these bundles come from: pointed at another
-// checkout's vendored tree, the control below booted a core with no PATH op
-// and drew nothing.
-process.env.POCKETJS_ROOT = VENDOR;
 
 interface PathDataModule {
   compilePathEntry(keys: readonly string[], viewBox?: string): { verbs: number[]; shapes: number[][] };

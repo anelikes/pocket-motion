@@ -27,8 +27,6 @@ import { resolveComposition } from "../src/cli/resolve.ts";
 import { EXIT_FAIL, EXIT_OK } from "../src/cli/types.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
-const VENDOR = join(ROOT, "vendor", "pocketjs");
-process.env.POCKETJS_ROOT = VENDOR;
 
 const FIXTURE = join(ROOT, "compositions", "layout-codes");
 const flags = { json: true } as const;
@@ -187,7 +185,7 @@ describe("verify — the --json write survives a reader that does not drain", ()
     await ensureBuilt();
     const proc = Bun.spawn(
       ["bun", "src/cli/main.ts", "verify", "compositions/layout-codes", "--samples", "24", "--json"],
-      { cwd: ROOT, stdout: "pipe", stderr: "pipe", env: { ...process.env, POCKETJS_ROOT: VENDOR } },
+      { cwd: ROOT, stdout: "pipe", stderr: "pipe", env: { ...process.env } },
     );
     // Long enough for the writer to fill the pipe buffer and block.
     await Bun.sleep(400);

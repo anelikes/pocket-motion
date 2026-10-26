@@ -31,17 +31,16 @@ import {
 import { sampleFrames } from "../src/cli/commands/visibility.ts";
 import { cropFrame, drawText, textWidth, type Surface } from "../src/render/annotate.ts";
 import { EXIT_OK } from "../src/cli/types.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
 const DIR = join(ROOT, "compositions", "layout-codes");
-const TMP = "/tmp/pocketjs-motion-snapshot-test";
+const TMP = scratchDir("snapshot");
 const DIST = join(TMP, "dist");
 const BUNDLE = join(DIST, "main.js");
 const PAK = join(DIST, "main.pak");
 const OUT = join(TMP, "out");
-
-process.env.POCKETJS_ROOT = VENDOR;
 
 function flags(extra: Record<string, unknown> = {}) {
   return { json: true, bundle: BUNDLE, pak: PAK, ...extra } as never;
@@ -63,7 +62,7 @@ beforeAll(async () => {
     cwd: VENDOR,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [out, err, code] = await Promise.all([
     new Response(proc.stdout).text(),
