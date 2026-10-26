@@ -830,8 +830,10 @@ describe("a dropped viewing copy stops", () => {
       requireBundle: true,
     });
     if (!resolved.ok) throw new Error(resolved.message);
+    // This process's children only: a suite running in another checkout
+    // encodes viewing copies of its own under the same prefix.
     const encoders = () =>
-      Bun.spawnSync(["pgrep", "-f", "pocketjs-motion-watch-"])
+      Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", "pocketjs-motion-watch-"])
         .stdout.toString()
         .split("\n")
         .filter(Boolean).length;
@@ -1395,8 +1397,10 @@ describe("one switch at a time, and a stop that always finishes", () => {
   });
 
   test("concurrent selects leave one session, and stop() closes it once", async () => {
+    // This process's children only: a suite running in another checkout
+    // encodes viewing copies of its own under the same prefix.
     const encoders = () =>
-      Bun.spawnSync(["pgrep", "-f", "pocketjs-motion-watch-"])
+      Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", "pocketjs-motion-watch-"])
         .stdout.toString()
         .split("\n")
         .filter(Boolean).length;

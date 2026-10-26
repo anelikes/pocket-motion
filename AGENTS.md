@@ -1392,10 +1392,13 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   `/tmp/pocketjs-motion-*` paths had two suites deleting each other's builds,
   14 to 34 false failures a run. `tests/isolation.test.ts` reads every test
   file and fails on a `/tmp` literal or a `tmpdir()` outside a `mkdtemp`.
-  `tests/preload.ts`, which `bunfig.toml` loads before every file, refuses a
-  run that inherits `POCKETJS_ROOT` rather than overriding it, because Bun
-  gives a child spawned without `env` the environment the run started with,
-  and that child would boot the tree the variable names.
+  A test that counts processes counts its own children (`pgrep -P`): the
+  preview tests counted every viewing-copy encoder on the machine, and
+  another checkout's made them fail. `tests/preload.ts`, which `bunfig.toml`
+  loads before every file, refuses a run that inherits `POCKETJS_ROOT`
+  rather than overriding it, because Bun gives a child spawned without `env`
+  the environment the run started with, and that child would boot the tree
+  the variable names.
 - Prose states the mechanism directly. No slogans, no personification, no
   empty intensifiers, no imported architecture jargon. `AUTHORING.md` and this
   file are the register reference.
