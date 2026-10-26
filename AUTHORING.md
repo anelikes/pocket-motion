@@ -945,10 +945,14 @@ resolve.
 
 `render` does. After the frames are encoded it builds the mix graph from
 the sidecar (`src/sound/mix.ts`), muxes it under the video stream
-(copied, not re-encoded), and writes a sibling `*.sound.json` with the
-mixed audio's sha256 (the soundtrack decoded to s16le / 48 kHz / stereo)
-and the ffmpeg version that produced it — the same first-line convention
-ingest uses. Nothing in that pass is reachable from `trace`.
+(copied, not re-encoded) in the container `--format` names (table under
+"Delivery formats"), and writes a record named after the whole delivered
+file — `hero.mp4` gets `hero.mp4.sound.json`, so `hero.mp4` and `hero.webm`
+keep one each — with the mixed audio's sha256 (the soundtrack decoded to
+s16le / 48 kHz / stereo) and the ffmpeg version that produced it — the same
+first-line convention ingest uses. The mix is padded with silence to the
+film's length, so the audio stream ends with the picture whenever the last
+element does. Nothing in that pass is reachable from `trace`.
 
 Ducking is a computed envelope, not a compressor. `duck` on a narration
 line is the linear factor applied to the bed's gain while that line
@@ -1347,12 +1351,12 @@ them changes: frames are hashed before a byte reaches it, so **a
 composition's digest is the same whichever format you ask for**, and
 `tests/format.test.ts` asserts that rather than leaving it to be believed.
 
-| `--format` | what it writes |
-|---|---|
-| `mp4` (default) | libx264, `yuv420p` — unchanged |
-| `webm` | libvpx-vp9, `yuv420p`; `--alpha` → `yuva420p` |
-| `mov` | ProRes 422 HQ (`yuv422p10le`); `--alpha` → ProRes 4444 |
-| `png-seq` | `<out>/%06d.png`, no ffmpeg at all |
+| `--format` | what it writes | declared `sound` muxes as |
+|---|---|---|
+| `mp4` (default) | libx264, `yuv420p` | AAC, 192 kb/s |
+| `webm` | libvpx-vp9, `yuv420p`; `--alpha` → `yuva420p` | Opus, 192 kb/s, 48 kHz |
+| `mov` | ProRes 422 HQ (`yuv422p10le`); `--alpha` → ProRes 4444 | PCM s24le, 48 kHz |
+| `png-seq` | `<out>/%06d.png`, no ffmpeg at all | nothing — said in the output |
 
 ```bash
 bun src/cli/main.ts build  compositions/alpha
@@ -1365,6 +1369,15 @@ With no `--format` the `--out` extension decides. **A `--format` that
 disagrees with the extension is refused**, because a `.webm` holding H.264
 plays, reports a sensible duration, and is not what it says it is. `png-seq`
 writes a directory, so its `--out` must not carry an extension.
+
+**Every encoded file is BT.709, converted and tagged**: the RGB → YUV
+conversion names the BT.709 matrix at video range, and the stream carries
+BT.709 primaries, transfer and matrix, so a player decodes the colours the
+frames had rather than guessing. (ProRes has no range field; decoders take
+video range.) The container is named to ffmpeg, never inferred from `--out`,
+and so is the one the sound mux writes: a composition with `sound` rendered
+to `webm` or `mov` is a WebM or a MOV, alpha included, not an MP4 under that
+name.
 
 `png-seq`'s frames are **the same PNG bytes `frame --at N` writes** — asserted,
 not intended, the way `preview`'s `/frame` is. It is the format to reach for
@@ -1397,7 +1410,8 @@ Two things reading the flags would get wrong, both pinned by the tests:
 ProRes 4444 is asked for as `yuva444p10le` and *decodes* as `yuva444p12le`,
 because the 4444 bitstream is 12-bit; and VP9 stores alpha out of band, so an
 alpha WebM's stream still reports `pix_fmt=yuv420p` and the evidence is the
-container's `alpha_mode=1`.
+track's AlphaMode element — which ffprobe shows as `alpha_mode=1`, and on a
+file the sound mux rewrote as `ALPHA_MODE=1`, from a tag the remux copied.
 
 ### What `--json` will and will not say about your machine
 
