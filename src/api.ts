@@ -75,6 +75,11 @@ export interface RenderOptions extends CompositionFlags {
   readonly format?: "mp4" | "webm" | "mov" | "png-seq";
   /** Ask the codec for an alpha channel. Refused for mp4. */
   readonly alpha?: boolean;
+  /** With `spec`: skip each job's own `assertions[]`, which are otherwise
+   *  checked on its staged tree before it renders — a job is refused when one
+   *  fails, and `assert`'s object comes back as `assertions`. Refused without
+   *  `spec`. */
+  readonly noAssert?: boolean;
 }
 
 export interface VerifyOptions extends CompositionFlags {
@@ -132,6 +137,8 @@ export type RenderResult =
         readonly outputPath: string;
         readonly digest: string;
         readonly frames: number;
+        /** `assert`'s object for the job, unless `noAssert` was set. */
+        readonly assertions?: unknown;
       }[];
     })
   | Refusal;
