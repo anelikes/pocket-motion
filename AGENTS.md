@@ -341,7 +341,7 @@ mechanisms with the file or test beside them.
   the burial, both dissolves and the reveal side by side.
 - **What that gate actually reaches is narrower than "a named node", and a
   total hides it.** `baselines/visibility.json` carries the count per
-  composition — 153 names over the tree as it stands — and reading it by
+  composition — 200 names over the tree as it stands — and reading it by
   composition is the point: 19 of them are `footage:<track>/tile:<col>:<row>`
   (15 of bound tracks, which `src/cli/footage.ts` REFUSES a track without, and
   4 that `kenburns` and `shimmer` push into), so they are a protocol rather
@@ -372,11 +372,30 @@ mechanisms with the file or test beside them.
   `inPicture [from,to]`, `entersBy`, `exitsBy`, `insideBox`, `dwellFrames`,
   `before`; `assert` evaluates them from the same classification `visibility`
   sweeps, with `insideBox` reading the layout codes.
-  Three lines are load-bearing. **A name the tree does not carry is a FAILURE,
+  Four lines are load-bearing. **A name the tree does not carry is a FAILURE,
   not a skip** — otherwise renaming a `debugName` turns every assertion about it
   green at once, which is the cheapest way for this to stop meaning anything.
-  **Every verdict is about the sampled frames**, and the printed line names the
-  grid; `--samples <durationFrames>` is the exact case. **`dwellFrames` is
+  A name the tree carries whose node no sampled frame laid out — it or an
+  ancestor `display: none`, or an ancestor at opacity 0, at every one — fails
+  too, since nothing was measured, and the detail says that and names the
+  frames rather than "no node carries the debugName", which the hajibang
+  port's twenty-rank request was told 40 times about nodes the tree carried.
+  **Every verdict is about the sampled frames**, and the printed line and the
+  JSON's `grid` name them; `--samples <durationFrames>` is the exact case.
+  **The sampled frames are the even grid plus what each assertion names**
+  (`assertionFrames`, `src/render/assertions.ts`): an `inPicture` window's
+  ends, an `entersBy` frame, an `exitsBy` frame and the one after it, and —
+  read in a second boot once the first sweep has run — every frame between a
+  `before` node's first showing and the sample before it, so two entrances
+  inside one stride are not a tie. An even grid alone decides a window
+  narrower than its stride by where the stride falls: on the twenty-rank
+  request, 1 s a rank over 1,125 frames, 24 samples step every 49 and 66 of
+  107 assertions failed on a correct film; with the named frames all 107
+  hold over 109 sampled frames. `compositions/short-sections` is that shape
+  at fixture size — eight 9-frame ranks under a 13-frame stride, 8 of 19
+  red on the even grid, green on the default grid and at every frame — and
+  `tests/assert.test.ts` is red with `assertionFrames` emptied, with the old
+  message, and with `pinFrames` emptied. **`dwellFrames` is
   defined conservatively**: the longest run of CONSECUTIVE sampled frames
   showing the node, measured first-to-last plus one, so a run of one sample
   spans one frame however wide the stride. Red case:
@@ -673,6 +692,26 @@ mechanisms with the file or test beside them.
   patch on the sample. `trace` does not accept `--spec`, so a job never enters
   the identity ledger. `tests/spec.test.ts` drives the path and
   `tests/lower-third.test.ts` drives the template with the most inputs.
+- **A job's render checks the job's own assertions.** The staged tree is the
+  only place a job's `assertions[]` exist and it is removed when `render`
+  returns, so `render --spec` evaluates them there, after the build and before
+  the encode: `assert`'s own function (`assertComposition`,
+  `src/cli/commands/assert.ts`) and its JSON, carried verbatim as
+  `assertions` in `--json` — per job for a directory of jobs. A job one fails
+  is refused, exit 1, nothing written, the failing frames named; refusing
+  before the encode is the order `openFootage` keeps with the ingest.
+  **On by default, because of what it was measured to cost**: CPU over the
+  whole job (stage, build, render, encode) on an M4 at a load of 25–50, a 6 s
+  alpha captions job 9.3 s → 10.0 s, a 3.4 s burn-in over footage
+  13.5 s → 17.8 s, and a 60 s transcript of 132 words, 283 frames sampled,
+  57.8 s → 66.4 s — 7 to 32%; on hajibang's three ported requests `assert`
+  alone is 8 to 16% of `render`. A sidecar that declares no assertions
+  returns before booting. `--no-assert` skips the check, for the run that
+  wants the video of a failing job; it is refused without `--spec`, where
+  `render` checks nothing and `assert <dir>` is the command.
+  `tests/spec.test.ts` stages `compositions/short-sections` under a sidecar
+  the job writes, since no shipped template can write a false assertion, and
+  is red with the check removed.
 - **A caption job asserts every word against the picture.** `template:
   "captions"` (`src/captions/`) turns a WhisperX, OpenAI or own-schema
   transcript into a composition in which every word is a node named `w<i>`
@@ -1313,16 +1352,17 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   difference, which is the observation identity's omission of the wasm rests
   on, and why the package ships one wasm instead of a compile per machine.
   The Dockerfile pins 1.97.1; the workflow takes stable.
-- **A caption job's own assertions are never evaluated.** `render --spec`
-  stages the job's composition — sidecar `assertions[]` included — renders it
-  and deletes it, and nothing evaluates the assertions of the job in between.
-  What holds the word-window claim is the generator: `tests/captions.test.ts`
-  sweeps all five styles at every frame, and the two samples are in both
-  ledgers. A transcript shaped unlike anything those cover is a picture
-  nothing has checked. Run on a sample, `assert` with its default 24 samples
-  passes only because every window in those two transcripts is at least as
-  wide as the stride; an assertion whose window holds no sample fails, so a
-  job of real length needs `--samples <durationFrames>`.
+- **A job is checked against what its generator asserted, at sampled
+  frames.** `render --spec` now evaluates a caption job's word windows, at
+  both ends of each and on the even grid between, so a transcript shaped
+  unlike the two samples is checked at the first and last frame of every
+  word. Between those frames it is the sampled-frame claim `assert` always
+  makes; `tests/captions.test.ts`'s every-frame sweep of all five styles is
+  still what holds the template at every frame. And a job is checked for
+  nothing its generator did not write: `copy` and `lower-third` write no
+  assertions, so their jobs carry an `assertions` object with no entries and
+  a note that the sidecar declares none — `ok: true` there says nothing was
+  asserted, not that anything was checked.
 - **The five caption styles exist twice.** `compositions/captions/highlight`
   and its four siblings are still the ports of the HyperFrames catalog, with
   their own generators and hand-picked phrasing; `src/captions/styles.ts`
