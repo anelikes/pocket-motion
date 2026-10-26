@@ -610,7 +610,14 @@ describe("catalog gates", () => {
       }
     }
     expect(parts, parts.join("\n") || "G7 clean").toEqual([]);
-  });
+    // Two costs, timed apart (2026-10-26, Apple M4, 10 cores, load average
+    // 280-310 from other work, three runs each). Importing jsx-plugin.ts took
+    // 2.2-5.0 s whether or not the transform cache was warm: it loads 574
+    // modules, Babel and Vue's language tools among them. The 13 transforms took
+    // 2.4-4.9 s against an empty cache and 0.2-1.0 s against a warm one. So a
+    // cold run took 4.6-8.3 s and a warm one 3.5-5.5 s, against bun's 5 s
+    // default; 60 s is G10's bound, for the same work.
+  }, 60_000);
 
   /**
    * The finding codes are the one part of the catalogue nobody declares: they
