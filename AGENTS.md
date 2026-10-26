@@ -93,6 +93,15 @@ that is said rather than implied.
   refused (`src/cli/build.ts`, `src/render/build-record.ts`); `identity`'s
   `toolchain` component hashes that record rather than the Bun this process
   happens to be running (`tests/identity.test.ts`, `tests/cli.test.ts`).
+- **An artifact a warm cache served from a recipe the tree no longer runs.**
+  The footage cache key held what the sidecar decides and nothing the ingest
+  code decides, so an edit to a scaler flag left every warm `dist` rendering
+  the bytes the previous flags made — and a flag that moves bytes only on x86
+  would have shown nothing on the machine where it was edited. Recorded as a
+  hole rather than seen moving a digest — declared. The key now carries the
+  ingest argv and the ffmpeg build (`src/cli/footage.ts`), and
+  `tests/footage-cli.test.ts` plants an older recipe's artifact and requires a
+  re-decode.
 - **A verification that read windows carrying no evidence.** `sound --verify`
   reported every element of a correct mix absent, because the residual was
   measured in windows where the source was itself silent — where a muxed
@@ -881,12 +890,62 @@ mechanisms with the file or test beside them.
   one and picks the fast one by default; `SWS_ACCURATE_RND` picks the one that
   agrees with the C reference. Measured here before the flags landed: with
   them, without them, and under `-cpuflags 0` — twelve decodes over the three
-  synthetic tracks — every one produces the digest already in
-  `baselines/ingest-bytes.json`, so the aarch64 path already is that reference
+  synthetic tracks — every one produces the whole-clip digest
+  `baselines/ingest-bytes.json` records, so the aarch64 path already is that reference
   and the flags move no recorded digest on this machine.
   `tests/footage-cli.test.ts` pins the string for all three fits — a fit that
   keeps `lanczos` and loses `accurate_rnd` decodes to different bytes on x86
   and the same bytes here, so nothing local would report it.
+- **Ingest decodes what a composition can show, and its cache key is what a
+  decode runs** (`src/cli/footage.ts`, `src/footage/ingest.ts`). A track can
+  show source frames `[sourceFrame, sourceFrame + min(endFrame,
+  durationFrames) - startFrame)` (`reachableSpan`) — the sidecar's
+  `durationFrames`, not a `--frames` given to one command, so `check` and
+  `trace` read one artifact. Tracks that decode to the same bytes — one
+  source by content, one drawn size, `fit` and `tile` — share one artifact
+  holding the union of their spans in order; the layer finds a source frame
+  through the manifest's spans and refuses one outside them, where it used to
+  clamp. Before, every track decoded its whole clip: `captions/burn-zh` kept
+  179 frames for a 101-frame window, and `footage-tracks` decoded one clip
+  whole twice for its windows at [0, 60) and [89, 179), which are now one
+  150-frame artifact. The decode still starts at the clip's first frame and
+  stops at the last span's end, and frames outside the spans stream through
+  and are dropped before the disk. It does not seek, and that was measured:
+  `-r` counts from the first frame it is handed, and on the 24 fps clip read
+  at 30 an input seek to frame 20 decoded [20, 140) to the same bytes while a
+  seek to frame 89 decoded [89, 179) to different ones. Byte identity was
+  measured too: all five artifacts the ledger ingests are byte slices of the
+  whole decodes, whose digests `baselines/ingest-bytes.json` keeps beside each
+  span, and no frame digest moved. Identity's `footage:<id>` components
+  moved with every artifact that is now less than its clip — all but
+  `wide-contain`, whose window is its whole clip — because they hash the
+  artifact.
+
+  The key (`footageCacheKey`) is the source's sha256, the drawn size, fps,
+  `fit`, `tile`, the spans, the RECIPE — the argv minus the source path, from
+  `ingestArgv`, which also builds the argv the decode runs — and a digest of
+  all of `ffmpeg -version`. It used to hold what the sidecar decides and
+  nothing the ingest code decides, so a changed scaler flag left a warm
+  `dist` serving the old recipe's artifact, and CI, which starts with no
+  `dist`, could not see it. The ffmpeg build is in it because a hit has to be
+  what a miss would decode, and a miss runs the installed ffmpeg: the H.264
+  decode is bit-exact by specification, but the RGBA conversion, the resample
+  and `-r`'s choice of picture are library and fftools code, and
+  `accurate_rnd`/`bitexact` pin how one build rounds on two architectures,
+  not what another release computes. That costs one re-decode per artifact
+  after an ffmpeg upgrade. Identity still leaves the build out
+  (`DELIBERATELY_ABSENT`), and the artifact standing in front of it is now
+  always the installed build's. A cut that changes the frames shown
+  re-decodes its span; one that only moves them in the film does not. An
+  artifact is written beside and renamed over, so a process reading the old
+  one keeps its inode, and a directory under `footage/` that no track reads is
+  removed — which is where a tree built before spans keeps `wide-return`'s
+  whole decode. `tests/footage-cli.test.ts` holds it: the union test is red
+  with the whole clip decoded, with the spans' offsets dropped from the
+  layer's addressing, and with the prune removed; the planted-artifact test,
+  whose control shows a planted artifact IS a hit under today's recipe, is
+  red with the recipe out of the key; the key's unit test is red with the
+  ffmpeg build out.
 - **The determinism claim is checked on a machine that is not the author's.**
   `.github/workflows/determinism.yml` runs the suite, the typecheck and the
   digest ledger on every push, on Linux/x86-64, against digests recorded on
@@ -896,7 +955,7 @@ mechanisms with the file or test beside them.
   checks less than its name claims. ffmpeg is pinned in the workflow rather than
   taken from whatever the image carries, because the frozen ingest artifact
   stands in front of the decoder and its bytes are an input to the digest of
-  every composition that declares footage — 3 of the ledger's 40 today. The
+  every composition that declares footage — 3 of the ledger's 42 today. The
   visibility ledger is NOT run there; it is a local step before a pull request
   and nothing on a runner would notice it going stale.
 - `CAPABILITIES.md` is generated from `src/catalog/surface.ts` by
@@ -1201,14 +1260,15 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   the ceiling, and a size that baked yesterday is refused today with no edit
   to the size itself.
 - **A full ledger run's disk cost is set by the footage in the tree, and
-  only the ledger can measure it.** Ingest decodes each footage track to raw
-  RGBA next to the bundle and leaves it there. Measured 2026-10-22 by
-  clearing `dist/**/*.rgba` and running the whole ledger serially: 6 `.rgba`
-  files totalling 1,381,017,600 bytes — 1.3 GiB — from 1.5 MB of tracked
-  clips. 659,865,600 of those bytes are one 44 KB clip, the one
-  `compositions/captions/burn-zh` burns its captions into: ingest decodes a
-  source whole at the drawn size, here 179 frames at 720×1280, whatever
-  window the track uses. A tree carrying recorded material at film length
+  only the ledger can measure it.** Ingest decodes the span each footage
+  artifact's tracks can show to raw RGBA next to the bundle and leaves it
+  there. Measured 2026-10-26 by clearing `dist/**/*.rgba` and running the
+  whole ledger serially: 5 `.rgba` files totalling 827,366,400 bytes — 789
+  MiB — from 1.5 MB of tracked clips, the largest
+  `compositions/captions/burn-zh`'s 101 frames at 720×1280. It was 6 files
+  and 1,381,017,600 bytes on 2026-10-22, when ingest decoded every source
+  whole whatever window its track used: that one 44 KB clip was 659,865,600
+  of them. A tree carrying recorded material at film length
   reached 92 files and 120 GB and filled a 1.8 TiB volume, and the ingest
   that hit the wall reported `No space left on device` from ffmpeg rather
   than anything about capacity. That measurement is `FULL_RUN_RGBA_BYTES`
@@ -1235,20 +1295,22 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   compared by a person reading `dist/**/footage/*/manifest.json` by hand. That
   is how the one cross-architecture divergence so far was attributed: by
   reasoning about which compositions failed, not by measuring the artifact.
-  The five rows are also the whole of what it covers — the artifacts the two
-  synthetic-clip fixtures ingest — so a check that read them would say nothing
-  about a track added tomorrow.
-- **The ingest recipe is not in the footage cache key.** `footageCacheKey`
-  (`src/cli/footage.ts`) hashes the source sha256, tile, fps, drawn width and
-  height, frame count and resolved `fit` — everything the sidecar decides, and
-  nothing the ingest code decides. Change the `-vf` string or a scaler flag
-  and a tree with a warm `dist` reuses the artifact the old recipe produced,
-  silently, until someone deletes it. CI is unaffected because a fresh
-  checkout has no `dist` to hit, which is exactly why this would not be
-  noticed there. The workaround is `find dist -name '*.rgba' -delete`, which
-  works because `readCache` wants all three of `cache.json`, `manifest.json`
-  and `frames.rgba` and takes a missing one as a miss. Stating the recipe in
-  the key would be the fix, at the cost of re-decoding every track once.
+  Its five rows are also the whole of what it covers — the artifacts the
+  three compositions drawing synthetic clips ingest, each recorded as its
+  spans beside the whole-clip decode it is a byte slice of — so a check that
+  read them would say nothing about a track added tomorrow.
+- **What the footage cache key does not name, and what a span still costs.**
+  The key names ffmpeg by all of `ffmpeg -version`: the release, the configure
+  line and the version of every library it loaded. An external decoder's
+  version — libdav1d, for an AV1 source — is not in that text, and neither is
+  a build patched under an unchanged version string; a warm `dist` across
+  either serves the previous decode. The fix there is still
+  `find dist -name '*.rgba' -delete`, which works because `readCache` wants
+  all three of `cache.json`, `manifest.json` and `frames.rgba`. And the frames
+  before a clip's first span are decoded and dropped rather than skipped, so a
+  ten-second take cut from the end of a minute-long source costs the decode
+  of the minute, though not its disk: the seek that would avoid it moves
+  bytes, measured above.
 - **An SVG's angles go through the host's `Math`.** `rotate()` and an
   arc's x-axis-rotation take `Math.cos` and `Math.sin`, and `skewX`/`skewY`
   take `Math.tan`, in the baker that writes the pak — upstream's choice for

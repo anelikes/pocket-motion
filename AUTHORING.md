@@ -41,7 +41,7 @@ failed — the command that fixes it: the running Bun against the one
 `build.json` names; rustup and the wasm target; `ffmpeg` and `ffprobe`
 separately, with their version lines; the vendored tree at the pin with the
 patches applied; `assets/*/manifest.json` fetched and matching; and free disk
-against what a full ledger run was measured to decode (1.3 GiB — it fails below
+against what a full ledger run was measured to decode (789 MiB — it fails below
 that and calls the headroom thin below 3x it).
 
 `ffprobe` is asked for separately because it is separately load-bearing:
@@ -652,11 +652,17 @@ plan shots accordingly.
 
 **A sidecar that declares `footage` gets it presented by every command that
 produces frames** — `check`, `frame`, `trace` and `render` build one layer per
-track, ingest on demand into `dist/<composition>/footage/<track-id>/` (cached
-on everything that can move a pixel), and present each track once per frame.
-Each layer holds one decoded frame (`width × height × 4` bytes) for its life;
-the rest of the clip stays on disk and is read as `present` walks it. A
-1080×1920 track is about 8 MiB, independent of duration. A track that cannot
+track, ingest on demand into `dist/<composition>/footage/<track-id>/`, and
+present each track once per frame. The ingest keeps the source frames the
+track's window can show, not the whole clip, and tracks that decode one source
+at one drawn size and `fit` share the first one's directory, holding the union
+of what each shows (`src/cli/footage.ts`). It is cached on everything that can
+move a pixel — the source, the drawn size, the frames shown, the ingest's own
+ffmpeg argv and the installed ffmpeg — so a cut that changes which source
+frames it shows re-decodes them, and one that only moves them in the film does
+not. Each layer holds one decoded frame (`width × height × 4` bytes) for its
+life; the rest stays on disk and is read as `present` walks it. A 1080×1920
+track is about 8 MiB, independent of duration. A track that cannot
 be built fails the command: a missing source file, no
 `ffmpeg`, a `nodePrefix` matching no node, a sidecar `grid` that disagrees
 with the tile nodes, or a source whose aspect does not match the drawn size

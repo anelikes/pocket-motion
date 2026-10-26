@@ -25,11 +25,13 @@ const MANIFEST: IngestManifest = {
   width: W,
   height: H,
   fps: 30,
+  spans: [[0, FRAMES]],
   frames: FRAMES,
   tile: TILE,
   grid: gridOf(W, H, TILE),
   sha256: "0".repeat(64),
   bytes: W * H * 4 * FRAMES,
+  recipe: [],
   ffmpeg: "test",
 };
 
@@ -164,7 +166,10 @@ describe("footage sampling mode", () => {
     layer.close();
   });
 
-  test("present reads the clamped frame window and close is idempotent", async () => {
+  // The manifest's spans are where each source frame sits. Two spans with a
+  // gap between them: a frame in the gap was never written, and the clamp
+  // this replaced would have shown a picture from one side of it.
+  test("present addresses source frames through the spans and refuses one outside them", async () => {
     const frame0 = Buffer.alloc(W * H * 4, 0x11);
     const frame1 = Buffer.alloc(W * H * 4, 0x22);
     const twoPath = join(dir, "two-frames.rgba");
@@ -180,26 +185,43 @@ describe("footage sampling mode", () => {
     };
 
     const layer = await FootageLayer.create({
-      manifest: MANIFEST,
+      manifest: { ...MANIFEST, spans: [[3, 4], [7, 8]] },
       rawPath: twoPath,
       nodePrefix: "footage:t",
       tree: TREE,
       ops: rec.ops,
     });
 
-    layer.present(-1);
+    layer.present(3);
     const first = Buffer.from(uploads[0]!);
-    layer.present(0);
-    expect(Buffer.from(uploads[2]!).equals(first)).toBe(true);
-    layer.present(99);
-    const last = Buffer.from(uploads[4]!);
-    expect(last.equals(first)).toBe(false);
-    layer.present(1);
-    expect(Buffer.from(uploads[6]!).equals(last)).toBe(true);
-    expect(uploads).toHaveLength(8);
+    expect(first.subarray(0, 4).equals(Buffer.alloc(4, 0x11))).toBe(true);
+    layer.present(7);
+    const second = Buffer.from(uploads[2]!);
+    expect(second.subarray(0, 4).equals(Buffer.alloc(4, 0x22))).toBe(true);
+    layer.present(3);
+    expect(Buffer.from(uploads[4]!).equals(first)).toBe(true);
+    expect(uploads).toHaveLength(6);
+
+    for (const n of [-1, 0, 4, 5, 6, 8, 99]) {
+      expect(() => layer.present(n)).toThrow(/outside the decoded spans \[\[3,4\],\[7,8\]\]/);
+    }
+    expect(uploads).toHaveLength(6);
 
     layer.close();
     layer.close();
-    expect(() => layer.present(0)).toThrow(/after close/);
+    expect(() => layer.present(3)).toThrow(/after close/);
+  });
+
+  test("a manifest whose spans do not add up to its frames is refused at create", async () => {
+    const { ops } = recordingOps(false);
+    await expect(
+      FootageLayer.create({
+        manifest: { ...MANIFEST, spans: [[0, 3]] },
+        rawPath,
+        nodePrefix: "footage:t",
+        tree: TREE,
+        ops,
+      }),
+    ).rejects.toThrow(/holds 2 frames but its spans \[\[0,3\]\] cover 3/);
   });
 });
