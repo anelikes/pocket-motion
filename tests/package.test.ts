@@ -326,8 +326,9 @@ describe("installed from the tarball", () => {
     // component. The bundle names the framework by its place in the PocketJS
     // tree (patches/0051) rather than as
     // `node_modules/pocket-motion/vendor/pocketjs/…`, and `build.json` names
-    // nothing the project's location decides. Red with 0051 out of
-    // `patches/`: the `bundle` component differs and nothing else does.
+    // nothing the project's location decides. Red with 0051's rename
+    // disabled in `tools/build.ts`: the `bundle` component differs and
+    // nothing else does.
     const flags = { json: false };
     const unbuilt = await resolveComposition({ dir: join(ROOT, "compositions/smoke"), flags, requireBundle: false });
     if (!unbuilt.ok) throw new Error(unbuilt.message);

@@ -93,6 +93,15 @@ that is said rather than implied.
   refused (`src/cli/build.ts`, `src/render/build-record.ts`); `identity`'s
   `toolchain` component hashes that record rather than the Bun this process
   happens to be running (`tests/identity.test.ts`, `tests/cli.test.ts`).
+- **An identity that named the directory a build ran in.** The same sources
+  staged into two directories, built from a project outside the checkout or
+  against an installed package reported two identities with every frame
+  equal, so `render --spec` reported none and a batch deduplicated only
+  because its staging paths were named after their content — declared. The
+  bundle's module names (`patches/0051`), `build.json`'s argv
+  (`src/render/build-record.ts`) and the wasm (`patches/0052`,
+  `scripts/vendor.ts`) carry no directory now; `tests/build-location.test.ts`
+  holds it.
 - **A verification that read windows carrying no evidence.** `sound --verify`
   reported every element of a correct mix absent, because the residual was
   measured in windows where the source was itself silent — where a muxed
@@ -162,9 +171,9 @@ mechanisms with the file or test beside them.
   the `build` command, `render --spec`, preview's hot reload and both ledgers
   all go through it — so nothing this repository builds is unattributable. The
   record holds the Bun, the pinned upstream commit, every `patches/*.patch` by
-  sha256, and the build argv (repo-relative, so the checkout's location is not
-  an input; `--hz` and `--density` are written down in it). No timestamp: a
-  clock reading is not an input. `identity`'s `toolchain` component hashes
+  sha256, and the build argv with every path relative to what it belongs to
+  (next entry; `--hz` and `--density` are written down in it). No timestamp:
+  a clock reading is not an input. `identity`'s `toolchain` component hashes
   that file rather than the Bun this process happens to be running — the
   running Bun answers "what is here now", not "what made this".
 
@@ -176,6 +185,66 @@ mechanisms with the file or test beside them.
   message quotes `bun src/cli/main.ts build <dir>` and NOT upstream's
   `tools/build.ts`, which writes no record — printing that as the fix for a
   missing record would be a loop. `tests/cli.test.ts` holds all three.
+- **Where a build runs is not an input.** One set of declared inputs built
+  from this checkout, from a randomly named staging directory, from a project
+  outside the repository reached through a symlink, or against an installed
+  package writes one bundle, one pak and one `build.json`, and reports one
+  identity. Three routes carried the directory into the bytes, and each is
+  closed where it started:
+
+  - **The bundle's module names.** Bun writes each module's name above its
+    code, and the name is its realpath relative to the build process's cwd
+    — not `root` (measured on Bun 1.3.11). So a staged job's app was
+    `// dist/captions-job-Xq3/main.tsx`, a project outside the checkout named
+    every framework module `// ../../../Users/<someone>/…/vendor/pocketjs/…`,
+    and an installed package `// node_modules/pocket-motion/vendor/…`.
+    `patches/0051` (class `upstream`) renames each by what it is, after pass
+    2, from the metafile: relative to the PocketJS tree
+    (`framework/src/index.ts`), `./` and relative to the composition's
+    directory (`./app.tsx`), `.entries/` under `--outdir`, from the last
+    `node_modules/`, or else relative to the composition. Bun can print a
+    module's name line twice (an entry that exports has its namespace object
+    placed ahead of its imports), so every such line is rewritten, and Bun's
+    transpiler, which drops comments, must print the same program before and
+    after: a template literal repeating a name line fails the build rather
+    than being rewritten, and so does a module with code and no name line.
+  - **`build.json`'s argv.** The entry is written relative to the
+    composition's directory and `--outdir` relative to the record itself
+    (`main.tsx`, `--outdir=.`), the compiler relative to this package, and a
+    face the sidecar names by an absolute path relative to the project
+    (`relativise`, `src/render/build-record.ts`). Relative to the repository,
+    as it was, the entry and outdir named the composition's path, so one job
+    staged twice was two `toolchain` components.
+  - **The wasm.** rustc writes every reachable panic's source path into the
+    module as cargo hands it over, and folds cargo's `-C metadata` into every
+    symbol's crate disambiguator; for a path dependency outside the
+    workspace root that hash is of its absolute path, and the disambiguators
+    order the module's functions. `engine/wasm` is a workspace of its own and
+    reached pocketjs-core as `../core`. `patches/0052` (class `motion`) makes
+    it `core`, a symlink cargo does not resolve, so the core is a member
+    hashed and handed to rustc by a relative path; `scripts/vendor.ts`
+    remaps cargo's home for the registry crates, through `--config` because
+    `RUSTFLAGS` would replace 0022's `+simd128`. Before, the module carried
+    24 absolute paths, 18 into the checkout and 6 into `~/.cargo/registry`,
+    and two copies of `engine/` with every path remapped still differed in
+    18,502 bytes; after, it carries none, `target_features` still names
+    `simd128`, and builds from this worktree and two scratch directories
+    were byte-identical.
+
+  `tests/build-location.test.ts` builds `compositions/vector-paths` from the
+  checkout, a `mkdtemp` under `dist/` and a symlinked project in the
+  system's temp directory and holds bundle, pak, `build.json` and identity
+  equal; red with 0051's rename disabled (both copies, `bundle`) and with
+  the record's old anchors restored (the staged copy, `toolchain`). The same file renders
+  one `render --spec` job twice and holds the identities equal, and
+  `tests/package.test.ts` holds an installed package's identity for `smoke`
+  equal to this checkout's, component by component, and is red on `bundle`
+  alone with the rename disabled.
+  `tests/bundle-names.test.ts` holds the naming rules and both refusals.
+  Measured on the ledger: every one of its 42 bundles changed bytes, in 45
+  to 47 name lines each and in no other line, and every frame digest is
+  unchanged; each of the 42 rebuilt from a randomly named directory at the
+  same depth wrote the same bundle, pak and `build.json`.
 - **A build writes inside its own `--outdir`, so builds run side by side.**
   Until upstream #591 (`586428b2`) — backported as a patch first, and on the
   pin since it moved to 66caf4e5 — pass 1 wrote `framework/src/styles.generated.ts`
@@ -198,7 +267,8 @@ mechanisms with the file or test beside them.
   into a namespace of its own, and Bun then names the module in the bundle
   by its absolute path — the checkout's location, in every bundle.
   `patches/0023-style-table-file-namespace.patch` keeps it in the file
-  namespace, where the name is repo-relative; when the backport landed on
+  namespace, where 0051 names it by its place in the tree,
+  `framework/src/styles.generated.ts`; when the backport landed on
   the old pin, all 45 compositions' bundles and paks were byte-identical
   before and after it.
   `src/text/measure.ts` and `scripts/fit-probe.ts` read the slot table from
@@ -671,7 +741,9 @@ mechanisms with the file or test beside them.
   `--width`, `--height`, `--supersample`, `--bundle` and `--pak` are refused
   alongside `--spec`, because a job is a complete description rather than a
   patch on the sample. `trace` does not accept `--spec`, so a job never enters
-  the identity ledger. `tests/spec.test.ts` drives the path and
+  the identity ledger; `render --json` reports its identity, which the staging
+  directory's name does not reach (the entry above). `tests/spec.test.ts`
+  drives the path and
   `tests/lower-third.test.ts` drives the template with the most inputs.
 - **A caption job asserts every word against the picture.** `template:
   "captions"` (`src/captions/`) turns a WhisperX, OpenAI or own-schema
@@ -1028,10 +1100,13 @@ mechanisms with the file or test beside them.
   skipped: six of eight cases.
 - **`render --json` carries `trace`'s identity**, from one function
   (`compositionIdentity`, `src/cli/commands/trace.ts`), so a delivery holds
-  the pair another machine checks with `trace`. A `--spec` job carries none,
-  measured: one job staged twice moved both the `toolchain` and the `bundle`
-  components, because the staged directory's random name is in
-  `build.json`'s argv and in the bundle's module comments.
+  the pair another machine checks with `trace`. A `--spec` job carries its
+  own. It used to carry none, measured: one job staged twice moved both the
+  `toolchain` and the `bundle` components, because the staged directory's
+  random name was in `build.json`'s argv and in the bundle's module names.
+  Neither is now ("Where a build runs is not an input"), and
+  `tests/build-location.test.ts` renders one spec twice to one identity and
+  a spec differing in one line of copy to another.
 - **The npm package is staged, never packed from the checkout.**
   `scripts/pack.ts` assembles `dist/pack/pocket-motion` from an explicit
   list, because npm honours `vendor/pocketjs`'s own `.gitignore`, which
@@ -1059,14 +1134,15 @@ mechanisms with the file or test beside them.
   digest through the package's bin. Red, measured at 66caf4e5: shipping
   upstream's `.gitignore` drops 4054 of 4410 files; staging with no
   `optionalDependencies` fails `doctor` with `Cannot find native binding`.
-- **A consumer's `build.json` is relative to the consumer.** `relativise`
-  (`src/render/build-record.ts`) tries this package's root and then the
-  composition's repository root — the cwd `buildSpawn` builds from — so a
-  project that installed the package records `compositions/card/main.tsx`,
-  not where the project sits. In this repository the two roots are one
-  directory and every record is the bytes it was. `tests/identity.test.ts`
-  records one build from two project locations; red with the package root
-  alone.
+- **A consumer's `build.json` says nothing about where the consumer is.**
+  `relativise` (`src/render/build-record.ts`) writes the entry relative to
+  the composition and `--outdir` as `.`, then tries this package's root for
+  the compiler and the composition's repository root — the cwd `buildSpawn`
+  builds from — for a face named by an absolute path, so a project that
+  installed the package records `main.tsx` and
+  `vendor/pocketjs/tools/build.ts`, not where either sits.
+  `tests/identity.test.ts` records one build from two project locations;
+  red with the package root alone.
 - **The Docker image is the workflow's run.** `Dockerfile` builds the
   repository from nothing on linux/amd64 and runs `bun scripts/digests.ts`.
   Bun is pinned by image digest, ffmpeg is the workflow's asset by the
@@ -1267,19 +1343,6 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   to order the writers and never the readers; `scripts/digests.ts`'s
   mtime/size check is what makes a moved artefact impossible to pass silently,
   and it covers a ledger run and nothing outside one.
-- **An installed package's bundle is not this checkout's bundle, and
-  identity says so while the picture does not.** Measured on `smoke`, built
-  here and built in a project that installed the tarball, at e0b37e20 and
-  again at 66caf4e5: the frame digest,
-  `pak`, `params`, `sidecar` and `toolchain` agree, and `bundle` does not.
-  Bun's bundler writes each module's path relative to the build's cwd into a
-  comment, and the framework sits at `vendor/pocketjs/framework/src/…` here
-  and at `node_modules/pocket-motion/vendor/pocketjs/framework/src/…` there —
-  and at a third path under a linker that does not hoist. So two installs with
-  one layout share an identity, and an install and a checkout do not. Hashing
-  the bundle with those comments normalised, or building from a cwd that makes
-  the framework's path independent of the install, would close it; neither is
-  done.
 - **An installed package still speaks as a checkout in places.** Refusals
   print `bun src/cli/main.ts build <dir>` and `bun scripts/assets.ts`, which a
   consumer does not have (`bunx pocket-motion build <dir>` is the command
@@ -1296,21 +1359,17 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   on linux-x64, which is where the second platform will be measured. The
   binding is declared for the fourteen platforms its compiler lists; Windows
   has not been tried, and `doctor`'s disk check reads `df`.
-- **Nothing records the rustc that compiled the wasm, and the same rustc does
-  not give the same wasm.** `vendor/prebuilt.json` pins the wasm's bytes;
-  `scripts/vendor.ts` compiles it with whatever rustup runs and writes no
-  note, so a version recorded at pack time would describe a compile nothing
-  saw. Measured at 66caf4e5 with rustc 1.97.1 (`8bab26f4f`) throughout:
-  914,481 and 914,321 bytes from two checkouts on one Mac, and 913,329 bytes
-  in the linux/amd64 image, which reproduced all 38 digests (at e0b37e20:
-  513,402 on the Mac, 513,135 in the image). Two checkouts on one machine
-  already differ, so where the checkout sits is enough to move the bytes:
-  the wasm keeps panic locations as absolute paths, 23 of them in the packed
-  wasm — 17 into the checkout and 6 into `~/.cargo/registry` — and **a
-  packed tarball names the packing user's home directory**.
-  `--remap-path-prefix` in the wasm build would make the bytes
-  path-independent; nothing passes it. The frames do not depend on the
-  difference, which is the observation identity's omission of the wasm rests
+- **Nothing records the rustc that compiled the wasm, and whether two
+  machines' rustc give one wasm has not been measured since the paths came
+  out.** `vendor/prebuilt.json` pins the wasm's bytes; `scripts/vendor.ts`
+  compiles it with whatever rustup runs and writes no note, so a version
+  recorded at pack time would describe a compile nothing saw. Where the
+  checkout sits no longer moves the bytes ("Where a build runs is not an
+  input"), but before that the linux/amd64 image built 913,329 bytes against
+  the Mac's 914,481 with rustc 1.97.1 (`8bab26f4f`) on both, and how much of
+  that gap was the paths is not known: the image has not been rebuilt since.
+  The frames do not depend on the difference — the image reproduced all 38
+  digests — which is the observation identity's omission of the wasm rests
   on, and why the package ships one wasm instead of a compile per machine.
   The Dockerfile pins 1.97.1; the workflow takes stable.
 - **A caption job's own assertions are never evaluated.** `render --spec`
