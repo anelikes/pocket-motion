@@ -27,8 +27,14 @@
  *     unless one is already there: after `set(t0, …)` that key is the state
  *     BEFORE the change, and overwriting it ramped the change in from tick 0.
  *
- * A frame shows tick `2f` at 30 fps and tick `f` at 60 fps, so an instant
- * meant to be seen at 30 fps belongs on an even tick.
+ * Keys are written in ticks and a frame shows one tick: the LAST of its
+ * window, `clockOfFrame` in `src/runtime/clock.ts` — `2f + 1` at 30 fps,
+ * `f` at 60. So a move keyed from an even tick at 30 fps is first seen one
+ * tick in and one keyed from an odd tick is seen at its first key; run
+ * `keyframes` to read which instants a film's frames land on. A change
+ * written by `set` or `step` is a one-tick segment, which no frame lands
+ * inside at either parity, and `decodeSeq`'s two-tick glyphs each hold
+ * exactly one sampled tick at 30 fps wherever they start.
  */
 
 export const inOut = (u: number) => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2);
