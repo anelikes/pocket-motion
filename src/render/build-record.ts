@@ -32,14 +32,17 @@
  * in here would make every rebuild a different record for no reason a pixel
  * could see.
  *
- * The recorded `argv` is repo-relative. It is the identity component's
- * companion, and an absolute path is a property of the checkout, not of the
- * build: `~/code/motion/dist/compositions/smoke` and
- * `/srv/ci/motion/dist/compositions/smoke` are the same build, and hashing
- * them raw would make input identity disagree across machines for the one
- * reason it exists to rule out. "Repo" is two directories when this runs as
- * an installed package — this package for the compiler, the project that
- * installed it for the composition — and `relativise` says how both are used.
+ * The recorded `argv` names no directory. It is the identity component's
+ * companion, and where a build ran is a property of the machine and the
+ * moment, not of the build: `~/code/motion/dist/compositions/smoke` and
+ * `/srv/ci/motion/dist/compositions/smoke` are the same build, and so are
+ * `compositions/smoke` and the `dist/captions-job-Xq3/` a `render --spec`
+ * job stages into. Each path token is written relative to what it belongs
+ * to — the entry to the composition's directory, `--outdir` to the
+ * directory this record sits in, the compiler to this package — and
+ * `relativise` says how. Hashing them any other way would make identity
+ * disagree between two builds of one set of declared inputs for the one
+ * reason it exists to rule out.
  */
 
 import { existsSync } from "node:fs";
@@ -67,8 +70,28 @@ export interface BuildRecord {
   readonly upstream: string;
   /** `patches/*.patch` in sorted order, by content. */
   readonly patches: readonly PatchDigest[];
-  /** The build argv, repo-relative. Carries `--hz` and `--density`. */
+  /**
+   * The build argv with every path relative to what it belongs to (see
+   * `relativise`): `main.tsx`, `--outdir=.`, `vendor/pocketjs/tools/build.ts`.
+   * Carries `--hz`, `--density` and the faces as the sidecar names them.
+   */
   readonly argv: readonly string[];
+}
+
+/**
+ * The directories a record's paths are written relative to. `outDir` is
+ * always the directory the record is written into; the other two are the
+ * composition's, when the build has one.
+ */
+export interface RecordAnchors {
+  /** The composition's directory: its entry is named relative to it. */
+  readonly compositionDir?: string;
+  /**
+   * The composition's repository — the cwd the build runs in. A face the
+   * sidecar names by an absolute path under it is recorded relative to it.
+   * Defaults to this package's root, the same directory in this repository.
+   */
+  readonly projectRoot?: string;
 }
 
 export function buildRecordPath(bundlePath: string): string {
@@ -76,30 +99,38 @@ export function buildRecordPath(bundlePath: string): string {
 }
 
 /**
- * Relative form of one argv token against the first root that contains it;
- * absolute paths under neither stay whole.
+ * Relative form of one argv token against the first anchor that contains it;
+ * an absolute path under none of them stays whole.
  *
- * TWO ROOTS, because an installed package splits what one checkout holds.
- * The compiler is under THIS package's root (`vendor/pocketjs/tools/build.ts`),
- * and the composition, its `--outdir` and its faces are under the
- * composition's own repository — the directory `buildSpawn` builds from,
- * which in a project that installed pocket-motion is that project, not
- * `node_modules/pocket-motion`. Against this root alone every one of those
- * stayed absolute, so the toolchain component of a consumer's identity hashed
- * where the project sat on that machine. In this repository the two roots are
- * the same directory and the record is the bytes it always was.
+ * The anchors, in order, and what each token comes out as:
  *
- * The package root is tried first so the compiler's token reads the same
- * however the package was installed — hoisted, nested or global.
+ *   the record's own directory   --outdir=.
+ *   the composition's directory  main.tsx
+ *   this package's root          vendor/pocketjs/tools/build.ts
+ *   the composition's project    assets/fonts/Face-Regular.ttf
+ *
+ * The first two are what make the record independent of where the
+ * composition sits. Relative to the repository instead, as this used to be,
+ * the entry and the outdir named the composition's path —
+ * `compositions/smoke/main.tsx`, `dist/captions-job-Xq3/main.tsx` — so one
+ * set of sources staged into two directories was two toolchains. The last two
+ * are two roots because an installed package splits what one checkout holds:
+ * the compiler is under THIS package (`node_modules/pocket-motion` in a
+ * project that installed it) and a face the sidecar names is under the
+ * project `buildSpawn` builds from. In this repository they are one
+ * directory. The package root comes before the project so the compiler's
+ * token reads the same however the package was installed — hoisted, nested
+ * or global.
  */
-function relativise(token: string, roots: readonly string[]): string {
+function relativise(token: string, anchors: readonly string[]): string {
   const eq = token.indexOf("=");
   if (token.startsWith("--") && eq > 0) {
-    return `${token.slice(0, eq)}=${relativise(token.slice(eq + 1), roots)}`;
+    return `${token.slice(0, eq)}=${relativise(token.slice(eq + 1), anchors)}`;
   }
   if (!isAbsolute(token)) return token;
-  for (const root of roots) {
-    const rel = relative(root, token);
+  for (const anchor of anchors) {
+    const rel = relative(anchor, token);
+    if (rel === "") return ".";
     if (!rel.startsWith("..") && !isAbsolute(rel)) return rel;
   }
   return token;
@@ -123,20 +154,25 @@ export async function patchDigests(): Promise<PatchDigest[]> {
 }
 
 /**
- * What a build running right now would record. `projectRoot` is the
- * composition's repository — the cwd the build runs in — and defaults to this
- * package's root, which is the same directory inside this repository.
+ * What a build running right now would record, written into `outDir`.
+ * `anchors` are the composition's directory and project; see `relativise`.
  */
 export async function currentBuildRecord(
   argv: readonly string[],
-  projectRoot: string = ROOT,
+  outDir: string,
+  anchors: RecordAnchors = {},
 ): Promise<BuildRecord> {
-  const roots = [ROOT, resolve(projectRoot)];
+  const order = [
+    resolve(outDir),
+    ...(anchors.compositionDir ? [resolve(anchors.compositionDir)] : []),
+    ROOT,
+    resolve(anchors.projectRoot ?? ROOT),
+  ];
   return {
     bun: Bun.version,
     upstream: UPSTREAM.commit,
     patches: await patchDigests(),
-    argv: argv.map((token) => relativise(token, roots)),
+    argv: argv.map((token) => relativise(token, order)),
   };
 }
 
@@ -144,9 +180,9 @@ export async function currentBuildRecord(
 export async function writeBuildRecord(
   outDir: string,
   argv: readonly string[],
-  projectRoot: string = ROOT,
+  anchors: RecordAnchors = {},
 ): Promise<BuildRecord> {
-  const record = await currentBuildRecord(argv, projectRoot);
+  const record = await currentBuildRecord(argv, outDir, anchors);
   await Bun.write(join(outDir, BUILD_RECORD_FILE), JSON.stringify(record, null, 2) + "\n");
   return record;
 }

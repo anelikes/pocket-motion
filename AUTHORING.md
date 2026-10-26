@@ -1224,8 +1224,12 @@ generator written today could use `glow-*` instead). Omit it to leave the
 sample's picture unchanged. A logo is a still picture (each side at most
 2048 — see Still pictures above). Footage is ingested into the throwaway job tree and deleted with it,
 so a batch of jobs sharing one clip still decodes it once per job. The
-digest in `render --json` is the job's picture at a fixed `--hash`;
-`trace` does not accept `--spec`, so a job is not in the identity ledger.
+digest in `render --json` is the job's picture at a fixed `--hash`, and
+`identity` beside it is the job's input identity: the staging directory's
+random name reaches neither the bundle nor `build.json`, so one spec
+rendered twice reports one identity and a spec that changes one field
+reports another. `trace` does not accept `--spec`, so a job is not in the
+identity ledger.
 
 ```bash
 bun compositions/copy/gen.ts     # only if the composition has a generator

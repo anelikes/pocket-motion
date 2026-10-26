@@ -28,14 +28,7 @@ function record(overrides: Partial<BuildRecord> = {}): BuildRecord {
       { file: "0001-dynamic-font-slots.patch", sha256: "aa".repeat(32) },
       { file: "0007-debug-hide-node.patch", sha256: "bb".repeat(32) },
     ],
-    argv: [
-      "bun",
-      "vendor/pocketjs/tools/build.ts",
-      "compositions/smoke/main.tsx",
-      "--outdir=dist/compositions/smoke",
-      "--framework=solid",
-      "--hz=60",
-    ],
+    argv: ["bun", "vendor/pocketjs/tools/build.ts", "main.tsx", "--outdir=.", "--framework=solid", "--hz=60"],
     ...overrides,
   };
 }
@@ -154,14 +147,7 @@ describe("computeIdentity — shape", () => {
       [
         "argv",
         record({
-          argv: [
-            "bun",
-            "vendor/pocketjs/tools/build.ts",
-            "compositions/smoke/main.tsx",
-            "--outdir=dist/compositions/smoke",
-            "--framework=solid",
-            "--hz=30",
-          ],
+          argv: ["bun", "vendor/pocketjs/tools/build.ts", "main.tsx", "--outdir=.", "--framework=solid", "--hz=30"],
         }),
       ],
     ];
@@ -281,7 +267,7 @@ describe("identityProjection", () => {
 const SIMULATED = new Set([
   "sound",
   "`layoutAllow` and `assertions`",
-  "where the checkout sits on disk",
+  "where the build ran",
   "when the build ran",
 ]);
 
@@ -331,32 +317,41 @@ describe("shutter — an input, and only where it is declared", () => {
 });
 
 describe("build.json — the two omissions it makes on purpose", () => {
-  test("the argv is recorded repo-relative, so the checkout's location is not an input", async () => {
+  test("the argv names no directory: the entry is the composition's, the outdir the record's own", async () => {
+    // One composition in the checkout and the same sources in a `render
+    // --spec` staging directory write one record. Red with the entry and the
+    // outdir written relative to the repository, as they were: the staged
+    // one came out `dist/captions-job-Xq3/main.tsx` and
+    // `--outdir=dist/captions-job-Xq3/dist`.
     const ROOT = resolve(import.meta.dir, "..");
-    const written = await currentBuildRecord([
-      "bun",
-      join(ROOT, "vendor/pocketjs/tools/build.ts"),
-      join(ROOT, "compositions/smoke/main.tsx"),
-      `--outdir=${join(ROOT, "dist/compositions/smoke")}`,
-      "--framework=solid",
-      "--hz=60",
-    ]);
-    expect(written.argv).toEqual([
-      "bun",
-      "vendor/pocketjs/tools/build.ts",
-      "compositions/smoke/main.tsx",
-      "--outdir=dist/compositions/smoke",
-      "--framework=solid",
-      "--hz=60",
-    ]);
-    expect(written.argv.join(" ")).not.toContain(ROOT);
+    const record = async (dir: string, outDir: string) =>
+      (
+        await currentBuildRecord(
+          [
+            "bun",
+            join(ROOT, "vendor/pocketjs/tools/build.ts"),
+            join(dir, "main.tsx"),
+            `--outdir=${outDir}`,
+            "--framework=solid",
+            "--hz=60",
+          ],
+          outDir,
+          { compositionDir: dir },
+        )
+      ).argv;
+    const checkout = await record(join(ROOT, "compositions/smoke"), join(ROOT, "dist/compositions/smoke"));
+    expect(checkout).toEqual(["bun", "vendor/pocketjs/tools/build.ts", "main.tsx", "--outdir=.", "--framework=solid", "--hz=60"]);
+    const staged = join(ROOT, "dist/captions-job-Xq3");
+    expect(await record(staged, join(staged, "dist"))).toEqual(checkout);
+    expect(checkout.join(" ")).not.toContain(ROOT);
   });
 
-  test("a composition outside this package records its paths relative to its own repository", async () => {
+  test("a composition outside this package records the same argv wherever its project sits", async () => {
     // An installed package: the compiler under the package, the composition
     // under the project that installed it. Two projects in two places must
-    // write the same record. Red with `relativise` given the package root
-    // alone — the composition, outdir and face stay absolute.
+    // write the same record. A face the sidecar names by an absolute path
+    // is written relative to the project. Red with `relativise` given the
+    // package root alone — the composition, outdir and face stay absolute.
     const ROOT = resolve(import.meta.dir, "..");
     const record = async (project: string) =>
       (
@@ -370,15 +365,16 @@ describe("build.json — the two omissions it makes on purpose", () => {
             "--hz=60",
             `--font-regular=${join(project, "fonts/Face-Regular.ttf")}`,
           ],
-          project,
+          join(project, "dist/compositions/card"),
+          { compositionDir: join(project, "compositions/card"), projectRoot: project },
         )
       ).argv;
     const here = await record("/srv/one/project");
     expect(here).toEqual([
       "bun",
       "vendor/pocketjs/tools/build.ts",
-      "compositions/card/main.tsx",
-      "--outdir=dist/compositions/card",
+      "main.tsx",
+      "--outdir=.",
       "--framework=solid",
       "--hz=60",
       "--font-regular=fonts/Face-Regular.ttf",
@@ -387,10 +383,10 @@ describe("build.json — the two omissions it makes on purpose", () => {
   });
 
   test("no timestamp: two records of the same build are the same bytes", async () => {
-    const argv = ["bun", "tools/build.ts", "--outdir=dist/x"];
-    const a = await currentBuildRecord(argv);
+    const argv = ["bun", "tools/build.ts", "--outdir=/srv/x/dist"];
+    const a = await currentBuildRecord(argv, "/srv/x/dist");
     await Bun.sleep(5);
-    const b = await currentBuildRecord(argv);
+    const b = await currentBuildRecord(argv, "/srv/x/dist");
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
     expect(Object.keys(a).sort()).toEqual(["argv", "bun", "patches", "upstream"]);
   });

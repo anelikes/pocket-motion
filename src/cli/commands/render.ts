@@ -53,8 +53,8 @@ export interface RenderJson {
   frames: number;
   /** The frame-sequence digest — the same value `trace` reports. */
   digest: string;
-  /** `trace`'s input identity. Absent for a `--spec` job (see `run`). */
-  identity?: InputIdentity;
+  /** `trace`'s input identity, for a `--spec` job as for a composition. */
+  identity: InputIdentity;
   elapsedMs: number;
   msPerFrame: number;
   shutter?: SidecarShutter;
@@ -263,13 +263,11 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
     });
 
     // The identity `trace` would report, from the same function, so a delivery
-    // carries the pair a reader on another machine compares against. Not for
-    // a job: `--spec` builds in a staged directory whose name is random and
-    // lands in `build.json`'s argv, so two renders of one job would report two
-    // identities — the reason `trace` does not accept `--spec` either.
-    const identity = staged
-      ? undefined
-      : await compositionIdentity(c, bound.footage?.hashes);
+    // carries the pair a reader on another machine compares against. A job's
+    // too: its staged directory's random name reaches neither the bundle
+    // (`patches/0051`) nor `build.json` (`src/render/build-record.ts`), so one
+    // spec staged twice reports one identity (`tests/build-location.test.ts`).
+    const identity = await compositionIdentity(c, bound.footage?.hashes);
 
     const payload: RenderJson = {
       ok: true,
@@ -279,7 +277,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       ...(result.alphaFloor !== undefined ? { alphaFloor: result.alphaFloor } : {}),
       frames: result.frames,
       digest: result.digest,
-      ...(identity ? { identity } : {}),
+      identity,
       elapsedMs: result.elapsedMs,
       msPerFrame: result.msPerFrame,
       ...(c.shutter ? { shutter: c.shutter } : {}),
@@ -288,7 +286,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
     const stdoutLines = [
       `render ok — ${result.frames} frames → ${payload.outputPath} (${format})`,
       `digest ${result.digest}`,
-      ...(identity ? [`identity ${identity.digest}`] : []),
+      `identity ${identity.digest}`,
       `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
       ...(c.shutter
         ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure of ${c.shutter.samples} renders`]

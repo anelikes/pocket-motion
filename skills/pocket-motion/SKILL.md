@@ -275,7 +275,8 @@ browser.
   through the CLI's own dispatch and returns what `--json` would have
   printed, redaction and `runId` included. `tests/api.test.ts` holds each
   function equal to the CLI. `render`'s object carries `trace`'s `digest`
-  and `identity`, except for a `--spec` job, which has no identity.
+  and `identity`; a `--spec` job's identity does not depend on the
+  directory it was staged in, so one spec rendered twice reports one.
 - A command states what it EXAMINED. `check` names the frame window it used;
   `visibility` and `assert` name the sampled frames; `layout` is one frame.
   None of them claims anything about the frames it did not look at, and

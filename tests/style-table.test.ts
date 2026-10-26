@@ -194,8 +194,9 @@ describe("a build's style table is its own", () => {
     expect(`${r.code}\n${r.err}`).toStartWith("0");
     const bundle = readFileSync(join(outdir, "main.js"), "utf8");
     // Bun names each module above its code by its path relative to the
-    // build's cwd; the served table is one of them.
-    expect(bundle).toContain("\n  // vendor/pocketjs/framework/src/styles.generated.ts\n");
+    // build's cwd, and 0051 renames each by what it is; the served table is
+    // a module of the PocketJS tree.
+    expect(bundle).toContain("\n  // framework/src/styles.generated.ts\n");
     const absolute = bundle.split("\n").filter((l) => l.includes(ROOT) || l.includes(outdir));
     expect(absolute.join("\n") || "none").toBe("none");
   }, 120_000);

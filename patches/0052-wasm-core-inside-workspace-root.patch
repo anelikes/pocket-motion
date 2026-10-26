@@ -1,0 +1,58 @@
+pocket-motion-only: upstream ships this module to browsers and builds it on any host its contributors use, where a symlink in the crate is a broken checkout on Windows without core.symlinks and nothing hashes the module; here the module is the rasteriser every frame goes through, the package ships one copy of it, and its bytes should be the same wherever it was compiled.
+
+0052 — the wasm crate reaches pocketjs-core through a path inside its own
+workspace root, so the module's bytes do not depend on where the tree is.
+
+Cargo gives rustc a `-C metadata` per crate, and rustc folds it into the
+crate disambiguator every v0 symbol carries (`Cs1PSgNagyDwA_13pocketjs_wasm`).
+For a path dependency the hash is of its path relative to the workspace
+root when it is inside the root, and of its absolute path when it is not.
+`engine/wasm` is a workspace of its own — upstream's `engine/Cargo.toml`
+excludes it, for cargo-psp — so `path = "../core"` hashed the checkout's
+location into pocketjs-core's disambiguator, and through it into the wasm
+crate's. The disambiguators are in the name section, and they order the
+module's functions, so the code and element sections moved too: two copies
+of `engine/` built with the same rustc and every path remapped were the
+same length and differed in 18,502 bytes, in the function, element, code and
+name sections.
+
+`engine/wasm/core` is a symlink to `../core`, and the dependency names it.
+Cargo does not resolve the symlink, so pocketjs-core is inside the root,
+becomes a member of the wasm crate's workspace, and is hashed as `core`;
+as a member it is also handed to rustc by a relative path, so its panic
+locations read `core/src/raster.rs` with no remap. `Cargo.lock` does not
+record a path dependency's path and is unchanged. Built at two scratch
+locations, the two modules were byte-identical; without this patch, not.
+
+pocket-motion's `scripts/vendor.ts` remaps cargo's home for the registry
+crates' panic locations. Neither changes a pixel: the ledger's digests are
+the check.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/engine/wasm/Cargo.toml b/engine/wasm/Cargo.toml
+index 08cb63e7..a34dde4f 100644
+--- a/engine/wasm/Cargo.toml
++++ b/engine/wasm/Cargo.toml
+@@ -16,7 +16,12 @@ edition = "2021"
+ crate-type = ["cdylib"]
+ 
+ [dependencies]
+-pocketjs-core = { path = "../core" }
++# pocket-motion: `core` is a symlink to ../core. Cargo hashes a path
++# dependency into every symbol's crate disambiguator by its path relative to
++# the workspace root when it lies inside the root, and by its absolute path
++# when it does not, and the disambiguators order the module's functions. So
++# `../core` made the wasm's bytes depend on where the tree was checked out.
++pocketjs-core = { path = "core" }
+ 
+ [profile.release]
+ # pocket-motion: built for render throughput, not download size; the
+diff --git a/engine/wasm/core b/engine/wasm/core
+new file mode 120000
+index 00000000..c73d9e17
+--- /dev/null
++++ b/engine/wasm/core
+@@ -0,0 +1 @@
++../core
+\ No newline at end of file

@@ -30,11 +30,19 @@ to declare; every digest recorded before this reproduces unchanged.
 ### Changed
 
 - `render --json` carries `identity`, the value `trace` reports, beside
-  `digest`. A `--spec` job carries none.
-- `build.json` records a composition's paths relative to the composition's
-  own repository as well as this one, so a project that installed the
-  package writes a record that does not say where it sits. Every record in
-  this repository is byte-identical to before.
+  `digest`, for a `--spec` job as for a composition: one spec rendered
+  twice reports one identity.
+- **Where a build ran is not an input.** A bundle names its modules by
+  what they are — `framework/src/index.ts`, `./app.tsx` — rather than by
+  their path from the build's cwd (`patches/0051`); `build.json` writes
+  the entry relative to the composition and `--outdir` as `.`; the wasm
+  reaches pocketjs-core inside its own workspace root (`patches/0052`) and
+  remaps cargo's home, so it carries no absolute path. One composition
+  built from the checkout, a random staging directory or a symlinked
+  project, or against the installed package, is one bundle, one pak and
+  one identity. Every bundle's bytes changed, in its module-name lines
+  and nothing else, and so did every `build.json`; every frame digest
+  recorded before reproduces unchanged.
 - `doctor` in an installed package checks the prebuilt tree against
   `vendor/prebuilt.json` and loads the compiler; `rustup` and `assets` say
   they do not apply there.
