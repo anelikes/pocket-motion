@@ -26,8 +26,9 @@
  * rather than fail. Building here is what keeps source and binary in step.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { UPSTREAM } from "../src/vendor/upstream.ts";
@@ -107,6 +108,35 @@ async function hasCommit(dir: string, commit: string): Promise<boolean> {
   return (await p.exited) === 0;
 }
 
+/**
+ * `--remap-path-prefix` for cargo's home, as a cargo `--config` value.
+ *
+ * rustc writes the source path of every reachable panic into the module —
+ * the file a bounds check or an `unwrap` is in — as cargo hands it over. A
+ * crate of the workspace being built is handed over relative to its root,
+ * and since `patches/0052` that is the wasm crate and pocketjs-core both; a
+ * registry crate is handed over by its absolute path under cargo's home.
+ * Before, a wasm built here carried 24 absolute paths, 18 into the checkout
+ * and 6 into `~/.cargo/registry`, so two checkouts on one machine built two
+ * wasms and a packed tarball named the packing user's home. Remapped,
+ * cargo's home is `cargo/`; the toolchain's own library is already
+ * `/rustc/<commit>/`. The home is remapped under its realpath too when that
+ * differs, because either spelling can be the one cargo passes.
+ *
+ * A `--config` value rather than `RUSTFLAGS`: `patches/0022` sets
+ * `+simd128` in `engine/wasm/.cargo/config.toml`, and `RUSTFLAGS` replaces
+ * that file's flags where a `--config` array is joined to them. Measured:
+ * the module's `target_features` section still names `simd128`, and two
+ * remaps of different spellings build the same crate disambiguators, so the
+ * flag itself is not hashed into the module.
+ */
+function remapConfig(): string {
+  const home = process.env.CARGO_HOME ?? join(homedir(), ".cargo");
+  const real = existsSync(home) ? realpathSync(home) : home;
+  const flags = [...new Set([home, real])].map((from) => `--remap-path-prefix=${from}=cargo`);
+  return `target.wasm32-unknown-unknown.rustflags=${JSON.stringify(flags)}`;
+}
+
 async function buildWasm(): Promise<void> {
   const found = await cargoBin();
   if (!found) {
@@ -117,7 +147,7 @@ async function buildWasm(): Promise<void> {
   const out = join(VENDOR, "hosts", "web", "pocketjs.wasm");
   const built = join(wasmDir, "target/wasm32-unknown-unknown/release/pocketjs_wasm.wasm");
   console.log("vendor: building engine/wasm (release, wasm32-unknown-unknown)");
-  await sh([found.cargo, "build", "--release", "--target", "wasm32-unknown-unknown"], wasmDir, {
+  await sh([found.cargo, "build", "--release", "--target", "wasm32-unknown-unknown", "--config", remapConfig()], wasmDir, {
     ...Bun.env,
     PATH: `${found.dir}:${Bun.env.PATH ?? ""}`,
   });
