@@ -610,13 +610,19 @@ describe("catalog gates", () => {
       }
     }
     expect(parts, parts.join("\n") || "G7 clean").toEqual([]);
-    // Two costs, timed apart (2026-10-26, Apple M4, 10 cores, load average
-    // 280-310 from other work, three runs each). Importing jsx-plugin.ts took
-    // 2.2-5.0 s whether or not the transform cache was warm: it loads 574
-    // modules, Babel and Vue's language tools among them. The 13 transforms took
-    // 2.4-4.9 s against an empty cache and 0.2-1.0 s against a warm one. So a
-    // cold run took 4.6-8.3 s and a warm one 3.5-5.5 s, against bun's 5 s
-    // default; 60 s is G10's bound, for the same work.
+    // Two costs, timed apart on 2026-10-26 (Apple M4, 10 cores), three runs
+    // each: importing jsx-plugin.ts, 574 modules, Babel and Vue's language
+    // tools among them, whether or not the transform cache is warm; and the 13
+    // transforms, against an empty cache and a warm one.
+    //
+    //   load average   import       transforms, empty   transforms, warm
+    //   13-16          0.29-0.41 s  73-131 ms           4 ms
+    //   280-310        2.2-5.0 s    2.4-4.9 s           0.2-1.0 s
+    //
+    // So G7 is half a second on a quiet machine, cold or warm (with Bun's own
+    // transpiler cache off as well), and 3.5-8.3 s on one other work holds at
+    // a load of 300, against bun's 5 s default. 60 s is G10's bound, for the
+    // same work.
   }, 60_000);
 
   /**
