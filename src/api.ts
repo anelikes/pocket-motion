@@ -203,9 +203,9 @@ export function trace(dir: string, options: CompositionFlags = {}): Promise<Trac
 /**
  * `render <dir> --out <file> --json`, or with `spec` a job rendered from the
  * composition's generator. `outputPath` is the file; `digest` and `identity`
- * are the values `trace` reports. A `--spec` job carries no `identity`:
- * it builds in a staged directory whose name is random and lands in the
- * build record, so the same job would report a different one every run.
+ * are the values `trace` reports. A `--spec` job carries its own
+ * `identity`, which the staged directory's random name does not reach, so
+ * one spec rendered twice reports one.
  */
 export function render(dir: string, options: RenderOptions): Promise<RenderResult> {
   return call(argvOf("render", dir, { ...options }));

@@ -103,8 +103,8 @@ export const DELIBERATELY_ABSENT = [
     why: "faces are either declared as repo-relative paths in the sidecar or the build's default; the guest never reads the system font directory",
   },
   {
-    what: "where the checkout sits on disk",
-    why: "`build.json` records the build argv repo-relative, so the same build under two directories is one toolchain component; an absolute path is a property of the machine and would make identity disagree across machines for the one reason it exists to rule out",
+    what: "where the build ran",
+    why: "the bundle names each module relative to the PocketJS tree or the composition's own directory (patches/0051) and `build.json` writes the entry relative to the composition and `--outdir` relative to itself, so one set of declared inputs built from a checkout, a staging directory or an installed package is one bundle and one toolchain component; a directory is a property of the machine and the moment, and would make identity disagree for the one reason it exists to rule out (`tests/build-location.test.ts`)",
   },
   {
     what: "when the build ran",
