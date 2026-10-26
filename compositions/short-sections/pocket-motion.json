@@ -1,0 +1,27 @@
+{
+  "motion": 1,
+  "durationFrames": 300,
+  "fps": 30,
+  "supersample": 1,
+  "assertions": [
+    {"node": "intro", "exitsBy": 89},
+    {"node": "num-r1", "inPicture": [90, 98]},
+    {"node": "title-r1", "inPicture": [93, 98]},
+    {"node": "num-r2", "inPicture": [99, 107]},
+    {"node": "title-r2", "inPicture": [102, 107]},
+    {"node": "num-r3", "inPicture": [108, 116]},
+    {"node": "title-r3", "inPicture": [111, 116]},
+    {"node": "num-r4", "inPicture": [117, 125]},
+    {"node": "title-r4", "inPicture": [120, 125]},
+    {"node": "num-r5", "inPicture": [126, 134]},
+    {"node": "title-r5", "inPicture": [129, 134]},
+    {"node": "num-r6", "inPicture": [135, 143]},
+    {"node": "title-r6", "inPicture": [138, 143]},
+    {"node": "num-r7", "inPicture": [144, 152]},
+    {"node": "title-r7", "inPicture": [147, 152]},
+    {"node": "num-r8", "inPicture": [153, 161]},
+    {"node": "title-r8", "inPicture": [156, 161]},
+    {"node": "num-r7", "before": "title-r7"},
+    {"node": "outro", "entersBy": 162}
+  ]
+}

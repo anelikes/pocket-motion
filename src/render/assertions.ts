@@ -14,12 +14,40 @@
  * WHAT AN ASSERTION CLAIMS, EXACTLY
  *
  * Sampled frames, and nothing between them. `entersBy: 40` passing means some
- * SAMPLED frame at or before 40 showed the node — at 24 samples over 240
- * frames the stride is about 10, so a node that appears at 38 and is asserted
- * `entersBy: 39` can fail on a grid that has no sample in between. That is a
- * property of sampling and not a bug to be smoothed: the verdict names the
- * frames it looked at, and `--samples` is the lever. The exact case,
+ * SAMPLED frame at or before 40 showed the node. That is a property of
+ * sampling and not a bug to be smoothed: the verdict names the frames it
+ * looked at, and `--samples` is the lever. The exact case,
  * `--samples durationFrames`, is available and costs what it costs.
+ *
+ * WHICH FRAMES ARE SAMPLED
+ *
+ * An evenly spaced grid alone decides a window narrower than its stride by
+ * where the stride happens to fall. Measured on hajibang's ranking template
+ * (the port on branch `claude/angry-carson-0abed5`), its twenty-rank request:
+ * 1 s a rank over 1,125 frames, so 24 samples step every 49 and most ranks
+ * held none. 66 of its 107 assertions failed on a correct film — 26 with "no
+ * sampled frame falls in" and 40 with "no node carries the debugName" about
+ * nodes the tree carries. `compositions/short-sections` is that shape at
+ * fixture size. So `assert` samples, besides the grid, the frames each
+ * assertion itself names (`assertionFrames`):
+ *
+ *   inPicture [from, to]   from and to
+ *   entersBy N             N — the last frame it may first be shown at
+ *   exitsBy N              N and N + 1 — the last frame it may be shown at and
+ *                          the first it may not
+ *
+ * `before` names no frame. What it compares is two first showings, so its
+ * pair is found rather than named (`pinFrames`): once the grid has been read,
+ * every frame between each node's first showing and the sampled frame before
+ * it is sampled too, which puts each first showing on the frame it happens.
+ * Two entrances inside one stride otherwise read as one sampled frame, and a
+ * strict "earlier than" fails on a tie the film does not have.
+ *
+ * `insideBox` and `dwellFrames` name no frame and add none.
+ *
+ * Adding frames can only make a verdict more exact, never vacuous: a frame
+ * added inside a dwell run that does not show the node breaks the run, which
+ * is what the node did.
  *
  * `dwellFrames` is the one where this matters most, so it is defined
  * conservatively: the span of the longest run of CONSECUTIVE sampled frames
@@ -58,15 +86,19 @@ export interface AssertionVerdict {
 
 export interface EvaluateInputs {
   readonly assertions: readonly SidecarAssertion[];
-  /** By `debugName`. A name the tree does not carry is a failure, not a skip. */
+  /**
+   * By `debugName`: each node the sweep laid out at a sampled frame. A name
+   * missing here is a failure, not a skip, whether or not the tree carries it.
+   */
   readonly nodes: ReadonlyMap<string, SweptNode>;
   /** The frames the sweep looked at, ascending. */
   readonly frames: readonly number[];
   /**
-   * Every debugName the sweep saw a box for, first seen first — what a failing
-   * name is told the composition carries. Absent means `nodes`' own keys,
-   * which is the same list when every named node was classified; `assert`
-   * classifies only the names its assertions mention and passes this.
+   * Every debugName the tree carries, in document order. It separates the two
+   * ways a name can be missing from `nodes` — no node carries it, or a node
+   * does and no sampled frame laid it out — and it is what a name of the first
+   * kind is told the composition carries. Absent means `nodes`' own keys, and
+   * then every missing name reads as the first kind.
    */
   readonly named?: readonly string[];
 }
@@ -86,6 +118,95 @@ export function predicateOf(a: SidecarAssertion): { key: string; value: unknown 
   // The parser refuses an entry naming none, so reaching this means a caller
   // built an assertion by hand. Say so rather than return a made-up verdict.
   throw new Error(`assertion for ${a.node} names no predicate`);
+}
+
+/**
+ * The frames the assertions themselves name, ascending and inside the clock.
+ *
+ * The header's table is the rule. The parser has already held every frame to
+ * the clock; the bound here is for `exitsBy`'s N + 1 on the last frame, which
+ * no frame can follow.
+ */
+export function assertionFrames(
+  assertions: readonly SidecarAssertion[],
+  durationFrames: number,
+): number[] {
+  const out = new Set<number>();
+  const add = (f: number): void => {
+    if (f >= 0 && f < durationFrames) out.add(f);
+  };
+  for (const a of assertions) {
+    if ("inPicture" in a) {
+      add(a.inPicture[0]);
+      add(a.inPicture[1]);
+    } else if ("entersBy" in a) {
+      add(a.entersBy);
+    } else if ("exitsBy" in a) {
+      add(a.exitsBy);
+      add(a.exitsBy + 1);
+    }
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
+/**
+ * The frames that put each `before` node's first showing where it happens.
+ *
+ * For each node a `before` compares, every frame strictly between its first
+ * showing on `frames` and the sampled frame before that one. Sampled, those
+ * frames leave the node's first showing at the earliest frame of that gap
+ * that shows it, which is the frame it entered unless it was also shown and
+ * hidden again inside an earlier gap — a stretch no grid short of every frame
+ * sees. A node no sampled frame shows has no gap to search, and adds nothing.
+ */
+export function pinFrames(
+  assertions: readonly SidecarAssertion[],
+  nodes: ReadonlyMap<string, SweptNode>,
+  frames: readonly number[],
+): number[] {
+  const out = new Set<number>();
+  for (const a of assertions) {
+    if (!("before" in a)) continue;
+    for (const name of [a.node, a.before]) {
+      const first = nodes.get(name)?.onScreen[0];
+      if (first === undefined) continue;
+      const i = frames.indexOf(first);
+      const prev = i > 0 ? frames[i - 1]! : -1;
+      for (let f = prev + 1; f < first; f++) out.add(f);
+    }
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
+/**
+ * Why a name has no sweep entry, as the verdict's detail.
+ *
+ * Two different facts, and the message used to state the first for both. A
+ * name no node carries is a rename or a typo. A name the tree carries with no
+ * entry is a node the draw walk reached at none of the sampled frames: it, or
+ * an ancestor, was `display: none`, or an ancestor was at opacity 0 and the
+ * walk returned above it (`draw.rs`). A node at its OWN opacity 0 still has a
+ * box, so it is never this. Both are failures — neither has any evidence
+ * behind it — and only the first is about the name.
+ */
+function absent(name: string, inputs: EvaluateInputs): string {
+  const named = inputs.named ?? [...inputs.nodes.keys()];
+  if (named.includes(name)) {
+    return (
+      `${JSON.stringify(name)} is in the tree and was laid out at none of the ` +
+      `${inputs.frames.length} sampled frame(s) (${list(inputs.frames)}): the draw walk ` +
+      "did not reach it at any of them — it or an ancestor was display: none, or an " +
+      "ancestor was at opacity 0 — so no sampled frame carries evidence about it"
+    );
+  }
+  // An assertion about a node nobody named is not vacuously true. A renamed
+  // `debugName` would otherwise turn every assertion about it green at once,
+  // which is the failure mode that costs the most.
+  return (
+    `no node carries the debugName ${JSON.stringify(name)}. ` +
+    `Named in this composition: ${named.slice(0, 8).join(", ") || "(none)"}` +
+    (named.length > 8 ? ` … (${named.length})` : "")
+  );
 }
 
 /**
@@ -125,14 +246,7 @@ export function evaluateAssertions(inputs: EvaluateInputs): AssertionVerdict[] {
         predicate: key,
         expected: value,
         ok: false,
-        // An assertion about a node nobody named is not vacuously true. A
-        // renamed `debugName` would otherwise turn every assertion about it
-        // green at once, which is the failure mode that costs the most.
-        detail:
-          `no node carries the debugName ${JSON.stringify(a.node)}. ` +
-          `Named in this composition: ${
-            (inputs.named ?? [...inputs.nodes.keys()]).slice(0, 8).join(", ") || "(none)"
-          }`,
+        detail: absent(a.node, inputs),
       });
       continue;
     }
@@ -218,11 +332,7 @@ function verdict(
     case "before": {
       const other = inputs.nodes.get(value as string);
       if (other === undefined) {
-        return {
-          ...base,
-          ok: false,
-          detail: `no node carries the debugName ${JSON.stringify(value)}`,
-        };
+        return { ...base, ok: false, detail: absent(value as string, inputs) };
       }
       const mine = shown[0];
       const theirs = other.onScreen[0];
