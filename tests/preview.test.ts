@@ -1145,7 +1145,14 @@ describe("hot reload — an edit reaches the page", () => {
       const decoder = new TextDecoder();
 
       await Bun.sleep(300); // FSEvents takes a moment to arm
-      await Bun.write(entry, `${original}\n// an edit that reaches the pixels\n`);
+      // A class, so the style table and the pak move. This used to append a
+      // comment, which reaches no pixel and passed only because the fixture
+      // and the reload built from two working directories and Bun named the
+      // bundle's modules relative to each; since 0051 the two bundles are one,
+      // and a comment is correctly `unchanged`.
+      const edited = original.replace("bg-blue-600", "bg-red-600");
+      expect(edited).not.toBe(original);
+      await Bun.write(entry, edited);
 
       let seen = "";
       const deadline = Date.now() + 90_000;
