@@ -99,6 +99,17 @@ that is said rather than implied.
   element and a missing one are indistinguishable — seen. Windows are now
   placed on voiced material and a per-window floor decides which of them carry
   evidence (`src/sound/verify.ts`, `tests/sound.test.ts`).
+- **A delivered file whose container, colour and length were defaults.**
+  `render --format webm` on a composition with sound wrote an ISO MP4 of VP9
+  and AAC under the `.webm` name, its alpha gone, and `--format mov` exited 1;
+  every encoded file was converted to YUV with swscale's default BT.601 matrix
+  and tagged with nothing, so a player taking BT.709 for untagged HD showed
+  255 green as 216; and the mix ended with its last element, a 1 s audio
+  stream in a 2 s film — declared. The mux writes the container `--format`
+  names (`src/sound/mux.ts`), the conversion names BT.709 and the stream
+  carries it (`DELIVERY_COLOUR`, `src/render/encode.ts`), and every mix is
+  padded to the film (`src/sound/mix.ts`). `tests/format.test.ts` reads
+  each back out of the file.
 
 Four defects are **not** instances of either invariant, and forcing them in
 would make both rules useless.
@@ -866,6 +877,69 @@ mechanisms with the file or test beside them.
   replaced by the opaque expression, three of them fail. What this does NOT
   change is the RGB565 targets, which have no alpha byte, and it does not
   reach the hosts upstream presents to — which is why it is class `motion`.
+- **A delivered file is read back the way a player reads it.** Frame
+  digests are taken before the encoder, so nothing about the file itself was
+  checked until `tests/format.test.ts`'s "delivered files, read back" drove
+  the encode leg and the sound mux with a field of flat patches and a 1 s
+  tone under a 2 s film, in all three containers, alpha and not. What it
+  holds, each measured on main first and each seen red with its fix taken
+  out:
+  - **The container.** Read from the bytes, not from ffprobe's `format_name`,
+    which is `matroska,webm` for both Matroska flavours and one string for
+    MP4 and MOV: the `ftyp` brand (`isom`, `qt  `) and the EBML DocType
+    (`webm`). Both legs name it with `-f`; inferred from `--out`, a `--format
+    mov --out cut` that `render` accepts failed in ffmpeg. With sound, MP4
+    carries AAC, WebM Opus at 48 kHz (WebM carries Opus or Vorbis and nothing
+    else), MOV 24-bit PCM at 48 kHz, the ProRes container's own convention.
+  - **The alpha through the mux.** The video stream is copied, and the test
+    decodes it on both sides of the mux and requires the same bytes. For VP9
+    it also reads the track's AlphaMode element, which is what a browser
+    reads: ffprobe's `alpha_mode` tag is derived — on a remuxed file it comes
+    back as `ALPHA_MODE`, from a SimpleTag the remux copied — and stripping
+    stream metadata in the mux removes the element while the decoded alpha
+    still compares equal through libvpx, so only the element catches it.
+  - **The colour.** The RGB → YUV `scale` names `out_color_matrix=bt709`
+    and `out_range=tv`, and primaries and transfer go on the frames with
+    `setparams`: ffmpeg 8.0's encoder takes them from the frames, and with
+    the four output options and no `setparams` the stream came out tagged
+    with matrix and range only. On 8.0 the output `-colorspace` drives the
+    negotiation too, so tags without the named matrix also convert BT.709 —
+    measured — and the matrix is named anyway so the conversion does not
+    rest on that. The decode honours the tags, BT.709 where there are none;
+    every patch is within 1 level through H.264 and VP9 and 0 through ProRes,
+    against 39 and 40 on main. BT.601 pixels under BT.709 tags — the
+    combination a tag must not paper over — read back 7 of 8 patches out, up
+    to 39 levels; grey is the same under either matrix. Naming BT.601 in the
+    `scale` while the output asks BT.709 is not that combination on 8.0: it
+    inserts a second, YUV-to-YUV conversion and lands 4 patches 4–5 levels
+    out, grey included, which is why both read one `DELIVERY_COLOUR`.
+    ProRes has no range field, in its bitstream or MOV's `colr`, so its range
+    reads absent and decoders take video range.
+  - **The length.** Every mix graph ends with `apad` to the film, and the
+    mux's `-t` cuts one that runs longer. Audio and video agree to one codec
+    frame both as the container states them and as a decode yields samples:
+    MP4 states 2.000 s for both and decodes 20 ms over, inside AAC's 1024
+    samples; WebM states 2.008 s for Opus and decodes exactly 2.000; MOV is
+    exact both ways.
+  - **No muxer version in the container.** `-fflags +bitexact` sat before
+    `-i` in both legs, where it acts on the demuxer, and every delivery
+    carried `encoder=Lavf62.3.100`. It is an output flag now.
+
+  Two readers had to move with it. `sound --verify` reads every window from
+  one decode of the delivery rather than seeking into it, because an input
+  `-ss` is not on one clock across containers: out of the MP4 a window cut at
+  0.75 s matched the full decode sample for sample, out of the Opus WebM it
+  matched 384 samples (8.0 ms) earlier, which put the fixture's 440 Hz
+  narration nearly in antiphase and read the bed's level window at +6.0 dB
+  against a declared −24.4. And `*.sound.json` is named after the whole delivered file —
+  `hero.mp4.sound.json`, where it was `hero.sound.json` — because `hero.mp4`
+  and `hero.webm`, one `<video>`'s two sources, shared one record. The
+  CLI half renders `compositions/sound-roles` to WebM and MOV: the 500 ms
+  tail is digital silence through Opus and PCM with the same 50 ms guard, and
+  `sound --verify` passes every element in both. ffmpeg 8.0 prints `Error
+  parsing Opus packet header` once when it decodes any Opus WebM it wrote,
+  this repository's or one from `lavfi` alone; the decode is complete to
+  the sample, the last 20 ms at full level.
 - Ingest records the ffmpeg version into each artifact's manifest, and
   `assets/*/manifest.json` pins every fetched byte by sha256.
 - **The ingest names the scaler's rounding, not only its kernel.** Every
@@ -1176,14 +1250,17 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
     where two ducks overlap below the floor are counted as unexamined
   - the 50 ms guard is two AAC frames at 44.1 kHz. A mix at a lower rate,
     where two frames are longer, is not prevented — the measurement after the
-    mux is what would refuse it
+    mux is what would refuse it. Opus and PCM were measured with the same
+    guard on `compositions/sound-roles` and leave the tail silent; no other
+    mix has been
 - **The two ProRes/VP9 facts a reader would get wrong from the argv**, both
   pinned so they are not rediscovered: ProRes 4444 is asked for as
   `yuva444p10le` and DECODES as `yuva444p12le`, because the 4444 bitstream is
   12-bit; and VP9 stores alpha out of band, so an alpha WebM's video stream
   still reports `pix_fmt=yuv420p` and the evidence is the container's
-  `alpha_mode` tag. A test asserting `pix_fmt=yuva420p` would be red on a
-  correct file.
+  `alpha_mode` tag — on a file the sound mux rewrote, `ALPHA_MODE`, and the
+  element behind it is what the delivery test reads. A test asserting
+  `pix_fmt=yuva420p` would be red on a correct file.
 - **The largest bakeable text size is a property of the face, not of the
   format.** The FONT ATLAS header stores `cellH` as a u8, so
   `patches/0002-loud-font-cell-limit.patch` refuses a size whose cell would
@@ -1291,6 +1368,15 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   points upstream's transform cache at
   `node_modules/pocket-motion/vendor/pocketjs/.cache`, so an install on a
   read-only filesystem cannot build.
+- **A delivered file's colour and container are measured on ffmpeg 8.0
+  only.** The workflow and the image pin it; an installed package runs
+  whatever ffmpeg the consumer has, and `doctor` checks that one exists, not
+  which. Two parts of the encode leg are there for other versions and were
+  reasoned, not run: the colour tags are passed as output options as well as
+  on the frames, for an ffmpeg that does not carry frame properties into the
+  encoder, and the matrix is named in the `scale`, for one that does not
+  negotiate colour spaces. Nothing reports a consumer's file coming out
+  untagged.
 - **What the package was checked on is one platform.** The install test has
   run on darwin-arm64 only, at the time of writing; it is in the suite CI runs
   on linux-x64, which is where the second platform will be measured. The

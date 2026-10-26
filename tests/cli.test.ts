@@ -633,13 +633,15 @@ describe("supersample", () => {
       scaleTo: encodeScaleTo({ width: 1920, height: 1080, supersample: 2 }),
     });
     expect(args).toContain("-vf");
-    expect(args).toContain("scale=1920:1080:flags=area");
+    expect(args[args.indexOf("-vf") + 1]).toContain("scale=1920:1080:flags=area:");
     expect(args.join(" ")).not.toContain("lanczos");
     // The input is still the supersampled buffer — the hash covers that.
     expect(args.join(" ")).toContain("-s 3840x2160");
   });
 
-  test("no filter at all when the render is not supersampled", () => {
+  test("no downscale when the render is not supersampled", () => {
+    // The `-vf` chain is always there now — it names the BT.709 conversion
+    // (`tests/format.test.ts`) — but it carries no size and no `area`.
     const args = ffmpegArgs({
       width: 1920,
       height: 1080,
@@ -647,7 +649,10 @@ describe("supersample", () => {
       outputPath: "/dev/null",
       scaleTo: encodeScaleTo({ width: 1920, height: 1080, supersample: 1 }),
     });
-    expect(args).not.toContain("-vf");
+    const vf = args[args.indexOf("-vf") + 1]!;
+    expect(vf).toContain("scale=out_color_matrix=bt709");
+    expect(vf).not.toContain("flags=area");
+    expect(vf).not.toMatch(/scale=\d/);
   });
 
   const header = (density: number, slot = 14) => ({

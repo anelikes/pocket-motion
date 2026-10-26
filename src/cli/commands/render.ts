@@ -319,7 +319,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
         "png-seq is a directory of stills, not a container: the declared sound has nowhere " +
         "to go. Render this composition to mp4, webm or mov for the mix.";
       stdoutLines.push(`sound not muxed — ${payload.soundSkipped}`);
-    } else if (soundDeclared(c.sidecar.sound)) {
+    } else if (soundDeclared(c.sidecar.sound) && format !== "png-seq") {
       const resolved = resolveSound(c.sidecar, c.dir);
       if (!resolved.ok) {
         return {
@@ -376,6 +376,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
         outputPath: payload.outputPath,
         graph,
         durationSec: framesToMs(c.durationFrames, c.fps) / 1000,
+        format,
         ...(sound.silentTailMs !== undefined ? { silentTailMs: sound.silentTailMs } : {}),
       });
       payload.sound = {
