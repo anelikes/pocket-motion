@@ -229,6 +229,13 @@ const EXEMPT: Readonly<Record<string, string>> = {
     "exactly one node with a box and no pixel — the fixture for `visibility`'s " +
     "covered classification. A `tests/cli.test.ts` fixture, not a deliverable — its " +
     "frames carry no film, and a digest would pin a test input as if it were a cut.",
+  "compositions/short-sections":
+    "Eight 9-frame ranks under the 13-frame stride of `assert`'s default 24 samples, " +
+    "each rank's card at opacity 0 outside its window — hajibang's top-reveal at " +
+    "fixture size. What it holds is which frames `assert` samples, against a " +
+    "sidecar `assert --samples 300` passes at every frame (`tests/assert.test.ts`); " +
+    "a fixture for the grid, not a deliverable, and its pixels are flat cards " +
+    "and two text runs a rank that no other test reads.",
   "compositions/spanned":
     "The same burial at the proportions it appears at in a real cut, and the three " +
     "things it has to be told apart from: a named caption shown for a clean 72 frames and covered " +

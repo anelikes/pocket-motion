@@ -224,10 +224,13 @@ bun src/cli/main.ts render compositions/captions/alpha-en --spec compositions/ca
 ```
 
 `compositions/captions/alpha-en` and `compositions/captions/burn-zh` are the
-two samples; either takes any captions job. `assert --samples <durationFrames>`
-checks every word at every frame — the default 24 samples can miss a short
-word's window, and an assertion with no sample in its window fails rather
-than passing. `AUTHORING.md`, "Captions from a transcript", has the rules, and
+two samples; either takes any captions job. `assert` reads each word at both
+ends of its window besides its 24 evenly spaced frames, so a word shorter than
+the stride is still read; `assert --samples <durationFrames>` checks every
+word at every frame. A job's render runs that same check on the job's own
+staged tree before it encodes and refuses the job when a word is not in the
+picture over its window, with `assert`'s JSON as `assertions` in `--json`;
+`--no-assert` skips it. `AUTHORING.md`, "Captions from a transcript", has the rules, and
 `CAPABILITIES.md`, "Captions job", every key with its default and refusal.
 
 ## The commands

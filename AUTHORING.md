@@ -1156,12 +1156,11 @@ onto the sampled clock, `assert --samples 101` on `burn-zh` fails all nine
 words, each at exactly its first frame; `tests/captions.test.ts` sweeps every
 frame of all five styles at 30 and 60 fps.
 
-`assert` without `--samples` looks at 24 frames, and an assertion whose window
-holds none of them FAILS ("raise --samples"). Every window in the two samples
-is at least as wide as that stride, so `assert` and `verify` pass on them with
-the default grid — a property of those two transcripts, not of the template.
-For a job of any length, the exact check is `--samples <durationFrames>`.
-`verify` passes on both. `burn-zh` carries 23 layout warnings, so `--strict`
+`assert` without `--samples` looks at 24 evenly spaced frames plus both ends
+of every word's window, so a word shorter than the stride is read at its own
+first and last frame rather than missed — on `alpha-en` that is 48 frames for
+13 words. `assert` and `verify` pass on both samples with that grid, and the
+exact check is still `--samples <durationFrames>`. `burn-zh` carries 23 layout warnings, so `--strict`
 fails it: 21 are `text_not_painted` on words whose clip window has not opened
 yet, which is what `clip-wipe` is, and two are on the unnamed text inside a
 window as it closes. The word-over-tile `content_overlap` a burn-in draws on
@@ -1184,11 +1183,12 @@ bun src/cli/main.ts render compositions/captions/burn-zh --spec job.json --out o
 
 The third line renders the sample's own spec as a job, and its digest is the
 one the ledger records for the sample: the job path and the sample are one
-picture. Two things it does not do yet: a job's assertions are written into
-its staged sidecar and deleted with it, so `render --spec` never evaluates
-them — the samples and `tests/captions.test.ts` are what hold the claim; and
-no style carries an outline or shadow for text over busy footage, though
-`text-stroke-*` and `text-shadow-*` exist in the vocabulary.
+picture. A job's render checks every word's window before it encodes (see
+"Build, then verify" — a job's assertions are checked by default), so a
+transcript unlike either sample is read at the first and last frame of every
+word; the every-frame claim is still `tests/captions.test.ts`'s. One thing it
+does not do yet: no style carries an outline or shadow for text over busy
+footage, though `text-stroke-*` and `text-shadow-*` exist in the vocabulary.
 
 ## Build, then verify
 
@@ -1212,7 +1212,17 @@ tree — the sample is not a job. A directory of jobs is
 builds that job and opens `/watch`. User copy becomes a text literal; palette
 hex becomes a class literal the generator writes. A job is a complete spec,
 not a patch on the sample: `--frames`, `--fps`, `--width`, `--height`,
-`--supersample`, `--bundle` and `--pak` are refused with `--spec`. `copy`
+`--supersample`, `--bundle` and `--pak` are refused with `--spec`.
+
+**A job's own `assertions[]` are checked before it renders.** The staged
+tree is removed when `render` returns, so `render --spec` runs `assert` on
+it after the build and before the encode, and carries `assert`'s JSON
+verbatim as `assertions` in `--json`. A job whose assertions fail is
+refused — exit 1, no output written, the failing frames named. It is on by
+default for what it was measured to cost: 7 to 32% of a job's CPU (a 60 s captions job,
+132 words, 57.8 → 66.4 CPU-s; a burn-in over footage is the 32%), and no
+boot at all for a sidecar with no assertions. `--no-assert` skips it, for
+when you want the video of a failing job to look at. `copy`
 is a title card;
 `lower-third` is a name plate (optional logo, optional one footage clip);
 `captions` is a caption track from a word-level transcript (see "Captions from
@@ -1728,7 +1738,10 @@ all. None of them knows what the film is FOR. Write that down in the sidecar:
 One predicate per entry — two would be two assertions sharing one verdict, and
 a reader could not tell which half failed. `node` is a `debugName`; a name the
 tree does not carry is a FAILURE and not a skip, so renaming a node cannot turn
-every assertion about it green at once.
+every assertion about it green at once. A name the tree carries whose node no
+sampled frame laid out — it or an ancestor was `display: none`, or an ancestor
+was at opacity 0, at every one — fails as well, because nothing about it was
+measured; the detail says which of the two it is and names the frames.
 
 Each one is evaluated from the picture, over the frames `assert` samples:
 
@@ -1744,8 +1757,24 @@ Each one is evaluated from the picture, over the frames `assert` samples:
 - `before: other` — first shown strictly earlier than that other node.
 
 **Every verdict is about the sampled frames and nothing between them**, and the
-printed line names the grid it used. `--samples <durationFrames>` is the exact
-case and costs what it costs. `assert` exits 1 on any failure.
+printed line and the JSON's `grid` name them. They are `--samples` evenly
+spaced frames (24 by default) plus the frames the assertions themselves name:
+
+- `inPicture: [from, to]` — `from` and `to`.
+- `entersBy: f` — `f`.
+- `exitsBy: f` — `f` and `f + 1`.
+- `before: other` — no frame of its own. Once the rest has been read, every
+  frame between each node's first showing and the sampled frame before it is
+  read too, so each first showing is the frame it happens on — unless the
+  node was also shown and hidden again between two earlier samples — and two
+  entrances inside one stride are not a tie.
+
+So every window has a sampled frame at each end, however much narrower than
+the stride it is.
+`compositions/short-sections` is eight 9-frame ranks under a 13-frame stride,
+and on the even grid alone 8 of its 19 assertions fail on a correct film.
+`--samples <durationFrames>` is the exact case and costs what it costs.
+`assert` exits 1 on any failure.
 
 **An assertion moves no pixel.** `identityProjection` drops the key, so adding
 one does not change a recorded digest — `tests/identity.test.ts` proves that

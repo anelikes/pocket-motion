@@ -21,10 +21,13 @@ import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
 
 import {
+  assertComposition,
   mentionedNames,
+  mergeSweeps,
   run as runAssert,
   runFromArgv as assertFromArgv,
   sweepNamedNodes,
+  type AssertGrid,
 } from "../src/cli/commands/assert.ts";
 import { UsageError } from "../src/cli/args.ts";
 import { sampleFrames } from "../src/cli/commands/visibility.ts";
@@ -32,9 +35,12 @@ import { runBuild } from "../src/cli/build.ts";
 import { resolveComposition, type ResolvedComposition } from "../src/cli/resolve.ts";
 import { EXIT_FAIL, EXIT_OK } from "../src/cli/types.ts";
 import {
+  assertionFrames,
   dwellSpan,
   evaluateAssertions,
+  pinFrames,
   predicateOf,
+  type AssertionVerdict,
   type SweptNode,
 } from "../src/render/assertions.ts";
 import type { SidecarAssertion } from "../src/manifest/sidecar.ts";
@@ -182,9 +188,10 @@ describe("what the command classifies", () => {
     expect(narrow.nodes.get("escapee")!.outsideBox.length).toBe(frames.length);
     expect(narrow.nodes.get("offscreen")!.outsideBox.length).toBeGreaterThan(0);
     expect(narrow.nodes.get("wing")!.outsideBox).toEqual([]);
-    // The list a failing name is answered with does not depend on the filter.
-    expect(narrow.named).toEqual([...full.nodes.keys()]);
-    expect(full.named).toEqual([...full.nodes.keys()]);
+    // The list a failing name is answered with is the tree's, so it does not
+    // depend on the filter, and it holds every name the full sweep laid out.
+    expect(narrow.named).toEqual(full.named);
+    for (const name of full.nodes.keys()) expect(full.named).toContain(name);
   }, 180_000);
 
   test("an assertion's own node and its `before` target are what is mentioned", () => {
@@ -201,6 +208,199 @@ describe("what the command classifies", () => {
     await expect(
       assertFromArgv(["compositions/no-such-composition", "--read", "blur"]),
     ).rejects.toThrow(UsageError);
+  });
+});
+
+// `compositions/short-sections` is a ranking at hajibang's proportions: ranks
+// of 9 frames under a 24-sample grid that steps every 13, each rank's card at
+// opacity 0 outside its window. Its sidecar is true at every frame. What these
+// hold is that the DEFAULT grid can read it: before `assert` sampled the
+// frames its assertions name, 8 of the 19 failed and five of those said no
+// node carried a name the tree carries.
+describe("sections shorter than the stride — compositions/short-sections", () => {
+  const SHORT = join(ROOT, "compositions", "short-sections");
+  let short: ResolvedComposition | undefined;
+  async function resolveShort(): Promise<ResolvedComposition> {
+    if (short) return short;
+    const resolved = await resolveComposition({ dir: SHORT, flags: { json: false }, requireBundle: false });
+    if (!resolved.ok) throw new Error(`short-sections did not resolve: ${resolved.message}`);
+    await runBuild(resolved.value);
+    short = resolved.value;
+    return short;
+  }
+  interface AssertJson {
+    ok: boolean;
+    frames: number[];
+    grid: AssertGrid;
+    assertions: AssertionVerdict[];
+    failures: string[];
+  }
+
+  test("the default grid samples what each assertion names, and all 19 hold", async () => {
+    await resolveShort();
+    const result = await runAssert({ dir: SHORT, flags: { json: true } });
+    const json = result.json as AssertJson;
+    expect(json.failures).toEqual([]);
+    expect(json.assertions.length).toBe(19);
+    expect(result.exitCode).toBe(EXIT_OK);
+    // Red with `assertionFrames` emptied: the 8 failures below come back.
+    expect(json.grid.even).toEqual(sampleFrames(300, 24));
+    expect(json.grid.asserted).toContain(111); // title-r3's first frame, in no stride
+    expect(json.grid.asserted).toContain(90); // intro's exitsBy 89, and the frame after
+    // title-r7 is first shown 3 frames after num-r7, whose window start is
+    // sampled; the two frames between are pinned and do not show it.
+    expect(json.grid.pinned).toEqual([145, 146]);
+    // The parts are disjoint and `frames` is their union.
+    const parts = [...json.grid.even, ...json.grid.asserted, ...json.grid.pinned];
+    expect(new Set(parts).size).toBe(parts.length);
+    expect(json.frames).toEqual([...parts].sort((a, b) => a - b));
+  }, 180_000);
+
+  test("on the evenly spaced grid alone 8 fail, and each says what was observed", async () => {
+    const c = await resolveShort();
+    const even = sampleFrames(c.durationFrames, 24);
+    const sweep = await sweepNamedNodes(c, even, { names: mentionedNames(c.sidecar.assertions) });
+    const verdicts = evaluateAssertions({
+      assertions: c.sidecar.assertions,
+      nodes: sweep.nodes,
+      named: sweep.named,
+      frames: even,
+    });
+    const failing = verdicts.filter((v) => !v.ok);
+    expect(failing.map((v) => `${v.node} ${v.predicate}`)).toEqual([
+      "title-r1 inPicture",
+      "num-r3 inPicture",
+      "title-r3 inPicture",
+      "title-r4 inPicture",
+      "num-r7 inPicture",
+      "title-r7 inPicture",
+      "num-r7 before",
+      "outro entersBy",
+    ]);
+    // Ranks 3 and 7 hold no sampled frame. The tree carries both names, so the
+    // message says the node was not laid out, and names the frames — not that
+    // no node carries the name. Red with the old single message.
+    for (const v of failing.filter((f) => /r[37]$/.test(f.node))) {
+      expect(v.detail).toContain("is in the tree and was laid out at none of the 24 sampled frame(s)");
+      expect(v.detail).toContain("0, 13, 26 … 286, 299 (24)");
+      expect(v.detail).not.toContain("no node carries");
+    }
+    expect(failing[0]!.detail).toBe("no sampled frame falls in [93, 98] — raise --samples");
+    // The other way a name goes missing still reads as itself.
+    const typo = evaluateAssertions({
+      assertions: [{ node: "num-r33", entersBy: 120 }],
+      nodes: sweep.nodes,
+      named: sweep.named,
+      frames: even,
+    })[0]!;
+    expect(typo.ok).toBe(false);
+    expect(typo.detail).toContain('no node carries the debugName "num-r33"');
+    expect(typo.detail).toContain("num-r3"); // the tree's names, laid out or not
+  }, 180_000);
+
+  test("every frame agrees with the sidecar, so the default grid's pass is not a gap", async () => {
+    await resolveShort();
+    const json = (await runAssert({ dir: SHORT, samples: 300, flags: { json: true } })).json as AssertJson;
+    expect(json.frames.length).toBe(300);
+    expect(json.failures).toEqual([]);
+  }, 180_000);
+
+  test("`before`'s pair is pinned: two entrances inside one stride are not a tie", async () => {
+    const c = await resolveShort();
+    // Not the fixture's sidecar — an assertion set with nothing else naming
+    // rank 2's frames, so the only sampled frame in rank 2 is the grid's 104,
+    // where both nodes are up.
+    const only = (assertions: readonly SidecarAssertion[]): ResolvedComposition => ({
+      ...c,
+      sidecar: { ...c.sidecar, assertions },
+    });
+    const forward = (await assertComposition(only([{ node: "num-r2", before: "title-r2" }]))).json as AssertJson;
+    // Red with `pinFrames` emptied: "first shown at 104; title-r2 at 104".
+    expect(forward.assertions[0]!.detail).toBe('first shown at 99; "title-r2" at 102');
+    expect(forward.ok).toBe(true);
+    expect(forward.grid.pinned).toEqual([92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103]);
+    const backward = (await assertComposition(only([{ node: "title-r2", before: "num-r2" }]))).json as AssertJson;
+    expect(backward.ok).toBe(false);
+  }, 180_000);
+});
+
+describe("assertionFrames", () => {
+  test("inPicture's ends, entersBy's frame, exitsBy's frame and the next", () => {
+    expect(
+      assertionFrames(
+        [
+          { node: "a", inPicture: [10, 20] },
+          { node: "b", entersBy: 5 },
+          { node: "c", exitsBy: 30 },
+          { node: "d", insideBox: true },
+          { node: "e", dwellFrames: 7 },
+          { node: "f", before: "a" },
+          { node: "g", inPicture: [20, 20] },
+        ],
+        100,
+      ),
+    ).toEqual([5, 10, 20, 30, 31]);
+  });
+
+  test("exitsBy on the last frame names no frame past the clock", () => {
+    expect(assertionFrames([{ node: "a", exitsBy: 99 }], 100)).toEqual([99]);
+  });
+});
+
+describe("pinFrames", () => {
+  const node = (onScreen: number[]): SweptNode => ({
+    onScreen,
+    covered: [],
+    outsideBox: [],
+    hasBox: onScreen,
+  });
+
+  test("the frames between each node's first showing and the sample before it", () => {
+    const frames = [0, 10, 20, 30];
+    const nodes = new Map([
+      ["a", node([20, 30])],
+      ["b", node([30])],
+    ]);
+    expect(pinFrames([{ node: "a", before: "b" }], nodes, frames)).toEqual([
+      11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+    ]);
+  });
+
+  test("a node first shown at frame 0, or never, has no gap to search", () => {
+    const nodes = new Map([["a", node([0, 10])]]);
+    expect(pinFrames([{ node: "a", before: "missing" }], nodes, [0, 10])).toEqual([]);
+  });
+
+  test("only `before` pins", () => {
+    const nodes = new Map([["a", node([20])]]);
+    expect(pinFrames([{ node: "a", entersBy: 20 }], nodes, [0, 10, 20])).toEqual([]);
+  });
+});
+
+describe("mergeSweeps", () => {
+  test("joins each node's frames in order and keeps a node only one sweep saw", () => {
+    const a = {
+      nodes: new Map<string, SweptNode>([
+        ["x", { onScreen: [0, 20], covered: [], outsideBox: [20], hasBox: [0, 20] }],
+      ]),
+      named: ["x", "y"],
+    };
+    const b = {
+      nodes: new Map<string, SweptNode>([
+        ["x", { onScreen: [10], covered: [15], outsideBox: [], hasBox: [10, 15] }],
+        ["y", { onScreen: [15], covered: [], outsideBox: [], hasBox: [15] }],
+      ]),
+      named: ["x", "y"],
+    };
+    const merged = mergeSweeps(a, b);
+    expect(merged.nodes.get("x")).toEqual({
+      onScreen: [0, 10, 20],
+      covered: [15],
+      outsideBox: [20],
+      hasBox: [0, 10, 15, 20],
+    });
+    expect(merged.nodes.get("y")!.onScreen).toEqual([15]);
+    expect(merged.named).toEqual(["x", "y"]);
   });
 });
 

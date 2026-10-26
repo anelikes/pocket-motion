@@ -41,6 +41,7 @@ import {
   type CommandResult,
   type GlobalFlags,
 } from "../types.ts";
+import { assertComposition } from "./assert.ts";
 import { compositionIdentity } from "./trace.ts";
 
 /** What `render --json` prints for one finished render. */
@@ -55,6 +56,11 @@ export interface RenderJson {
   digest: string;
   /** `trace`'s input identity. Absent for a `--spec` job (see `run`). */
   identity?: InputIdentity;
+  /** `assert --json`'s object for a job's staged tree, verbatim. Present on
+   *  every `--spec` job unless `--no-assert` — and here only when every
+   *  assertion held, because a job whose assertions fail is refused before it
+   *  renders. */
+  assertions?: unknown;
   elapsedMs: number;
   msPerFrame: number;
   shutter?: SidecarShutter;
@@ -79,6 +85,10 @@ export interface RenderOptions {
   readonly format?: OutputFormat;
   /** Ask the codec for an alpha channel. Refused for `mp4`. */
   readonly alpha?: boolean;
+  /** With `spec`: evaluate the job's own `assertions[]` on its staged tree
+   *  after the build and before the render, and refuse the job when one
+   *  fails. Absent means true; `--no-assert` is false. */
+  readonly assert?: boolean;
 }
 
 /**
@@ -219,8 +229,40 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
     const c = resolved.value;
     const outputPath = resolve(options.out);
     const format = options.format ?? "mp4";
+    // A job's assertions are evaluated on the tree it was staged into, which
+    // is removed when this returns, so this is the last place they can be
+    // read. Before the render rather than after: a job that fails them is
+    // refused before paying for the encode, as `openFootage` refuses an
+    // undeclared fit before paying for the ingest. `assert`'s own object is
+    // carried verbatim either way.
+    //
+    // On by default, and the measurement is why. In CPU over the whole job
+    // (stage, build, render, encode), on an M4 at a load of 25–50: a 6 s
+    // alpha captions job 9.3 s → 10.0 s, a 3.4 s burn-in over footage
+    // 13.5 s → 17.8 s, a 60 s transcript of 132 words 57.8 s → 66.4 s. That
+    // is 7–32%, and nothing for a template whose sidecar declares no
+    // assertions, which returns before it boots. A job is the render nobody
+    // looks at, so the check is the part of it that reads the picture;
+    // `--no-assert` is for the run that wants the video of a failing job.
+    let assertions: CommandResult | undefined;
     if (options.spec) {
       await runBuild(c);
+      if (options.assert !== false) {
+        assertions = await assertComposition(c);
+        if (assertions.exitCode !== EXIT_OK) {
+          const failures = (assertions.json as { failures?: readonly string[] }).failures ?? [];
+          const error =
+            failures.length > 0
+              ? `the job's assertions do not hold: ${failures.join(", ")}`
+              : `the job's assertions could not be evaluated: ${(assertions.json as { error?: string }).error ?? "assert failed"}`;
+          return {
+            exitCode: EXIT_FAIL,
+            json: { ok: false, error, assertions: assertions.json },
+            stderrLines: assertions.stderrLines ?? [error],
+            stdoutLines: [`render refused — ${error}`, "", ...(assertions.stdoutLines ?? [])],
+          };
+        }
+      }
     }
     if (format === "png-seq") mkdirSync(outputPath, { recursive: true });
     // Upstream's PNG encoder, reached through a computed specifier the way
@@ -280,6 +322,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       frames: result.frames,
       digest: result.digest,
       ...(identity ? { identity } : {}),
+      ...(assertions ? { assertions: assertions.json } : {}),
       elapsedMs: result.elapsedMs,
       msPerFrame: result.msPerFrame,
       ...(c.shutter ? { shutter: c.shutter } : {}),
@@ -289,6 +332,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       `render ok — ${result.frames} frames → ${payload.outputPath} (${format})`,
       `digest ${result.digest}`,
       ...(identity ? [`identity ${identity.digest}`] : []),
+      ...(assertions?.stdoutLines?.[0] ? [assertions.stdoutLines[0]] : []),
       `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
       ...(c.shutter
         ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure of ${c.shutter.samples} renders`]
@@ -451,6 +495,7 @@ async function runBatch(options: {
   readonly flags: GlobalFlags;
   readonly format: OutputFormat;
   readonly alpha: boolean;
+  readonly assert: boolean;
 }): Promise<CommandResult> {
   const files = readdirSync(options.specDir)
     .filter((n) => n.endsWith(".json"))
@@ -510,7 +555,13 @@ async function runBatch(options: {
     };
   }
   mkdirSync(options.outDir, { recursive: true });
-  const jobs: Array<{ spec: string; outputPath: string; digest: string; frames: number }> = [];
+  const jobs: Array<{
+    spec: string;
+    outputPath: string;
+    digest: string;
+    frames: number;
+    assertions?: unknown;
+  }> = [];
   const stdoutLines: string[] = [];
   for (let i = 0; i < files.length; i++) {
     const name = files[i]!;
@@ -529,9 +580,11 @@ async function runBatch(options: {
       spec: specPath,
       format: options.format,
       alpha: options.alpha,
+      assert: options.assert,
     });
     if (result.exitCode !== EXIT_OK) {
       const pending = files.slice(i + 1);
+      const verdict = (result.json as { assertions?: unknown } | undefined)?.assertions;
       return {
         exitCode: result.exitCode,
         json: {
@@ -541,6 +594,7 @@ async function runBatch(options: {
             {
               spec: name,
               error: (result.json as { error?: string } | undefined)?.error ?? "render failed",
+              ...(verdict === undefined ? {} : { assertions: verdict }),
             },
           ],
           done: jobs,
@@ -550,8 +604,14 @@ async function runBatch(options: {
         stdoutLines: [`render failed — ${name}`],
       };
     }
-    const json = result.json as { digest: string; frames: number; outputPath: string };
-    jobs.push({ spec: name, outputPath: json.outputPath, digest: json.digest, frames: json.frames });
+    const json = result.json as RenderJson;
+    jobs.push({
+      spec: name,
+      outputPath: json.outputPath,
+      digest: json.digest,
+      frames: json.frames,
+      ...(json.assertions === undefined ? {} : { assertions: json.assertions }),
+    });
     stdoutLines.push(`${name}  ${json.digest}`);
   }
   return {
@@ -572,6 +632,15 @@ export async function runFromArgv(
   const outDir = optionalString(parsed.flags, "out-dir");
   const requestedFormat = optionalString(parsed.flags, "format");
   const alpha = parsed.flags.alpha === true;
+  const assert = parsed.flags["no-assert"] !== true;
+  if (!assert && spec === undefined) {
+    // A composition's render never reads its assertions — they are
+    // `assert <dir>`'s — so there is nothing here for the flag to turn off,
+    // and accepting it would be a flag that does nothing.
+    throw new UsageError(
+      "--no-assert skips a job's own assertions and needs --spec; a composition's render does not check them (`assert <dir>` does)",
+    );
+  }
 
   if (spec !== undefined) {
     const specPath = resolve(spec);
@@ -597,6 +666,7 @@ export async function runFromArgv(
         flags: parsed.global,
         format: batchFormat,
         alpha,
+        assert,
       });
     }
     if (outDir !== undefined) {
@@ -616,7 +686,7 @@ export async function runFromArgv(
     }
     const format = resolveFormat(requestedFormat, out);
     assertAlphaSupported(format, alpha);
-    return run({ dir, out, flags: parsed.global, spec: specPath, format, alpha });
+    return run({ dir, out, flags: parsed.global, spec: specPath, format, alpha, assert });
   }
 
   if (outDir !== undefined) {

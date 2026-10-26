@@ -614,7 +614,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "[]",
     constraint:
-      "array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames; changes no pixel",
+      "array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames — the even grid plus the frames each entry names (inPicture's ends, entersBy, exitsBy and the frame after it, and the frames that pin a before pair's first showings); changes no pixel",
     source: "src/manifest/sidecar.ts:750",
     verification: "probed",
     diagnostics: [
@@ -3186,6 +3186,24 @@ export const SURFACE: readonly CapabilityRow[] = [
     diagnostics: [],
     probes: [],
     pinned: ['alpha ? "yuva444p10le" : "yuv422p10le"', 'alpha ? "yuva420p" : "yuv420p"'],
+  },
+  {
+    id: "output.no-assert",
+    group: "output",
+    declaredIn: "render command",
+    key: "--no-assert",
+    required: false,
+    defaultValue: "off: a job's assertions are checked",
+    constraint:
+      "with --spec only. Without it a job's own assertions[] are evaluated on its staged tree after the build and before the render — the frames `assert` samples on a composition, the even grid plus every frame an assertion names — and the job is refused (exit 1, nothing written) when one fails; `assert`'s JSON is carried verbatim as `assertions` in render's --json, on the refusal and on the delivery, and per job for a directory of jobs. A sidecar with no assertions costs no boot. --no-assert skips the check. Refused without --spec: a composition's render checks no assertions, `assert <dir>` does. Held by tests/spec.test.ts",
+    source: "src/cli/commands/render.ts:251",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: [
+      "assertions = await assertComposition(c);",
+      "--no-assert skips a job's own assertions and needs --spec",
+    ],
   },
 
   // -------------------------------------------------------------------------
