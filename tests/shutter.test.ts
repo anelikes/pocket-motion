@@ -50,7 +50,6 @@ import type { SidecarShutter } from "../src/manifest/sidecar.ts";
 const ROOT = resolve(import.meta.dir, "..");
 const DIR = join(ROOT, "compositions", "shutter-blur");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
-process.env.POCKETJS_ROOT = VENDOR;
 
 let c: ResolvedComposition;
 

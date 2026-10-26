@@ -31,19 +31,18 @@ import { run as runCheck } from "../src/cli/commands/check.ts";
 import { run as runKeyframes } from "../src/cli/commands/keyframes.ts";
 import { run as runLint } from "../src/cli/commands/lint.ts";
 import { EXIT_FAIL, EXIT_OK } from "../src/cli/types.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
 const DIR = join(ROOT, "compositions", "late-anim");
-const TMP = "/tmp/pocketjs-motion-keyframes-test";
+const TMP = scratchDir("keyframes");
 /** Distinct ANIM TABLE entries the fixture bakes. Measured, not derived: the
  *  baker shares an entry between identical shorthands, and whether two of the
  *  fixture's six uses collapse is its decision. */
 const BAKED_ENTRIES = 6;
 const BUNDLE = join(TMP, "main.js");
 const PAK = join(TMP, "main.pak");
-
-process.env.POCKETJS_ROOT = VENDOR;
 
 function flags(extra: Record<string, unknown> = {}) {
   return { json: false, bundle: BUNDLE, pak: PAK, ...extra } as never;
@@ -66,7 +65,7 @@ beforeAll(async () => {
     cwd: VENDOR,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [stderr, code] = await Promise.all([
     new Response(proc.stderr).text(),

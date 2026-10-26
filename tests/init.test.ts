@@ -37,12 +37,10 @@ import {
 } from "../src/cli/commands/init.ts";
 import { parseSidecar } from "../src/manifest/sidecar.ts";
 import { EXIT_OK, EXIT_USAGE } from "../src/cli/types.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
-const VENDOR = join(ROOT, "vendor", "pocketjs");
 const PROBE = "init-probe";
-
-process.env.POCKETJS_ROOT = VENDOR;
 
 const made: string[] = [];
 
@@ -67,7 +65,7 @@ async function cli(argv: readonly string[]): Promise<{ out: string; code: number
     cwd: ROOT,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -178,11 +176,12 @@ describe("declaredAssets", () => {
 
 describe("init refuses", () => {
   test("a target outside compositions/, naming why a composition lives there", async () => {
-    const { out, code } = await cli(["init", "/tmp/pocketjs-motion-init-elsewhere", "--example", "smoke"]);
+    const elsewhere = join(scratchDir("init"), "elsewhere");
+    const { out, code } = await cli(["init", elsewhere, "--example", "smoke"]);
     expect(code).toBe(EXIT_USAGE);
     expect(out).toContain("compositions/ tree");
     expect(out).toContain("init compositions/<name>");
-    expect(existsSync("/tmp/pocketjs-motion-init-elsewhere")).toBe(false);
+    expect(existsSync(elsewhere)).toBe(false);
   });
 
   test("an existing non-empty directory, and writes nothing into it", async () => {
@@ -249,7 +248,7 @@ describe("a composition made by init", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       });
       expect(await gen.exited).toBe(0);
       expect(existsSync(join(dir, "app.tsx"))).toBe(true);
@@ -293,7 +292,7 @@ describe("a composition made by init", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       });
       const genErr = await new Response(gen.stderr).text();
       expect(`${await gen.exited}\n${genErr}`.slice(0, 400)).toStartWith("0\n");

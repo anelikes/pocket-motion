@@ -43,11 +43,12 @@ import {
   isTraceJson,
   type TraceJson,
 } from "../src/cli/types.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SMOKE_DIR = join(ROOT, "compositions", "smoke");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
-const TMP = "/tmp/pocketjs-motion-cli-test";
+const TMP = scratchDir("cli");
 const DIST = join(TMP, "dist");
 const BUNDLE = join(DIST, "main.js");
 const PAK = join(DIST, "main.pak");
@@ -69,9 +70,6 @@ const LAYOUT_CODES_DIR = join(ROOT, "compositions", "layout-codes");
 const LAYOUT_CODES_DIST = join(TMP, "dist-layout-codes");
 const LAYOUT_CODES_BUNDLE = join(LAYOUT_CODES_DIST, "main.js");
 const LAYOUT_CODES_PAK = join(LAYOUT_CODES_DIST, "main.pak");
-
-// Point boot at the vendored tree (patched) rather than a sibling checkout.
-process.env.POCKETJS_ROOT = VENDOR;
 
 function smokeFlags(extra: Record<string, string | number | boolean> = {}) {
   return {
@@ -105,7 +103,7 @@ async function buildComposition(
     cwd: VENDOR,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -545,7 +543,7 @@ describe("invocation contract", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       },
     );
     const [stdout, stderr, code] = await Promise.all([
@@ -1199,7 +1197,7 @@ describe("e2e spawn", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       },
     );
     const code = await proc.exited;
@@ -1222,7 +1220,7 @@ describe("e2e spawn", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       },
     );
     const [stdout, stderr, code] = await Promise.all([

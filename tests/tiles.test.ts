@@ -33,9 +33,10 @@ import {
 import { run as runLint } from "../src/cli/commands/lint.ts";
 import { TEX_MAX_DIM } from "../src/manifest/sidecar.ts";
 import { EXIT_OK } from "../src/cli/types.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
-const TMP = "/tmp/pocketjs-motion-tiles-test";
+const TMP = scratchDir("tiles");
 
 afterAll(() => {
   rmSync(TMP, { recursive: true, force: true });

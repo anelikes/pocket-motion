@@ -48,12 +48,13 @@ import {
   PreviewSession,
   type PreviewSessionOptions,
 } from "../src/preview/session.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SMOKE_DIR = join(ROOT, "compositions", "smoke");
 const OCCLUDED_DIR = join(ROOT, "compositions", "occluded");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
-const TMP = "/tmp/pocketjs-motion-preview-test";
+const TMP = scratchDir("preview");
 
 async function post(base: string, body: unknown): Promise<Response> {
   return fetch(`${base}/select`, {
@@ -129,8 +130,6 @@ function repoArtefactStamp(): string {
   }).join("\n");
 }
 
-process.env.POCKETJS_ROOT = VENDOR;
-
 function flags(
   bundle: string,
   pak: string,
@@ -152,7 +151,7 @@ async function buildComposition(entryDir: string, outdir: string, bundle: string
     cwd: VENDOR,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -1555,7 +1554,7 @@ describe("one discovery rule", () => {
         cwd: TMP,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       });
       const [out, err, code] = await Promise.all([
         new Response(proc.stdout).text(),
@@ -1799,7 +1798,7 @@ describe("listenPreview — HTTP is the display", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       },
     );
     try {

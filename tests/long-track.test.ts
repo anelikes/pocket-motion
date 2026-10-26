@@ -39,7 +39,6 @@ import { EXIT_OK } from "../src/cli/types.ts";
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
 const DIR = join(ROOT, "compositions", "long-track");
-process.env.POCKETJS_ROOT = VENDOR;
 
 interface Segment {
   t0: number;

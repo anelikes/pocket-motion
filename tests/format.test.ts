@@ -43,14 +43,12 @@ import { runBuild } from "../src/cli/build.ts";
 import { resolveComposition } from "../src/cli/resolve.ts";
 import { UsageError } from "../src/cli/args.ts";
 import { EXIT_OK, EXIT_USAGE } from "../src/cli/types.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
-const VENDOR = join(ROOT, "vendor", "pocketjs");
 const ALPHA_DIR = "compositions/alpha";
 const SOUND_ROLES_DIR = "compositions/sound-roles";
-const TMP = "/tmp/pocketjs-motion-format-test";
-
-process.env.POCKETJS_ROOT = VENDOR;
+const TMP = scratchDir("format");
 
 /** The digest `compositions/alpha` is recorded at, whatever format asks. */
 const LEDGER_DIGEST = (
@@ -64,7 +62,7 @@ async function cli(argv: readonly string[]): Promise<{ out: string; code: number
     cwd: ROOT,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
