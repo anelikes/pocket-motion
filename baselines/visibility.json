@@ -150,8 +150,8 @@
     },
     "compositions/late-anim": {
       "failures": [],
-      "nodes": 5,
-      "named": 5,
+      "nodes": 6,
+      "named": 6,
       "neverShown": 0,
       "buriedAfterShown": 0
     },
