@@ -327,7 +327,12 @@ describe("compositions/late-anim", () => {
       expect(node.covered).toEqual([]);
     }
 
-    expect(json.namedNodes).toBe(5);
+    // And the ruler `tests/keyframes.test.ts` reads the grid off, which moves
+    // in plain view for the whole film.
+    const ruler = byName.get("ruler")!;
+    expect(ruler.onScreen.length).toBe(json.frames.length);
+
+    expect(json.namedNodes).toBe(6);
     expect(json.failures).toEqual([]);
     expect(json.impossible).toEqual([]);
     expect(result.exitCode).toBe(EXIT_OK);

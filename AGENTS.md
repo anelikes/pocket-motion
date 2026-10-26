@@ -716,21 +716,25 @@ mechanisms with the file or test beside them.
 - `keyframes` (`src/cli/commands/keyframes.ts`) reads the style table and the
   ANIM TABLE out of the pak and places every baked timeline on the grid the
   render samples. Timelines bake at 60 Hz; the render looks at every
-  `60/fps`-th tick, so an instant on an odd tick at 30 fps is never observed
-  and appears at the next one. It is reported, not failed — 958 of `reel`'s
-  1160 timeline uses (707 baked entries, shared across style records) declare
-  one, so a gate would be red on the ledger from the day it landed. A timeline
-  whose delay outlives its clock **is** failed: it is a declared animation no
-  frame of that composition can show. Fixture:
-  `compositions/late-anim`, which `lint`, `check` and `trace` all pass.
+  `60/fps`-th tick, the LAST of each frame's window (`clockOfFrame`, next
+  entry), so an instant on an even tick at 30 fps — tick 0 included — is
+  never observed and the first frame past it shows it a tick under way. It
+  is reported, not failed — 955 of `reel`'s 1160 timeline uses (707 baked
+  entries, shared across style records) declare one, so a gate would be red
+  on the ledger from the day it landed. A timeline whose delay outlives its
+  clock **is** failed: it is a declared animation no frame of that
+  composition can show. Fixture: `compositions/late-anim`, which `lint`,
+  `check` and `trace` all pass.
   **Two more readings come off the same table, both reported rather than
   failed, and the tree was measured before that was decided.** A step no
   longer than one rendered frame that a sampled tick lands strictly inside
-  is shown part-way by that frame — a `gin 34ms` gate at an odd tick at
+  is shown part-way by that frame — a `gin 34ms` gate from an even tick at
   30 fps arrives a frame late and grey, which is how `rename-card`'s close
-  first rendered; `shutter` carries 376 of them and `rename-card` 217, all
-  in the 34 ms cadence shutter measured off its recording, so failing on
-  them would fail two films for a frame each. And a property two animations
+  first rendered; `shutter` and `rename-card` carry the same 578 of them, in
+  456 timeline uses of the opening `rename-card` keeps, all in the 34 ms
+  cadence shutter measured off its recording, so failing on them would fail
+  two films for a frame each. The kit-built films report too and carry no
+  gate at all — the open entry below says why. And a property two animations
   of one comma list write at once: the core takes the LAST animation
   currently writing a property and `both`/`backwards` fill is writing from
   tick 0 (`tick_timelines`, `engine/core/src/lib.rs`), so a later tween whose
@@ -743,7 +747,8 @@ mechanisms with the file or test beside them.
   or gate written over by the next animation on the same node (a word's exit
   starting before its entrance has finished, a slide's eased tail under the
   next slide), which is why it reports rather than fails.
-  `late-anim` carries one of each (`gated`, `contended`) and
+  `late-anim` carries one of each (`gated`, `contended`), every composition's
+  count of each is in `baselines/keyframes-phase.md`, and
   `tests/keyframes.test.ts` is red on each with its predicate removed. The
   bake rate it places those timelines on is ASSUMED, not read: the rate is
   published by the bundle and this command does not boot. `readTimelines`
@@ -757,6 +762,32 @@ mechanisms with the file or test beside them.
   `compositions/long-track` to the segments its keyframe set declares and
   reads the camera's cut after its 2,000th segment, which a decoder reading
   the count's low byte would never reach.
+- **Which tick a frame shows is one function, and it is read off pixels.**
+  The host steps the core `60/fps` ticks per frame and rasterises after the
+  last of them, frame 0 included, and the core samples a timeline at its
+  clock before advancing it (`tick_timelines`, from 0 at
+  `restart_timelines`). So frame `f` shows clock `(f + 1) · 60/fps − 1` —
+  `f` at 60 fps, `2f + 1` at 30, `3f + 2` at 20 — and `clockOfFrame`
+  (`src/runtime/clock.ts`) is the one statement of it: `keyframes`, the
+  captions template's `clockAt` and the motion kit's header derive from it.
+  `keyframes` used to take the FIRST tick, `f · 60/fps`, which agrees at
+  60 fps only; below it every phase-dependent reading sat a tick off.
+  `late-anim`'s `gated` step over ticks 3 to 5 was reported half done by
+  frame 2 and was at full opacity there, and the instants called unsampled
+  at 30 fps were exactly the ones the render samples. The fixture now
+  carries a `ruler` moving a pixel a tick, retimed so each node is what its
+  name says on this grid, and `tests/keyframes.test.ts` reads the ruler out
+  of `frame`'s PNGs at 20, 30 and 60 fps and holds the readings to the same
+  PNGs through the frame numbers `keyframes` now reports (`observedFrame`,
+  `PartialCut.frame`): the frame it names inside `gated`'s step reads 125
+  red between frames of 2 and 248. With the first-tick placement put back,
+  eight of that file's cases fail, both pixel tests among them. Readings
+  that depend on the segments alone — contention, jumps, `neverStarts`,
+  `endsPastWindow`, period and loop drift — are identical per timeline in
+  all 55 compositions on both grids (`baselines/keyframes-phase/measure.ts`
+  stops on a difference); `neverStarts` was already on the right side,
+  since the last frame shows tick `durationFrames · 60/fps − 1`. No digest
+  moved: what moved is what `keyframes` says about a pak.
 - **A baked track holds up to 65,535 segments**
   (`patches/0050-long-animation-tracks.patch`, class `upstream`). The 255 a
   track held was the format's: `segCount` is the second byte of a track
@@ -1338,27 +1369,24 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   timeline either, so a longer film needs a wider anim entry header — every
   field of it, not one count. Nothing in this tree is longer, and the
   HyperFrames series runs 7.5 minutes.
+- **`keyframes` takes a short segment for a cut whatever it does.** The
+  part-way reading counts any segment no longer than one rendered frame
+  with a sampled tick inside it, and asks neither whether its value changes
+  nor whether it continues a move on the same track. `src/anim/sampled.ts`
+  keys every move each `MOVE_STEP` — two ticks, one frame at 30 fps — so a
+  kit move keyed from an even tick has a frame inside every segment: on the
+  corrected grid `mg-hud` reports 2636, `long-track` 2002 and `mg-bauhaus`
+  121, and not one is a gate — 2224, 2000 and 119 are segments of keyed
+  moves and the rest segments over which nothing changes
+  (`baselines/keyframes-phase.md`). Every gate the tree carries is in
+  `shutter`, `rename-card`, `shutter-blur` and `late-anim`. Asking both
+  questions of the track would separate the two; it is not done, and until
+  it is, the reading's count in a kit-built film is not a count of cuts.
 - **The shutter still finds a segment by walking.** `within_iteration` in
   `engine/core/src/shutter.rs` (0034) takes `.find` over a track's segments
   for every sample of every integrated track, so under a declared shutter a
   long track costs O(segments) per sample — the cost 0050 removed from the
   tick. Unmeasured at film length: no composition here declares both.
-- **`keyframes` places the render's grid at the wrong end of each frame.** It
-  counts a node's ticks from its clock's start and takes f × 60 / fps as the
-  tick frame f shows; the realm renders frame f at the LAST tick of its
-  window, (f + 1) × 60 / fps − 1 — clock f at 60 fps, 2f + 1 at 30, 3f + 2 at
-  20. Measured with a node moving one pixel per tick (at 30 fps frame 0 at
-  x = 1, frame 1 at 3, frame 30 at 61, in `layout` and in `frame`'s pixels
-  alike), and `tests/shutter.test.ts` reads the same ("frame 15 (clock 31)").
-  At 60 fps the two agree. At 30 fps the instants reported unsampled are the
-  ones the render samples, and
-  `late-anim`'s `gated` step over ticks 3 to 5, reported shown half done by
-  frame 2, is at full opacity at frame 2 (red 248, as at frame 3): no frame
-  shows it part-way. The readings that depend on the segments alone —
-  counts, jumps, contention, `neverStarts` — do not move with the phase,
-  which is why the long-track tests assert only those. Not fixed with 0050:
-  the readings, their tests, `late-anim`'s comments and `src/anim/sampled.ts`'s
-  "a frame shows tick 2f" have to move together.
 
 ## Working rules
 
