@@ -10,10 +10,17 @@ to declare; every digest recorded before this reproduces unchanged.
 
 ### Added
 
-- **`src/api.ts`**: `build`, `trace`, `render`, `verify` and `doctor` as
-  functions, each returning the object its command prints with `--json` —
-  the same dispatch, the same redaction, the same `runId`.
+- **`src/api.ts`**: `build`, `trace`, `render`, `verify`, `assert`, `layout`
+  and `doctor` as functions, each returning the object its command prints
+  with `--json` — the same dispatch, the same redaction, the same `runId`.
   `tests/api.test.ts` holds each equal to the CLI run as a process.
+  `render` and `trace` also take an `AbortSignal` and a per-frame progress
+  callback; a cancelled call resolves with `cancelled: true`.
+- **`pocket-motion mcp`**: `verify`, `assert`, `layout`, `render`, `trace`
+  and `doctor` as Model Context Protocol tools on stdio, each returning its
+  API function's object. `render` and `trace` report progress per frame and
+  stop at the next one when cancelled; tools that rasterise take turns.
+  `tests/mcp.test.ts` drives it as a client does.
 - **An npm package**, `pocket-motion`, Bun-only, staged by
   `scripts/pack.ts` and not yet published: the CLI as the `pocket-motion`
   bin, the API as the package's export, and the patched compiler,
@@ -29,6 +36,11 @@ to declare; every digest recorded before this reproduces unchanged.
 
 ### Changed
 
+- `render` encodes a container to a hidden file beside `--out` and renames
+  it into place once ffmpeg has finished. A render that fails or is
+  cancelled no longer leaves a truncated file under the delivery's name, and
+  an earlier delivery at `--out` survives it. Frame hashes are taken before
+  the encode leg, so no digest moved.
 - `render --json` carries `identity`, the value `trace` reports, beside
   `digest`. A `--spec` job carries none.
 - `build.json` records a composition's paths relative to the composition's

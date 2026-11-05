@@ -275,15 +275,54 @@ browser.
 - `MOTION_RUN_ID` in the environment is echoed back as `runId` on every
   envelope, so one agent turn's `lint`, `check`, `trace` and `verify` join up.
 - The same objects come back from code: `import { build, trace, render,
-  verify, doctor } from "pocket-motion"` (`src/api.ts`) runs the command
-  through the CLI's own dispatch and returns what `--json` would have
-  printed, redaction and `runId` included. `tests/api.test.ts` holds each
-  function equal to the CLI. `render`'s object carries `trace`'s `digest`
-  and `identity`, except for a `--spec` job, which has no identity.
+  verify, assert, layout, doctor } from "pocket-motion"` (`src/api.ts`) runs
+  the command through the CLI's own dispatch and returns what `--json` would
+  have printed, redaction and `runId` included. `tests/api.test.ts` holds
+  each function equal to the CLI. `render`'s object carries `trace`'s
+  `digest` and `identity`, except for a `--spec` job, which has no identity.
 - A command states what it EXAMINED. `check` names the frame window it used;
   `visibility` and `assert` name the sampled frames; `layout` is one frame.
   None of them claims anything about the frames it did not look at, and
   `--samples <durationFrames>` is the exact case when you need it.
+
+## As MCP tools
+
+`mcp` serves `verify`, `assert`, `layout`, `render`, `trace` and `doctor` as
+Model Context Protocol tools on stdin and stdout, for a client that would
+rather call a tool than parse a shell. A tool's arguments are the `src/api.ts`
+function's options with the composition directory as `dir`, and its result
+is the object the command prints with `--json`, as `structuredContent` and
+again as the text content. `tests/mcp.test.ts` drives it over stdio and holds
+each result equal to the API's.
+
+```bash
+bun src/cli/main.ts mcp    # serves until stdin closes; run with no stdin, as here, it exits 0 at once
+claude mcp add pocket-motion -- bun src/cli/main.ts mcp
+```
+
+- `isError` means the command could not produce its reading: the object has
+  an `error` field. `verify` with `ok: false` and `errors`, a failing
+  `assert` and a red `doctor` are readings, and are not errors.
+- `build` is not a tool. Build in a shell first; a tool given a composition
+  with no build is refused with the command that builds it. `render` with
+  `spec` builds its staged job itself.
+- Every tool but `doctor` boots a composition, and they take turns in
+  arrival order: the rasteriser is wasm on the server's one thread, so two
+  at once would interleave rather than run side by side. A call that has to
+  wait is told so in a progress notification.
+- `render` and `trace` send `notifications/progress` for each finished frame
+  to a call carrying a `progressToken`, at most one every 250 ms plus the
+  last. Cancelled, they stop at the next frame. A cancelled `render` leaves
+  no file it wrote: a container is encoded to a hidden sibling and renamed
+  over `out` only once complete, so `out` keeps what it held before, and a
+  png-seq render removes its frames. Other tools run to the end. No cancelled
+  call is answered.
+- Arguments are checked against each tool's schema before anything runs. An
+  unknown key or a wrong type comes back as `{ ok: false, exitCode: 2 }`;
+  every value the CLI checks (fps dividing 60, a frame in range) is refused
+  by the CLI, in its own words.
+- Paths in arguments resolve against the server's working directory; paths in
+  results are redacted to `$REPO` and `$HOME` as every envelope is.
 
 ## Reading a picture without looking at it
 

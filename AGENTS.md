@@ -1218,17 +1218,54 @@ mechanisms with the file or test beside them.
   wrong — the hit is unreachable, and `build.ts` iterates the field, so an
   `undefined` would throw rather than go quiet.
 - **The API is the CLI's `--json`, returned.** `src/api.ts` exports `build`,
-  `trace`, `render`, `verify` and `doctor`. Each turns its options into the
-  argv the command would be typed with, runs it through `dispatch`
-  (`src/cli/main.ts` — the parser, the command, and the conversion of a
-  thrown error into `{ ok: false, error, exitCode }` that `main` used to hold
-  inline), and returns it through `jsonPayload` and `envelope`, which are
-  what `--json` writes through. So an API result is redacted and carries
-  `runId` exactly as the printed object does, and nothing re-derives a
-  verdict. `tests/api.test.ts` runs the CLI as a separate process with a
-  hand-typed argv and requires equal objects; `render` may differ in
-  `elapsedMs` and `msPerFrame` and nothing else. Red with `envelope()`
-  skipped: six of eight cases.
+  `trace`, `render`, `verify`, `assert`, `layout` and `doctor`. Each turns
+  its options into the argv the command would be typed with, runs it through
+  `dispatch` (`src/cli/main.ts` — the parser, the command, and the
+  conversion of a thrown error into `{ ok: false, error, exitCode }` that
+  `main` used to hold inline), and returns it through `jsonPayload` and
+  `envelope`, which are what `--json` writes through. So an API result is
+  redacted and carries `runId` exactly as the printed object does, and
+  nothing re-derives a verdict. `tests/api.test.ts` runs the CLI as a
+  separate process with a hand-typed argv and requires equal objects;
+  `render` may differ in `elapsedMs` and `msPerFrame` and nothing else. Red
+  with `envelope()` skipped: eight of the nine parity cases.
+- **The MCP server is the API, served.** `pocket-motion mcp`
+  (`src/mcp/server.ts`) offers `verify`, `assert`, `layout`, `render`,
+  `trace` and `doctor` as tools over newline-delimited JSON-RPC on stdio. A
+  tool's arguments are its API function's options with the composition as
+  `dir`, and its result is that function's object, as `structuredContent`
+  and as text; nothing in the server reads a verdict except to set
+  `isError`, which means the object carries an `error` — `verify` saying no
+  is the reading that was asked for, not a tool that failed. What an argv
+  cannot carry — a cancel and per-frame progress — reaches `render` and
+  `trace` as a `RunContext` through `dispatch` (`src/cli/types.ts`), and
+  moves no field of a result that is not cancelled. Four mechanisms, each
+  measured red in `tests/mcp.test.ts`, which drives the server as a
+  separate process. **A cancelled render leaves no file it wrote**: a
+  container is encoded to a hidden sibling and renamed over `--out` only
+  when complete (`partialPathOf`, `src/cli/commands/render.ts`), so `--out`
+  keeps what it held before — written straight to `--out`, the earlier
+  delivery came back as the first bytes of an mp4 — and a cancelled png-seq
+  render removes its frames. **The loop yields a macrotask a frame when it
+  has a signal** (`src/render/render.ts`): a hash-only loop otherwise never
+  lets stdin be read (a 20 ms timer fired once in 120 frames of `trace`),
+  and without it a cancelled trace reached frame 450 of 450 and a cancelled
+  png-seq render was not stopped in two minutes, while the mp4 cases stayed
+  green on the encoder pipe's flush. **Every tool but `doctor` takes one
+  turn** (`Turns`), because the rasteriser is wasm on the server's one
+  thread and two calls would interleave rather than run side by side —
+  bypassed, a second render reported frame 1 before the first had answered.
+  **stdout is the protocol's alone**: a `--spec` job imports a generator into
+  the server, so `console.log` and `process.stdout.write` both go to stderr
+  while it serves; each half was red on its own, because Bun's `console.log`
+  does not go through `process.stdout.write`. A client that closes stdin,
+  or sends SIGTERM or SIGINT, cancels whatever is running and the server
+  exits once it has unwound — without the signal handler, SIGTERM killed it
+  mid-render with exit 143.
+  Argument types and names are checked against each tool's schema, since
+  `alpha: "false"` would reach the parser as `--alpha=false`; every value the
+  CLI checks is still the CLI's to refuse. `skills/pocket-motion/SKILL.md`
+  documents it, and its launch line runs under the fence gate.
 - **`render --json` carries `trace`'s identity**, from one function
   (`compositionIdentity`, `src/cli/commands/trace.ts`), so a delivery holds
   the pair another machine checks with `trace`. A `--spec` job carries none,
@@ -1575,6 +1612,22 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   for every sample of every integrated track, so under a declared shutter a
   long track costs O(segments) per sample — the cost 0050 removed from the
   tick. Unmeasured at film length: no composition here declares both.
+- **A cancel reaches a frame loop and nothing else.** `render` and `trace`
+  stop at the next frame; `verify`, `assert` and `layout` sweep through
+  `openProber` and the layout walk, which take no signal, so a cancelled one
+  runs to the end and holds the server's one turn while it does — a 64 s
+  `assert` on `mg-hud` keeps every render queued behind it for 64 s. Inside a
+  render, a footage ingest, a job's generator and build, and the sound mux
+  are not interruptible either; the cancel is honoured after each, and what
+  the mux wrote is then removed. A png-seq render cancelled in a directory
+  that already held a sequence removes the frames it wrote, which leaves the
+  earlier sequence missing its first frames: the directory is not this
+  render's to restore.
+- **The MCP server has no `build` tool.** Every tool but `render --spec`
+  needs a built composition, and a client with no shell can only read the
+  refusal that names the command. `src/api.ts` has `build`; serving it is a
+  tool definition away, and the reason it is not one yet is that this server
+  was scoped to the six.
 
 ## Working rules
 

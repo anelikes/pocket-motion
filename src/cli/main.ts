@@ -28,19 +28,21 @@ import * as verifyCmd from "./commands/verify.ts";
 import * as visibilityCmd from "./commands/visibility.ts";
 import * as doctorCmd from "./commands/doctor.ts";
 import * as initCmd from "./commands/init.ts";
+import * as mcpCmd from "./commands/mcp.ts";
 import {
   EXIT_FAIL,
   EXIT_OK,
   EXIT_USAGE,
   type CommandResult,
   type ExitCode,
+  type RunContext,
 } from "./types.ts";
 
 const COMMANDS: Record<
   string,
   {
     readonly summary: string;
-    readonly run: (argv: readonly string[]) => Promise<CommandResult>;
+    readonly run: (argv: readonly string[], context: RunContext) => Promise<CommandResult>;
   }
 > = {
   lint: {
@@ -58,11 +60,11 @@ const COMMANDS: Record<
   },
   render: {
     summary: "produce the video (--out file.mp4)",
-    run: (argv) => renderCmd.runFromArgv(argv),
+    run: (argv, context) => renderCmd.runFromArgv(argv, context),
   },
   trace: {
     summary: "the frame-hash sequence + digest",
-    run: (argv) => traceCmd.runFromArgv(argv),
+    run: (argv, context) => traceCmd.runFromArgv(argv, context),
   },
   frame: {
     summary: "one frame as a PNG (--at N --out file.png)",
@@ -118,6 +120,11 @@ const COMMANDS: Record<
     summary:
       "PNGs at sampled frames (--out dir), optionally with layout's boxes and finding codes drawn over them (--annotate)",
     run: (argv) => snapshotCmd.runFromArgv(argv),
+  },
+  mcp: {
+    summary:
+      "serve render, verify, assert, layout, trace and doctor as MCP tools on stdin/stdout",
+    run: (argv) => mcpCmd.runFromArgv(argv),
   },
 };
 
@@ -185,8 +192,14 @@ export function helpText(): string {
  * CLI invocation with the same argv run the same code up to the point where
  * one writes the object and the other returns it. `"help"` is returned rather
  * than a result because help is the one output that is not an envelope.
+ *
+ * `context` is what an embedding caller adds and an argv cannot carry — a
+ * cancel signal and a progress callback (`RunContext`). The CLI passes none.
  */
-export async function dispatch(argv: readonly string[]): Promise<CommandResult | "help"> {
+export async function dispatch(
+  argv: readonly string[],
+  context: RunContext = {},
+): Promise<CommandResult | "help"> {
   try {
     const parsed = parseArgs(argv);
     if (parsed.flags.help === true) return "help";
@@ -205,7 +218,7 @@ export async function dispatch(argv: readonly string[]): Promise<CommandResult |
     // Re-pass original argv without the command token so each command's
     // parseArgs sees its own positionals + flags.
     const rest = argv.slice(argv.indexOf(name) + 1);
-    return await cmd.run(rest);
+    return await cmd.run(rest, context);
   } catch (e) {
     if (e instanceof UsageError) {
       return {
