@@ -182,6 +182,7 @@ export class MovieJob {
           outputPath: outPath,
           graph,
           durationSec: framesToMs(c.durationFrames, c.fps) / 1000,
+          format: "mp4",
         });
         path = mixed.outputPath;
       } else {

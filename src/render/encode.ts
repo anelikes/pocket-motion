@@ -6,10 +6,13 @@
  * (35.03 ms/frame, of which 31.95 ms was the PNG encode). `-f rawvideo` skips
  * both halves.
  *
- * `-fflags +bitexact -flags +bitexact` drops the encoder tag and creation time
- * so the container is as reproducible as the encoder allows. That is a
- * courtesy, not the contract: the determinism claim rests on frame hashes
- * (src/render/hash.ts), never on MP4 bytes.
+ * `-fflags +bitexact` on the output drops the muxer's version string and
+ * creation time, and `-flags +bitexact` the encoder's, so the container is
+ * as reproducible as the encoder allows. That is a courtesy, not the
+ * contract: the determinism claim rests on frame hashes (src/render/hash.ts),
+ * never on MP4 bytes. The format flag sat before `-i -` until the files were
+ * read back, where it set the rawvideo DEMUXER bitexact and every delivery
+ * carried `encoder=Lavf62.3.100`.
  *
  * FOUR OUTPUT FORMATS, and the encode leg is the only thing any of them
  * changes. Frames are hashed before a byte reaches here (`render.ts`), so the
@@ -17,10 +20,35 @@
  * `tests/format.test.ts` asserts that rather than leaving it to be inferred
  * from the code's shape.
  *
- *   mp4      libx264, yuv420p — unchanged, and the default
+ *   mp4      libx264, yuv420p — the default
  *   webm     libvpx-vp9, yuv420p (yuva420p with alpha)
  *   mov      ProRes 422 (yuv422p10le), or 4444 (yuva444p10le) with alpha
  *   png-seq  no ffmpeg at all — one RGBA PNG per frame (`pngSequenceSink`)
+ *
+ * The container is named with `-f`, never inferred from `--out`: ffmpeg picks
+ * a muxer by extension, so `--format mov --out cut`, which `render` accepts,
+ * failed with "Unable to choose an output format".
+ *
+ * **Every ffmpeg format is BT.709, converted and tagged** (`DELIVERY_COLOUR`).
+ * swscale's default matrix for RGB → YUV is BT.601, and the files carried no
+ * colour tags, so the matrix was left to the player. A player that takes
+ * BT.709 for an untagged HD file — the convention — shifted every saturated
+ * colour: measured on a field of flat patches through this leg and decoded
+ * with the BT.709 matrix, 255 green came back 216 and 255 magenta 255,39,255,
+ * a worst channel 40 levels out, in all three formats. Now the matrix is
+ * named in the `scale` that does the conversion, so it does not depend on
+ * what the encoder's options negotiate, and the same field decodes within
+ * `tests/format.test.ts`'s tolerance under the tags the file carries.
+ *
+ * Primaries and transfer go on the frames (`setparams`) as well as on the
+ * encoder, because ffmpeg 8.0's encoder takes them from the frames: with the
+ * four output options and no `setparams`, measured, the H.264 stream came
+ * out tagged with matrix and range and nothing else. On 8.0 the output
+ * options repeat what the chain already set; they stay because they are the
+ * encoder's own fields, which is where an ffmpeg that does not carry frame
+ * properties into the encoder would look — no such ffmpeg was run here.
+ * ProRes has no range field in its bitstream or in MOV's `colr` atom, so a
+ * ProRes file reads `color_range=unknown` and decoders take video range.
  *
  * **`--alpha` delivers a picture.** The rasteriser clears the framebuffer to
  * TRANSPARENT black (`patches/0014-transparent-clear.patch`), so a pixel no
@@ -55,6 +83,78 @@ export function formatCarriesAlpha(format: OutputFormat): boolean {
   return format !== "mp4";
 }
 
+/**
+ * The formats ffmpeg writes: every one but `png-seq`. Each is also the name
+ * of ffmpeg's muxer for it, which the encode leg and the sound mux pass as
+ * `-f`.
+ */
+export type ContainerFormat = Exclude<OutputFormat, "png-seq">;
+
+/**
+ * The colour every encoded file is converted with and tagged as. sRGB, which
+ * the rasteriser's bytes are, shares BT.709's primaries; the transfer is
+ * tagged BT.709 as video delivered from RGB conventionally is, and no transfer
+ * conversion is applied — the code values are the rasteriser's.
+ */
+export const DELIVERY_COLOUR = {
+  matrix: "bt709",
+  primaries: "bt709",
+  transfer: "bt709",
+  range: "tv",
+} as const;
+
+/**
+ * The `-vf` chain: frame colour properties, the RGB → YUV conversion with its
+ * matrix named, and the pixel format, so no scaler ffmpeg inserts on its own
+ * is left to choose a matrix. The supersample downscale, when there is one,
+ * is the same `scale`.
+ */
+function videoFilter(scaleTo: EncodeOptions["scaleTo"], pixFmt: string): string {
+  const c = DELIVERY_COLOUR;
+  // area: `scaleTo` is set only for supersample 2 or 4, so this is always an
+  // exact integer downscale, and an area average over the subpixels is what
+  // supersampling means. The filter is part of the output's identity —
+  // pinned, not left to ffmpeg's default.
+  //
+  // lanczos was here. Its negative lobes put a halo on hard edges that the
+  // source does not contain, and this renderer still emits hard edges: the
+  // core computes fractional coverage for axis-aligned rect spans, rounded
+  // corners, and — since the POLY op — rotated SOLID boxes, but not for
+  // rotated gradients, which still fan into coverage-less TRIs, and not for
+  // baked glyph cells. Measured on a 4x hard-edged bar,
+  // background 128, bar 255, downscaled 4:1, at an edge covering 75% of its
+  // pixel:
+  //
+  //   area     ... 128 128 223 255 255 255 160 128 ...   exact: 128+0.75*127
+  //   lanczos  ... 129 121 221 255 252 255 162 121 ...   halo both sides
+  //
+  // Across 70 rows of a slowly drifting edge, the darkest pixel beside the
+  // bar was a constant 128 under area and ranged 118-128 under lanczos: the
+  // halo depth tracks sub-pixel phase, so it pulses along the edge. That is
+  // an artefact the source never had, and it is the signature people read as
+  // edge crawl.
+  //
+  // This applies to the supersample step only. `src/footage/ingest.ts` scales
+  // photographic footage by arbitrary factors, where lanczos is the right
+  // choice and stays.
+  const size = scaleTo ? `${scaleTo[0]}:${scaleTo[1]}:flags=area:` : "";
+  return [
+    `setparams=color_primaries=${c.primaries}:color_trc=${c.transfer}`,
+    `scale=${size}out_color_matrix=${c.matrix}:out_range=${c.range}`,
+    `format=${pixFmt}`,
+  ].join(",");
+}
+
+function colourTags(): string[] {
+  const c = DELIVERY_COLOUR;
+  return [
+    "-colorspace", c.matrix,
+    "-color_primaries", c.primaries,
+    "-color_trc", c.transfer,
+    "-color_range", c.range,
+  ];
+}
+
 export interface EncodeOptions {
   readonly width: number;
   readonly height: number;
@@ -78,7 +178,7 @@ export interface EncodeOptions {
   /** Downscale to this size on the way out — the supersampling step. */
   readonly scaleTo?: readonly [width: number, height: number];
   /** Container and codec. Default `mp4`, which is the historical behaviour. */
-  readonly format?: Exclude<OutputFormat, "png-seq">;
+  readonly format?: ContainerFormat;
   /** Ask the codec for an alpha channel. Refused for `mp4` by the caller. */
   readonly alpha?: boolean;
 }
@@ -104,44 +204,21 @@ export function ffmpegArgs(options: EncodeOptions): string[] {
   const { width, height, fps, outputPath } = options;
   const args = [
     "ffmpeg", "-y", "-v", "error",
-    "-fflags", "+bitexact",
     "-f", "rawvideo", "-pix_fmt", "rgba",
     "-s", `${width}x${height}`,
     "-framerate", String(fps),
     "-i", "-",
   ];
-  if (options.scaleTo) {
-    const [w, h] = options.scaleTo;
-    // area: `scaleTo` is set only for supersample 2 or 4, so this is always an
-    // exact integer downscale, and an area average over the subpixels is what
-    // supersampling means. The filter is part of the output's identity —
-    // pinned, not left to ffmpeg's default.
-    //
-    // lanczos was here. Its negative lobes put a halo on hard edges that the
-    // source does not contain, and this renderer still emits hard edges: the
-    // core computes fractional coverage for axis-aligned rect spans, rounded
-    // corners, and — since the POLY op — rotated SOLID boxes, but not for
-    // rotated gradients, which still fan into coverage-less TRIs, and not for
-    // baked glyph cells. Measured on a 4x hard-edged bar,
-    // background 128, bar 255, downscaled 4:1, at an edge covering 75% of its
-    // pixel:
-    //
-    //   area     ... 128 128 223 255 255 255 160 128 ...   exact: 128+0.75*127
-    //   lanczos  ... 129 121 221 255 252 255 162 121 ...   halo both sides
-    //
-    // Across 70 rows of a slowly drifting edge, the darkest pixel beside the
-    // bar was a constant 128 under area and ranged 118-128 under lanczos: the
-    // halo depth tracks sub-pixel phase, so it pulses along the edge. That is
-    // an artefact the source never had, and it is the signature people read as
-    // edge crawl.
-    //
-    // This applies to the supersample step only. `src/footage/ingest.ts` scales
-    // photographic footage by arbitrary factors, where lanczos is the right
-    // choice and stays.
-    args.push("-vf", `scale=${w}:${h}:flags=area`);
-  }
   const format = options.format ?? "mp4";
   const alpha = options.alpha === true;
+  const pixFmt =
+    format === "webm"
+      ? alpha ? "yuva420p" : "yuv420p"
+      : format === "mov"
+        ? alpha ? "yuva444p10le" : "yuv422p10le"
+        : "yuv420p";
+
+  args.push("-vf", videoFilter(options.scaleTo, pixFmt));
 
   if (format === "webm") {
     // `-b:v 0` is what makes `-crf` mean constant quality in VP9; without it
@@ -156,38 +233,23 @@ export function ffmpegArgs(options: EncodeOptions): string[] {
       "0",
       "-row-mt",
       "1",
-      "-pix_fmt",
-      alpha ? "yuva420p" : "yuv420p",
-      outputPath,
     );
-    return args;
-  }
-
-  if (format === "mov") {
+  } else if (format === "mov") {
     // prores_ks profile 3 is 422 HQ and 4 is 4444. Only 4444 has an alpha
     // plane, so the profile and the pixel format are one decision, made here
     // rather than left to two flags that can disagree.
-    args.push(
-      "-c:v",
-      options.encoder ?? "prores_ks",
-      "-profile:v",
-      alpha ? "4444" : "3",
-      "-pix_fmt",
-      alpha ? "yuva444p10le" : "yuv422p10le",
-      outputPath,
-    );
-    return args;
-  }
-
-  const encoder = options.encoder ?? "libx264";
-  args.push("-c:v", encoder);
-  if (encoder === "libx264") {
-    args.push("-preset", options.preset ?? "medium", "-crf", String(options.crf ?? 16), "-flags", "+bitexact");
+    args.push("-c:v", options.encoder ?? "prores_ks", "-profile:v", alpha ? "4444" : "3");
   } else {
-    // Hardware encoders take a bitrate/quality knob rather than CRF.
-    args.push("-q:v", String(options.crf ?? 55));
+    const encoder = options.encoder ?? "libx264";
+    args.push("-c:v", encoder);
+    if (encoder === "libx264") {
+      args.push("-preset", options.preset ?? "medium", "-crf", String(options.crf ?? 16), "-flags", "+bitexact");
+    } else {
+      // Hardware encoders take a bitrate/quality knob rather than CRF.
+      args.push("-q:v", String(options.crf ?? 55));
+    }
   }
-  args.push("-pix_fmt", "yuv420p", outputPath);
+  args.push("-pix_fmt", pixFmt, ...colourTags(), "-fflags", "+bitexact", "-f", format, outputPath);
   return args;
 }
 

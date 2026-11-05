@@ -39,6 +39,29 @@ to declare; every digest recorded before this reproduces unchanged.
   `vendor/prebuilt.json` and loads the compiler; `rustup` and `assets` say
   they do not apply there.
 
+### Fixed
+
+- **A composition with `sound` rendered to `webm` or `mov` is that
+  container.** The mux wrote an MP4 under the requested name — VP9 and AAC
+  with the alpha gone, in a `.webm` — and failed on every `.mov`. WebM now
+  carries Opus at 48 kHz, MOV 24-bit PCM at 48 kHz and MP4 AAC as before,
+  each with the video stream and its alpha copied.
+- **Every encoded file is BT.709, converted and tagged.** The RGB → YUV
+  conversion used swscale's default BT.601 matrix and the file named none,
+  so a player taking BT.709 for HD showed saturated colours up to 40 levels
+  off. No recorded digest moved: frames are hashed before the encode.
+- **The audio stream is as long as the picture.** A mix whose last element
+  ended early ended the audio there; every mix is now padded with silence
+  to the film.
+- `*.sound.json` is named after the whole delivered file
+  (`hero.mp4.sound.json`, where it was `hero.sound.json`), so `hero.mp4`
+  and `hero.webm` keep a record each. `render --json` prints the path.
+- `sound --verify` reads its windows from one decode of the delivery, so a
+  correct Opus WebM is not read 8 ms early and failed.
+- ffmpeg is told the container with `-f`, so `--format mov --out cut`
+  renders, and `-fflags +bitexact` now reaches the muxer instead of the
+  input, so a delivery carries no muxer version.
+
 ## v0.5.0 — 2026-09-26
 
 The same pictures, rendered with less memory and less work. Nothing new

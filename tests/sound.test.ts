@@ -331,7 +331,7 @@ describe("mixGraph", () => {
     expect(graph.filter).toContain("volume=0.3");
     expect(graph.filter).toContain("afade=t=in:st=0:d=0.6");
     expect(graph.filter).toContain("afade=t=out:st=4.2:d=1.8");
-    expect(graph.filter).toContain("amix=inputs=1:normalize=0:dropout_transition=0[a]");
+    expect(graph.filter).toContain("amix=inputs=1:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]");
     expect(graph.filter).not.toContain("eval=frame");
   });
 
@@ -445,7 +445,7 @@ describe("mixGraph", () => {
     expect(graph.filter).toContain("0.25");
     expect(graph.filter).toContain("between(t\\,1\\,2.5)");
     expect(graph.filter).toContain("adelay=1000:all=1");
-    expect(graph.filter).toContain("amix=inputs=2:normalize=0:dropout_transition=0[a]");
+    expect(graph.filter).toContain("amix=inputs=2:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]");
   });
 
   test("a cue is adelay'd by framesToMs at the composition rate", () => {
@@ -575,8 +575,8 @@ describe("mixGraph", () => {
       90,
       "/sound/narration/0/src",
     );
-    expect(full.filter).toContain("amix=inputs=2:normalize=0:dropout_transition=0[a]");
-    expect(omitted.filter).toContain("amix=inputs=1:normalize=0:dropout_transition=0[a]");
+    expect(full.filter).toContain("amix=inputs=2:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]");
+    expect(omitted.filter).toContain("amix=inputs=1:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]");
     expect(full.inputArgs).toContain("/abs/vo.wav");
     expect(omitted.inputArgs).not.toContain("/abs/vo.wav");
     expect(omitted.inputArgs).toContain("/abs/bed.mp3");
@@ -765,6 +765,7 @@ describe("verifyMix", () => {
       outputPath: out,
       graph: mixGraph(parsed.value.sound, elements, 15, 30),
       durationSec: 2,
+      format: "mp4",
     });
     const result = await verifyMix({
       sidecar: parsed.value,
@@ -818,6 +819,7 @@ describe("verifyMix", () => {
       outputPath: out,
       graph: mixGraph(onlyFirst.value.sound, declared.slice(0, 1), 15, 30),
       durationSec: 2,
+      format: "mp4",
     });
     const result = await verifyMix({
       sidecar: full.value,
@@ -858,6 +860,7 @@ describe("verifyMix", () => {
       outputPath: out,
       graph: mixGraph(parsed.value.sound, elements, 15, 30),
       durationSec: 2,
+      format: "mp4",
     });
     const result = await verifyMix({
       sidecar: parsed.value,
@@ -1060,6 +1063,7 @@ describe("verifyMix", () => {
         30,
       ),
       durationSec: 2,
+      format: "mp4",
     });
     const result = await runSound({
       dir: COMP,
@@ -1287,6 +1291,7 @@ describe("verify does not read a pause inside a line as an absence", () => {
       outputPath: out,
       graph: mixGraph(mixed.sidecar.sound, mixed.elements, 15, 30),
       durationSec: 2,
+      format: "mp4",
     });
     const declared = withBed(declaredSrc, fadeInMs);
     return await verifyMix({
@@ -1421,6 +1426,7 @@ describe("verify does not read a pause inside a line as an absence", () => {
       outputPath: out,
       graph: mixGraph(parsed.value.sound, elements, 15, 42),
       durationSec: 2.8,
+      format: "mp4",
     });
     const result = await verifyMix({
       sidecar: parsed.value, elements, producedPath: out, fps: 15,
@@ -1550,7 +1556,7 @@ describe("mixGraph: the four shapes, as strings", () => {
       "[1:a]adelay=1000:all=1," +
         `asetnsamples=n=${VOLUME_STEP_SAMPLES}:p=0,` +
         "volume=volume='(lt(t\\,1)*0.5+gte(t\\,1)*lt(t\\,2)*(0.5+(0-0.5)*(t-1)/(2-1))+gte(t\\,2)*0)':eval=frame[c0];" +
-        "[c0]amix=inputs=1:normalize=0:dropout_transition=0[a]",
+        "[c0]amix=inputs=1:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]",
     );
     // A constant level writes no expression and no asetnsamples.
     expect(mixGraph(cue().sound, [cueEl()], 15, 90).filter).toContain("adelay=1000:all=1,volume=1[c0]");
@@ -1718,6 +1724,7 @@ async function muxAndVerify(
     outputPath: out,
     graph: mixGraph(mixed.sound, await probeSoundDurations(r.elements), fps, mixed.durationFrames),
     durationSec,
+    format: "mp4",
     ...(mixed.sound.silentTailMs !== undefined ? { silentTailMs: mixed.sound.silentTailMs } : {}),
   });
   const verify = await verifyMix({
@@ -1854,7 +1861,7 @@ describe("the four shapes, measured", () => {
     const graph = mixGraph(sc.sound, await probeSoundDurations(r.elements), 30, 180);
     const measure = async (name: string, filter: string) => {
       const out = join(T, `gate-${name}.mp4`);
-      const p = Bun.spawn(muxArgs(join(T, "picture-30.mp4"), out, { ...graph, filter }, 6), { stderr: "pipe" });
+      const p = Bun.spawn(muxArgs(join(T, "picture-30.mp4"), out, { ...graph, filter }, 6, "mp4"), { stderr: "pipe" });
       expect(await p.exited).toBe(0);
       return await measureSilentTail(out, 6, 500);
     };

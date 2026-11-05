@@ -3160,8 +3160,8 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "mp4",
     constraint:
-      "mp4 | webm | mov | png-seq. mp4 is libx264 yuv420p; webm is libvpx-vp9 yuv420p with `-b:v 0` so --crf means quality; mov is prores_ks, profile 3 (422 HQ, yuv422p10le); png-seq writes <out>/%06d.png with no ffmpeg in the path and is byte-identical to `frame --at N`. With no --format the --out extension decides; a --format that disagrees with the extension is refused rather than silently winning. Read back with ffprobe in tests/format.test.ts",
-    source: "src/render/encode.ts:106",
+      "mp4 | webm | mov | png-seq. mp4 is libx264 yuv420p; webm is libvpx-vp9 yuv420p with `-b:v 0` so --crf means quality; mov is prores_ks, profile 3 (422 HQ, yuv422p10le); png-seq writes <out>/%06d.png with no ffmpeg in the path and is byte-identical to `frame --at N`. With no --format the --out extension decides; a --format that disagrees with the extension is refused rather than silently winning, and ffmpeg is told the container with -f rather than left to read it off --out. Every ffmpeg format is converted to YUV with the BT.709 matrix at video range and tagged BT.709 primaries, transfer and matrix. With declared sound the mix is muxed into the same container — AAC in mp4, Opus at 48 kHz in webm, 24-bit PCM at 48 kHz in mov — and padded to the film's length. Read back from the file in tests/format.test.ts",
+    source: "src/render/encode.ts:62",
     verification: "pinned",
     diagnostics: [],
     probes: [],
@@ -3170,6 +3170,7 @@ export const SURFACE: readonly CapabilityRow[] = [
       "libvpx-vp9",
       "prores_ks",
       "yuv422p10le",
+      'matrix: "bt709"',
     ],
   },
   {
@@ -3181,7 +3182,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     defaultValue: "off",
     constraint:
       "asks the codec for an alpha channel: mov becomes ProRes 4444 (yuva444p10le in, yuva444p12le out — the 4444 bitstream is 12-bit), webm becomes yuva420p and the container gains alpha_mode=1 while the stream's own pix_fmt stays yuv420p, png-seq always carries all four channels. Refused for mp4, whose yuv420p has no alpha plane. The channel carries the picture: the rasteriser clears to transparent black (patches/0014), so a pixel no declared ground reaches has alpha 0 and a composition with a full-bleed ground is 255 everywhere — `render` measures and prints the floor rather than restating this",
-    source: "src/render/encode.ts:169",
+    source: "src/render/encode.ts:216",
     verification: "pinned",
     diagnostics: [],
     probes: [],
