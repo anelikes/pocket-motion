@@ -50,6 +50,10 @@
       "frames": 342,
       "digest": "40ae1820615583beaaee3febc2b269e9b4bc312265cc75832cdaad20db02d283"
     },
+    "compositions/data-chart": {
+      "frames": 120,
+      "digest": "c4015fc6620c4cfc4d9e7be4152eb5584a5a174e4554476064d11577498cb6b7"
+    },
     "compositions/faces": {
       "frames": 1,
       "digest": "9e43b28b9fed9cdc1b10f36f9120d4a12a0a52f80063e04b6bc3e23ab3be67eb"
@@ -137,6 +141,10 @@
     "compositions/stroke": {
       "frames": 45,
       "digest": "847ac2adc862dab231e48cc342ae856125d581b1e2fe7b9fc76c2d8dd614712e"
+    },
+    "compositions/svg-import": {
+      "frames": 150,
+      "digest": "9f02354347bc2812f9471779ac63f3fd12512c0a36448c00c0e3e3a07f35c2bf"
     },
     "compositions/textcmp-cjk": {
       "frames": 1,

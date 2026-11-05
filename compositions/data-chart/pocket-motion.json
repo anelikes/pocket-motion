@@ -1,0 +1,19 @@
+{
+  "motion": 1,
+  "durationFrames": 120,
+  "fps": 30,
+  "supersample": 1,
+  "layoutAllow": [
+    {"node": "series", "allow": "occlusion", "reason": "trimmed to nothing until the draw starts at frame 6: no geometry is the declaration, not a burial"},
+    {"node": "area", "allow": "occlusion", "reason": "faded from nothing once the line has passed: no geometry before the fade starts"},
+    {"node": "dots", "allow": "occlusion", "reason": "faded from nothing last: no geometry before the fade starts"}
+  ],
+  "assertions": [
+    {"node": "rules", "inPicture": [0, 119]},
+    {"node": "series", "entersBy": 12},
+    {"node": "series", "before": "area"},
+    {"node": "area", "before": "dots"},
+    {"node": "series", "dwellFrames": 100},
+    {"node": "dots", "inPicture": [75, 119]}
+  ]
+}

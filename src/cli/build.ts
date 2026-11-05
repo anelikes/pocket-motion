@@ -14,27 +14,31 @@
  * vendored tree only content-addressed transform-cache entries
  * (upstream #591, on the pin since 66caf4e5;
  * `tests/style-table.test.ts` holds both halves).
+ *
+ * A build whose collector met a `<Path>` `d` it could not read says so on one
+ * line (`paths at mount:`, `patches/0054`). Only then is the bundle mounted
+ * to read the outlines it computes (`src/render/path-inventory.ts`), and when
+ * there are any it is built again with them as `--path-inventory=`, which is
+ * the argv recorded. A composition whose every `d` is a literal never takes
+ * that path, so its artifacts are the bytes they were.
  */
+
+import { rmSync } from "node:fs";
+import { basename, join } from "node:path";
 
 import {
   outDirOf,
   writeBuildRecord,
   type BuildRecord,
 } from "../render/build-record.ts";
+import { unbakedOutlines, type PathInventory } from "../render/path-inventory.ts";
 import { buildSpawn, type ResolvedComposition } from "./resolve.ts";
 
-/**
- * Build a composition and record what built it.
- *
- * Takes the composition rather than a command string so no caller can spawn
- * `buildCommand.split(" ")` — a path with a space in it became two argv tokens
- * and surfaced three layers down as `cannot resolve app "dist"`.
- */
-export async function runBuild(
-  c: Pick<ResolvedComposition, "buildArgs" | "dir">,
-): Promise<BuildRecord> {
-  const { argv, cwd, env } = buildSpawn(c);
-  const proc = Bun.spawn(argv, { cwd, env, stdout: "pipe", stderr: "pipe" });
+/** The line `tools/build.ts` prints when some `d` attribute is known only at mount. */
+const PATHS_AT_MOUNT = /^\s*paths at mount: (\d+) /m;
+
+async function spawnBuild(argv: readonly string[], cwd: string, env: Record<string, string>): Promise<string> {
+  const proc = Bun.spawn([...argv], { cwd, env, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -45,6 +49,20 @@ export async function runBuild(
       `build failed (${code})${stderr.trim() ? `\n${stderr.trim()}` : ""}${stdout.trim() ? `\n${stdout.trim()}` : ""}`,
     );
   }
+  return stdout;
+}
+
+/**
+ * Build a composition and record what built it.
+ *
+ * Takes the composition rather than a command string so no caller can spawn
+ * `buildCommand.split(" ")` — a path with a space in it became two argv tokens
+ * and surfaced three layers down as `cannot resolve app "dist"`.
+ */
+export async function runBuild(
+  c: Pick<ResolvedComposition, "buildArgs" | "dir" | "bundlePath" | "pakPath" | "width" | "height" | "fps">,
+): Promise<BuildRecord> {
+  const { argv, cwd, env } = buildSpawn(c);
   const outDir = outDirOf(argv);
   if (outDir === null) {
     // buildSpawn always writes one; a caller that dropped it would leave an
@@ -52,8 +70,44 @@ export async function runBuild(
     // discovering later.
     throw new Error(`build argv names no --outdir: ${argv.join(" ")}`);
   }
+  const inventoryPath = join(outDir, `${basename(c.bundlePath, ".js")}.paths.json`);
+  // One a previous build left would describe a bundle this one replaces.
+  rmSync(inventoryPath, { force: true });
+  const stdout = await spawnBuild(argv, cwd, env);
+
+  let recorded: readonly string[] = argv;
+  const unread = PATHS_AT_MOUNT.exec(stdout);
+  if (unread) {
+    const read = async (): Promise<PathInventory["outlines"]> => {
+      try {
+        return await unbakedOutlines(c);
+      } catch (e) {
+        throw new Error(
+          `${unread[1]} <Path> d attribute(s) are not literals, so the build mounts the bundle to read their outlines, ` +
+            `and the mount failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    };
+    const outlines = await read();
+    if (outlines.length > 0) {
+      const inventory: PathInventory = { outlines };
+      await Bun.write(inventoryPath, JSON.stringify(inventory, null, 2) + "\n");
+      recorded = [...argv, `--path-inventory=${inventoryPath}`];
+      await spawnBuild(recorded, cwd, env);
+      // The rebuilt bundle differs from the one mounted (its PATH_IDS), so the
+      // inventory holds only if its mount computes the same outlines.
+      const again = await read();
+      if (again.length > 0) {
+        throw new Error(
+          `the bundle rebuilt with the ${outlines.length} outline(s) its mount computed (${inventoryPath}) ` +
+            `mounts ${again.length} more: what the composition draws depends on something that changed between ` +
+            `the two builds. First: ${JSON.stringify(again[0]).slice(0, 200)}`,
+        );
+      }
+    }
+  }
   // `cwd` is the composition's repository root, which the record's paths
   // are written relative to — in a project that installed this package, the
   // project rather than `node_modules/pocket-motion`.
-  return writeBuildRecord(outDir, argv, cwd);
+  return writeBuildRecord(outDir, recorded, cwd);
 }

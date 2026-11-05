@@ -1,0 +1,1465 @@
+pocket-motion-only: `<Svg>` expands a file into `<Path>`s, and only 0042's PATH op draws them; an upstream target would get Views selecting table entries no backend renders, so the import ships with the op or not at all.
+
+0053 — an SVG file as a tree of nodes: `<Svg src="./x.svg" parts={{ id: "…" }} />`
+expanded by the build into Views and `<Path>`s, each element's id its
+debugName, so a part can be animated, asserted and swept by name. The
+design is `patches/0042-vector-paths.design.md`, "SVG import".
+
+What the patch adds, by file:
+
+- `framework/compiler/svg-tree.ts` (new): the document half. An XML reader
+  (comments, processing instructions, CDATA and the doctype dropped; an
+  entity declaration refused); the presentation cascade — attributes,
+  `style=""` over them, the inherited properties and `inherit`; every basic
+  shape as SVG 2's equivalent path (a circle from (cx + r, cy) clockwise, a
+  rect from (x + rx, y), so a draw-on starts where a browser's does); every
+  `transform` (matrix, translate, scale, rotate, skewX, skewY, the rightmost
+  applied first), the viewBox and preserveAspectRatio (nine alignments,
+  meet, slice, none) FOLDED into the outline, rotations and skews through
+  path-data.ts's `cosSinDeg`, never `Math.cos`; each part's box its own
+  bounds, half a stroke out, on whole px, with the outline written relative
+  to it, so a part's transform origin is its own centre; paint as class
+  tokens — `fill-[#rrggbbaa]` with fill-opacity folded into the alpha, the
+  stroke's width scaled by the map, join, cap, miter limit, fill rule,
+  `opacity-N`. A stroke under a map that is not a uniform scale and rotation
+  is refused: folded into px it would be one width where SVG draws it wider
+  along one axis. A `<g>` with an id is a View holding its children in its
+  own box; one with neither id nor opacity adds no node. Refused, naming the
+  element and its line: gradients, patterns, clip paths, masks, filters,
+  `<use>`, `<symbol>`, `<style>`, text, images, nested `<svg>`, markers,
+  `<switch>`, `<a>`, scripts and SMIL — inside `<defs>` too; a `url()` paint,
+  a dash array, clip-path/mask/filter/marker/vector-effect/paint-order/blend
+  properties; a duplicate id. `svgSites` finds the `<Svg src>` elements of a
+  module by parsing it, for this repository's lint.
+- `framework/compiler/jsx-plugin.ts`: a Babel plugin ahead of the collector
+  replaces each JSX element named by a binding imported as `Svg` from the
+  framework's components with the expansion — a View with the author's
+  class, debugName and other attributes; a canvas View named `svg:<src>` at
+  the picture's size, `overflow-hidden` unless the root says
+  overflow="visible"; the parts — and adds the View and Path specifiers to
+  the import. A `parts` entry is joined to its part's own tokens HERE, as one
+  string literal carrying the entry's location (a ternary of them for a
+  ternary), so the collector reads it as the whole value of a `class=`
+  attribute: 0011's, 0012's and 0041's refusals reach the author's tokens,
+  and 0041's is located at the entry. A key naming no id is refused at the
+  key, listing the file's ids in document order. `CacheEntry.svgDeps` holds
+  every file an expansion read by sha256, and a cached transform is a miss
+  when one has changed: the module's own text did not.
+- `tools/build.ts`: an `SvgExpandError` is printed as
+  `error: file:line:column: <Svg>: …` and the build exits 1.
+- `framework/src/primitives.ts`, `components.ts`: `Svg` and `SvgProps`. The
+  function runs only when the build did not see the element, and throws
+  saying so.
+
+Red cases, run by `baselines/svg-import/redcheck.ts`, each an edit to one or
+two `+` lines of this patch (the harness rebuilds the vendored tree from the
+edited patch and restores it) — or, for the last four, to this repository's
+own file — each turning the named test red:
+- a circle swept counter-clockwise -> tests/svg-import.test.ts -t a circle starts at
+- a transform list composed leftmost-first -> -t a transform list applies its rightmost function first
+- rotate() through Math.cos and Math.sin -> -t a quarter turn is exact
+- meet and slice swapped -> -t preserveAspectRatio
+- a stroke under a non-uniform map accepted -> -t non-uniform map is refused
+- a gradient not refused by name -> -t refused: <defs><linearGradient
+- ids listed in the order the walk finished them -> -t an unnamed group is folded
+- an editor's unit on the root's size refused without saying what to give -> -t an editor's unit on the root's size
+- an id inside <defs> not recorded -> -t an id inside <defs> is known
+- the expander not among transformFile's plugins -> -t every shape is an outline the collector bakes
+- the added import names forgotten between elements -> -t two <Svg> elements in one module
+- a parts key naming no id accepted -> -t a parts key naming no id
+- a parts entry joined as a `+` expression, not a literal -> -t a token in a parts value that does not parse
+- a parts entry dropped from the join -> -t sidecar's assertions hold
+- a cached transform kept when its file changed -> -t a cached transform is dropped
+- the canvas not named svg:<src> -> -t every shape is an outline the collector bakes
+- the catalogue's svg probe expecting the wrong refusal (src/catalog/surface.ts) -> tests/catalog.test.ts -t G10
+- lint does not check the file exists (src/lint/svg-trees.ts) -> -t a missing file is svg.missingFile
+- the image lint reads an <Svg>'s src as a picture name (src/lint/images.ts) -> -t a missing file is svg.missingFile
+- layout reads one picture's parts as collisions (src/render/findings.ts) -> -t two parts in one svg
+
+The fixture is `compositions/svg-import`, in both ledgers: a line-art
+lighthouse whose parts are drawn on one after another, a lamp that pops
+about its own centre and a beam that sweeps about the lamp, its sidecar
+asserting the order by id.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/framework/compiler/jsx-plugin.ts b/framework/compiler/jsx-plugin.ts
+index abcde81..b83bacf 100644
+--- a/framework/compiler/jsx-plugin.ts
++++ b/framework/compiler/jsx-plugin.ts
+@@ -1,14 +1,15 @@
+ // Framework-aware pass-1 Babel transform + AST collection.
+ 
+-import { transformAsync, type PluginObj } from "@babel/core";
++import { transformAsync, types as t, type NodePath, type PluginObj } from "@babel/core";
+ import type { ParserOptions } from "@babel/parser";
+ import solidPreset from "babel-preset-solid";
+ import tsPreset from "@babel/preset-typescript"; // untyped - see framework/compiler/ambient.d.ts
+ import { transformVueJsxVapor } from "vue-jsx-vapor/api";
+-import { existsSync } from "node:fs";
+-import { dirname, join } from "node:path";
++import { existsSync, readFileSync } from "node:fs";
++import { dirname, join, resolve } from "node:path";
+ import { fileURLToPath } from "node:url";
+ import { compileVueSfc } from "./vue-sfc-compile.ts";
++import { importSvg, isSvgComponentSource, SvgImportError, type SvgPart } from "./svg-tree.ts";
+ import { compilerPackageDirectory, findPackageDirectory, packageVersion } from "./runtime-packages.ts";
+ import { pocketNexusCacheRoot } from "../../tools/targets/cache.ts";
+ import { getSolidAotProgram, resolveSolidAotMock, resolveSolidAotModel } from "../../microts/compiler/aot-solid-browser.ts";
+@@ -451,6 +452,257 @@ function makeFeatureFolder(features: BuildFeatures): PluginObj {
+   };
+ }
+ 
++/**
++ * An `<Svg>` the build could not expand (pocket-motion), at the place the
++ * module wrote it: 1-based line and column, and what was wrong.
++ */
++export class SvgExpandError extends Error {
++  constructor(
++    readonly file: string,
++    readonly line: number,
++    readonly column: number,
++    readonly detail: string,
++  ) {
++    super(`${file}:${line}:${column}: ${detail}`);
++  }
++}
++
++/** A file an `<Svg>` expansion read, by content: a cached transform holds only while each is unchanged. */
++export interface SvgDep {
++  path: string;
++  sha256: string;
++}
++
++function sha256Of(bytes: Uint8Array): string {
++  return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
++}
++
++/** Whether every file a cached transform's expansions read is still the bytes it read. */
++function svgDepsHold(deps: readonly SvgDep[] | undefined): boolean {
++  for (const dep of deps ?? []) {
++    if (!existsSync(dep.path) || sha256Of(readFileSync(dep.path)) !== dep.sha256) return false;
++  }
++  return true;
++}
++
++/**
++ * `<Svg src="./x.svg" parts={{ id: "…" }} />` (pocket-motion): the element
++ * is replaced by the tree svg-tree.ts imports from the file — a View holding
++ * the author's class and debugName, a canvas View at the picture's size, and
++ * a View per `<g>` with an id and a `<Path>` per shape, each element's id its
++ * debugName. A `parts` entry is added to its part's own classes HERE, as one
++ * literal (or a ternary of them), so the node's class is a literal the
++ * collector reads as the whole value of a `class=` attribute and 0012's and
++ * 0041's refusals reach the author's tokens, located at the entry. It runs
++ * before the collector, which then bakes the outlines like any written `d`.
++ */
++function makeSvgExpander(file: string, deps: SvgDep[]): PluginObj {
++  return {
++    name: "pocketjs-expand-svg",
++    visitor: {
++      Program(program) {
++        let expanded = false;
++        // The View and Path specifiers added to an import, once per declaration:
++        // a name added for one element is not a scope binding until the crawl.
++        const added = new Map<t.ImportDeclaration, SvgLocals>();
++        program.traverse({
++          JSXElement(path) {
++            const name = path.node.openingElement.name;
++            if (name.type !== "JSXIdentifier") return;
++            const binding = path.scope.getBinding(name.name);
++            if (!binding?.path.isImportSpecifier()) return;
++            const imported = binding.path.node.imported;
++            if ((imported.type === "Identifier" ? imported.name : imported.value) !== "Svg") return;
++            const decl = binding.path.parentPath;
++            if (!decl?.isImportDeclaration() || !isSvgComponentSource(decl.node.source.value)) return;
++            path.replaceWith(expandSvg(path, decl.node, file, deps, added));
++            expanded = true;
++          },
++        });
++        // The added View/Path specifiers are referenced only from nodes built
++        // here: re-collect bindings so the TypeScript preset sees them used.
++        if (expanded) program.scope.crawl();
++      },
++    },
++  };
++}
++
++/** The local names the expansion's Views and Paths are written with. */
++interface SvgLocals {
++  view: string;
++  path: string;
++}
++
++function expandSvg(
++  path: NodePath<t.JSXElement>,
++  decl: t.ImportDeclaration,
++  file: string,
++  deps: SvgDep[],
++  added: Map<t.ImportDeclaration, SvgLocals>,
++): t.JSXElement {
++  const opening = path.node.openingElement;
++  const fail = (node: t.Node, detail: string): never => {
++    const loc = node.loc?.start;
++    throw new SvgExpandError(file, loc?.line ?? 0, (loc?.column ?? -1) + 1, `<Svg>: ${detail}`);
++  };
++  const literalOf = (v: t.Node | null | undefined): t.StringLiteral | t.TemplateLiteral | null => {
++    if (!v) return null;
++    if (v.type === "JSXExpressionContainer") return literalOf(v.expression as t.Node);
++    if (v.type === "StringLiteral") return v;
++    if (v.type === "TemplateLiteral" && v.expressions.length === 0 && v.quasis.length === 1) return v;
++    return null;
++  };
++  const textOf = (v: t.StringLiteral | t.TemplateLiteral): string =>
++    v.type === "StringLiteral" ? v.value : (v.quasis[0]!.value.cooked ?? v.quasis[0]!.value.raw);
++  const numberOf = (a: t.JSXAttribute): number => {
++    const v = a.value;
++    const e = v?.type === "JSXExpressionContainer" ? v.expression : v;
++    if (e?.type === "NumericLiteral" && e.value > 0) return e.value;
++    if (e?.type === "StringLiteral" && /^\s*\d+(?:\.\d+)?\s*$/.test(e.value) && Number(e.value) > 0) return Number(e.value);
++    return fail(a, `${(a.name as t.JSXIdentifier).name} must be a number literal above 0 (the picture's size in px)`);
++  };
++
++  if (path.node.children.some((c) => !(c.type === "JSXText" && c.value.trim() === ""))) {
++    fail(path.node, "takes no children - the file is its content");
++  }
++  let src: { text: string; node: t.Node } | null = null;
++  let width: number | undefined;
++  let height: number | undefined;
++  let parts: t.ObjectExpression | null = null;
++  const passed: Array<t.JSXAttribute> = [];
++  for (const a of opening.attributes) {
++    if (a.type === "JSXSpreadAttribute") fail(a, "a spread attribute - the build reads src, width, height and parts where they are written");
++    const attr = a as t.JSXAttribute;
++    const key = attr.name.type === "JSXIdentifier" ? attr.name.name : `${attr.name.namespace.name}:${attr.name.name.name}`;
++    if (key === "src") {
++      const lit = literalOf(attr.value);
++      if (!lit) fail(attr, "src must be a string literal (a path relative to this module)");
++      src = { text: textOf(lit!), node: lit! };
++    } else if (key === "width") width = numberOf(attr);
++    else if (key === "height") height = numberOf(attr);
++    else if (key === "parts") {
++      const v = attr.value;
++      const e = v?.type === "JSXExpressionContainer" ? v.expression : null;
++      if (e?.type !== "ObjectExpression") fail(attr, "parts must be an object literal of class literals by element id");
++      parts = e as t.ObjectExpression;
++    } else if (key === "children") {
++      fail(attr, "takes no children - the file is its content");
++    } else passed.push(attr);
++  }
++  if (!src) return fail(opening, "src is missing");
++  const s = src as { text: string; node: t.Node };
++  const abs = resolve(dirname(file), s.text);
++  if (!existsSync(abs)) fail(s.node, `src ${JSON.stringify(s.text)} names no file (looked for ${abs})`);
++  const bytes = readFileSync(abs);
++  deps.push({ path: abs, sha256: sha256Of(bytes) });
++  let tree;
++  try {
++    tree = importSvg(new TextDecoder().decode(bytes), {
++      ...(width !== undefined ? { width } : {}),
++      ...(height !== undefined ? { height } : {}),
++    });
++  } catch (e) {
++    if (e instanceof SvgImportError) fail(s.node, `${s.text}: ${e.message}`);
++    throw e;
++  }
++
++  // The author's class literals, by id.
++  const byId = new Map<string, t.Expression>();
++  for (const prop of (parts as t.ObjectExpression | null)?.properties ?? []) {
++    if (prop.type !== "ObjectProperty" || prop.computed) fail(prop, "parts must be written as id: \"classes\" entries (no spreads, methods or computed keys)");
++    const p = prop as t.ObjectProperty;
++    const id = p.key.type === "Identifier" ? p.key.name : p.key.type === "StringLiteral" ? p.key.value : fail(p.key, "a parts key must be an element id");
++    if (!tree.ids.includes(id)) {
++      const why = tree.skipped.get(id);
++      fail(
++        p.key,
++        why !== undefined
++          ? `parts names ${JSON.stringify(id)}, which ${s.text} puts on an element that draws nothing (${why})`
++          : `parts names ${JSON.stringify(id)}, which no element of ${s.text} carries as its id` +
++              (tree.ids.length > 0 ? ` (its ids: ${tree.ids.join(", ")})` : " (it carries none)"),
++      );
++    }
++    byId.set(id, p.value as t.Expression);
++  }
++
++  // The element's own literal, or the author's added to it — a literal with
++  // the author's position, or a ternary of them.
++  const combine = (base: string, v: t.Expression, id: string): t.Expression => {
++    switch (v.type) {
++      case "StringLiteral":
++      case "TemplateLiteral": {
++        const lit = literalOf(v);
++        if (!lit) break;
++        const out = t.stringLiteral(`${base} ${textOf(lit)}`.trim());
++        out.loc = v.loc;
++        return out;
++      }
++      case "ConditionalExpression":
++        return t.conditionalExpression(v.test, combine(base, v.consequent, id), combine(base, v.alternate, id));
++      case "ParenthesizedExpression":
++      case "TSAsExpression":
++      case "TSSatisfiesExpression":
++        return combine(base, v.expression, id);
++    }
++    return fail(v, `parts[${JSON.stringify(id)}] must be a class literal or a ternary of them, so the build can join it to the part's own classes`);
++  };
++  const literal = (text: string): t.StringLiteral => {
++    const out = t.stringLiteral(text);
++    out.loc = s.node.loc;
++    return out;
++  };
++
++  let locals = added.get(decl);
++  if (!locals) {
++    const taken = new Set([...added.values()].flatMap((l) => [l.view, l.path]));
++    const local = (want: string, imported: string): string => {
++      let name = want;
++      for (let k = 2; path.scope.hasBinding(name) || taken.has(name); k++) name = `${want}${k}`;
++      decl.specifiers.push(t.importSpecifier(t.identifier(name), t.identifier(imported)));
++      return name;
++    };
++    locals = { view: local("SvgView", "View"), path: local("SvgPath", "Path") };
++    added.set(decl, locals);
++  }
++  const viewName = locals.view;
++  const pathName = locals.path;
++  const attr = (name: string, value: t.Expression): t.JSXAttribute =>
++    t.jsxAttribute(t.jsxIdentifier(name), value.type === "StringLiteral" ? value : t.jsxExpressionContainer(value));
++  const element = (tag: string, attrs: t.JSXAttribute[], children: t.JSXElement[]): t.JSXElement =>
++    t.jsxElement(
++      t.jsxOpeningElement(t.jsxIdentifier(tag), attrs, children.length === 0),
++      children.length === 0 ? null : t.jsxClosingElement(t.jsxIdentifier(tag)),
++      children,
++      children.length === 0,
++    );
++  const node = (part: SvgPart): t.JSXElement => {
++    const attrs: t.JSXAttribute[] = [];
++    if (part.id !== undefined) attrs.push(attr("debugName", t.stringLiteral(part.id)));
++    const extra = part.id !== undefined ? byId.get(part.id) : undefined;
++    attrs.push(attr("class", extra ? combine(part.cls, extra, part.id!) : literal(part.cls)));
++    if (part.kind === "path") {
++      attrs.push(attr("d", t.stringLiteral(part.d!)));
++      return element(pathName, attrs, []);
++    }
++    return element(viewName, attrs, part.children.map(node));
++  };
++  const size = (n: number): string => `${Math.round(n * 1000) / 1000}px`;
++  // The canvas is named `svg:<src>`, a protocol name like `footage:<track>`:
++  // `layout` reads it as the bounds of one picture, whose parts overlap where
++  // the file draws them over each other.
++  const canvas = element(
++    viewName,
++    [
++      attr("debugName", t.stringLiteral(`svg:${s.text}`)),
++      attr("class", literal(`w-[${size(tree.width)}] h-[${size(tree.height)}]${tree.clip ? " overflow-hidden" : ""}`)),
++    ],
++    tree.parts.map(node),
++  );
++  const root = element(viewName, passed, [canvas]);
++  root.loc = path.node.loc;
++  return root;
++}
++
+ function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
+   const seen = new Set<string>();
+   const add = (s: string) => {
+@@ -685,6 +937,8 @@ interface CacheEntry {
+   textCodepoints: number[];
+   literalSites: LiteralSite[];
+   pathDecls: PathDecl[];
++  /** Files `<Svg>` expansions read (pocket-motion): the entry holds only while each is unchanged. */
++  svgDeps: SvgDep[];
+ }
+ 
+ function resolvePackageSubpath(spec: string): string | null {
+@@ -777,7 +1031,7 @@ export async function transformFile(
+   const cached = (await Bun.file(cacheFile).json().catch(() => null)) as CacheEntry | null;
+   // SFC output also depends on imported props and declaration modules. Their
+   // contents are outside this per-file hash, including on pure child views.
+-  if (!isVueSfc && !solidAot && cached && typeof cached.code === "string") {
++  if (!isVueSfc && !solidAot && cached && typeof cached.code === "string" && svgDepsHold(cached.svgDeps)) {
+     return {
+       code: cached.code,
+       classStrings: cached.classStrings,
+@@ -814,6 +1068,7 @@ export async function transformFile(
+       // The collector read compiled SFC output: its positions are not the file's.
+       literalSites: [],
+       pathDecls: collected.pathDecls,
++      svgDeps: [],
+     };
+     await Bun.write(cacheFile, JSON.stringify(entry));
+     return {
+@@ -828,8 +1083,10 @@ export async function transformFile(
+ 
+   const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [], pathDecls: [] };
+   const opts = transformOptions(framework);
++  const svgDeps: SvgDep[] = [];
+   const plugins = [
+     ...(options.features === undefined ? [] : [makeFeatureFolder(options.features)]),
++    ...(framework === "solid" ? [makeSvgExpander(path, svgDeps)] : []),
+     makeCollector(collected, framework),
+   ];
+   let res;
+@@ -905,6 +1162,7 @@ export async function transformFile(
+     textCodepoints: [...collected.textCodepoints],
+     literalSites: positionsHold ? collected.literalSites : [],
+     pathDecls: collected.pathDecls,
++    svgDeps,
+   };
+   await Bun.write(cacheFile, JSON.stringify(entry));
+   return {
+diff --git a/framework/compiler/svg-tree.ts b/framework/compiler/svg-tree.ts
+new file mode 100644
+index 0000000..e502151
+--- /dev/null
++++ b/framework/compiler/svg-tree.ts
+@@ -0,0 +1,954 @@
++// An SVG document -> a tree of `<Path>`s (pocket-motion patch 0053).
++//
++// `<Svg src="./robot.svg" parts={{ arm: "animate-draw" }} />` is expanded by
++// the build (jsx-plugin.ts) into Views and `<Path>`s whose outlines are
++// literals, so the collector bakes them like any other `<Path>` and every
++// part is a node an animation, `assert` or `visibility` can name. This module
++// is the document half: it reads the XML subset, resolves the presentation
++// cascade and turns every shape into a positioned outline with its paint as
++// class tokens. Nothing here draws; the core's PATH op does.
++//
++// Every element's transform, the viewBox and preserveAspectRatio are FOLDED
++// into the outlines, which are written in px relative to their own box: a
++// part's node is its own bounds, so its transform origin (the box centre) is
++// the centre of the part — CSS `transform-box: fill-box`, which is what a
++// rotate or scale on one part means to an author — and a View's transform
++// props stay free for the author's animation instead of holding the file's.
++//
++// Determinism: the outlines become pak bytes, so nothing here may depend on
++// the host's libm. Rotations and skews go through path-data.ts's `cosSinDeg`
++// (exact at multiples of 90 degrees, a fixed f64 series elsewhere); every
++// other step is + - * / and Math.sqrt.
++
++import { parse as babelParse } from "@babel/parser";
++import { PATH_VERB } from "../../contracts/spec/spec.ts";
++import { cosSinDeg, normalizePathData, PathDataError } from "./path-data.ts";
++
++/** A refusal, naming the element (and its line in the .svg) it is about. */
++export class SvgImportError extends Error {}
++
++// ---- XML ------------------------------------------------------------------------------------
++
++export interface XmlElement {
++  name: string;
++  attrs: Record<string, string>;
++  children: XmlElement[];
++  /** 1-based line of the start tag in the document. */
++  line: number;
++}
++
++const NAMED_ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
++
++function decodeEntities(v: string, line: number): string {
++  return v.replace(/&(#x[0-9a-fA-F]+|#\d+|[A-Za-z][\w.-]*);/g, (_, ref: string) => {
++    if (ref[0] === "#") {
++      const cp = ref[1] === "x" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
++      if (!(cp >= 0 && cp <= 0x10ffff)) throw new SvgImportError(`line ${line}: &${ref}; is not a character`);
++      return String.fromCodePoint(cp);
++    }
++    const ch = NAMED_ENTITIES[ref];
++    if (ch === undefined) throw new SvgImportError(`line ${line}: entity &${ref}; is not one of XML's five`);
++    return ch;
++  });
++}
++
++/** The element tree of an XML document: comments, processing instructions, the doctype and CDATA dropped. */
++export function parseXml(text: string): XmlElement {
++  const src = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
++  let i = 0;
++  let line = 1;
++  const advanceTo = (j: number): void => {
++    for (let k = i; k < j; k++) if (src.charCodeAt(k) === 10) line++;
++    i = j;
++  };
++  const skipPast = (end: string, what: string): void => {
++    const j = src.indexOf(end, i);
++    if (j < 0) throw new SvgImportError(`line ${line}: unterminated ${what}`);
++    advanceTo(j + end.length);
++  };
++  const stack: XmlElement[] = [];
++  let root: XmlElement | null = null;
++  while (i < src.length) {
++    const lt = src.indexOf("<", i);
++    if (lt < 0) break;
++    advanceTo(lt);
++    if (src.startsWith("<!--", i)) { skipPast("-->", "comment"); continue; }
++    if (src.startsWith("<?", i)) { skipPast("?>", "processing instruction"); continue; }
++    if (src.startsWith("<![CDATA[", i)) { skipPast("]]>", "CDATA section"); continue; }
++    if (src.startsWith("<!DOCTYPE", i) || src.startsWith("<!doctype", i)) {
++      const close = src.indexOf(">", i);
++      const bracket = src.indexOf("[", i);
++      const end = bracket >= 0 && (close < 0 || bracket < close) ? src.indexOf("]>", bracket) : close;
++      if (end < 0) throw new SvgImportError(`line ${line}: unterminated doctype`);
++      if (/<!ENTITY/.test(src.slice(i, end))) {
++        throw new SvgImportError(`line ${line}: the doctype declares entities, which are not read - expand them in the file`);
++      }
++      advanceTo(end + (src[end] === "]" ? 2 : 1));
++      continue;
++    }
++    if (src[i + 1] === "/") {
++      const m = /^<\/([A-Za-z_][\w:.-]*)\s*>/.exec(src.slice(i));
++      if (!m) throw new SvgImportError(`line ${line}: malformed end tag`);
++      const top = stack.pop();
++      if (!top || top.name !== m[1]) {
++        throw new SvgImportError(`line ${line}: </${m[1]}> does not close ${top ? `<${top.name}> (line ${top.line})` : "anything"}`);
++      }
++      advanceTo(i + m[0].length);
++      continue;
++    }
++    const m = /^<([A-Za-z_][\w:.-]*)((?:\s+[A-Za-z_:][\w:.-]*\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/.exec(src.slice(i));
++    if (!m) throw new SvgImportError(`line ${line}: malformed start tag`);
++    const startLine = line;
++    const attrs: Record<string, string> = {};
++    const re = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
++    for (let a = re.exec(m[2]!); a; a = re.exec(m[2]!)) {
++      if (a[1]! in attrs) throw new SvgImportError(`line ${startLine}: <${m[1]}> has ${a[1]} twice`);
++      attrs[a[1]!] = decodeEntities(a[2] ?? a[3] ?? "", startLine);
++    }
++    const el: XmlElement = { name: m[1]!, attrs, children: [], line: startLine };
++    advanceTo(i + m[0].length);
++    if (stack.length > 0) stack[stack.length - 1]!.children.push(el);
++    else if (root) throw new SvgImportError(`line ${startLine}: a second root element <${el.name}>`);
++    else root = el;
++    if (m[3] !== "/") stack.push(el);
++  }
++  if (stack.length > 0) {
++    const top = stack[stack.length - 1]!;
++    throw new SvgImportError(`<${top.name}> (line ${top.line}) is never closed`);
++  }
++  if (!root) throw new SvgImportError("the file has no root element");
++  return root;
++}
++
++// ---- affine maps ----------------------------------------------------------------------------
++
++/** [a, b, c, d, e, f]: x' = a x + c y + e, y' = b x + d y + f (SVG's matrix()). */
++type Mat = [number, number, number, number, number, number];
++const IDENTITY: Mat = [1, 0, 0, 1, 0, 0];
++
++/** m · n: n applies to a point first. */
++function mul(m: Mat, n: Mat): Mat {
++  return [
++    m[0] * n[0] + m[2] * n[1],
++    m[1] * n[0] + m[3] * n[1],
++    m[0] * n[2] + m[2] * n[3],
++    m[1] * n[2] + m[3] * n[3],
++    m[0] * n[4] + m[2] * n[5] + m[4],
++    m[1] * n[4] + m[3] * n[5] + m[5],
++  ];
++}
++
++const NUMBER = /[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/y;
++
++/** Numbers separated by whitespace and/or commas (a transform's arguments, `points`). */
++function numberList(v: string, what: string): number[] {
++  const out: number[] = [];
++  let pos = 0;
++  for (;;) {
++    while (pos < v.length && /[\s,]/.test(v[pos]!)) pos++;
++    if (pos >= v.length) return out;
++    NUMBER.lastIndex = pos;
++    const m = NUMBER.exec(v);
++    if (!m) throw new SvgImportError(`${what} ${JSON.stringify(v)} is not a list of numbers`);
++    pos = NUMBER.lastIndex;
++    out.push(Number(m[0]));
++  }
++}
++
++/** `transform="…"` as one matrix, the rightmost function applied first, as SVG composes a list. */
++function parseTransform(value: string): Mat {
++  let out = IDENTITY;
++  const re = /\s*,?\s*([A-Za-z]+)\s*\(([^)]*)\)/y;
++  let pos = 0;
++  while (pos < value.length) {
++    re.lastIndex = pos;
++    const m = re.exec(value);
++    if (!m) {
++      if (/^[\s,]*$/.test(value.slice(pos))) break;
++      throw new SvgImportError(`transform=${JSON.stringify(value)} does not parse`);
++    }
++    pos = re.lastIndex;
++    const name = m[1]!;
++    const a = numberList(m[2]!, `transform ${name}()`);
++    const want = (...counts: number[]): void => {
++      if (!counts.includes(a.length)) {
++        throw new SvgImportError(`${name}() takes ${counts.join(" or ")} numbers, got ${a.length} in transform=${JSON.stringify(value)}`);
++      }
++    };
++    let t: Mat;
++    if (name === "matrix") {
++      want(6);
++      t = a as Mat;
++    } else if (name === "translate") {
++      want(1, 2);
++      t = [1, 0, 0, 1, a[0]!, a[1] ?? 0];
++    } else if (name === "scale") {
++      want(1, 2);
++      t = [a[0]!, 0, 0, a[1] ?? a[0]!, 0, 0];
++    } else if (name === "rotate") {
++      want(1, 3);
++      const [c, s] = cosSinDeg(a[0]!);
++      const cx = a[1] ?? 0;
++      const cy = a[2] ?? 0;
++      // translate(cx cy) rotate(a) translate(-cx -cy)
++      t = [c, s, -s, c, cx - c * cx + s * cy, cy - s * cx - c * cy];
++    } else if (name === "skewX" || name === "skewY") {
++      want(1);
++      const [c, s] = cosSinDeg(a[0]!);
++      if (c === 0) throw new SvgImportError(`${name}(${a[0]}) is a shear to infinity`);
++      const tan = s / c;
++      t = name === "skewX" ? [1, 0, tan, 1, 0, 0] : [1, tan, 0, 1, 0, 0];
++    } else {
++      throw new SvgImportError(`transform function ${name}() is not one of matrix, translate, scale, rotate, skewX, skewY`);
++    }
++    out = mul(out, t);
++  }
++  return out;
++}
++
++// ---- paint ----------------------------------------------------------------------------------
++
++/** CSS named colours (CSS Color 4), as 0xRRGGBB. */
++const NAMED_COLORS: Record<string, number> = {
++  aliceblue: 0xf0f8ff, antiquewhite: 0xfaebd7, aqua: 0x00ffff, aquamarine: 0x7fffd4, azure: 0xf0ffff,
++  beige: 0xf5f5dc, bisque: 0xffe4c4, black: 0x000000, blanchedalmond: 0xffebcd, blue: 0x0000ff,
++  blueviolet: 0x8a2be2, brown: 0xa52a2a, burlywood: 0xdeb887, cadetblue: 0x5f9ea0, chartreuse: 0x7fff00,
++  chocolate: 0xd2691e, coral: 0xff7f50, cornflowerblue: 0x6495ed, cornsilk: 0xfff8dc, crimson: 0xdc143c,
++  cyan: 0x00ffff, darkblue: 0x00008b, darkcyan: 0x008b8b, darkgoldenrod: 0xb8860b, darkgray: 0xa9a9a9,
++  darkgreen: 0x006400, darkgrey: 0xa9a9a9, darkkhaki: 0xbdb76b, darkmagenta: 0x8b008b,
++  darkolivegreen: 0x556b2f, darkorange: 0xff8c00, darkorchid: 0x9932cc, darkred: 0x8b0000,
++  darksalmon: 0xe9967a, darkseagreen: 0x8fbc8f, darkslateblue: 0x483d8b, darkslategray: 0x2f4f4f,
++  darkslategrey: 0x2f4f4f, darkturquoise: 0x00ced1, darkviolet: 0x9400d3, deeppink: 0xff1493,
++  deepskyblue: 0x00bfff, dimgray: 0x696969, dimgrey: 0x696969, dodgerblue: 0x1e90ff, firebrick: 0xb22222,
++  floralwhite: 0xfffaf0, forestgreen: 0x228b22, fuchsia: 0xff00ff, gainsboro: 0xdcdcdc, ghostwhite: 0xf8f8ff,
++  gold: 0xffd700, goldenrod: 0xdaa520, gray: 0x808080, green: 0x008000, greenyellow: 0xadff2f,
++  grey: 0x808080, honeydew: 0xf0fff0, hotpink: 0xff69b4, indianred: 0xcd5c5c, indigo: 0x4b0082,
++  ivory: 0xfffff0, khaki: 0xf0e68c, lavender: 0xe6e6fa, lavenderblush: 0xfff0f5, lawngreen: 0x7cfc00,
++  lemonchiffon: 0xfffacd, lightblue: 0xadd8e6, lightcoral: 0xf08080, lightcyan: 0xe0ffff,
++  lightgoldenrodyellow: 0xfafad2, lightgray: 0xd3d3d3, lightgreen: 0x90ee90, lightgrey: 0xd3d3d3,
++  lightpink: 0xffb6c1, lightsalmon: 0xffa07a, lightseagreen: 0x20b2aa, lightskyblue: 0x87cefa,
++  lightslategray: 0x778899, lightslategrey: 0x778899, lightsteelblue: 0xb0c4de, lightyellow: 0xffffe0,
++  lime: 0x00ff00, limegreen: 0x32cd32, linen: 0xfaf0e6, magenta: 0xff00ff, maroon: 0x800000,
++  mediumaquamarine: 0x66cdaa, mediumblue: 0x0000cd, mediumorchid: 0xba55d3, mediumpurple: 0x9370db,
++  mediumseagreen: 0x3cb371, mediumslateblue: 0x7b68ee, mediumspringgreen: 0x00fa9a,
++  mediumturquoise: 0x48d1cc, mediumvioletred: 0xc71585, midnightblue: 0x191970, mintcream: 0xf5fffa,
++  mistyrose: 0xffe4e1, moccasin: 0xffe4b5, navajowhite: 0xffdead, navy: 0x000080, oldlace: 0xfdf5e6,
++  olive: 0x808000, olivedrab: 0x6b8e23, orange: 0xffa500, orangered: 0xff4500, orchid: 0xda70d6,
++  palegoldenrod: 0xeee8aa, palegreen: 0x98fb98, paleturquoise: 0xafeeee, palevioletred: 0xdb7093,
++  papayawhip: 0xffefd5, peachpuff: 0xffdab9, peru: 0xcd853f, pink: 0xffc0cb, plum: 0xdda0dd,
++  powderblue: 0xb0e0e6, purple: 0x800080, rebeccapurple: 0x663399, red: 0xff0000, rosybrown: 0xbc8f8f,
++  royalblue: 0x4169e1, saddlebrown: 0x8b4513, salmon: 0xfa8072, sandybrown: 0xf4a460, seagreen: 0x2e8b57,
++  seashell: 0xfff5ee, sienna: 0xa0522d, silver: 0xc0c0c0, skyblue: 0x87ceeb, slateblue: 0x6a5acd,
++  slategray: 0x708090, slategrey: 0x708090, snow: 0xfffafa, springgreen: 0x00ff7f, steelblue: 0x4682b4,
++  tan: 0xd2b48c, teal: 0x008080, thistle: 0xd8bfd8, tomato: 0xff6347, turquoise: 0x40e0d0,
++  violet: 0xee82ee, wheat: 0xf5deb3, white: 0xffffff, whitesmoke: 0xf5f5f5, yellow: 0xffff00,
++  yellowgreen: 0x9acd32,
++};
++
++/** RGBA, each 0..255; null for `none`. */
++type Rgba = [number, number, number, number] | null;
++
++function clamp01(v: number): number {
++  return v < 0 ? 0 : v > 1 ? 1 : v;
++}
++
++/** `0.5` or `50%`, clamped to 0..1. */
++function parseAlpha(v: string, what: string): number {
++  const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(%?)\s*$/.exec(v);
++  if (!m) throw new SvgImportError(`${what}=${JSON.stringify(v)} is not a number or a percentage`);
++  return clamp01(m[2] ? Number(m[1]) / 100 : Number(m[1]));
++}
++
++/** A colour as SVG writes one: hex, rgb()/rgba(), a CSS name, `none`, `transparent`, `currentColor`. */
++function parseColor(raw: string, what: string, current: string): Rgba {
++  const v = raw.trim();
++  const lower = v.toLowerCase();
++  if (lower === "none") return null;
++  if (lower === "transparent") return [0, 0, 0, 0];
++  if (lower === "currentcolor") {
++    if (current.trim().toLowerCase() === "currentcolor") return [0, 0, 0, 255];
++    return parseColor(current, "color", "black");
++  }
++  if (lower.startsWith("url(")) {
++    throw new SvgImportError(
++      `${what}=${JSON.stringify(v)} paints with a paint server; gradients and patterns are not imported - ` +
++        "give the part a flat colour in the file and a gradient through its class (bg-clip-path)",
++    );
++  }
++  const hex = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.exec(v);
++  if (hex) {
++    let h = hex[1]!;
++    if (h.length <= 4) h = [...h].map((c) => c + c).join("");
++    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), h.length === 8 ? parseInt(h.slice(6, 8), 16) : 255];
++  }
++  const fn = /^rgba?\(\s*([^)]*)\)$/i.exec(v);
++  if (fn) {
++    const parts = fn[1]!.includes(",") ? fn[1]!.split(",").map((s) => s.trim()) : fn[1]!.split(/\s*\/\s*|\s+/).filter((s) => s !== "");
++    if (parts.length !== 3 && parts.length !== 4) throw new SvgImportError(`${what}=${JSON.stringify(v)} is not rgb(r, g, b) or rgba(r, g, b, a)`);
++    const channel = (s: string): number => {
++      const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(%?)$/.exec(s);
++      if (!m) throw new SvgImportError(`${what}=${JSON.stringify(v)}: ${JSON.stringify(s)} is not a channel`);
++      const n = m[2] ? (Number(m[1]) * 255) / 100 : Number(m[1]);
++      return Math.round(n < 0 ? 0 : n > 255 ? 255 : n);
++    };
++    const alpha = parts.length === 4 ? Math.round(parseAlpha(parts[3]!, what) * 255) : 255;
++    return [channel(parts[0]!), channel(parts[1]!), channel(parts[2]!), alpha];
++  }
++  const named = NAMED_COLORS[lower];
++  if (named !== undefined) return [(named >> 16) & 255, (named >> 8) & 255, named & 255, 255];
++  throw new SvgImportError(`${what}=${JSON.stringify(v)} is not a colour this import reads (hex, rgb(), rgba(), a CSS name, none, currentColor)`);
++}
++
++/** A length in user units: a number, optionally `px`. Percentages and other units are refused. */
++function parseLength(v: string | undefined, what: string, fallback: number): number {
++  if (v === undefined) return fallback;
++  const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)(px)?\s*$/.exec(v);
++  if (!m) throw new SvgImportError(`${what}=${JSON.stringify(v)} is not a number of user units (percentages and units other than px are not read)`);
++  return Number(m[1]);
++}
++
++// ---- the cascade ----------------------------------------------------------------------------
++
++/** Presentation properties an element passes down to its children. */
++const INHERITED = [
++  "fill", "fill-opacity", "fill-rule",
++  "stroke", "stroke-width", "stroke-opacity", "stroke-linejoin", "stroke-linecap", "stroke-miterlimit",
++  "visibility", "color",
++] as const;
++
++/** SVG's initial values. */
++const INITIAL: Record<string, string> = {
++  fill: "black", "fill-opacity": "1", "fill-rule": "nonzero",
++  stroke: "none", "stroke-width": "1", "stroke-opacity": "1",
++  "stroke-linejoin": "miter", "stroke-linecap": "butt", "stroke-miterlimit": "4",
++  visibility: "visible", color: "black",
++};
++
++/**
++ * Attributes that would change what is drawn and that this import does not
++ * carry — refused, with the value that is a no-op.
++ */
++const REFUSED_PROPERTIES: Record<string, string> = {
++  "clip-path": "none",
++  mask: "none",
++  filter: "none",
++  "stroke-dasharray": "none",
++  marker: "none",
++  "marker-start": "none",
++  "marker-mid": "none",
++  "marker-end": "none",
++  "paint-order": "normal",
++  "vector-effect": "none",
++  "mix-blend-mode": "normal",
++};
++
++const SHAPES = new Set(["path", "rect", "circle", "ellipse", "line", "polyline", "polygon"]);
++
++/** Never drawn and holding nothing that is: skipped with their contents. */
++const DESCRIPTIVE = new Set(["title", "desc", "metadata"]);
++
++/** Elements refused by name, each with what to do instead. Keyed lower-case. */
++const REFUSED_ELEMENTS: Record<string, string> = {
++  lineargradient: "gradients are not imported - paint the part with a class through parts (a gradient and bg-clip-path)",
++  radialgradient: "gradients are not imported - paint the part with a class through parts (a gradient and bg-clip-path)",
++  meshgradient: "gradients are not imported",
++  pattern: "patterns are not imported",
++  clippath: "clip paths are not imported - clip with overflow-mask on a View",
++  mask: "masks are not imported - clip with overflow-mask on a View",
++  filter: "filters are not imported - give the part blur or drop-shadow through parts",
++  use: "<use> is not imported - inline the shapes it references",
++  symbol: "<symbol> is not imported - inline its shapes",
++  style: "style sheets are not imported - write the properties as presentation attributes or style=\"\" on the shapes",
++  text: "text is not imported - convert it to outlines (paths), or draw it with <Text>",
++  tspan: "text is not imported - convert it to outlines (paths)",
++  textpath: "text is not imported - convert it to outlines (paths)",
++  image: "pictures are not imported - draw them with <Image>",
++  svg: "a nested <svg> is not imported - use a <g transform>",
++  foreignobject: "foreignObject is not SVG",
++  switch: "<switch> is not imported - keep the one branch that should draw",
++  a: "<a> is not imported - use a <g>",
++  marker: "markers are not imported - draw the marker as its own shape",
++  script: "scripts are not run",
++  animate: "SMIL animation is not imported - animate the part with a class through parts",
++  animatetransform: "SMIL animation is not imported - animate the part with a class through parts",
++  animatemotion: "SMIL animation is not imported - animate the part with a class through parts",
++  set: "SMIL animation is not imported - animate the part with a class through parts",
++};
++
++/** An element's own declarations: attributes, overridden by `style=""`. */
++function ownProperties(el: XmlElement): Record<string, string> {
++  const out = { ...el.attrs };
++  if (el.attrs.style !== undefined) {
++    delete out.style;
++    for (const decl of el.attrs.style.split(";")) {
++      const i = decl.indexOf(":");
++      if (i < 0) {
++        if (decl.trim() !== "") throw new SvgImportError(`style=${JSON.stringify(el.attrs.style)} has a declaration with no ":"`);
++        continue;
++      }
++      out[decl.slice(0, i).trim()] = decl.slice(i + 1).replace(/!important\s*$/, "").trim();
++    }
++  }
++  for (const [name, noop] of Object.entries(REFUSED_PROPERTIES)) {
++    const v = out[name];
++    if (v !== undefined && v.trim() !== noop) {
++      throw new SvgImportError(`${name}=${JSON.stringify(v)} is not carried by the import - remove it or flatten its effect into the shapes`);
++    }
++  }
++  return out;
++}
++
++// ---- shapes -> path data --------------------------------------------------------------------
++
++/** The equivalent path of a basic shape (SVG 2 §10), or null when it draws nothing. */
++function shapeData(el: XmlElement, own: Record<string, string>): string | null {
++  const n = (k: string, fallback = 0): number => parseLength(own[k], k, fallback);
++  switch (el.name) {
++    case "path":
++      return own.d === undefined || own.d.trim() === "" || own.d.trim() === "none" ? null : own.d;
++    case "rect": {
++      const x = n("x"), y = n("y"), w = n("width"), h = n("height");
++      if (w < 0 || h < 0) throw new SvgImportError("a negative width or height");
++      if (w === 0 || h === 0) return null;
++      const autoRx = own.rx === undefined || own.rx === "auto";
++      const autoRy = own.ry === undefined || own.ry === "auto";
++      let rx = autoRx ? 0 : n("rx");
++      let ry = autoRy ? 0 : n("ry");
++      if (rx < 0 || ry < 0) throw new SvgImportError("a negative corner radius");
++      if (autoRx && !autoRy) rx = ry;
++      if (autoRy && !autoRx) ry = rx;
++      if (rx > w / 2) rx = w / 2;
++      if (ry > h / 2) ry = h / 2;
++      const x2 = x + w, y2 = y + h;
++      if (rx === 0 || ry === 0) return `M${x} ${y}H${x2}V${y2}H${x}Z`;
++      const arc = (ex: number, ey: number): string => `A${rx} ${ry} 0 0 1 ${ex} ${ey}`;
++      return (
++        `M${x + rx} ${y}H${x2 - rx}${arc(x2, y + ry)}V${y2 - ry}${arc(x2 - rx, y2)}` +
++        `H${x + rx}${arc(x, y2 - ry)}V${y + ry}${arc(x + rx, y)}Z`
++      );
++    }
++    case "circle":
++    case "ellipse": {
++      const cx = n("cx"), cy = n("cy");
++      let rx: number, ry: number;
++      if (el.name === "circle") {
++        rx = ry = n("r");
++      } else {
++        const autoRx = own.rx === undefined || own.rx === "auto";
++        const autoRy = own.ry === undefined || own.ry === "auto";
++        rx = autoRx ? 0 : n("rx");
++        ry = autoRy ? 0 : n("ry");
++        if (autoRx) rx = ry;
++        if (autoRy) ry = rx;
++      }
++      if (rx < 0 || ry < 0) throw new SvgImportError("a negative radius");
++      if (rx === 0 || ry === 0) return null;
++      // From (cx + rx, cy), clockwise in four arcs: where a draw-on starts in a browser.
++      const arc = (ex: number, ey: number): string => `A${rx} ${ry} 0 0 1 ${ex} ${ey}`;
++      return `M${cx + rx} ${cy}${arc(cx, cy + ry)}${arc(cx - rx, cy)}${arc(cx, cy - ry)}${arc(cx + rx, cy)}Z`;
++    }
++    case "line":
++      return `M${n("x1")} ${n("y1")}L${n("x2")} ${n("y2")}`;
++    case "polyline":
++    case "polygon": {
++      const pts = numberList(own.points ?? "", "points");
++      if (pts.length % 2 !== 0) throw new SvgImportError(`points has an odd count of numbers (${pts.length})`);
++      if (pts.length < 4) return null;
++      let d = `M${pts[0]} ${pts[1]}`;
++      for (let k = 2; k < pts.length; k += 2) d += `L${pts[k]} ${pts[k + 1]}`;
++      return el.name === "polygon" ? d + "Z" : d;
++    }
++  }
++  return null;
++}
++
++// ---- geometry -------------------------------------------------------------------------------
++
++/** Bounds of a normalised outline: on-curve points, plus each cubic's extrema (derivative roots). */
++function bounds(verbs: readonly number[], pts: readonly number[]): [number, number, number, number] | null {
++  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
++  const add = (x: number, y: number): void => {
++    if (x < x0) x0 = x;
++    if (x > x1) x1 = x;
++    if (y < y0) y0 = y;
++    if (y > y1) y1 = y;
++  };
++  const extrema = (p0: number, p1: number, p2: number, p3: number, out: number[]): void => {
++    // B'(t) / 3 = a t^2 + b t + c
++    const a = -p0 + 3 * p1 - 3 * p2 + p3;
++    const b = 2 * (p0 - 2 * p1 + p2);
++    const c = p1 - p0;
++    if (Math.abs(a) < 1e-12) {
++      if (Math.abs(b) > 1e-12) out.push(-c / b);
++      return;
++    }
++    const disc = b * b - 4 * a * c;
++    if (disc < 0) return;
++    const r = Math.sqrt(disc);
++    out.push((-b + r) / (2 * a), (-b - r) / (2 * a));
++  };
++  let k = 0;
++  let px = 0, py = 0;
++  let drew = false;
++  for (const v of verbs) {
++    if (v === PATH_VERB.move) {
++      px = pts[k]!;
++      py = pts[k + 1]!;
++      k += 2;
++    } else if (v === PATH_VERB.line) {
++      add(px, py);
++      px = pts[k]!;
++      py = pts[k + 1]!;
++      add(px, py);
++      k += 2;
++      drew = true;
++    } else if (v === PATH_VERB.cubic) {
++      const [ax, ay, bx, by, ex, ey] = pts.slice(k, k + 6) as [number, number, number, number, number, number];
++      add(px, py);
++      add(ex, ey);
++      const ts: number[] = [];
++      extrema(px, ax, bx, ex, ts);
++      extrema(py, ay, by, ey, ts);
++      for (const t of ts) {
++        if (!(t > 0 && t < 1)) continue;
++        const u = 1 - t;
++        const w0 = u * u * u, w1 = 3 * u * u * t, w2 = 3 * u * t * t, w3 = t * t * t;
++        add(w0 * px + w1 * ax + w2 * bx + w3 * ex, w0 * py + w1 * ay + w2 * by + w3 * ey);
++      }
++      px = ex;
++      py = ey;
++      k += 6;
++      drew = true;
++    }
++  }
++  return drew ? [x0, y0, x1, y1] : null;
++}
++
++/** A px number for a class token or an outline: thousandths, no exponent, no -0. */
++function fmt(v: number): string {
++  const r = Math.round(v * 1000) / 1000;
++  return r === 0 ? "0" : String(r);
++}
++
++function hexColor([r, g, b, a]: [number, number, number, number]): string {
++  const h = (n: number): string => n.toString(16).padStart(2, "0");
++  return `#${h(r)}${h(g)}${h(b)}${a === 255 ? "" : h(a)}`;
++}
++
++// ---- the import -----------------------------------------------------------------------------
++
++/** One node of the expansion: a View (a `<g>` with an id) or a `<Path>`. */
++export interface SvgPart {
++  kind: "group" | "path";
++  /** The element's id, which becomes the node's debugName. */
++  id?: string;
++  /** The node's own class tokens: its box relative to its parent, its paint, its opacity. */
++  cls: string;
++  /** The outline, in px relative to the node's box (paths only). */
++  d?: string;
++  children: SvgPart[];
++  /** 1-based line of the element in the .svg. */
++  line: number;
++}
++
++export interface SvgImport {
++  /** The picture's box, px. */
++  width: number;
++  height: number;
++  /** The root's overflow clips the picture to its box (SVG's default for the outermost svg). */
++  clip: boolean;
++  /** The canvas's children, positioned in it. */
++  parts: SvgPart[];
++  /** Every id carried by a node, in document order. */
++  ids: string[];
++  /** Ids the file declares on elements that draw nothing, with why. */
++  skipped: Map<string, string>;
++}
++
++interface Box {
++  x0: number;
++  y0: number;
++  x1: number;
++  y1: number;
++}
++
++/** A node before placement: its box is absolute on the canvas, its outline relative to that box. */
++interface Built {
++  kind: "group" | "path";
++  id?: string;
++  /** Paint and opacity tokens; the placement is prepended by `finish`. */
++  tokens: string[];
++  d?: string;
++  box: Box;
++  children: Built[];
++  line: number;
++}
++
++/** A node placed in its parent's box. */
++function finish(b: Built, parent: Box | null): SvgPart {
++  const place =
++    `absolute left-[${b.box.x0 - (parent?.x0 ?? 0)}px] top-[${b.box.y0 - (parent?.y0 ?? 0)}px] ` +
++    `w-[${b.box.x1 - b.box.x0}px] h-[${b.box.y1 - b.box.y0}px]`;
++  return {
++    kind: b.kind,
++    ...(b.id !== undefined ? { id: b.id } : {}),
++    cls: [place, ...b.tokens].join(" "),
++    ...(b.d !== undefined ? { d: b.d } : {}),
++    children: b.children.map((c) => finish(c, b.box)),
++    line: b.line,
++  };
++}
++
++/**
++ * Import an SVG document as positioned outlines. `size` overrides the root's
++ * width and height (px); without it they are read from the root, falling
++ * back to the viewBox's size.
++ */
++export function importSvg(text: string, size: { width?: number; height?: number } = {}): SvgImport {
++  const root = parseXml(text);
++  if (root.name !== "svg") throw new SvgImportError(`the root element is <${root.name}>, not <svg>`);
++  const rootOwn = ownProperties(root);
++  if (rootOwn.transform !== undefined) {
++    throw new SvgImportError("a transform on the root <svg> is not read - wrap the content in a <g transform>");
++  }
++  let vb: [number, number, number, number] | null = null;
++  if (root.attrs.viewBox !== undefined) {
++    const v = numberList(root.attrs.viewBox, "viewBox");
++    if (v.length !== 4 || !(v[2]! > 0) || !(v[3]! > 0)) throw new SvgImportError(`viewBox=${JSON.stringify(root.attrs.viewBox)} is not "x y w h" with w and h above 0`);
++    vb = v as [number, number, number, number];
++  }
++  // The root's own size, unless the element gives one: an editor's `210mm`
++  // or `100%` is a size this cannot read, and the element's px are the answer.
++  const rootSize = (k: "width" | "height", fallback: number | undefined): number | undefined => {
++    if (root.attrs[k] === undefined) return fallback;
++    try {
++      return parseLength(root.attrs[k], k, 0);
++    } catch (e) {
++      throw new SvgImportError(`${(e as Error).message} - give the <Svg> width and height in px`);
++    }
++  };
++  const width = size.width ?? rootSize("width", vb?.[2]);
++  const height = size.height ?? rootSize("height", vb?.[3]);
++  if (width === undefined || height === undefined) {
++    throw new SvgImportError("the root <svg> has no width, height or viewBox - give the <Svg> width and height");
++  }
++  if (!(width > 0) || !(height > 0)) throw new SvgImportError(`the picture's size ${width}x${height} is not above 0`);
++
++  // The viewport map: viewBox -> px, by preserveAspectRatio.
++  let viewport: Mat = IDENTITY;
++  if (vb) {
++    const par = (root.attrs.preserveAspectRatio ?? "xMidYMid meet").trim().replace(/^defer\s+/, "");
++    const m = /^(none|x(Min|Mid|Max)Y(Min|Mid|Max))(?:\s+(meet|slice))?$/.exec(par);
++    if (!m) throw new SvgImportError(`preserveAspectRatio=${JSON.stringify(root.attrs.preserveAspectRatio)} does not parse`);
++    const [vx, vy, vw, vh] = vb;
++    if (m[1] === "none") {
++      const sx = width / vw, sy = height / vh;
++      viewport = [sx, 0, 0, sy, -vx * sx, -vy * sy];
++    } else {
++      const s = m[4] === "slice" ? Math.max(width / vw, height / vh) : Math.min(width / vw, height / vh);
++      const align = (k: string | undefined, room: number): number => (k === "Min" ? 0 : k === "Max" ? room : room / 2);
++      viewport = [s, 0, 0, s, align(m[2], width - vw * s) - vx * s, align(m[3], height - vh * s) - vy * s];
++    }
++  }
++  const overflow = (rootOwn.overflow ?? "hidden").trim();
++  if (!["hidden", "visible", "scroll", "auto"].includes(overflow)) throw new SvgImportError(`overflow=${JSON.stringify(overflow)} does not parse`);
++
++  const ids: string[] = [];
++  const seenIds = new Map<string, number>();
++  const skipped = new Map<string, string>();
++  const at = (el: XmlElement, e: unknown): never => {
++    const id = el.attrs.id !== undefined ? ` id=${JSON.stringify(el.attrs.id)}` : "";
++    const msg = e instanceof Error ? e.message : String(e);
++    throw new SvgImportError(`<${el.name}${id}> (line ${el.line}): ${msg}`);
++  };
++
++  const inherit = (parent: Record<string, string>, own: Record<string, string>): Record<string, string> => {
++    const out = { ...parent };
++    for (const k of INHERITED) {
++      const v = own[k];
++      if (v !== undefined && v.trim() !== "inherit") out[k] = v;
++    }
++    return out;
++  };
++
++  const claimId = (el: XmlElement): string | undefined => {
++    const id = el.attrs.id;
++    if (id === undefined) return undefined;
++    if (id.trim() === "") throw new SvgImportError("an empty id");
++    const prev = seenIds.get(id);
++    if (prev !== undefined) throw new SvgImportError(`id ${JSON.stringify(id)} is also on line ${prev}; ids name parts and must be unique`);
++    seenIds.set(id, el.line);
++    return id;
++  };
++
++  /** Refuse anything in a subtree that is refused by name; nothing in it is drawn. */
++  const refuseInside = (el: XmlElement): void => {
++    for (const c of el.children) {
++      if (c.name.includes(":") || DESCRIPTIVE.has(c.name)) continue;
++      const hint = REFUSED_ELEMENTS[c.name.toLowerCase()];
++      if (hint !== undefined) at(c, hint);
++      if (c.name !== "g" && !SHAPES.has(c.name) && c.name !== "defs") at(c, "is not an element this import reads");
++      if (c.attrs.id !== undefined && !skipped.has(c.attrs.id)) skipped.set(c.attrs.id, "it is inside <defs>, which is not drawn");
++      refuseInside(c);
++    }
++  };
++
++  const opacityTokens = (own: Record<string, string>): string[] => {
++    if (own.opacity === undefined) return [];
++    const o = parseAlpha(own.opacity, "opacity");
++    return o === 1 ? [] : [`opacity-${fmt(o * 100)}`];
++  };
++
++  /** Children of a container element, unnamed groups flattened into them. */
++  const walkChildren = (el: XmlElement, ctm: Mat, props: Record<string, string>): Built[] => {
++    const out: Built[] = [];
++    for (const c of el.children) {
++      if (c.name.includes(":") || DESCRIPTIVE.has(c.name)) continue; // an editor's metadata; never drawn
++      const hint = REFUSED_ELEMENTS[c.name.toLowerCase()];
++      if (hint !== undefined) at(c, hint);
++      if (c.name === "defs") {
++        // Nothing in <defs> is drawn; what is refused by name is refused there too.
++        refuseInside(c);
++        continue;
++      }
++      if (c.name !== "g" && !SHAPES.has(c.name)) at(c, "is not an element this import reads");
++      let built: Built | Built[] | null;
++      try {
++        built = element(c, ctm, props);
++      } catch (e) {
++        if (e instanceof SvgImportError && e.message.startsWith("<")) throw e;
++        if (e instanceof SvgImportError || e instanceof PathDataError) at(c, e);
++        throw e;
++      }
++      if (built === null) continue;
++      if (Array.isArray(built)) out.push(...built);
++      else out.push(built);
++    }
++    return out;
++  };
++
++  const element = (el: XmlElement, parentCtm: Mat, parentProps: Record<string, string>): Built | Built[] | null => {
++    const own = ownProperties(el);
++    const id = claimId(el);
++    const skip = (why: string): null => {
++      if (id !== undefined) skipped.set(id, why);
++      return null;
++    };
++    if ((own.display ?? "").trim() === "none") return skip('display="none"');
++    const props = inherit(parentProps, own);
++    const ctm = own.transform !== undefined ? mul(parentCtm, parseTransform(own.transform)) : parentCtm;
++
++    if (el.name === "g") {
++      const kids = walkChildren(el, ctm, props);
++      if (kids.length === 0) return skip("it contains nothing that draws");
++      const opacity = opacityTokens(own);
++      // A group with no id and no opacity is only a transform and a cascade, both
++      // already applied to its children: it adds no node.
++      if (id === undefined && opacity.length === 0) return kids;
++      const box: Box = {
++        x0: Math.min(...kids.map((k) => k.box.x0)),
++        y0: Math.min(...kids.map((k) => k.box.y0)),
++        x1: Math.max(...kids.map((k) => k.box.x1)),
++        y1: Math.max(...kids.map((k) => k.box.y1)),
++      };
++      if (id !== undefined) ids.push(id);
++      return { kind: "group", ...(id !== undefined ? { id } : {}), tokens: opacity, box, children: kids, line: el.line };
++    }
++
++    const inner = el.children.find((c) => !c.name.includes(":") && !DESCRIPTIVE.has(c.name));
++    if (inner) {
++      const hint = REFUSED_ELEMENTS[inner.name.toLowerCase()];
++      if (hint !== undefined) at(inner, hint);
++      throw new SvgImportError(`it holds <${inner.name}> (line ${inner.line}); a shape's children are not drawn`);
++    }
++    if ((props.visibility ?? "visible").trim() !== "visible") return skip(`visibility="${props.visibility}"`);
++    const data = shapeData(el, own);
++    if (data === null) return skip("its geometry is empty");
++    const norm = normalizePathData(data);
++
++    // Fold the element's transform and the viewport into the outline.
++    const m = mul(viewport, ctm);
++    const pts = norm.pts.slice();
++    for (let k = 0; k < pts.length; k += 2) {
++      const x = pts[k]!, y = pts[k + 1]!;
++      pts[k] = m[0] * x + m[2] * y + m[4];
++      pts[k + 1] = m[1] * x + m[3] * y + m[5];
++    }
++    const b = bounds(norm.verbs, pts);
++    if (b === null) return skip("its geometry is empty");
++
++    // Paint.
++    const color = props.color ?? INITIAL.color!;
++    const fill = parseColor(props.fill ?? INITIAL.fill!, "fill", color);
++    const stroke = parseColor(props.stroke ?? INITIAL.stroke!, "stroke", color);
++    const fillAlpha = parseAlpha(props["fill-opacity"] ?? "1", "fill-opacity");
++    const strokeAlpha = parseAlpha(props["stroke-opacity"] ?? "1", "stroke-opacity");
++    const tokens: string[] = [];
++    // A line encloses no area; a polyline is filled as if closed, as SVG fills it.
++    if (fill && el.name !== "line") {
++      const a = Math.round(fill[3] * fillAlpha);
++      if (a > 0) tokens.push(`fill-[${hexColor([fill[0], fill[1], fill[2], a])}]`);
++    }
++    const rule = (props["fill-rule"] ?? "nonzero").trim();
++    if (rule !== "nonzero" && rule !== "evenodd") throw new SvgImportError(`fill-rule=${JSON.stringify(rule)} is not nonzero or evenodd`);
++    if (rule === "evenodd" && tokens.length > 0) tokens.push("fill-evenodd");
++    let halfStroke = 0;
++    const userWidth = parseLength(props["stroke-width"], "stroke-width", 1);
++    if (userWidth < 0) throw new SvgImportError(`stroke-width=${JSON.stringify(props["stroke-width"])} is negative`);
++    const strokeA = stroke ? Math.round(stroke[3] * strokeAlpha) : 0;
++    if (stroke && strokeA > 0 && userWidth > 0) {
++      // A stroke is drawn in the element's own units and then transformed; folded
++      // into px it is one width only when the map is a uniform scale and rotation.
++      const [a, bb, c, d] = m;
++      const sx2 = a * a + bb * bb;
++      const sy2 = c * c + d * d;
++      const dot = a * c + bb * d;
++      const tol = 1e-9 * Math.max(sx2, sy2);
++      if (Math.abs(sx2 - sy2) > tol || Math.abs(dot) > tol) {
++        throw new SvgImportError(
++          `it is stroked under a transform that is not a uniform scale and rotation ` +
++            `(matrix ${[a, bb, c, d].map(fmt).join(" ")}, the viewBox map included); its stroke would not keep SVG's shape - ` +
++            "outline the stroke in the file, or remove the skew or non-uniform scale",
++        );
++      }
++      const w = userWidth * Math.sqrt(sx2);
++      halfStroke = w / 2;
++      tokens.push(`stroke-[${hexColor([stroke[0], stroke[1], stroke[2], strokeA])}]`, `stroke-[${fmt(w)}px]`);
++      const join = (props["stroke-linejoin"] ?? "miter").trim();
++      if (join !== "miter" && join !== "round" && join !== "bevel") throw new SvgImportError(`stroke-linejoin=${JSON.stringify(join)} is not miter, round or bevel`);
++      if (join !== "miter") tokens.push(`stroke-join-${join}`);
++      const cap = (props["stroke-linecap"] ?? "butt").trim();
++      if (cap !== "butt" && cap !== "round" && cap !== "square") throw new SvgImportError(`stroke-linecap=${JSON.stringify(cap)} is not butt, round or square`);
++      if (cap !== "butt") tokens.push(`stroke-cap-${cap}`);
++      const miter = parseLength(props["stroke-miterlimit"], "stroke-miterlimit", 4);
++      if (!(miter >= 1)) throw new SvgImportError(`stroke-miterlimit=${JSON.stringify(props["stroke-miterlimit"])} is under 1`);
++      if (miter !== 4) tokens.push(`stroke-miter-[${fmt(miter)}]`);
++    }
++
++    // The node's box: the outline's bounds, half a stroke out, on whole px.
++    const box: Box = {
++      x0: Math.floor(b[0] - halfStroke),
++      y0: Math.floor(b[1] - halfStroke),
++      x1: Math.ceil(b[2] + halfStroke),
++      y1: Math.ceil(b[3] + halfStroke),
++    };
++    if (box.x1 <= box.x0) box.x1 = box.x0 + 1;
++    if (box.y1 <= box.y0) box.y1 = box.y0 + 1;
++    let d = "";
++    let k = 0;
++    for (const v of norm.verbs) {
++      const p = (n: number): string => `${fmt(pts[k + n]! - box.x0)} ${fmt(pts[k + n + 1]! - box.y0)}`;
++      if (v === PATH_VERB.move) { d += `M${p(0)}`; k += 2; }
++      else if (v === PATH_VERB.line) { d += `L${p(0)}`; k += 2; }
++      else if (v === PATH_VERB.cubic) { d += `C${p(0)} ${p(2)} ${p(4)}`; k += 6; }
++      else d += "Z";
++    }
++    if (id !== undefined) ids.push(id);
++    return { kind: "path", ...(id !== undefined ? { id } : {}), tokens: [...tokens, ...opacityTokens(own)], d, box, children: [], line: el.line };
++  };
++
++  const rootProps = inherit(INITIAL, rootOwn);
++  const parts = walkChildren(root, IDENTITY, rootProps).map((b) => finish(b, null));
++  // In document order: the order the walk claimed them, not the order it finished them.
++  const emitted = new Set(ids);
++  return { width, height, clip: overflow !== "visible", parts, ids: [...seenIds.keys()].filter((id) => emitted.has(id)), skipped };
++}
++
++// ---- where a module uses <Svg> --------------------------------------------------------------
++
++/** The import sources `Svg` is the framework's component under. */
++export function isSvgComponentSource(source: string): boolean {
++  return /^@pocketjs\/framework(?:\/solid)?\/components$/.test(source);
++}
++
++export interface SvgSite {
++  /** The `src` as written. */
++  src: string;
++  /** 1-based line and column of the `src` value (its opening quote). */
++  line: number;
++  column: number;
++  /** `width`/`height` written as number literals, when they are. */
++  width?: number;
++  height?: number;
++}
++
++/**
++ * Every `<Svg src="…">` in a module, by parsing it — the same elements the
++ * build expands: a JSX element named by a binding imported as `Svg` from the
++ * framework's components. What `lint` reads, so it answers about the files
++ * the build would open.
++ */
++export function svgSites(source: string, filename: string): SvgSite[] {
++  let ast: unknown;
++  try {
++    ast = babelParse(source, { sourceType: "module", plugins: ["jsx", "typescript"], sourceFilename: filename });
++  } catch {
++    return []; // a module that does not parse is the build's error, not this one's
++  }
++  const locals = new Set<string>();
++  const sites: SvgSite[] = [];
++  const visit = (node: unknown, collect: boolean): void => {
++    if (Array.isArray(node)) {
++      for (const n of node) visit(n, collect);
++      return;
++    }
++    if (node === null || typeof node !== "object") return;
++    const n = node as Record<string, unknown> & { type?: string };
++    if (!collect && n.type === "ImportDeclaration" && isSvgComponentSource((n.source as { value: string }).value)) {
++      for (const s of n.specifiers as Array<{ type: string; imported?: { name?: string; value?: string }; local: { name: string } }>) {
++        if (s.type === "ImportSpecifier" && (s.imported?.name ?? s.imported?.value) === "Svg") locals.add(s.local.name);
++      }
++    }
++    if (collect && n.type === "JSXOpeningElement") {
++      const name = n.name as { type: string; name?: string };
++      if (name.type === "JSXIdentifier" && locals.has(name.name!)) {
++        const site = siteOf(n.attributes as unknown[]);
++        if (site) sites.push(site);
++      }
++    }
++    for (const key of Object.keys(n)) {
++      if (key === "loc" || key === "start" || key === "end" || key === "extra") continue;
++      visit(n[key], collect);
++    }
++  };
++  const program = (ast as { program: unknown }).program;
++  visit(program, false);
++  if (locals.size > 0) visit(program, true);
++  return sites;
++}
++
++function literalString(v: unknown): { value: string; loc: { line: number; column: number } } | null {
++  const n = v as { type?: string; value?: string; expression?: unknown; quasis?: Array<{ value: { cooked?: string } }>; expressions?: unknown[]; loc?: { start: { line: number; column: number } } } | null;
++  if (!n) return null;
++  if (n.type === "StringLiteral") return { value: n.value!, loc: n.loc!.start };
++  if (n.type === "JSXExpressionContainer") return literalString(n.expression);
++  if (n.type === "TemplateLiteral" && n.expressions!.length === 0 && n.quasis!.length === 1) {
++    return { value: n.quasis![0]!.value.cooked ?? "", loc: n.loc!.start };
++  }
++  return null;
++}
++
++function literalNumber(v: unknown): number | undefined {
++  const n = v as { type?: string; value?: unknown; expression?: unknown } | null;
++  if (!n) return undefined;
++  if (n.type === "NumericLiteral") return n.value as number;
++  if (n.type === "JSXExpressionContainer") return literalNumber(n.expression);
++  if (n.type === "StringLiteral" && /^\s*\d+(?:\.\d+)?\s*$/.test(n.value as string)) return Number(n.value);
++  return undefined;
++}
++
++function siteOf(attributes: unknown[]): SvgSite | null {
++  let site: SvgSite | null = null;
++  let width: number | undefined;
++  let height: number | undefined;
++  for (const a of attributes as Array<{ type: string; name?: { type: string; name: string }; value?: unknown }>) {
++    if (a.type !== "JSXAttribute" || a.name?.type !== "JSXIdentifier") continue;
++    if (a.name.name === "src") {
++      const s = literalString(a.value);
++      if (s) site = { src: s.value, line: s.loc.line, column: s.loc.column + 1 };
++    } else if (a.name.name === "width") width = literalNumber(a.value);
++    else if (a.name.name === "height") height = literalNumber(a.value);
++  }
++  if (!site) return null;
++  return { ...site, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) };
++}
+diff --git a/framework/src/components.ts b/framework/src/components.ts
+index 807fa5b..dddf3f7 100644
+--- a/framework/src/components.ts
++++ b/framework/src/components.ts
+@@ -41,12 +41,14 @@ import { createCommentNode, setDebugName } from "./native-tree.ts";
+ export {
+   View,
+   Path,
++  Svg,
+   Text,
+   Image,
+   Sprite,
+   CompositorSurface,
+   type ViewProps,
+   type PathProps,
++  type SvgProps,
+   type TextProps,
+   type ImageProps,
+   type SpriteProps,
+diff --git a/framework/src/primitives.ts b/framework/src/primitives.ts
+index edef447..e0c41ac 100644
+--- a/framework/src/primitives.ts
++++ b/framework/src/primitives.ts
+@@ -48,6 +48,16 @@ export interface PathProps extends ViewProps {
+   viewBox?: string;
+ }
+ 
++export interface SvgProps extends Omit<ViewProps, "children"> {
++  /** An SVG file, relative to the module that writes the element. */
++  src: string;
++  /** The picture's box in px; without them the file's own width and height, else its viewBox's. */
++  width?: number;
++  height?: number;
++  /** Class literals by element id: each is added to the classes the file's paint became. */
++  parts?: Record<string, string>;
++}
++
+ export interface TextProps {
+   /** A prepared whole-text lease. Its immutable text and font slot own content. */
+   resource?: TextResource;
+@@ -130,6 +140,20 @@ export function Path(props: PathProps): SolidJSX.Element {
+   }) as unknown as Record<string, unknown>);
+ }
+ 
++/**
++ * An SVG file as a tree of nodes (pocket-motion): the build expands the
++ * element into Views and `<Path>`s — every element's id its debugName, every
++ * `parts` entry added to that part's classes — so this function only runs
++ * when the build could not see the element: imported under another module,
++ * or spread rather than written.
++ */
++export function Svg(props: SvgProps): SolidJSX.Element {
++  throw new Error(
++    `PocketJS: <Svg src=${JSON.stringify(props.src)}> was not expanded by the build - write it as a JSX element ` +
++      "imported from @pocketjs/framework/components, with src, width, height and parts as literals",
++  );
++}
++
+ export function Text(props: TextProps): SolidJSX.Element {
+   // The presence of this prop selects the resource form for this component's lifetime.
+   if ("resource" in props) {
+diff --git a/tools/build.ts b/tools/build.ts
+index d41f9cd..3f78511 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -55,6 +55,7 @@ import {
+   transformFile,
+   type LiteralSite,
+   type PathDecl,
++  SvgExpandError,
+   type PocketFramework,
+ } from "../framework/compiler/jsx-plugin.ts";
+ import type { PocketConfig } from "../framework/src/config.ts";
+@@ -370,8 +371,18 @@ const systemLayers: string[] = [];
+ if (framework === "solid" && buildPlan?.features["system.agent"] === true) {
+   systemLayers.push(join(ROOT, "framework/src/agent-layer.tsx"));
+ }
+-await walk(entry);
+-for (const layer of systemLayers) await walk(layer);
++try {
++  await walk(entry);
++  for (const layer of systemLayers) await walk(layer);
++} catch (e) {
++  // An <Svg> the build could not expand (pocket-motion): located, not a stack.
++  if (!(e instanceof SvgExpandError)) throw e;
++  const base = projectRoot.endsWith("/") ? projectRoot : projectRoot + "/";
++  const file = e.file.startsWith(base) ? e.file.slice(base.length) : e.file;
++  console.error(`error: ${file}:${e.line}:${e.column}: ${e.detail}`);
++  console.error("PocketJS build: an <Svg> does not expand.");
++  process.exit(1);
++}
+ console.log(
+   `  pass 1: ${visited.size} module(s), ${classStrings.length} candidate literal(s) ` +
+     `(${classAttrStrings.size} from a class= attribute), ${codepoints.size} codepoint(s)`,
