@@ -360,11 +360,13 @@ mechanisms with the file or test beside them.
   (invisible by declaration — the walk returns above it at `op <= 0.0`, so
   inherited opacity is included without anyone reading it).
   `src/render/visibility.ts` holds the predicate and the table.
-- **Seven finding CODES sit on top of that**, in `src/render/findings.ts`, so a
+- **Eight finding CODES sit on top of that**, in `src/render/findings.ts`, so a
   caller can branch on a name instead of parsing a sentence: `text_not_painted`
-  and `text_occluded` are the two dark states renamed, and the other five are
+  and `text_occluded` are the two dark states renamed, the next five are
   `panel_out_of_canvas`, `escaped_container`, `content_overlap`,
-  `text_box_overflow` and `clipped_text`. The last two are measured in PIXELS,
+  `text_box_overflow` and `clipped_text`, and the eighth, `text_truncated`, is
+  the core's record of a clamp or a fit (the entry after the next). The two
+  before it are measured in PIXELS,
   not from a build-time advance table: `probe()` already hides the node and
   rasterises for `inPicture`, so the bounding box of the pixels that changed —
   the node's INK — comes out of a render that was happening anyway. The advance
@@ -849,6 +851,68 @@ mechanisms with the file or test beside them.
   as literals bakes the same pak byte for byte; the mount path costs it one
   build and two boots, 0.90-1.24 s a build against 0.45-0.53 s. Fixture
   `compositions/data-chart`, in both ledgers.
+- **Fit, wrap and clamp are layout's, and what a clamp drops is a code**
+  (`patches/0059`, class `upstream`). A template filled from data used to
+  predict, in its generator, the size and the lines every field would take
+  — and the batch-QA prototype measured that prediction right 58% of the
+  time it said a field would not fit, while 83 of 1,000 rows pushed a box out
+  of its container (`docs/batch-qa-prototype.md`). Three class utilities now
+  put the decision where the box is known: `text-fit-[..]` (a ladder of baked
+  slots, packed into props 101-102), `text-wrap` (104) and `line-clamp-N`
+  (103). The core's `text_fit.rs` evaluates them in the taffy measure of the
+  text leaf against the content box the solver offers, records the result on
+  the node at readback, and paint draws the record's slot and laid-out text.
+  Four rules carry it. **Breaks are the run's own**: spaces and U+200B, which
+  is never looked up or drawn, and `'\n'`; a generator writes U+200B where
+  its segmenter allows a break (`markBreaks`, `src/text/fit.ts`), so no
+  language rule enters the core and `scripts/digests.ts` still re-derives
+  every break. **A rung holds** when its widest line fits, its lines times
+  its line height fit a bounded height, the clamp's count is not exceeded and
+  no segment was cut; the first that holds is taken, else the smallest. **A
+  fitted block measures as its laid-out text**, summed per line exactly as
+  `measure_run` sums it, so the box layout reserves is the box paint fills.
+  **A clamp counts what it leaves out**, because text that is not drawn has
+  no ink and no pixel code can see it: `ui_debug_text_fit` exports the record,
+  `layout --json` reports it as `fit` on the node, and `text_truncated` fires
+  on a clamp that dropped characters or a declared ladder that bottomed out —
+  not on a fit that took a smaller rung, which is the declaration working.
+  `assert`'s `untruncated: true` fails a node `text_truncated` named at a
+  sampled frame. The size mapping was measured before it was chosen
+  (`baselines/text-fit.md`): a ladder of baked slots against the top rung
+  drawn scaled, which is the path an axis-aligned scale takes today. Scaled
+  glyph pages cost 92 CPU-ms a frame against 10 for the same 40 runs and
+  differ from a native bake by 10-21 coverage levels per glyph; a ladder
+  costs its length in atlases (12.8 MB of pak for 1,000 CJK characters at one
+  rung, 37.3 at five). So a fitted run draws the bytes a run declared at its
+  rung draws, and `tests/text-fit.test.ts` holds that pixel for pixel. No
+  existing digest moved: a node with none of the three utilities resolves to
+  no fit and lays out as it did, and all 45 recorded digests reproduced. The
+  batch-QA card rerun over its 1,000 rows with the fit in layout
+  (`baselines/text-fit.md`): of the 83 rows whose box left its container,
+  44 stay inside and are `text_truncated` (20 names, 24 disclaimers), 39
+  still leave it — every one a price, which the card declares unwrappable
+  and unclampable — and none goes quiet; no row that passed fails. The cost
+  is a ladder's atlases (pak 2.26 → 5.02 MB, median) and a hard box: 135
+  long names the generator's card drew whole in spare room are clamped, each
+  one reported. `compositions/text-fit` is the fixture, in both ledgers.
+  Guards: `engine/core/src/text_fit_tests.rs` (12 edits, all
+  red, `baselines/text-fit/redcheck.py`), `tests/text-fit.test.ts`,
+  `tests/mcp.test.ts` and catalogue G3/G6/G8 (11 edits, all red,
+  `baselines/text-fit/redcheck-ts.ts`).
+- **A job's characters are read against its faces before it is staged.** A
+  build accepts a code point the face lacks and bakes the tofu cell, exit 0,
+  and every gate then passes boxes of tofu; the measurer's refusal was the one
+  that existed and it costs a build. `render --spec` now reads every string
+  the job's template draws — copy's eyebrow, headline and body,
+  lower-third's name and title, captions' words with the style's case applied
+  — against both declared weights' cmaps (`src/text/coverage.ts`: the sfnt
+  `cmap` table's format 4 and 12 subtables, equal to opentype.js's reading on
+  all four faces in `assets/fonts`, 12 ms for Noto Sans SC) and refuses the job
+  with `missingGlyphs[]` — field, character, code point, weight, file — before
+  the generator runs. A directory of jobs reports every job's before any
+  renders, and the MCP `render` tool returns the object as its error. Both
+  weights, because nothing here knows which weight a template draws a field
+  in; a weight that maps a character the other does not is named.
 - **A job is a spec, and the sample is not the job.** `render --spec job.json`
   stages a throwaway copy of the composition (`src/cli/stage-sources.ts`), runs
   the generator into it, builds, encodes and removes the tree, so a batch never
@@ -1586,6 +1650,23 @@ mechanisms with the file or test beside them.
   a reachable repository.
 
 ## What does not reach them yet
+
+- **What fit and clamp do not do.** The core wraps greedily; a balanced
+  block is still a generator's (`fitToBox` with `balanced`). A rung's height
+  bound is the node's own `h-*`, `h-full` or `max-h-*` and nothing else — a
+  percentage `max-h` and the height a flex parent happens to leave are not
+  bounds, so a run without one grows its box as it always has. A word cut at
+  the smallest rung is counted (`fit.split`) and is not a finding. The
+  ellipsis is the face's U+2026 glyph: Noto Sans SC draws it as three centred
+  dots, the Chinese form, under Latin text too. A ladder bakes every collected
+  character into every rung, so its cost is rungs times charset, and nothing
+  bakes a rung's glyphs only for the runs that can reach it. Shaped runs
+  (`docs/text-shaping.design.md`) are not fitted: the fit sums the cmap's
+  advances, which is what the core draws today.
+- **The glyph pre-check knows the templates in this repository.** It reads the
+  strings `copy`, `lower-third` and `captions` draw; a template added
+  tomorrow is checked for nothing until `jobStrings` names its fields, and a
+  face a generator declares beyond the job's `fonts` is not read.
 
 - **The shutter blurs baked timelines and nothing else.** Tracks `animate()`
   and transitions spawn, springs and physics keep their tick value in every

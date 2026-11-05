@@ -1,0 +1,1707 @@
+0059 — fit, wrap and clamp a text run in layout, and record what was left out.
+
+A template filled from data needs a field's size and lines decided against
+the box the field lands in. Until now only a generator could decide them,
+before the build, against a box it computed itself: it cannot see a box
+flex sizes, and a decision it got wrong reached the frame as a box pushed
+out of its container. This patch makes three declarations on a `<Text>`
+that the core evaluates at layout, against the content box the solver
+offers the text leaf, and records what it chose:
+
+- `text-fit-[min..max]` / `text-fit-[a,b,...]`: a ladder of font slots,
+  largest first. The run is laid out at the first rung whose block holds
+  the box, and at the last when none does.
+- `text-wrap`: the run wraps to the content width at the break
+  opportunities it carries — a run of spaces, dropped at the break, and
+  U+200B, which is never looked up or drawn. '\n' always breaks. No
+  language rule enters the core: a generator writes U+200B where its own
+  segmenter allows a break.
+- `line-clamp-N`: the first N lines are kept and the last ends in U+2026,
+  or "..." when the face maps no U+2026, losing characters from its end
+  (a combining mark with the character it sits on) until the ellipsis fits.
+
+A rung holds when its widest line fits the width, its lines times its line
+height fit the height when the node bounds its height (`h-*`, `h-full`,
+`max-h-*`), it has no more lines than the clamp keeps, and no segment had
+to be cut between its own characters. A segment wider than the line is cut
+only at the rung taken when no rung holds, and the cut is counted.
+
+What the patch adds, by file:
+
+- `contracts/spec/spec.ts` and the generated `spec.rs`, microts `spec.rs`
+  and `component-types-microts.ts`: props `textFit0` (101) and `textFit1`
+  (102), one byte per rung, slot + 1, rungs 0..3 and 4..7; `lineClamp`
+  (103); `textWrap` (104). All four dirty layout. `TEXT_FIT_MAX_RUNGS = 8`.
+  No draw op, no table, no anim bit.
+- `engine/core/src/text_fit.rs` (new): `FitSpec` from a resolved style,
+  `Fonts::fit_run`, and `Fitted`, the record. Widths are summed per line
+  exactly as `Fonts::measure_run` sums them, so a fitted block measures as
+  its laid-out text and the box layout reserves is the box paint fills.
+- `engine/core/src/layout.rs`: a text leaf's `MeasureCtx` carries its fit
+  declaration and whether the node bounds its height; the measure closure
+  takes `fonts` and the offered `AvailableSpace` (a definite width is the
+  line length, min-content is every segment on its own line and none cut,
+  max-content is unbounded) and answers with the fitted block, cached per
+  box. Readback fits the content box the solver settled on and stores the
+  record on the node (`Node::text_fit`). A node declaring none of the
+  three resolves to no fit and lays out as it did.
+- `engine/core/src/draw.rs`: `emit_text` draws the record's slot and text.
+- `engine/core/src/lib.rs`: a text swap in a fixed cell relayouts a fitted
+  run; `debug_text_fit(id)` and `debug_text_fit_word(i)` read the record.
+  `engine/wasm/src/lib.rs` exports them as `ui_debug_text_fit` and
+  `ui_debug_text_fit_word`.
+- `framework/compiler/tailwind.ts`: the three utilities. A range is the
+  ten-percent ladder from its top (each rung the one above times 9/10
+  rounded up, in integers; `[48..88]` is 88, 80, 72, 65, 59, 54, 49, 48);
+  more than eight rungs is refused naming them, a text size beside a ladder
+  is refused, and every rung's slot is in `usedFontSlots`. `drawnCodepoints`
+  carries U+2026 when any record clamps, and `tools/build.ts` bakes it.
+
+Why it is class upstream: every piece is the declaration layer — a class
+literal, a style table, layout and the slot a GLYPH_RUN names — and none of
+it depends on a target. A native-text host keeps its own measurer for every
+run but these: a fitted run is measured and drawn from the atlas, as a
+tracked run already is.
+
+Tests, in `engine/core/src/text_fit_tests.rs`, each red under the edit named
+(`baselines/text-fit/redcheck.py` in the motion repository makes the edit,
+runs the test and restores it):
+
+- `the_largest_rung_that_holds_is_taken`.
+- `a_block_too_tall_for_its_box_gives_way_to_the_next_rung`: red with the
+  height test removed from `holds`.
+- `a_rung_that_must_cut_a_segment_does_not_hold`: red with `w.split == 0`
+  removed from `holds`.
+- `a_line_breaks_at_spaces_and_u200b_and_u200b_is_never_drawn`: red with
+  U+200B read as part of a segment.
+- `a_clamp_keeps_its_lines_ends_with_an_ellipsis_and_counts_what_it_left_out`:
+  red with the dropped count left at zero, with the ellipsis loop accepting
+  the line as it is, and with a mark cut from its base.
+- `a_face_with_no_ellipsis_ends_a_clamp_with_three_periods`.
+- `a_fitted_block_measures_as_its_laid_out_text`: red with tracking left out
+  of the pen and with the clamped line's old width kept.
+- `the_ladder_unpacks_from_its_two_words`: red with the ladder read from the
+  first word only.
+- `layout_records_the_fit_and_paint_draws_it`: red with paint drawing the
+  style's slot, with a node's height never a bound, and with readback
+  fitting an unbounded height.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 09414125..75801f20 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -116,6 +116,7 @@ import {
+   ID_SLOT_MASK,
+   LAYOUT_DIRTYING,
+   MAX_FONT_SLOTS,
++  TEXT_FIT_MAX_RUNGS,
+   MAX_TREE_DEPTH,
+   NODE_TYPE,
+   OP,
+@@ -263,6 +264,8 @@ export function generateRust(): string {
+   put(`pub const TEX_SLOT_MASK: u32 = ${hex(TEX_SLOT_MASK, 5)};`);
+   put("/// Max baked font-atlas slots.");
+   put(`pub const MAX_FONT_SLOTS: usize = ${MAX_FONT_SLOTS};`);
++  put("/// Most rungs a text-fit ladder names (textFit0 + textFit1).");
++  put(`pub const TEXT_FIT_MAX_RUNGS: usize = ${TEXT_FIT_MAX_RUNGS};`);
+   put("/// Transition mask value meaning \"every animatable prop\".");
+   put(`pub const TRANSITION_MASK_ALL: u32 = ${hex(TRANSITION_MASK_ALL)};`);
+   put("/// Core tick timestep: exactly 1/60 s (fixed — enables byte-exact goldens).");
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 2ede75c7..feb77b49 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -391,6 +391,18 @@ export const PROP = {
+   textAlign: 98, //     enum TextAlign
+   lineHeight: 99, //    f32 px (overrides the atlas default)
+   tracking: 100, //     f32 px extra advance per glyph
++  // Fit and clamp: the run is laid out at the largest rung of a declared size
++  // ladder whose block holds the box, wrapped at the break opportunities the
++  // run carries (spaces, U+200B; '\n' always breaks), and clamped to a line
++  // count with an ellipsis. The ladder is font slots, largest first, packed
++  // one byte each as slot + 1 (0 = no rung): rungs 0..3 in textFit0's bytes
++  // 0..3, rungs 4..7 in textFit1's. A node with no rung fits at its own
++  // fontSlot. What layout chose and what the clamp dropped are recorded on
++  // the node (OP debugTextFit).
++  textFit0: 101, //     int packed slots + 1, rungs 0..3 (0 = no ladder)
++  textFit1: 102, //     int packed slots + 1, rungs 4..7
++  lineClamp: 103, //    int max lines kept (0 = no clamp)
++  textWrap: 104, //     int 0/1: wrap the run at its break opportunities
+ 
+   // -- transform (128..159) — paint-only, never relayouts ---------------------
+   translateX: 128, //   f32 px
+@@ -629,6 +641,7 @@ export const LAYOUT_DIRTYING: readonly PropName[] = [
+   "gap", "flexDir", "justify", "align", "grow", "shrink", "basis", "flexWrap",
+   "posType", "insetT", "insetR", "insetB", "insetL", "display", "overflow", "contain",
+   "fontSlot", "textAlign", "lineHeight", "tracking",
++  "textFit0", "textFit1", "lineClamp", "textWrap",
+ ];
+ 
+ // ---------------------------------------------------------------------------
+@@ -673,6 +686,8 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   gradVia: VALUE_KIND.color, gradViaPos: VALUE_KIND.f32,
+   textColor: VALUE_KIND.color, fontSlot: VALUE_KIND.int,
+   textAlign: VALUE_KIND.int, lineHeight: VALUE_KIND.f32, tracking: VALUE_KIND.f32,
++  textFit0: VALUE_KIND.int, textFit1: VALUE_KIND.int,
++  lineClamp: VALUE_KIND.int, textWrap: VALUE_KIND.int,
+   translateX: VALUE_KIND.f32, translateY: VALUE_KIND.f32,
+   scale: VALUE_KIND.f32, rotate: VALUE_KIND.f32,
+   scaleX: VALUE_KIND.f32, scaleY: VALUE_KIND.f32,
+@@ -1120,6 +1135,9 @@ export const WIRE_MARK_FLAG_ENDED = 1 << 0;
+ // headroom is cheap, and a slot index still fits the u8 every atlas header and
+ // GLYPH_RUN carries.
+ export const MAX_FONT_SLOTS = 128;
++/** Most rungs a `text-fit-[..]` ladder names (textFit0 and textFit1, four
++ *  slot bytes each). */
++export const TEXT_FIT_MAX_RUNGS = 8;
+ 
+ // ---------------------------------------------------------------------------
+ // STYLE TABLE binary format — styles.bin  (version 2)
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 67cafad9..1e9e3f28 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -3262,7 +3262,7 @@ impl<'a> Walker<'a> {
+         if alpha(color) == 0 && !stroke {
+             return;
+         }
+-        let slot = r.font_slot as u8;
++        let mut slot = r.font_slot as u8;
+         let mut run = alloc::string::String::new();
+         // paint() gives us the node ref; re-walk its subtree for the run.
+         // (node.children ids resolve through self.tree.)
+@@ -3270,6 +3270,16 @@ impl<'a> Walker<'a> {
+         if run.is_empty() {
+             return;
+         }
++        // A fitted run draws what layout chose for it (`text_fit`): the
++        // rung's slot and the run as wrapped and clamped.
++        if let Some(fit) = node.text_fit.as_deref() {
++            slot = fit.slot;
++            run.clear();
++            run.push_str(&fit.text);
++            if run.is_empty() {
++                return;
++            }
++        }
+         if let (true, Some(texts)) = (self.capturing, self.texts.as_mut()) {
+             let mut b = world_aabb_of(self.screen, world, box_w, node.layout.h);
+             b.x0 = b.x0.max(clip.x0);
+diff --git a/engine/core/src/layout.rs b/engine/core/src/layout.rs
+index 1cff3eb6..b41ff11a 100644
+--- a/engine/core/src/layout.rs
++++ b/engine/core/src/layout.rs
+@@ -37,6 +37,7 @@ use taffy::{AvailableSpace, Size, TaffyTree};
+ use crate::spec;
+ use crate::style::{self, Resolved, StyleTable};
+ use crate::text::Fonts;
++use crate::text_fit::{FitSpec, Fitted, BREAK_MARK};
+ use crate::tree::{LayoutRect, Tree, LAYOUT_LIVE};
+ 
+ /// Measure context attached to text leaves (taffy NodeContext).
+@@ -55,6 +56,16 @@ pub struct MeasureCtx {
+     /// Replaying an unchanged measurement must preserve the public missing
+     /// glyph counter, even though no shaping work is repeated.
+     misses: u32,
++    /// The node's fit declaration (`text_fit`); None for a plain run, which
++    /// measures `size` whatever box it is offered.
++    pub fit: Option<FitSpec>,
++    /// The node bounds its own height (`h-*`, `h-full`, `max-h-*`), so a fit
++    /// reads the height the solver offers as a bound. Without one a run
++    /// grows its box downward, as an unfitted run does.
++    bounded_h: bool,
++    /// Fits already computed, by the box (width bits, height bits, cut) they
++    /// were computed for. The solver asks the same leaf several times.
++    fits: core::cell::RefCell<Vec<((u32, u32, bool), Fitted)>>,
+ }
+ 
+ impl MeasureCtx {
+@@ -65,12 +76,33 @@ impl MeasureCtx {
+         tracking: f32,
+         line_height: f32,
+         native: bool,
++        fit: (Option<FitSpec>, bool),
+     ) -> bool {
+         self.text == text
+             && self.slot == slot
+             && self.native == native
+             && float_key(self.tracking) == float_key(tracking)
+             && float_key(self.line_height) == float_key(line_height)
++            && self.fit == fit.0
++            && self.bounded_h == fit.1
++    }
++
++    /// The fit of this leaf's run in a content box `w` x `h`, computed once
++    /// per box.
++    fn fitted(&self, fonts: &Fonts, w: f32, h: f32, cut: bool) -> Option<Fitted> {
++        let spec = self.fit.as_ref()?;
++        let h = if self.bounded_h { h } else { f32::INFINITY };
++        let key = (w.to_bits(), h.to_bits(), cut);
++        if let Some((_, hit)) = self.fits.borrow().iter().find(|(k, _)| *k == key) {
++            return Some(hit.clone());
++        }
++        let fitted = fonts.fit_run(&self.text, spec, self.tracking, self.line_height, w, h, cut);
++        let mut fits = self.fits.borrow_mut();
++        if fits.len() >= 8 {
++            fits.remove(0);
++        }
++        fits.push((key, fitted.clone()));
++        Some(fitted)
+     }
+ 
+     fn replay_misses(&self, fonts: &Fonts) {
+@@ -86,9 +118,17 @@ impl MeasureCtx {
+         tracking: f32,
+         line_height: f32,
+         native: bool,
++        fit: (Option<FitSpec>, bool),
+     ) -> MeasureCtx {
+         let before = fonts.misses.get();
+-        let size = fonts.measure_run_provider(native, &text, slot, tracking, line_height);
++        // A fitted run's U+200B marks breaks and is never drawn, so it is
++        // not a glyph the face can miss.
++        let size = if fit.0.is_some() && text.contains(BREAK_MARK) {
++            let drawn: String = text.chars().filter(|&c| c != BREAK_MARK).collect();
++            fonts.measure_run_provider(native, &drawn, slot, tracking, line_height)
++        } else {
++            fonts.measure_run_provider(native, &text, slot, tracking, line_height)
++        };
+         MeasureCtx {
+             text,
+             slot,
+@@ -98,10 +138,20 @@ impl MeasureCtx {
+             native,
+             environment_epoch: 0,
+             misses: fonts.misses.get().wrapping_sub(before),
++            fit: fit.0,
++            bounded_h: fit.1,
++            fits: core::cell::RefCell::new(Vec::new()),
+         }
+     }
+ }
+ 
++/// A resolved style's fit declaration, and whether the node bounds its own
++/// height (see `MeasureCtx::bounded_h`).
++fn fit_of(r: &Resolved) -> (Option<FitSpec>, bool) {
++    let spec = FitSpec::of(r.font_slot as u8, r.text_fit0, r.text_fit1, r.line_clamp, r.text_wrap);
++    (spec, !r.height.is_nan() || !r.max_h.is_nan())
++}
++
+ fn float_key(value: f32) -> u32 {
+     if value.is_nan() {
+         f32::NAN.to_bits()
+@@ -582,7 +632,8 @@ fn build(
+             tree.slots[slot as usize].text_native = false;
+             return None; // empty text nodes never consume gap/flex space [R]
+         }
+-        let native = fonts.native_active() && resolved.tracking == 0.0 && !in_transform;
++        let fit = fit_of(&resolved);
++        let native = fonts.native_active() && resolved.tracking == 0.0 && !in_transform && fit.0.is_none();
+         tree.slots[slot as usize].text_native = native;
+         let ctx = MeasureCtx::shaped(
+             fonts,
+@@ -591,6 +642,7 @@ fn build(
+             resolved.tracking,
+             resolved.line_height,
+             native,
++            fit,
+         );
+         counters.shaping_calls = counters.shaping_calls.saturating_add(1);
+         let nid = taffy.new_leaf_with_context(to_taffy(&resolved), ctx).ok()?;
+@@ -670,6 +722,7 @@ fn update_measure(
+     native: bool,
+     replay_misses: bool,
+ ) {
++    let fit = fit_of(resolved);
+     if let Some(context) = eng.taffy.get_node_context(handle) {
+         if context.environment_epoch == eng.environment_epoch {
+             if context.matches(
+@@ -678,6 +731,7 @@ fn update_measure(
+                 resolved.tracking,
+                 resolved.line_height,
+                 native,
++                fit,
+             ) {
+                 if replay_misses {
+                     context.replay_misses(fonts);
+@@ -693,6 +747,7 @@ fn update_measure(
+         resolved.tracking,
+         resolved.line_height,
+         native,
++        fit,
+     );
+     context.environment_epoch = eng.environment_epoch;
+     #[cfg(feature = "counters")]
+@@ -770,7 +825,11 @@ fn sync_node(
+             return None;
+         }
+     }
+-    let native = is_text && fonts.native_active() && resolved.tracking == 0.0 && !in_transform;
++    let native = is_text
++        && fonts.native_active()
++        && resolved.tracking == 0.0
++        && !in_transform
++        && fit_of(&resolved).0.is_none();
+     let old = entry(eng, tree, slot);
+     let handle = if let Some(old) = old {
+         update_style(eng, old.handle, &resolved);
+@@ -795,6 +854,7 @@ fn sync_node(
+                 resolved.tracking,
+                 resolved.line_height,
+                 native,
++                fit_of(&resolved),
+             );
+             context.environment_epoch = eng.environment_epoch;
+             #[cfg(feature = "counters")]
+@@ -892,6 +952,7 @@ fn in_transform(tree: &Tree, styles: &StyleTable, slot: u32, root_id: i32) -> bo
+ fn assign_rect(
+     tree: &mut Tree,
+     eng: &LayoutEngine,
++    fonts: &Fonts,
+     slot: u32,
+     cum: (f32, f32),
+ ) -> ((f32, f32), (f32, f32)) {
+@@ -912,9 +973,20 @@ fn assign_rect(
+     node.taffy = handle;
+     node.layout = rect;
+     if node.node_type == spec::NodeType::Text as u8 {
+-        node.text_native = handle
+-            .and_then(|handle| eng.taffy.get_node_context(handle))
+-            .is_some_and(|context| context.native);
++        let context = handle.and_then(|handle| eng.taffy.get_node_context(handle));
++        node.text_native = context.is_some_and(|context| context.native);
++        // What paint draws is the fit of the box the solver settled on: its
++        // content box, the width and height the solver offered the measure
++        // on the final pass (taffy's leaf: size less padding and border).
++        node.text_fit = match (handle, context) {
++            (Some(handle), Some(context)) if context.fit.is_some() => {
++                let l = eng.taffy.unrounded_layout(handle);
++                let w = l.size.width - ((l.padding.left + l.border.left) + (l.padding.right + l.border.right));
++                let h = l.size.height - ((l.padding.top + l.border.top) + (l.padding.bottom + l.border.bottom));
++                context.fitted(fonts, w, h, true).map(alloc::boxed::Box::new)
++            }
++            _ => None,
++        };
+     }
+     (child_cum, size)
+ }
+@@ -926,12 +998,13 @@ fn assign_rect(
+ fn readback_scope(
+     tree: &mut Tree,
+     eng: &mut LayoutEngine,
++    fonts: &Fonts,
+     slot: u32,
+     assign_root: bool,
+     cum: (f32, f32),
+ ) {
+     let cum = if assign_root {
+-        assign_rect(tree, eng, slot, cum).0
++        assign_rect(tree, eng, fonts, slot, cum).0
+     } else {
+         cum
+     };
+@@ -943,7 +1016,7 @@ fn readback_scope(
+         if tree.slots[child_slot as usize].layout_mode != LAYOUT_LIVE {
+             continue;
+         }
+-        let (child_cum, size) = assign_rect(tree, eng, child_slot, cum);
++        let (child_cum, size) = assign_rect(tree, eng, fonts, child_slot, cum);
+         if tree.slots[child_slot as usize].region_root {
+             if let Some(index) = eng.region_index(child) {
+                 eng.regions[index].origin = child_cum;
+@@ -951,21 +1024,41 @@ fn readback_scope(
+             }
+             continue;
+         }
+-        readback_scope(tree, eng, child_slot, false, child_cum);
++        readback_scope(tree, eng, fonts, child_slot, false, child_cum);
+     }
+ }
+ 
+ /// Measure closure shared by every solve: a text leaf answers with its shaped
+-/// size on the axes the solver left open.
++/// size on the axes the solver left open. A fitted leaf (`text_fit`) answers
++/// with the block its fit lays out in the content box the solver offers: a
++/// definite width is the line length, min-content is every segment on its
++/// own line and none cut, max-content is unbounded.
+ fn measure_leaf(
+     known: Size<Option<f32>>,
++    available: Size<AvailableSpace>,
+     ctx: Option<&mut MeasureCtx>,
++    fonts: &Fonts,
+ ) -> Size<f32> {
+     match ctx {
+-        Some(m) => Size {
+-            width: known.width.unwrap_or(m.size.0),
+-            height: known.height.unwrap_or(m.size.1),
+-        },
++        Some(m) => {
++            let (w, cut) = match available.width {
++                AvailableSpace::Definite(w) => (w, true),
++                AvailableSpace::MinContent => (0.0, false),
++                AvailableSpace::MaxContent => (f32::INFINITY, true),
++            };
++            let h = match available.height {
++                AvailableSpace::Definite(h) => h,
++                _ => f32::INFINITY,
++            };
++            let size = match m.fitted(fonts, w, h, cut) {
++                Some(f) => (f.width, f.height),
++                None => m.size,
++            };
++            Size {
++                width: known.width.unwrap_or(size.0),
++                height: known.height.unwrap_or(size.1),
++            }
++        }
+         None => Size {
+             width: 0.0,
+             height: 0.0,
+@@ -973,7 +1066,7 @@ fn measure_leaf(
+     }
+ }
+ 
+-fn compute(tree: &mut Tree, eng: &mut LayoutEngine, root_slot: u32, root_nid: taffy::NodeId) {
++fn compute(tree: &mut Tree, eng: &mut LayoutEngine, fonts: &Fonts, root_slot: u32, root_nid: taffy::NodeId) {
+     #[cfg(feature = "counters")]
+     {
+         eng.counters.layout_passes = eng.counters.layout_passes.saturating_add(1);
+@@ -986,12 +1079,12 @@ fn compute(tree: &mut Tree, eng: &mut LayoutEngine, root_slot: u32, root_nid: ta
+             width: AvailableSpace::Definite(eng.viewport.0),
+             height: AvailableSpace::Definite(eng.viewport.1),
+         },
+-        |known, _available, _id, ctx, _style| -> Size<f32> {
++        |known, available, _id, ctx, _style| -> Size<f32> {
+             #[cfg(feature = "counters")]
+             {
+                 callbacks = callbacks.saturating_add(1);
+             }
+-            measure_leaf(known, ctx)
++            measure_leaf(known, available, ctx, fonts)
+         },
+     );
+     #[cfg(feature = "counters")]
+@@ -1001,7 +1094,7 @@ fn compute(tree: &mut Tree, eng: &mut LayoutEngine, root_slot: u32, root_nid: ta
+     eng.solved_viewport = Some((eng.viewport.0.to_bits(), eng.viewport.1.to_bits()));
+     // Rounding is cumulative: a cached child's pixel rounding can change when
+     // an ancestor moves, so every owned node reads back.
+-    readback_scope(tree, eng, root_slot, true, (0.0, 0.0));
++    readback_scope(tree, eng, fonts, root_slot, true, (0.0, 0.0));
+     eng.root_read = true;
+ }
+ 
+@@ -1148,19 +1241,19 @@ pub fn relayout_root(
+                 if eng.taffy.dirty(root).unwrap_or(true)
+                     || eng.solved_viewport != Some((eng.viewport.0.to_bits(), eng.viewport.1.to_bits()))
+                 {
+-                    compute(tree, eng, root_slot, root);
++                    compute(tree, eng, fonts, root_slot, root);
+                 } else if !eng.root_read {
+-                    readback_scope(tree, eng, root_slot, true, (0.0, 0.0));
++                    readback_scope(tree, eng, fonts, root_slot, true, (0.0, 0.0));
+                     eng.root_read = true;
+                 }
+             }
+             None => {
+-                readback_scope(tree, eng, root_slot, true, (0.0, 0.0));
++                readback_scope(tree, eng, fonts, root_slot, true, (0.0, 0.0));
+                 eng.root_read = false;
+             }
+         }
+     }
+-    solve_regions(tree, eng);
++    solve_regions(tree, eng, fonts);
+ }
+ 
+ /// Apply changed resolved styles (and text runs) to existing solver nodes.
+@@ -1284,7 +1377,7 @@ fn sync_region(
+ 
+ /// Solve every region whose box or structure changed, outer regions first,
+ /// and read back their children.
+-fn solve_regions(tree: &mut Tree, eng: &mut LayoutEngine) {
++fn solve_regions(tree: &mut Tree, eng: &mut LayoutEngine, fonts: &Fonts) {
+     if eng.regions.is_empty() {
+         return;
+     }
+@@ -1337,12 +1430,12 @@ fn solve_regions(tree: &mut Tree, eng: &mut LayoutEngine) {
+                     width: AvailableSpace::Definite(size.0),
+                     height: AvailableSpace::Definite(size.1),
+                 },
+-                |known, _available, _id, ctx, _style| -> Size<f32> {
++                |known, available, _id, ctx, _style| -> Size<f32> {
+                     #[cfg(feature = "counters")]
+                     {
+                         callbacks = callbacks.saturating_add(1);
+                     }
+-                    measure_leaf(known, ctx)
++                    measure_leaf(known, available, ctx, fonts)
+                 },
+             );
+             #[cfg(feature = "counters")]
+@@ -1351,7 +1444,7 @@ fn solve_regions(tree: &mut Tree, eng: &mut LayoutEngine) {
+             }
+             eng.regions[index].solved_box = Some(key);
+         }
+-        readback_scope(tree, eng, slot, false, origin);
++        readback_scope(tree, eng, fonts, slot, false, origin);
+         eng.regions[index].read_origin = Some(origin_bits);
+     }
+ }
+@@ -1422,7 +1515,7 @@ pub fn reference_mismatches(
+                     width: AvailableSpace::Definite(viewport.0),
+                     height: AvailableSpace::Definite(viewport.1),
+                 },
+-                |known, _available, _id, ctx, _style| -> Size<f32> { measure_leaf(known, ctx) },
++                |known, available, _id, ctx, _style| -> Size<f32> { measure_leaf(known, available, ctx, fonts) },
+             );
+             compare_reference(tree, &taffy, root_slot, (0.0, 0.0), &mut out);
+         }
+@@ -1510,7 +1603,7 @@ fn reference_rebuild(
+         region.solved_box = None;
+     }
+     if let (Some(root), Some(root_slot)) = (eng.root, tree.resolve(root_id)) {
+-        compute(tree, eng, root_slot, root);
++        compute(tree, eng, fonts, root_slot, root);
+     }
+ }
+ 
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 8739a75b..2960a9ce 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -67,6 +67,7 @@ pub mod stream;
+ pub mod stream_rx;
+ pub mod style;
+ pub mod text;
++pub mod text_fit;
+ pub mod font_pages;
+ pub mod font_stream;
+ pub mod font_archive;
+@@ -329,6 +330,8 @@ pub struct Ui {
+     /// Draw-time skip: this node and its subtree emit nothing. 0 = nothing
+     /// hidden. Layout is not involved — other nodes' boxes stay put.
+     hide_id: i32,
++    /// The node `debug_text_fit` last selected; 0 = none.
++    fit_inspect_id: i32,
+     /// World AABB (x, y, w, h) of the inspected node, captured by the last
+     /// `draw()` that painted it.
+     inspect_rect: Option<(f32, f32, f32, f32)>,
+@@ -399,6 +402,7 @@ impl Ui {
+             tick_hz: DEFAULT_TICK_HZ,
+             inspect_id: 0,
+             hide_id: 0,
++            fit_inspect_id: 0,
+             inspect_rect: None,
+             inspect_drawn: None,
+             paused: false,
+@@ -952,7 +956,11 @@ impl Ui {
+             let r = style::resolve(&self.tree.slots[root_slot as usize], &self.styles, true);
+             let fixed =
+                 r.width.is_finite() && r.width >= 0.0 && r.height.is_finite() && r.height >= 0.0;
+-            if !fixed {
++            // A fitted run's rung and lines depend on the text whatever its
++            // box, so its swap is always a relayout.
++            let fitted = text_fit::FitSpec::of(r.font_slot as u8, r.text_fit0, r.text_fit1, r.line_clamp, r.text_wrap)
++                .is_some();
++            if !fixed || fitted {
+                 self.mark_layout_style(root_slot);
+             }
+         }
+@@ -2358,6 +2366,53 @@ impl Ui {
+         }
+     }
+ 
++    /// Select text node `id`'s fit record (`Node::text_fit`, written by the
++    /// last layout) for [`Self::debug_text_fit_word`] and return its summary:
++    /// bits 0-7 the slot drawn, 8-11 the rung taken, 12-15 the ladder's
++    /// rungs, 16 a rung held the box, 17 a ladder was declared, 18 the run
++    /// wraps. -1 when the node holds no record: it is not a laid-out text
++    /// node, or it declares no fit, clamp or wrap.
++    pub fn debug_text_fit(&mut self, id: i32) -> i32 {
++        self.fit_inspect_id = 0;
++        let Some(slot) = self.tree.resolve(id) else { return -1 };
++        let node = &self.tree.slots[slot as usize];
++        let Some(fit) = node.text_fit.as_deref() else { return -1 };
++        let r = style::resolve(node, &self.styles, true);
++        let Some(spec) =
++            text_fit::FitSpec::of(r.font_slot as u8, r.text_fit0, r.text_fit1, r.line_clamp, r.text_wrap)
++        else {
++            return -1;
++        };
++        self.fit_inspect_id = id;
++        (fit.slot as i32)
++            | ((fit.rung as i32 & 0xf) << 8)
++            | ((spec.rungs as i32 & 0xf) << 12)
++            | ((fit.fitted as i32) << 16)
++            | ((spec.ladder as i32) << 17)
++            | ((spec.wrap as i32) << 18)
++    }
++
++    /// Word `i` of the record `debug_text_fit` selected: 0 lines kept |
++    /// lines the run wrapped to << 16, 1 characters the clamp left out, 2
++    /// breaks placed inside a segment, 3 the clamp's line count (0 none),
++    /// 8 + k the slot of rung k (k below the ladder's rungs). -1 for any
++    /// other `i`, or when nothing is selected or the record is gone.
++    pub fn debug_text_fit_word(&self, i: u32) -> i32 {
++        let Some(slot) = self.tree.resolve(self.fit_inspect_id) else { return -1 };
++        let node = &self.tree.slots[slot as usize];
++        let Some(fit) = node.text_fit.as_deref() else { return -1 };
++        let r = style::resolve(node, &self.styles, true);
++        let spec = text_fit::FitSpec::of(r.font_slot as u8, r.text_fit0, r.text_fit1, r.line_clamp, r.text_wrap);
++        match (i, spec) {
++            (0, _) => fit.lines_kept as i32 | ((fit.lines_total as i32) << 16),
++            (1, _) => fit.dropped.min(i32::MAX as u32) as i32,
++            (2, _) => fit.split as i32,
++            (3, Some(spec)) => spec.clamp as i32,
++            (8.., Some(spec)) if ((i - 8) as usize) < spec.rungs as usize => spec.slots[(i - 8) as usize] as i32,
++            _ => -1,
++        }
++    }
++
+     /// Freeze (or resume) the world: while paused `tick()` is a no-op — the
+     /// frame counter, tracks, timelines and sprite clocks all hold. `draw()`
+     /// still runs so the highlight overlay stays live.
+@@ -2642,6 +2697,8 @@ fn prop_bits(kind: u8, value: f64) -> u32 {
+ mod tests;
+ #[cfg(test)]
+ mod path_tests;
++#[cfg(test)]
++mod text_fit_tests;
+ 
+ /// Little-endian Float64 fields of a physics wire record.
+ fn wire_f64s(bytes: &[u8]) -> Vec<f64> {
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index f14e701b..a729eb00 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -38,6 +38,8 @@ pub const TEX_SLOT_BITS: u32 = 20;
+ pub const TEX_SLOT_MASK: u32 = 0xfffff;
+ /// Max baked font-atlas slots.
+ pub const MAX_FONT_SLOTS: usize = 128;
++/// Most rungs a text-fit ladder names (textFit0 + textFit1).
++pub const TEXT_FIT_MAX_RUNGS: usize = 8;
+ /// Transition mask value meaning "every animatable prop".
+ pub const TRANSITION_MASK_ALL: u32 = 0xffffffff;
+ /// Core tick timestep: exactly 1/60 s (fixed — enables byte-exact goldens).
+@@ -170,6 +172,10 @@ pub mod prop {
+     pub const TEXT_ALIGN: u8 = 98;
+     pub const LINE_HEIGHT: u8 = 99;
+     pub const TRACKING: u8 = 100;
++    pub const TEXT_FIT0: u8 = 101;
++    pub const TEXT_FIT1: u8 = 102;
++    pub const LINE_CLAMP: u8 = 103;
++    pub const TEXT_WRAP: u8 = 104;
+     pub const TRANSLATE_X: u8 = 128;
+     pub const TRANSLATE_Y: u8 = 129;
+     pub const SCALE: u8 = 130;
+@@ -250,7 +256,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x01, 0x01, 0x01, 0x02, 0x00, 0x00, 0x01, 0x00, 0x02, 0xff, 0xff, 0xff, 0xff, 0x01, 0x01, 0x01,
+     0x01, 0x00, 0x01, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0x01, 0x02, 0x02, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x01, 0x02, 0x02, 0x00, 0x00, 0x02, 0x02, 0x02, 0x02, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -286,7 +292,7 @@ pub const ANIM_BIT: [u8; 256] = [
+ /// Bitset over prop ids: animatable props (tween/spring/transition targets).
+ pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x00000000000b8d01];
+ /// Bitset over prop ids: props whose change invalidates layout.
+-pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
++pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x000001fe00000000, 0x0000000000000000, 0x0000000000000000];
+ 
+ pub const fn is_animatable(prop: u8) -> bool {
+     ANIMATABLE_BITS[(prop >> 6) as usize] & (1u64 << (prop & 63)) != 0
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index 3a3086e9..c490f529 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -309,6 +309,14 @@ pub struct Resolved {
+     /// NAN = use the atlas default.
+     pub line_height: f32,
+     pub tracking: f32,
++    /// Fit ladder: font slots + 1, one byte each, largest rung first (rungs
++    /// 0..3 in `text_fit0`, 4..7 in `text_fit1`; 0 ends the ladder).
++    pub text_fit0: u32,
++    pub text_fit1: u32,
++    /// Lines a clamp keeps (0 = no clamp).
++    pub line_clamp: u32,
++    /// 1 = wrap the run at its break opportunities.
++    pub text_wrap: u8,
+     pub translate_x: f32,
+     pub translate_y: f32,
+     pub scale: f32,
+@@ -436,6 +444,10 @@ impl Default for Resolved {
+             text_align: spec::TextAlign::Left as u8,
+             line_height: f32::NAN,
+             tracking: 0.0,
++            text_fit0: 0,
++            text_fit1: 0,
++            line_clamp: 0,
++            text_wrap: 0,
+             translate_x: 0.0,
+             translate_y: 0.0,
+             scale: 1.0,
+@@ -567,6 +579,10 @@ impl Resolved {
+             p::TEXT_ALIGN => self.text_align = bits as u8,
+             p::LINE_HEIGHT => self.line_height = f,
+             p::TRACKING => self.tracking = f,
++            p::TEXT_FIT0 => self.text_fit0 = bits,
++            p::TEXT_FIT1 => self.text_fit1 = bits,
++            p::LINE_CLAMP => self.line_clamp = bits,
++            p::TEXT_WRAP => self.text_wrap = bits as u8,
+             p::TRANSLATE_X => self.translate_x = f,
+             p::TRANSLATE_Y => self.translate_y = f,
+             p::SCALE => self.scale = f,
+@@ -691,6 +707,10 @@ impl Resolved {
+             p::TEXT_ALIGN => self.text_align as u32,
+             p::LINE_HEIGHT => self.line_height.to_bits(),
+             p::TRACKING => self.tracking.to_bits(),
++            p::TEXT_FIT0 => self.text_fit0,
++            p::TEXT_FIT1 => self.text_fit1,
++            p::LINE_CLAMP => self.line_clamp,
++            p::TEXT_WRAP => self.text_wrap as u32,
+             p::TRANSLATE_X => self.translate_x.to_bits(),
+             p::TRANSLATE_Y => self.translate_y.to_bits(),
+             p::SCALE => self.scale.to_bits(),
+diff --git a/engine/core/src/text.rs b/engine/core/src/text.rs
+index 0a04ff03..313f25ab 100644
+--- a/engine/core/src/text.rs
++++ b/engine/core/src/text.rs
+@@ -368,6 +368,16 @@ impl Fonts {
+         }
+     }
+ 
++    /// (gid, advance) as [`Self::glyph`] resolves them, without counting a
++    /// miss: fitting a run tries every rung, and only the laid-out text is a
++    /// measurement the miss counter describes.
++    pub(crate) fn glyph_quiet(&self, atlas: &Atlas, cp: u32) -> (u16, f32) {
++        match atlas.lookup_entry(cp) {
++            Some(e) => (e.gid, e.advance as f32),
++            None => (0, atlas.stream.as_ref().map_or(atlas.cell_w as f32, |s| s.advance as f32)),
++        }
++    }
++
+     /// Measure a run: (max line width, line count x line height). Empty text
+     /// or an unregistered slot measures (0, 0). With a native measurer
+     /// installed, tracking-0 runs route to it — the auto-gate the JS-facing
+diff --git a/engine/core/src/text_fit.rs b/engine/core/src/text_fit.rs
+new file mode 100644
+index 00000000..7525bf1b
+--- /dev/null
++++ b/engine/core/src/text_fit.rs
+@@ -0,0 +1,361 @@
++//! Fit and clamp: a text run laid out against the box layout gives it.
++//!
++//! A node may declare three things about its run (spec.ts PROP.textFit0..
++//! textWrap): a LADDER of baked font slots, largest first; WRAPPING at the
++//! break opportunities the run carries; and a CLAMP to a line count. Layout
++//! evaluates them here, against the content box the solver offers, and the
++//! answer is a pure function of (run, declaration, box, atlases):
++//!
++//! - **Break opportunities are the run's own.** A run of spaces, and U+200B,
++//!   which the generator writes where its language allows a break (CJK, Thai)
++//!   and which is never drawn or looked up. `'\n'` always breaks. No language
++//!   rule is applied here: where a line may end is decided by whoever wrote
++//!   the run, and a segmenter's answer reaches the core as U+200B.
++//! - **A rung holds** when its block's widest line fits the width, its line
++//!   count times the line height fits the height bound, the clamp's line count
++//!   is not exceeded, and no segment had to be cut between two of its own
++//!   characters. The first rung that holds is taken; when none does, the last
++//!   (smallest), and `fitted` is false.
++//! - **A cut inside a segment** happens only when a segment is wider than the
++//!   whole line at the rung taken. It is counted (`split`), never preferred:
++//!   a rung that needs one does not hold, so a smaller rung is tried first.
++//! - **A clamp** keeps its first N lines and ends the last with an ellipsis
++//!   (U+2026, or "..." when the face maps no U+2026), removing characters
++//!   from that line's end until the ellipsis fits. A combining mark is removed
++//!   with the character it sits on. What it removed is counted (`dropped`), so
++//!   text that is not drawn is a number a reader can ask for.
++//!
++//! Widths are summed exactly as [`Fonts::measure_run`] sums them, per line,
++//! in order — pair adjustment, advance and tracking per glyph — so the box
++//! layout reserves for a fitted run is the box its laid-out text measures.
++
++use alloc::string::String;
++use alloc::vec::Vec;
++
++use crate::spec;
++use crate::text::{Atlas, Fonts};
++
++/// U+200B ZERO WIDTH SPACE: a break opportunity the run's author placed.
++pub const BREAK_MARK: char = '\u{200B}';
++/// U+2026 HORIZONTAL ELLIPSIS, ending a clamped run's last kept line.
++pub const ELLIPSIS: char = '\u{2026}';
++
++/// What a node declares about fitting its run.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub struct FitSpec {
++    /// Font slots, largest rung first; `rungs` of them are meaningful.
++    pub slots: [u8; spec::TEXT_FIT_MAX_RUNGS],
++    pub rungs: u8,
++    /// The ladder was declared (`text-fit-[..]`). Without one the single rung
++    /// is the node's own font slot.
++    pub ladder: bool,
++    /// Lines kept (0 = no clamp).
++    pub clamp: u16,
++    pub wrap: bool,
++}
++
++impl FitSpec {
++    /// The declaration a resolved style carries, or None when it declares
++    /// nothing — the run then lays out as it always has.
++    pub fn of(font_slot: u8, fit0: u32, fit1: u32, clamp: u32, wrap: u8) -> Option<FitSpec> {
++        let mut slots = [0u8; spec::TEXT_FIT_MAX_RUNGS];
++        let mut rungs = 0u8;
++        let bytes = [fit0.to_le_bytes(), fit1.to_le_bytes()];
++        // Slot + 1 per byte; the first 0 ends the ladder.
++        for byte in bytes.iter().flatten().copied().take(spec::TEXT_FIT_MAX_RUNGS) {
++            if byte == 0 {
++                break;
++            }
++            slots[rungs as usize] = byte - 1;
++            rungs += 1;
++        }
++        let ladder = rungs > 0;
++        if !ladder && clamp == 0 && wrap == 0 {
++            return None;
++        }
++        if !ladder {
++            slots[0] = font_slot;
++            rungs = 1;
++        }
++        Some(FitSpec {
++            slots,
++            rungs,
++            ladder,
++            clamp: clamp.min(u16::MAX as u32) as u16,
++            wrap: wrap != 0,
++        })
++    }
++}
++
++/// What layout chose for one run in one box.
++#[derive(Clone, Debug, PartialEq)]
++pub struct Fitted {
++    /// The slot the run is drawn with.
++    pub slot: u8,
++    /// Its index in the ladder (0 = the largest).
++    pub rung: u8,
++    /// A rung held the box. False when the smallest did not, and the run was
++    /// laid out at it anyway.
++    pub fitted: bool,
++    /// The run as laid out: lines joined by '\n', break spaces and U+200B
++    /// removed, the ellipsis appended to a clamped run.
++    pub text: String,
++    pub width: f32,
++    pub height: f32,
++    pub lines_kept: u16,
++    /// Lines the run wrapped to at the slot taken, before the clamp.
++    pub lines_total: u16,
++    /// Characters of the run the clamp left out (break spaces and U+200B not
++    /// counted).
++    pub dropped: u32,
++    /// Line breaks placed between two characters of one segment.
++    pub split: u16,
++}
++
++/// One rung's wrap: lines and their widths.
++struct Wrapped {
++    lines: Vec<String>,
++    widths: Vec<f32>,
++    split: u16,
++}
++
++/// Combining marks the clamp keeps with their base: the general-purpose
++/// combining blocks, ZWJ and the variation selectors. Not a Unicode table;
++/// the blocks a Latin, Cyrillic or Greek run carries marks from.
++fn is_mark(c: char) -> bool {
++    matches!(c as u32,
++        0x0300..=0x036F | 0x1AB0..=0x1AFF | 0x1DC0..=0x1DFF | 0x20D0..=0x20FF
++        | 0xFE20..=0xFE2F | 0x200D | 0xFE00..=0xFE0F)
++}
++
++/// Sums widths exactly as `Fonts::measure_run` does for one line.
++#[derive(Clone)]
++struct Pen<'a> {
++    fonts: &'a Fonts,
++    atlas: &'a Atlas,
++    tracking: f32,
++    width: f32,
++    prev: Option<u16>,
++}
++
++impl<'a> Pen<'a> {
++    fn new(fonts: &'a Fonts, atlas: &'a Atlas, tracking: f32) -> Self {
++        Pen { fonts, atlas, tracking, width: 0.0, prev: None }
++    }
++
++    /// The width after `c`, without moving the pen.
++    fn after(&self, c: char) -> (f32, u16) {
++        let (gid, adv) = self.fonts.glyph_quiet(self.atlas, c as u32);
++        let pair = match self.prev {
++            Some(prev) => self.atlas.kern(prev, gid) as f32,
++            None => 0.0,
++        };
++        (self.width + (pair + adv + self.tracking), gid)
++    }
++
++    fn push(&mut self, c: char) {
++        let (width, gid) = self.after(c);
++        self.width = width;
++        self.prev = Some(gid);
++    }
++}
++
++fn width_of(fonts: &Fonts, atlas: &Atlas, tracking: f32, line: &str) -> f32 {
++    let mut pen = Pen::new(fonts, atlas, tracking);
++    for c in line.chars() {
++        pen.push(c);
++    }
++    pen.width
++}
++
++/// Lay one rung's lines out. `cut` allows a segment wider than the line to be
++/// cut between its characters; without it the segment overflows its line,
++/// which is what a min-content measurement asks for.
++fn wrap(fonts: &Fonts, atlas: &Atlas, tracking: f32, text: &str, wrap: bool, max_w: f32, cut: bool) -> Wrapped {
++    let mut out = Wrapped { lines: Vec::new(), widths: Vec::new(), split: 0 };
++    for hard in text.split('\n') {
++        if !wrap {
++            let line: String = hard.chars().filter(|&c| c != BREAK_MARK).collect();
++            out.widths.push(width_of(fonts, atlas, tracking, &line));
++            out.lines.push(line);
++            continue;
++        }
++        let mut line = String::new();
++        let mut pen = Pen::new(fonts, atlas, tracking);
++        // Spaces seen since the last segment: drawn if the next segment
++        // joins this line, dropped if it starts the next one. At the start of
++        // a hard line they are the author's indent and are kept.
++        let mut spaces = String::new();
++        let mut at_start = true;
++        let mut chars = hard.chars().peekable();
++        while let Some(&c) = chars.peek() {
++            if c == ' ' {
++                spaces.push(c);
++                chars.next();
++                continue;
++            }
++            if c == BREAK_MARK {
++                chars.next();
++                continue;
++            }
++            let mut segment = String::new();
++            while let Some(&c) = chars.peek() {
++                if c == ' ' || c == BREAK_MARK {
++                    break;
++                }
++                segment.push(c);
++                chars.next();
++            }
++            // Try the segment on this line, spaces first.
++            let mut trial = pen.clone();
++            let lead = if line.is_empty() && !at_start { "" } else { spaces.as_str() };
++            for s in lead.chars().chain(segment.chars()) {
++                trial.push(s);
++            }
++            if line.is_empty() || trial.width <= max_w {
++                line.push_str(lead);
++                line.push_str(&segment);
++                pen = trial;
++            } else {
++                out.widths.push(pen.width);
++                out.lines.push(core::mem::take(&mut line));
++                pen = Pen::new(fonts, atlas, tracking);
++                for s in segment.chars() {
++                    pen.push(s);
++                }
++                line = segment.clone();
++            }
++            spaces.clear();
++            at_start = false;
++            if cut && pen.width > max_w && line.chars().count() > 1 {
++                // The line is (indent and) one segment wider than the line:
++                // cut it between characters, each piece as wide as fits.
++                let source = core::mem::take(&mut line);
++                pen = Pen::new(fonts, atlas, tracking);
++                for c in source.chars() {
++                    let (w, _) = pen.after(c);
++                    // Never between a mark and the character it sits on.
++                    if !line.is_empty() && w > max_w && !is_mark(c) {
++                        out.widths.push(pen.width);
++                        out.lines.push(core::mem::take(&mut line));
++                        out.split = out.split.saturating_add(1);
++                        pen = Pen::new(fonts, atlas, tracking);
++                    }
++                    pen.push(c);
++                    line.push(c);
++                }
++            }
++        }
++        if !spaces.is_empty() && line.is_empty() && at_start {
++            // A hard line of nothing but spaces keeps them, as unwrapped.
++            for s in spaces.chars() {
++                pen.push(s);
++            }
++            line.push_str(&spaces);
++        }
++        out.widths.push(pen.width);
++        out.lines.push(line);
++    }
++    out
++}
++
++impl Fonts {
++    /// Fit `text` to a content box `max_w` x `max_h` (either may be
++    /// `f32::INFINITY`). `cut` false is the min-content measurement: segments
++    /// are never cut, so the widest segment is the width.
++    pub fn fit_run(
++        &self,
++        text: &str,
++        spec: &FitSpec,
++        tracking: f32,
++        line_h_override: f32,
++        max_w: f32,
++        max_h: f32,
++        cut: bool,
++    ) -> Fitted {
++        let mut chosen: Option<(u8, Wrapped, f32, bool)> = None;
++        for rung in 0..spec.rungs {
++            let Some(atlas) = self.atlas(spec.slots[rung as usize]) else {
++                continue;
++            };
++            let lh = if line_h_override.is_nan() { atlas.line_height as f32 } else { line_h_override };
++            let w = wrap(self, atlas, tracking, text, spec.wrap, max_w, cut);
++            let widest = w.widths.iter().fold(0.0f32, |a, &b| a.max(b));
++            let lines = w.lines.len();
++            let holds = widest <= max_w
++                && lines as f32 * lh <= max_h
++                && (spec.clamp == 0 || lines <= spec.clamp as usize)
++                && w.split == 0;
++            let last = rung + 1 == spec.rungs;
++            if holds || last {
++                chosen = Some((rung, w, lh, holds));
++                break;
++            }
++            chosen = Some((rung, w, lh, false));
++        }
++        let Some((rung, mut w, lh, fitted)) = chosen else {
++            return Fitted {
++                slot: spec.slots[0],
++                rung: 0,
++                fitted: false,
++                text: String::new(),
++                width: 0.0,
++                height: 0.0,
++                lines_kept: 0,
++                lines_total: 0,
++                dropped: 0,
++                split: 0,
++            };
++        };
++        let slot = spec.slots[rung as usize];
++        let atlas = self.atlas(slot).expect("chosen rung has an atlas");
++        let lines_total = w.lines.len();
++        let mut dropped = 0u32;
++        let clamp = spec.clamp as usize;
++        if clamp > 0 && lines_total > clamp {
++            for line in &w.lines[clamp..] {
++                dropped += line.chars().filter(|&c| c != ' ').count() as u32;
++            }
++            w.lines.truncate(clamp);
++            w.widths.truncate(clamp);
++            let ellipsis: &str = if atlas.lookup_entry(ELLIPSIS as u32).is_some() { "\u{2026}" } else { "..." };
++            let mut last = w.lines.pop().unwrap_or_default();
++            w.widths.pop();
++            loop {
++                let kept = last.trim_end_matches(' ');
++                let mut candidate = String::with_capacity(kept.len() + ellipsis.len());
++                candidate.push_str(kept);
++                candidate.push_str(ellipsis);
++                let width = width_of(self, atlas, tracking, &candidate);
++                if width <= max_w || kept.is_empty() {
++                    w.lines.push(candidate);
++                    w.widths.push(width);
++                    break;
++                }
++                // Remove the last character, and a mark with its base.
++                while let Some(c) = last.pop() {
++                    if c != ' ' {
++                        dropped += 1;
++                    }
++                    if !is_mark(c) {
++                        break;
++                    }
++                }
++            }
++        }
++        let width = w.widths.iter().fold(0.0f32, |a, &b| a.max(b));
++        let lines_kept = w.lines.len();
++        Fitted {
++            slot,
++            rung,
++            fitted,
++            text: w.lines.join("\n"),
++            width,
++            height: lines_kept as f32 * lh,
++            lines_kept: lines_kept.min(u16::MAX as usize) as u16,
++            lines_total: lines_total.min(u16::MAX as usize) as u16,
++            dropped,
++            split: w.split,
++        }
++    }
++}
+diff --git a/engine/core/src/text_fit_tests.rs b/engine/core/src/text_fit_tests.rs
+new file mode 100644
+index 00000000..25c81372
+--- /dev/null
++++ b/engine/core/src/text_fit_tests.rs
+@@ -0,0 +1,240 @@
++//! Fit and clamp (`text_fit.rs`) against synthetic atlases whose advances
++//! make every width a small integer, so each expectation is arithmetic.
++
++use alloc::string::String;
++use alloc::vec::Vec;
++
++use crate::spec;
++use crate::text::Fonts;
++use crate::text_fit::{FitSpec, ELLIPSIS};
++use crate::Ui;
++
++/// A v4 atlas: `glyphs` are (codepoint, advance), gids in order from 1 after
++/// the tofu cell; `pairs` are (left codepoint, right codepoint, delta).
++fn atlas(slot: u8, line_height: u8, glyphs: &[(char, u8)], pairs: &[(char, char, i8)]) -> Vec<u8> {
++    let mut cmap: Vec<(u32, u16, u8)> = alloc::vec![(0xfffd, 0, 8)];
++    for (i, &(c, adv)) in glyphs.iter().enumerate() {
++        cmap.push((c as u32, i as u16 + 1, adv));
++    }
++    cmap.sort_by_key(|e| e.0);
++    let gid = |c: char| cmap.iter().find(|e| e.0 == c as u32).unwrap().1;
++    let mut kern: Vec<(u16, u16, i8)> = pairs.iter().map(|&(l, r, d)| (gid(l), gid(r), d)).collect();
++    kern.sort_by_key(|p| ((p.0 as u32) << 16) | p.1 as u32);
++    let (cell_w, cell_h) = (8u8, 8u8);
++    let mut out = Vec::new();
++    out.extend_from_slice(&spec::font_atlas::MAGIC.to_le_bytes());
++    out.extend_from_slice(&4u16.to_le_bytes());
++    out.extend_from_slice(&(cmap.len() as u16).to_le_bytes());
++    out.extend_from_slice(&[cell_w, cell_h, 7, line_height, slot, 0, 1, 0]);
++    for &(cp, g, adv) in &cmap {
++        out.extend_from_slice(&cp.to_le_bytes());
++        out.extend_from_slice(&g.to_le_bytes());
++        out.push(adv);
++        out.push(0);
++    }
++    out.extend_from_slice(&alloc::vec![0u8; cmap.len() * cell_w as usize * cell_h as usize]);
++    out.extend_from_slice(&(kern.len() as u32).to_le_bytes());
++    for (l, r, d) in kern {
++        out.extend_from_slice(&l.to_le_bytes());
++        out.extend_from_slice(&r.to_le_bytes());
++        out.push(d as u8);
++    }
++    out
++}
++
++/// Slot 2: every letter 10 px, a space 10, line height 20. Slot 3: half of
++/// that. Both map U+2026 at the width of one letter.
++fn fonts() -> Fonts {
++    let mut f = Fonts::new();
++    // The mark is given an advance so that removing it alone would change
++    // a width (a spacing mark does carry one).
++    let big = [('A', 10), ('B', 10), (' ', 10), ('.', 10), ('\u{301}', 5), (ELLIPSIS, 10)];
++    let small = [('A', 5), ('B', 5), (' ', 5), ('.', 5), ('\u{301}', 0), (ELLIPSIS, 5)];
++    assert!(f.load(&atlas(2, 20, &big, &[])));
++    assert!(f.load(&atlas(3, 10, &small, &[])));
++    f
++}
++
++fn ladder(slots: &[u8], clamp: u16, wrap: bool) -> FitSpec {
++    let mut s = [0u8; spec::TEXT_FIT_MAX_RUNGS];
++    s[..slots.len()].copy_from_slice(slots);
++    FitSpec { slots: s, rungs: slots.len() as u8, ladder: true, clamp, wrap }
++}
++
++const INF: f32 = f32::INFINITY;
++
++#[test]
++fn the_largest_rung_that_holds_is_taken() {
++    let f = fonts();
++    let fit = f.fit_run("AAAA", &ladder(&[2, 3], 0, false), 0.0, f32::NAN, 100.0, INF, true);
++    assert_eq!((fit.slot, fit.rung, fit.fitted), (2, 0, true));
++    assert_eq!((fit.width, fit.height), (40.0, 20.0));
++    // Too wide at slot 2, wide enough at slot 3.
++    let fit = f.fit_run("AAAA", &ladder(&[2, 3], 0, false), 0.0, f32::NAN, 30.0, INF, true);
++    assert_eq!((fit.slot, fit.rung, fit.fitted, fit.width), (3, 1, true, 20.0));
++    // Neither holds: the smallest, marked.
++    let fit = f.fit_run("AAAA", &ladder(&[2, 3], 0, false), 0.0, f32::NAN, 10.0, INF, true);
++    assert_eq!((fit.slot, fit.rung, fit.fitted), (3, 1, false));
++}
++
++/// Red with the height test removed from `holds`: slot 2 wraps to two lines
++/// of 20 in a 20 px box and is taken anyway.
++#[test]
++fn a_block_too_tall_for_its_box_gives_way_to_the_next_rung() {
++    let f = fonts();
++    let fit = f.fit_run("AAAA AAAA", &ladder(&[2, 3], 0, true), 0.0, f32::NAN, 50.0, 20.0, true);
++    assert_eq!((fit.slot, fit.text.as_str(), fit.lines_total), (3, "AAAA AAAA", 1));
++    assert_eq!((fit.width, fit.height), (45.0, 10.0));
++}
++
++/// Red with `&& w.split == 0` removed from `holds`: slot 2 cuts "AAAAAA"
++/// into two lines that fit 40 x 40 and is taken.
++#[test]
++fn a_rung_that_must_cut_a_segment_does_not_hold() {
++    let f = fonts();
++    let fit = f.fit_run("AAAAAA", &ladder(&[2, 3], 0, true), 0.0, f32::NAN, 40.0, 40.0, true);
++    assert_eq!((fit.slot, fit.split, fit.lines_total), (3, 0, 1));
++    assert_eq!(fit.text, "AAAAAA");
++    // With no smaller rung, the cut is made and counted.
++    let fit = f.fit_run("AAAAAA", &ladder(&[2], 0, true), 0.0, f32::NAN, 40.0, INF, true);
++    assert_eq!((fit.text.as_str(), fit.split, fit.fitted), ("AAAA\nAA", 1, false));
++    // A min-content measurement never cuts: the segment is its own width.
++    let fit = f.fit_run("AAAAAA AA", &ladder(&[2], 0, true), 0.0, f32::NAN, 0.0, INF, false);
++    assert_eq!((fit.text.as_str(), fit.width, fit.split), ("AAAAAA\nAA", 60.0, 0));
++}
++
++/// Red with U+200B read as part of a segment: the run is one segment, cut
++/// between letters.
++#[test]
++fn a_line_breaks_at_spaces_and_u200b_and_u200b_is_never_drawn() {
++    let f = fonts();
++    let spec = ladder(&[2], 0, true);
++    let fit = f.fit_run("AA\u{200B}BB\u{200B}AA", &spec, 0.0, f32::NAN, 40.0, INF, true);
++    assert_eq!((fit.text.as_str(), fit.split), ("AABB\nAA", 0));
++    // Spaces at a break are dropped; an indent at a hard line's start is kept.
++    let fit = f.fit_run("  AA BB\nAA", &spec, 0.0, f32::NAN, 40.0, INF, true);
++    assert_eq!(fit.text, "  AA\nBB\nAA");
++    // Without wrapping only '\n' breaks, and U+200B still is not drawn.
++    let fit = f.fit_run("AA\u{200B}BB", &ladder(&[2], 0, false), 0.0, f32::NAN, 10.0, INF, true);
++    assert_eq!((fit.text.as_str(), fit.width), ("AABB", 40.0));
++}
++
++/// Red with the dropped count left at zero, and with the ellipsis loop
++/// removed (the last line keeps its full width).
++#[test]
++fn a_clamp_keeps_its_lines_ends_with_an_ellipsis_and_counts_what_it_left_out() {
++    let f = fonts();
++    let spec = ladder(&[2], 2, true);
++    let fit = f.fit_run("AAA BBB AAA BBB", &spec, 0.0, f32::NAN, 35.0, INF, true);
++    // Four lines of three; two kept; "BBB\u{2026}" is 40, so "BBB" loses its
++    // last letter to the ellipsis, which then fits in 35.
++    assert_eq!(fit.text, "AAA\nBB\u{2026}");
++    assert_eq!((fit.lines_kept, fit.lines_total), (2, 4));
++    assert_eq!(fit.dropped, 3 + 3 + 1);
++    assert_eq!((fit.width, fit.height), (30.0, 40.0));
++    // A mark goes with its base: "AAB\u{301}\u{2026}" is 45 in a 40 box, and
++    // "AAB\u{2026}" would fit, but B without its accent is another letter.
++    let fit = f.fit_run("AAB\u{301} AAA", &ladder(&[2], 1, true), 0.0, f32::NAN, 40.0, INF, true);
++    assert_eq!(fit.text, "AA\u{2026}");
++    assert_eq!(fit.dropped, 3 + 2);
++}
++
++#[test]
++fn a_face_with_no_ellipsis_ends_a_clamp_with_three_periods() {
++    let mut f = Fonts::new();
++    assert!(f.load(&atlas(4, 20, &[('A', 10), (' ', 10), ('.', 4)], &[])));
++    let fit = f.fit_run("AAAA AAAA", &ladder(&[4], 1, true), 0.0, f32::NAN, 60.0, INF, true);
++    assert_eq!(fit.text, "AAAA...");
++}
++
++/// The box layout reserves is the laid-out text measured: per line, in
++/// order, pair adjustments, advances and tracking. Red with tracking left
++/// out of `Pen`, or with a pair read across a removed U+200B as zero.
++#[test]
++fn a_fitted_block_measures_as_its_laid_out_text() {
++    let mut f = Fonts::new();
++    let glyphs = [('A', 9), ('V', 11), ('W', 13), (' ', 4), (ELLIPSIS, 7)];
++    let pairs = [('A', 'V', -2), ('V', 'A', -1), ('W', 'A', -3), ('A', 'W', 1)];
++    assert!(f.load(&atlas(5, 17, &glyphs, &pairs)));
++    let runs = ["AVAW VAWA WAVA AVWA", "AV\u{200B}AW\u{200B}VA\u{200B}WA", "A V A W A V A W A V"];
++    for run in runs {
++        for clamp in [0u16, 1, 2] {
++            for tracking in [0.0f32, 1.5] {
++                for w in [20.0f32, 37.5, 52.0, 80.0, 1000.0] {
++                    let fit = f.fit_run(run, &ladder(&[5], clamp, true), tracking, f32::NAN, w, INF, true);
++                    let (mw, mh) = f.measure_run(&fit.text, 5, tracking, f32::NAN);
++                    assert_eq!((fit.width, fit.height), (mw, mh), "{run:?} clamp {clamp} tracking {tracking} w {w}");
++                }
++            }
++        }
++    }
++}
++
++#[test]
++fn the_ladder_unpacks_from_its_two_words() {
++    // Slots 21, 22, 23, 24 | 25: one byte each, slot + 1.
++    let fit0 = 22 | (23 << 8) | (24 << 16) | (25 << 24);
++    let spec = FitSpec::of(9, fit0, 26, 0, 0).unwrap();
++    assert_eq!(&spec.slots[..spec.rungs as usize], &[21, 22, 23, 24, 25]);
++    assert!(spec.ladder);
++    // No ladder, a clamp: the one rung is the node's own slot.
++    let spec = FitSpec::of(9, 0, 0, 3, 0).unwrap();
++    assert_eq!((spec.slots[0], spec.rungs, spec.ladder, spec.clamp), (9, 1, false, 3));
++    assert_eq!(FitSpec::of(9, 0, 0, 0, 0), None);
++}
++
++/// Text nodes in a 1:1 Ui: the record layout writes, what paint draws, and
++/// the export a host reads. Red with `emit_text` drawing the style's slot.
++#[test]
++fn layout_records_the_fit_and_paint_draws_it() {
++    let mut ui = Ui::new();
++    ui.set_viewport(400.0, 300.0);
++    let big = [('A', 10), ('B', 10), (' ', 10), (ELLIPSIS, 10)];
++    let small = [('A', 5), ('B', 5), (' ', 5), (ELLIPSIS, 5)];
++    assert!(ui.load_font_atlas(&atlas(2, 20, &big, &[])));
++    assert!(ui.load_font_atlas(&atlas(3, 10, &small, &[])));
++    let text = ui.create_node(spec::NodeType::Text as u8);
++    ui.insert_before(spec::ROOT_ID, text, 0);
++    ui.set_prop(text, spec::prop::WIDTH, 50.0);
++    ui.set_prop(text, spec::prop::HEIGHT, 20.0);
++    ui.set_prop(text, spec::prop::FONT_SLOT, 2.0);
++    ui.set_prop(text, spec::prop::TEXT_FIT0, (3 | (4 << 8)) as f64);
++    ui.set_prop(text, spec::prop::TEXT_WRAP, 1.0);
++    ui.set_prop(text, spec::prop::TEXT_COLOR, 0xffff_ffffu32 as f64);
++    ui.set_text(text, "AAAA AAAA");
++    ui.tick();
++    let words = ui.draw().words.clone();
++    // One GLYPH_RUN, on slot 3: nine glyphs on one line.
++    let at = words.iter().position(|&w| w == spec::draw_op::GLYPH_RUN).expect("a glyph run");
++    assert_eq!(words[at + 1] & 0xff, 3);
++    assert_eq!(words[at + 1] >> 16, 9);
++    let summary = ui.debug_text_fit(text);
++    assert_eq!(summary & 0xff, 3, "slot drawn");
++    assert_eq!((summary >> 8) & 0xf, 1, "rung");
++    assert_eq!((summary >> 12) & 0xf, 2, "rungs");
++    assert_eq!((summary >> 16) & 7, 0b111, "fitted, ladder, wraps");
++    assert_eq!(ui.debug_text_fit_word(0), 1 | (1 << 16));
++    assert_eq!((ui.debug_text_fit_word(8), ui.debug_text_fit_word(9), ui.debug_text_fit_word(10)), (2, 3, -1));
++    // A node that declares nothing holds no record.
++    let plain = ui.create_node(spec::NodeType::Text as u8);
++    ui.insert_before(spec::ROOT_ID, plain, 0);
++    ui.set_prop(plain, spec::prop::FONT_SLOT, 2.0);
++    ui.set_text(plain, "AB");
++    ui.tick();
++    ui.draw();
++    assert_eq!(ui.debug_text_fit(plain), -1);
++    // The clamp's count reaches the export.
++    ui.set_prop(text, spec::prop::LINE_CLAMP, 1.0);
++    ui.set_prop(text, spec::prop::TEXT_FIT0, 0.0);
++    ui.set_text(text, "AAAA BBBB AAAA");
++    ui.tick();
++    ui.draw();
++    assert!(ui.debug_text_fit(text) >= 0);
++    let lines = ui.debug_text_fit_word(0);
++    assert_eq!((lines & 0xffff, lines >> 16), (1, 3));
++    // "AAAA\u{2026}" is 50 px, the box's width, so no letter gives way.
++    assert_eq!(ui.debug_text_fit_word(1), 4 + 4);
++    let mut drawn = String::new();
++    drawn.push_str("AAAA\u{2026}");
++    assert_eq!(ui.tree.get(text).unwrap().text_fit.as_ref().unwrap().text, drawn);
++}
+diff --git a/engine/core/src/tree.rs b/engine/core/src/tree.rs
+index 01ef7e89..5be2da31 100644
+--- a/engine/core/src/tree.rs
++++ b/engine/core/src/tree.rs
+@@ -118,6 +118,10 @@ pub struct Node {
+     /// provider per node per layout, never re-decided at paint time
+     /// (docs/BACKENDS.md).
+     pub text_native: bool,
++    /// Text nodes that declare a fit, a clamp or wrapping: what the last
++    /// layout chose (`text_fit::Fitted`) — the slot and the laid-out text
++    /// paint draws, and what the clamp left out. None for every other node.
++    pub text_fit: Option<alloc::boxed::Box<crate::text_fit::Fitted>>,
+ }
+ 
+ impl Node {
+@@ -149,6 +153,7 @@ impl Node {
+             layout_mode: LAYOUT_LIVE,
+             region_root: false,
+             text_native: false,
++            text_fit: None,
+         }
+     }
+ 
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index e4d9e41c..761a55c1 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -62,6 +62,10 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("textAlign", 98, "i32"),
+     ("lineHeight", 99, "f32"),
+     ("tracking", 100, "f32"),
++    ("textFit0", 101, "i32"),
++    ("textFit1", 102, "i32"),
++    ("lineClamp", 103, "i32"),
++    ("textWrap", 104, "i32"),
+     ("translateX", 128, "f32"),
+     ("translateY", 129, "f32"),
+     ("scale", 130, "f32"),
+diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
+index 9c983148..2d4cf324 100644
+--- a/engine/wasm/src/lib.rs
++++ b/engine/wasm/src/lib.rs
+@@ -644,6 +644,18 @@ pub extern "C" fn ui_debug_rect_wh() -> i32 {
+     ui().debug_rect_wh()
+ }
+ 
++/// Fit record of a text node (`text_fit`): its summary, and it is selected
++/// for `ui_debug_text_fit_word`. -1 when it holds none.
++#[no_mangle]
++pub extern "C" fn ui_debug_text_fit(id: i32) -> i32 {
++    ui().debug_text_fit(id)
++}
++
++#[no_mangle]
++pub extern "C" fn ui_debug_text_fit_word(i: i32) -> i32 {
++    ui().debug_text_fit_word(i as u32)
++}
++
+ #[no_mangle]
+ pub extern "C" fn ui_debug_pause(on: i32) {
+     ui().debug_pause(on != 0)
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index 519c446e..9d743ab4 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -28,6 +28,7 @@ import {
+   BLUR_MAX,
+   PAINT_MAX_STOPS,
+   PATH_DASH_MAX,
++  TEXT_FIT_MAX_RUNGS,
+   TRANSITION_MASK_ALL,
+   abgr,
+   animBit,
+@@ -300,6 +301,10 @@ interface VariantAcc {
+   clipText?: boolean;
+   decls: Decl[];
+   sizePx?: number;
++  /** `text-fit-[..]`: the ladder's sizes, largest first. */
++  fitPx?: number[];
++  /** A `text-fit-[..]` with more rungs than a node carries, refused below. */
++  fitTooLong?: { tok: string; ladder: number[] };
+   bold?: boolean;
+   trackingWide?: boolean;
+   roundedFull?: boolean;
+@@ -393,6 +398,67 @@ const ARBITRARY_F32_PROPS: Record<string, number> = {
+  * Parse ONE utility token (variant prefix already stripped) into the
+  * accumulator. Returns false when the token is not a supported utility.
+  */
++/**
++ * A `text-fit-[..]` ladder, largest first, or null when it does not parse.
++ *
++ * Two forms. A list, `[88,76,64]` (`,` or `_` between sizes), is the ladder
++ * as written, sorted and deduplicated. A range, `[48..88]`, is the ten-percent
++ * ladder from its top: each rung the one above times 9/10 rounded up, in
++ * integers (one less when that does not move it), until the next would be at
++ * or below the bottom, which is the last rung — `[48..88]` is
++ * 88, 80, 72, 65, 59, 54, 49, 48. Every rung is a baked slot, and the baker
++ * bakes every collected character into every slot, so a ladder costs its
++ * length in atlases; more than TEXT_FIT_MAX_RUNGS does not parse, and the
++ * list form is how to say which ones.
++ */
++export function parseFitLadder(body: string, anyLength = false): number[] | null {
++  const size = (t: string): number | null => {
++    const m = /^(\d+(?:\.\d+)?)(?:px)?$/.exec(t);
++    if (!m) return null;
++    const v = parseFloat(m[1]!);
++    return v > 0 && v <= 512 ? v : null;
++  };
++  let rungs: number[];
++  const range = /^(\d+)(?:px)?\.\.(\d+)(?:px)?$/.exec(body);
++  if (range) {
++    const lo = parseInt(range[1]!, 10);
++    const hi = parseInt(range[2]!, 10);
++    if (!(lo >= 1 && hi <= 512 && lo <= hi)) return null;
++    rungs = [hi];
++    for (let r = hi; r > lo; ) {
++      let next = Math.floor((r * 9 + 9) / 10);
++      if (next >= r) next = r - 1;
++      r = next <= lo ? lo : next;
++      rungs.push(r);
++    }
++  } else {
++    const parts = body.split(/[,_]/);
++    const sizes = parts.map(size);
++    if (parts.length === 0 || sizes.some((v) => v === null)) return null;
++    rungs = [...new Set(sizes as number[])].sort((a, b) => b - a);
++  }
++  if (rungs.length === 0 || (!anyLength && rungs.length > TEXT_FIT_MAX_RUNGS)) return null;
++  return rungs;
++}
++
++/** Ladder slots packed as spec.ts PROP.textFit0/textFit1 carry them. */
++function packFitSlots(slots: readonly number[]): [number, number] {
++  const word = (part: readonly number[]): number =>
++    part.reduce((w, slot, i) => w | ((slot + 1) << (8 * i)), 0) >>> 0;
++  return [word(slots.slice(0, 4)), word(slots.slice(4, 8))];
++}
++
++/** Slots a packed textFit0/textFit1 word names. */
++function unpackFitSlots(word: number): number[] {
++  const out: number[] = [];
++  for (let i = 0; i < 4; i++) {
++    const b = (word >>> (8 * i)) & 0xff;
++    if (b === 0) break;
++    out.push(b - 1);
++  }
++  return out;
++}
++
+ function parseUtility(tok: string, acc: VariantAcc): boolean {
+   const D = acc.decls;
+ 
+@@ -429,6 +495,34 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+     case "font-bold": acc.bold = true; return true;
+     case "font-mono": acc.mono = true; return true;
+     case "tracking-wide": acc.trackingWide = true; return true;
++    // Wrap the run at its break opportunities (spaces, U+200B) to the box
++    // width; `text-nowrap` is the default, a run breaking only at '\n'.
++    case "text-wrap": D.push([PROP.textWrap, int(1)]); return true;
++    case "text-nowrap": D.push([PROP.textWrap, int(0)]); return true;
++    case "line-clamp-none": D.push([PROP.lineClamp, int(0)]); return true;
++  }
++  {
++    // `line-clamp-N` / `line-clamp-[N]`: keep N lines, the last ending in an
++    // ellipsis when the clamp drops text.
++    const clamp = /^line-clamp-(?:(\d+)|\[(\d+)\])$/.exec(tok);
++    if (clamp) {
++      const n = parseInt(clamp[1] ?? clamp[2]!, 10);
++      if (!(n >= 1 && n <= 0xffff)) return false;
++      D.push([PROP.lineClamp, int(n)]);
++      return true;
++    }
++  }
++  {
++    const fit = /^text-fit-\[([^\]]*)\]$/.exec(tok);
++    if (fit) {
++      const ladder = parseFitLadder(fit[1]!, true);
++      if (ladder === null) return false;
++      // A range that parses into more rungs than a node carries is refused
++      // with its rungs named, once the literal is known to be a class.
++      if (ladder.length > TEXT_FIT_MAX_RUNGS) acc.fitTooLong = { tok, ladder };
++      else acc.fitPx = ladder;
++      return true;
++    }
+   }
+   if (tok in SHADOWS) { D.push([PROP.shadow, int(SHADOWS[tok])]); return true; }
+   if (parseFilterUtility(tok, D)) return true;
+@@ -1491,17 +1585,43 @@ export function parseClassLiteral(
+     }
+   }
+ 
++  for (const v of [acc.base, acc.focus, acc.active]) {
++    if (v.fitTooLong === undefined || (utilityTokens <= 1 && !options.fromClassAttribute)) continue;
++    const { tok, ladder } = v.fitTooLong;
++    throw new Error(
++      `PocketJS tailwind: \`${tok}\` in "${literal}" is ${ladder.length} rungs (${ladder.join(", ")}); ` +
++        `a node carries at most ${TEXT_FIT_MAX_RUNGS}, and each is an atlas the build bakes — ` +
++        `narrow the range or name the sizes, e.g. \`text-fit-[${ladder.filter((_, i) => i % 2 === 0).join(",")}]\`.`,
++    );
++  }
++
+   // resolve pseudo-utilities per variant (font slot / tracking / rounded-full)
+   const base = acc.base;
+   for (const name of ["base", "focus", "active"] as const) {
+     const v = acc[name];
+-    const effPx = v.sizePx ?? base.sizePx ?? 16;
++    if (v.fitPx !== undefined && v.sizePx !== undefined) {
++      throw new Error(
++        `PocketJS tailwind: \`text-fit-[..]\` names the node's sizes, so a text size beside it in ` +
++          `"${literal}" has no meaning — drop the size or the fit.`,
++      );
++    }
++    const effFit = v.fitPx ?? (v.sizePx === undefined ? base.fitPx : undefined);
++    const effPx = effFit?.[0] ?? v.sizePx ?? base.sizePx ?? 16;
+     const effBold = v.bold ?? base.bold ?? false;
+     const effMono = v.mono ?? base.mono ?? false;
+     const effFace = v.face ?? base.face;
+-    if (v.sizePx !== undefined || v.bold !== undefined || v.mono !== undefined || v.face !== undefined) {
++    const fontTouched =
++      v.sizePx !== undefined || v.fitPx !== undefined || v.bold !== undefined || v.mono !== undefined || v.face !== undefined;
++    if (fontTouched) {
+       v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold, effMono, effFace))]);
+     }
++    if (effFit !== undefined && fontTouched) {
++      const [fit0, fit1] = packFitSlots(effFit.map((px) => fontSlotFor(px, effBold, effMono, effFace)));
++      v.decls.push([PROP.textFit0, int(fit0)], [PROP.textFit1, int(fit1)]);
++    } else if (v.sizePx !== undefined && base.fitPx !== undefined && name !== "base") {
++      // A variant that names a size leaves the base's ladder.
++      v.decls.push([PROP.textFit0, int(0)], [PROP.textFit1, int(0)]);
++    }
+     // Gradient paint: kind, angle and the default via position, decided once
+     // the whole literal is known. A legacy `bg-gradient-to-*` direction
+     // becomes the angle when the paint path is taken; `bg-clip-text` over a
+@@ -1585,10 +1705,15 @@ export interface CompiledStyles {
+   ids: Record<string, number>;
+   /** styles.bin bytes (encodeStyleTable). */
+   bin: Uint8Array;
+-  /** Font slots referenced by any record (always includes DEFAULT_FONT_SLOT). */
++  /** Font slots referenced by any record (always includes DEFAULT_FONT_SLOT),
++   *  every rung of a `text-fit-[..]` ladder among them. */
+   usedFontSlots: number[];
+   /** `<Path>` key -> PATH TABLE index + 1 (pocket-motion; styles.bin PATH TABLE order). */
+   paths: Record<string, number>;
++  /** Characters the core draws for a record and no source literal has to
++   *  carry: U+2026, which ends a clamped run, when any record clamps. Empty
++   *  otherwise, so a build with no clamp bakes the characters it did. */
++  drawnCodepoints: number[];
+ }
+ 
+ /** Compile candidate literals: keep the ones that parse, dedupe identical records. */
+@@ -1609,6 +1734,7 @@ export function compileClasses(
+   const ids: Record<string, number> = {};
+   const byCanon = new Map<string, number>();
+   const slots = new Set<number>([DEFAULT_FONT_SLOT]);
++  let clampsText = false;
+ 
+   /** `class=` literals refused for tokens that do not parse, in candidate order. */
+   const refused: UncompiledClass[] = [];
+@@ -1636,7 +1762,11 @@ export function compileClasses(
+     ids[lit] = id;
+     for (const v of [rec.base, rec.focus, rec.active]) {
+       if (!v) continue;
+-      for (const p of v) if (p.prop === PROP.fontSlot) slots.add(p.value);
++      for (const p of v) {
++        if (p.prop === PROP.fontSlot) slots.add(p.value);
++        if (p.prop === PROP.textFit0 || p.prop === PROP.textFit1) for (const s of unpackFitSlots(p.value)) slots.add(s);
++        if (p.prop === PROP.lineClamp && p.value > 0) clampsText = true;
++      }
+     }
+   }
+   if (refused.length > 0) throw new UncompiledClassError(refused);
+@@ -1651,6 +1781,7 @@ export function compileClasses(
+     bin: encodeStyleTable(records, anims, (options.paths ?? []).map((p) => p.entry)),
+     usedFontSlots: [...slots].sort((a, b) => a - b),
+     paths: pathIds,
++    drawnCodepoints: clampsText ? [0x2026] : [],
+   };
+ }
+ 
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index c24edbf2..13be2acf 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -57,6 +57,10 @@ export interface MicroTsStyleProps {
+   textAlign?: i32;
+   lineHeight?: Px | MicroTsIntegerInput;
+   tracking?: Px | MicroTsIntegerInput;
++  textFit0?: i32;
++  textFit1?: i32;
++  lineClamp?: i32;
++  textWrap?: i32;
+   translateX?: Px | MicroTsIntegerInput;
+   translateY?: Px | MicroTsIntegerInput;
+   scale?: MicroTsFloatInput;
+diff --git a/tools/build.ts b/tools/build.ts
+index dcf0f1d9..6f0bbebe 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -578,7 +578,7 @@ for (const [name, f] of Object.entries(faceFlags)) {
+ }
+ 
+ const atlases = await bakeAtlases({
+-  codepoints: new Set([...codepoints, ...fontConfig.codepoints]),
++  codepoints: new Set([...codepoints, ...fontConfig.codepoints, ...styles.drawnCodepoints]),
+   slots: styles.usedFontSlots,
+   extraChars,
+   rasterDensity,
