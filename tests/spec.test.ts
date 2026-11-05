@@ -370,7 +370,7 @@ describe("--spec on the CLI", () => {
 
   test("trace --out is a usage error, not a silent ignore", () => {
     expect(() => parseArgs(["trace", "compositions/copy", "--out", "/tmp/nope.json"])).toThrow(
-      /--out is only accepted by frame, render or snapshot/,
+      /--out is only accepted by frame, render, snapshot or concat/,
     );
   });
 

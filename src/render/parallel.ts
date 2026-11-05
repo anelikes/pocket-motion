@@ -1,5 +1,5 @@
 /**
- * Frame-parallel rendering across processes.
+ * Frame-parallel rendering across processes: `render --workers N`.
  *
  * The plan proposed band-parallel rasterisation inside a frame, which would
  * need an RGBA window target in the Rust core and threads sharing one `Ui`.
@@ -7,126 +7,107 @@
  * against ~5 ms of rasterisation, so a worker can fold from frame 0 to the
  * start of its own range for almost nothing and only rasterise its share.
  *
- * A worker covering frames [900, 1800) of a 1800-frame reel ticks 1800 times
- * (~54 ms) and rasterises 900. The redundant folding is under 1% of its work,
- * and the whole thing needs no change to the core.
- *
- * Each worker is a fresh process with its own wasm instance, so nothing is
- * shared and nothing needs locking. The parent stitches the segments and
- * checks the concatenated frame hashes against the sequence a single-threaded
- * run produces — parallelism that changed a pixel would be caught, not assumed.
+ * EACH WORKER IS `render --range`, the command a distributed render runs on
+ * another machine, spawned here as a child of this Bun. So `--workers` is
+ * not a second way to split a film: it is N segment renders and the join
+ * `concat` runs (`src/render/segment.ts`), on one machine, and every claim the
+ * join makes about segments from elsewhere it makes about these. Each child
+ * is a fresh process with its own wasm instance, so nothing is shared and
+ * nothing needs locking; the one thing two children could race on — a
+ * footage ingest writing its cache — the caller warms before spawning.
  */
 
-import { FrameHashSequence, type FrameHash } from "./hash.ts";
-import type { RenderOptions } from "./render.ts";
 import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { MIN_SEGMENT_FRAMES, segmentManifestPath, splitRange } from "./segment.ts";
 
-export interface ParallelRenderOptions
-  extends Omit<RenderOptions, "onProgress" | "onFrameBoundary" | "wrapOps" | "setup"> {
-  /** Worker processes. Defaults to the CPU count, capped at the frame count. */
-  readonly workers?: number;
-  /** Directory for per-worker segments. Defaults to a temp dir beside the output. */
-  readonly scratchDir?: string;
-}
+const CLI = fileURLToPath(new URL("../cli/main.ts", import.meta.url));
 
-export interface ParallelRenderResult {
-  readonly frames: number;
+export interface SegmentWorkersOptions {
+  /** The composition directory each worker renders. */
+  readonly dir: string;
+  /** The film's frame count — the range being split. */
+  readonly filmFrames: number;
   readonly workers: number;
-  readonly frameHashes: readonly FrameHash[];
-  readonly digest: FrameHash;
-  readonly outputPath?: string;
+  /** Where the segments go; the caller owns and removes it. */
+  readonly scratchDir: string;
+  /** Appended to each segment's name: `.mp4`, or `""` for a png-seq directory. */
+  readonly extension: string;
+  /**
+   * Flags every worker is given as well as `--range` and `--out`: the
+   * format, `--alpha`, and the shared flags that decide the picture. A
+   * worker resolves the composition itself, so a flag left out here is a
+   * worker rendering another film — which the join's identity check refuses.
+   */
+  readonly forward: readonly string[];
+}
+
+export interface WorkerReport {
+  readonly first: number;
+  readonly last: number;
+  /** The segment's manifest — what the join reads. */
+  readonly manifestPath: string;
+  /** This worker's wall time, for spotting a straggler. */
   readonly elapsedMs: number;
-  readonly msPerFrame: number;
-  /** Per-worker wall time, for spotting a straggler. */
-  readonly workerMs: readonly number[];
 }
 
-interface WorkerReport {
-  readonly start: number;
-  readonly end: number;
-  readonly hashes: readonly FrameHash[];
-  readonly elapsedMs: number;
+/** The argv of one worker: a `render --range` command line. */
+export function workerArgv(o: SegmentWorkersOptions, first: number, last: number, out: string): string[] {
+  return [
+    process.execPath, CLI, "render", o.dir,
+    "--range", `${first}..${last}`,
+    "--out", out,
+    "--json",
+    ...o.forward,
+  ];
 }
 
-/** Contiguous ranges, remainder spread over the first few workers. */
-export function splitRange(frames: number, workers: number): Array<[number, number]> {
-  const n = Math.max(1, Math.min(workers, frames));
-  const base = Math.floor(frames / n);
-  const extra = frames % n;
-  const out: Array<[number, number]> = [];
-  let at = 0;
-  for (let i = 0; i < n; i++) {
-    const size = base + (i < extra ? 1 : 0);
-    out.push([at, at + size]);
-    at += size;
-  }
-  return out;
-}
-
-const WORKER = fileURLToPath(new URL("./parallel-worker.ts", import.meta.url));
-
-export async function renderParallel(
-  options: ParallelRenderOptions,
-): Promise<ParallelRenderResult> {
-  const started = performance.now();
-  const workers = Math.max(1, Math.min(options.workers ?? navigator.hardwareConcurrency ?? 4, options.durationFrames));
-  const ranges = splitRange(options.durationFrames, workers);
-  const scratch = options.scratchDir ?? `${options.outputPath ?? "/tmp/motion"}.parts`;
-  await Bun.$`mkdir -p ${scratch}`.quiet();
-
+/**
+ * Render the film as `workers` segments at once. Resolves with one report per
+ * segment in film order, or rejects with the first worker's failure after
+ * stopping the rest.
+ */
+export async function renderSegments(o: SegmentWorkersOptions): Promise<WorkerReport[]> {
+  const ranges = splitRange(o.filmFrames, o.workers, MIN_SEGMENT_FRAMES);
+  const procs: Array<ReturnType<typeof Bun.spawn>> = [];
   const jobs = ranges.map(async ([start, end], i): Promise<WorkerReport> => {
-    const segment = options.outputPath ? `${scratch}/part-${String(i).padStart(4, "0")}.mp4` : undefined;
-    const payload = JSON.stringify({ ...options, outputPath: segment, start, end });
-    const proc = Bun.spawn(["bun", WORKER], {
-      stdin: "pipe",
+    const out = join(o.scratchDir, `segment-${String(i).padStart(4, "0")}${o.extension}`);
+    const t0 = performance.now();
+    const proc = Bun.spawn(workerArgv(o, start, end - 1, out), {
       stdout: "pipe",
       stderr: "pipe",
+      // Explicit: a child spawned without `env` gets the environment this
+      // process STARTED with, not what it holds now (Bun 1.3.11).
       env: { ...process.env },
     });
-    proc.stdin.write(payload);
-    await proc.stdin.end();
-    const [out, err, code] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
+    procs.push(proc);
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout as ReadableStream).text(),
+      new Response(proc.stderr as ReadableStream).text(),
       proc.exited,
     ]);
     if (code !== 0) {
-      throw new Error(`PocketJS Motion: worker ${i} (frames ${start}..${end}) exited ${code}\n${err.trim()}`);
+      let error = stderr.trim();
+      try {
+        error = (JSON.parse(stdout) as { error?: string }).error ?? error;
+      } catch {
+        /* not JSON: stderr is the account */
+      }
+      throw new Error(`worker ${i} (render --range ${start}..${end - 1}) exited ${code}: ${error}`);
     }
-    return JSON.parse(out) as WorkerReport;
+    return { first: start, last: end - 1, manifestPath: segmentManifestPath(out), elapsedMs: performance.now() - t0 };
   });
-
-  const reports = (await Promise.all(jobs)).sort((a, b) => a.start - b.start);
-
-  const seq = new FrameHashSequence();
-  const hashes: FrameHash[] = [];
-  for (const r of reports) hashes.push(...r.hashes);
-  for (const h of hashes) seq.pushHash(h);
-
-  if (options.outputPath) {
-    const list = `${scratch}/concat.txt`;
-    await Bun.write(
-      list,
-      ranges.map((_, i) => `file 'part-${String(i).padStart(4, "0")}.mp4'`).join("\n") + "\n",
-    );
-    const cat = Bun.spawn(
-      ["ffmpeg", "-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", options.outputPath],
-      { stdout: "pipe", stderr: "pipe" },
-    );
-    if ((await cat.exited) !== 0) {
-      throw new Error(`PocketJS Motion: concat failed\n${(await new Response(cat.stderr).text()).trim()}`);
+  try {
+    return await Promise.all(jobs);
+  } catch (e) {
+    for (const p of procs) {
+      try {
+        p.kill(9);
+      } catch {
+        /* already gone */
+      }
     }
+    await Promise.allSettled(procs.map((p) => p.exited));
+    throw e;
   }
-
-  const elapsedMs = performance.now() - started;
-  return {
-    frames: options.durationFrames,
-    workers: ranges.length,
-    frameHashes: hashes,
-    digest: seq.digest(),
-    outputPath: options.outputPath,
-    elapsedMs,
-    msPerFrame: elapsedMs / options.durationFrames,
-    workerMs: reports.map((r) => r.elapsedMs),
-  };
 }

@@ -1399,6 +1399,67 @@ because the 4444 bitstream is 12-bit; and VP9 stores alpha out of band, so an
 alpha WebM's stream still reports `pix_fmt=yuv420p` and the evidence is the
 container's `alpha_mode=1`.
 
+### A film in pieces: `--workers`, `--range` and `concat`
+
+A **segment** runs every frame before its own exactly as a whole render runs
+it — the frame boundary, the guest turn, the ticks — and draws, hashes and
+encodes none of them; rasterisation is where a frame's cost is, and it is
+skipped. So a film splits into segments on as many processes or machines as
+you have, and the pieces join to the film a single render would have made:
+**the joined digest is the one `trace` reports**, held hash for hash by
+`tests/segments.test.ts`.
+
+```bash
+bun src/cli/main.ts render compositions/smoke --frames 60 --workers 3 --out smoke.mp4  # three processes, one film
+bun src/cli/main.ts render compositions/smoke --frames 60 --range 30..59 --out part-b.mp4  # one segment: frames 30 to 59, both included
+bun src/cli/main.ts render compositions/smoke --frames 60 --range 0..29 --out part-a.mp4
+bun src/cli/main.ts concat compositions/smoke part-b.mp4 part-a.mp4 --frames 60 --out joined.mp4  # any order; refused unless they are one film
+bun src/cli/main.ts concat compositions/smoke part-a.mp4 --frames 60 --out short.mp4  # exit 1: frames 30..59 are in no segment
+```
+
+`--range` writes the segment and `<out>.segment.json` beside it: the
+segment's frame hashes, the film's input identity — the same value `trace`
+prints, frame count included — the hash algorithm and the encoder argv. Move
+the two together; `concat` finds the file by name beside its manifest. A
+segment has no `digest`, because the digest of some frames is not a film's,
+and no sound.
+
+`concat` names the composition because two things come from it: the identity
+every segment must carry, and the sound. It **refuses** before joining a byte
+when the segments are not one film — two identities, or not this
+composition's (`join.identity`, naming which components moved: render every
+segment with the same flags, `--frames` included); frames in no segment
+(`join.gap`); frames in two (`join.overlap`); a different format, alpha, hash
+or encoder (`join.encoding`); a file changed since its manifest was written
+(`join.media`); bitstreams a stream copy cannot join (`join.bitstream`). The
+last one is measured, not assumed: libx264 writes its reorder delay only for
+a segment of three or more frames, so a one- or two-frame segment after a
+longer one cannot be copied in, and `--workers` never cuts one that short.
+
+The join is a **stream copy** — each segment is its own encode, so it starts
+on a keyframe and nothing refers across a boundary, and no codec here needs
+pre-roll — and then the joined file is **read back**: one packet per frame,
+decode timestamps increasing, a keyframe at every segment start,
+presentation timestamps exactly `i / fps`, and every decoded frame equal to
+the frame its segment decodes to on its own. WebM is joined with its
+timestamps rewritten from the frame index, because Matroska stores
+milliseconds and the demuxer's rounded offsets put frames 1 ms early after a
+segment whose length is not a whole number of them. `png-seq` segments name
+their PNGs by film frame and join by copying them into one directory.
+
+The joined file's **bytes are not a one-shot render's**: the encoder's rate
+control and keyframe placement see one segment at a time. The pixels before
+the encoder are what the digest is about, and those are the same.
+
+**Sound is muxed once, by `concat` or `--workers`, over the joined film** —
+the same mix a one-shot render muxes, decoded-audio hash for hash. Footage
+is the one input `concat` takes from the segments rather than measuring: its
+identity components are hashes of ingest artifacts, `concat` ingests
+nothing, and `--json` lists them under `identityFromSegments`. `--range`
+refuses `--spec`, because each staging of a job builds under a fresh
+directory name that lands in its identity; `--workers` with `--spec` shares
+one staging and is accepted.
+
 ### What `--json` will and will not say about your machine
 
 Every `--json` envelope leaves through one function (`src/cli/emit.ts`), so

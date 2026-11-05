@@ -251,7 +251,8 @@ browser.
 | `frame --at N` | one frame as a PNG |
 | `trace` | the per-frame hash sequence, the digest, and input identity |
 | `diff` | the first divergent frame between two traces |
-| `render` | the video — `--format mp4\|webm\|mov\|png-seq`, `--alpha` for a channel mov/webm/png-seq can carry |
+| `render` | the video — `--format mp4\|webm\|mov\|png-seq`, `--alpha` for a channel mov/webm/png-seq can carry; `--workers N` splits it over N processes, `--range A..B` renders one segment |
+| `concat` | join `render --range` segments from anywhere into the film `trace` reports, refused on mixed identity, a gap or an overlap; sound muxed once |
 | `sound` | what sound is declared, whether each file resolves, and `--verify` that each element reached a mix |
 | `preview` | a player at `/watch` and a frame debugger at `/`, serving the same bytes `frame` writes |
 
@@ -271,7 +272,7 @@ browser.
 - `MOTION_RUN_ID` in the environment is echoed back as `runId` on every
   envelope, so one agent turn's `lint`, `check`, `trace` and `verify` join up.
 - The same objects come back from code: `import { build, trace, render,
-  verify, doctor } from "pocket-motion"` (`src/api.ts`) runs the command
+  concat, verify, doctor } from "pocket-motion"` (`src/api.ts`) runs the command
   through the CLI's own dispatch and returns what `--json` would have
   printed, redaction and `runId` included. `tests/api.test.ts` holds each
   function equal to the CLI. `render`'s object carries `trace`'s `digest`

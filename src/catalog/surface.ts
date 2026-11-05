@@ -3187,6 +3187,57 @@ export const SURFACE: readonly CapabilityRow[] = [
     probes: [],
     pinned: ['alpha ? "yuva444p10le" : "yuv422p10le"', 'alpha ? "yuva420p" : "yuv420p"'],
   },
+  {
+    id: "output.range",
+    group: "output",
+    declaredIn: "render command",
+    key: "--range <first>..<last>",
+    required: false,
+    defaultValue: "the whole film",
+    constraint:
+      "renders frames first to last, both included, as a SEGMENT: every earlier frame runs its frame boundary, guest turn and ticks exactly as a whole render runs them and is not drawn, hashed or encoded. Writes the file and <out>.segment.json beside it — the frame hashes, the film's input identity (durationFrames included), the hash algorithm and the encoder argv — and muxes no sound. The JSON carries no `digest`, because the digest of some frames is not `trace`'s. Refused past the film's last frame, with --workers, and with --spec (each staging of a job has its own identity). Held to `trace` hash for hash in tests/segments.test.ts",
+    source: "src/cli/commands/render.ts:146",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: ["export function parseRange(", "--range cannot be used with --spec"],
+  },
+  {
+    id: "output.concat",
+    group: "output",
+    declaredIn: "concat command",
+    key: "concat <composition-dir> <segment>... --out <file>",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "joins `render --range` segments, in any order, into one film and reports the digest `trace` reports for that identity. Refuses before joining: segments of two identities or not the composition's (`join.identity`, naming the components), frames in no segment (`join.gap`), frames in two (`join.overlap`), a different format, alpha, hash algorithm, encoder argv or ffmpeg (`join.encoding`), a file that is not the bytes its manifest recorded (`join.media`), and bitstreams that differ in codec, picture, time base, parameter set or reorder delay (`join.bitstream` — libx264 medium writes no reorder delay for a segment of one or two frames). Joins by stream copy (WebM with its timestamps rewritten from the packet index, because Matroska's milliseconds drift a segment boundary by 1 ms) or, for png-seq, by file copy, then reads the result back: one packet per frame, increasing decode timestamps, a keyframe at every segment start, presentation timestamps exactly i/fps, every decoded frame equal to its segment's own decode. Muxes the declared sound once, over the joined film. Footage identity components are taken from the segments, since concat ingests nothing, and listed in `identityFromSegments`",
+    source: "src/render/segment.ts:260",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: [
+      "export function planJoin(",
+      'code: "join.gap"',
+      'code: "join.overlap"',
+      'code: "join.identity"',
+      "setts=ts=round(N/(${fps}*TB))",
+    ],
+  },
+  {
+    id: "output.workers",
+    group: "output",
+    declaredIn: "render command",
+    key: "--workers N",
+    required: false,
+    defaultValue: "1 process, no split",
+    constraint:
+      "renders the film as N `render --range` child processes into a scratch directory beside --out, then runs the join `concat` runs and muxes the sound once. A footage ingest is warmed first so no two workers write its cache. No segment is shorter than MIN_SEGMENT_FRAMES (3), so a short film gets fewer workers than asked. `digest` and `identity` are `trace`'s; `workers` gives each segment's range and wall time and `join` what reading the joined file back found",
+    source: "src/render/parallel.ts:70",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: ["export async function renderSegments(", '"render", o.dir', '"--range", `${first}..${last}`'],
+  },
 
   // -------------------------------------------------------------------------
   // Layout finding codes (read off a rendered frame, not declared)

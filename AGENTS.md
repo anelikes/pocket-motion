@@ -1015,7 +1015,7 @@ mechanisms with the file or test beside them.
   wrong — the hit is unreachable, and `build.ts` iterates the field, so an
   `undefined` would throw rather than go quiet.
 - **The API is the CLI's `--json`, returned.** `src/api.ts` exports `build`,
-  `trace`, `render`, `verify` and `doctor`. Each turns its options into the
+  `trace`, `render`, `concat`, `verify` and `doctor`. Each turns its options into the
   argv the command would be typed with, runs it through `dispatch`
   (`src/cli/main.ts` — the parser, the command, and the conversion of a
   thrown error into `{ ok: false, error, exitCode }` that `main` used to hold
@@ -1032,6 +1032,41 @@ mechanisms with the file or test beside them.
   measured: one job staged twice moved both the `toolchain` and the `bundle`
   components, because the staged directory's random name is in
   `build.json`'s argv and in the bundle's module comments.
+- **A film split into segments joins to the film `trace` reports, and the
+  join reads its own output back.** `render --range <first>..<last>`
+  renders a segment: every earlier frame runs its boundary, guest turn and
+  ticks exactly as a whole render runs them and is not drawn
+  (`render()`'s `range`, `src/render/render.ts`), and the segment is written
+  with `<out>.segment.json` — its frame hashes, the film's identity, the hash
+  algorithm and the encoder argv. `concat` joins segments from anywhere;
+  `render --workers N` is N `render --range` children and the same join
+  (`src/render/parallel.ts`, `src/render/segment.ts`), so the local path and
+  the distributed one are one path. `planJoin` refuses mixed identity, gaps,
+  overlaps and mixed encoding before a byte is joined; the media is checked
+  against its manifest; and a measured bitstream mismatch is refused: libx264
+  writes no reorder delay for a segment of one or two frames, and a stream
+  copy across two delays had the demuxer rewriting decode timestamps. After
+  the stream copy the file is read back — one packet per frame, increasing
+  decode timestamps, a keyframe at every segment start, presentation
+  timestamps exactly `i / fps`, every decoded frame equal to its segment's
+  own decode — and that read-back is what found the join's real defect: the
+  concat demuxer offsets each file by its container duration, an x264 MP4's
+  duration is quantised through its edit list (26 frames read 13302 ticks of
+  1/15360 for 13312), and 5 of the 42 ledger compositions failed at
+  `--workers 4`, every one split into unequal segments. Durations are now
+  written from frame counts, and WebM's millisecond timestamps are rewritten
+  from the packet index. Sound is muxed once over the joined film, through
+  the one function the one-shot render uses (`deliverSound`), and the joined
+  film's decoded audio hashes equal to a one-shot render's.
+  `tests/segments.test.ts` holds three segments of `sound-roles` — footage
+  presented every frame, a declared mix — to `trace` hash for hash, every
+  refusal through `planJoin` and through the CLI, and each container's
+  timestamps; its header lists the edit that turns each red.
+  `baselines/segments/ledger.ts` renders every ledger composition with
+  `--workers` against its recorded digest. What the join does not claim: the
+  joined bytes are not a one-shot encode's (rate control and keyframes see
+  one segment at a time), and `concat` takes the footage identity components
+  from the segments rather than ingesting, and lists them.
 - **The npm package is staged, never packed from the checkout.**
   `scripts/pack.ts` assembles `dist/pack/pocket-motion` from an explicit
   list, because npm honours `vendor/pocketjs`'s own `.gitignore`, which
