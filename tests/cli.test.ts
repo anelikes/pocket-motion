@@ -6,7 +6,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { run as runCheck } from "../src/cli/commands/check.ts";
 import { run as runDiff } from "../src/cli/commands/diff.ts";
@@ -25,6 +25,8 @@ import {
 } from "../src/cli/commands/layout.ts";
 import { encodeScaleTo } from "../src/cli/commands/render.ts";
 import { run as runTrace } from "../src/cli/commands/trace.ts";
+import { FLAG_COMMAND } from "../src/cli/args.ts";
+import { buildRefusalHint, spawnBuild } from "../src/cli/build.ts";
 import { helpText, main } from "../src/cli/main.ts";
 import {
   buildSpawn,
@@ -574,6 +576,79 @@ describe("invocation contract", () => {
     expect(text).toContain("mount-only");
     expect(text).toContain("frame-hash");
     expect(text).toContain("divergent");
+  });
+
+  // Agents asked `snapshot --help` for snapshot's flags and were handed the
+  // whole text (docs/agent-adoption-eval.md). A command's help is its header
+  // line and the flags its parser assigns it, read from the two places that
+  // already state them.
+  test("`<command> --help` is that command's line and its own flags", async () => {
+    const commandsDir = join(import.meta.dir, "..", "src", "cli", "commands");
+    const names = readdirSync(commandsDir).map((f) => f.replace(/\.ts$/, ""));
+    expect(names.length).toBeGreaterThan(15);
+    for (const name of names) {
+      const header = readFileSync(join(commandsDir, `${name}.ts`), "utf8").split("\n")[1]!;
+      const usage = /^ \* `(.*)`\s*$/.exec(header)?.[1];
+      expect(usage, `${name}.ts's first header line`).toBeDefined();
+      const text = helpText(name);
+      expect(text).toContain(`bun src/cli/main.ts ${usage}`);
+      for (const [flag, owners] of Object.entries(FLAG_COMMAND)) {
+        if (owners.includes(name)) expect(text, `${name} --help names --${flag}`).toContain(`--${flag}`);
+        else expect(text, `${name} --help leaves out --${flag}`).not.toMatch(new RegExp(`^  --${flag}\\b`, "m"));
+      }
+    }
+    for (const flag of Object.keys(FLAG_COMMAND)) expect(helpText()).toMatch(new RegExp(`^  --${flag}\\b`, "m"));
+    const printed: string[] = [];
+    const log = console.log;
+    console.log = (...a: unknown[]) => void printed.push(a.join(" "));
+    try {
+      expect(await main(["snapshot", "--help"])).toBe(0);
+    } finally {
+      console.log = log;
+    }
+    expect(printed.join("\n")).toBe(helpText("snapshot"));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// a refusal whose advice is upstream's
+// ---------------------------------------------------------------------------
+
+describe("build refusals", () => {
+  // `patches/0002` refuses a size past the face's 255 px cell and tells an
+  // app to use a larger viewport; on a film that is a larger frame. The hint
+  // is read off the refusal the vendored baker actually throws, so a change
+  // to its wording turns this red rather than the hint silently vanishing.
+  test("an oversize face gets the ceiling and the outline route, last", async () => {
+    const { default: opentype } = (await import(join(VENDOR, "node_modules", "opentype.js"))) as {
+      default: { parse(b: ArrayBuffer): unknown };
+    };
+    const { bakeSlot } = (await import(join(VENDOR, "framework", "compiler", "bake-font.ts"))) as {
+      bakeSlot: (font: unknown, slot: number, px: number, bold: boolean, chars: number[]) => unknown;
+    };
+    const bytes = readFileSync(join(VENDOR, "assets", "fonts", "Inter-Bold.ttf"));
+    const font = opentype.parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+    let refusal = "";
+    try {
+      bakeSlot(font, 0, 400, true, [66]);
+    } catch (e) {
+      refusal = (e as Error).message;
+    }
+    expect(refusal).toContain("larger logical viewport");
+    const hint = buildRefusalHint(refusal);
+    expect(hint).toContain("text-[400px]");
+    expect(hint).toContain("210px or less");
+    expect(hint).toContain("<Path>");
+    expect(buildRefusalHint("error: something else entirely")).toBeNull();
+
+    // Through the spawn every build goes through, the hint is the last line:
+    // the refusal is printed mid-log, and an agent reads the tail.
+    const failing = ["bun", "-e", `console.error(${JSON.stringify(refusal)}); console.log("pass 1: 55 module(s)"); process.exit(1)`];
+    const thrown = await spawnBuild(failing, ROOT, { PATH: process.env.PATH ?? "" }).then(
+      () => "",
+      (e: Error) => e.message,
+    );
+    expect(thrown.split("\n").at(-1)).toBe(hint!);
   });
 });
 
