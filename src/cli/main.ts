@@ -157,6 +157,8 @@ export function helpText(): string {
     "  --example <name>    init: which fixture to start from",
     "  --format <name>     render: mp4 | webm | mov | png-seq (default mp4)",
     "  --alpha             render: ask the codec for an alpha channel (not mp4)",
+    "  --no-assert         render --spec: skip the job's own assertions[], which are",
+    "                      otherwise checked on its staged tree before it renders",
     "  --samples N         visibility/snapshot: how many frames to look at (default 24)",
     "  --read exposure|tick layout/visibility/assert/verify, under a shutter: classify",
     "                      the delivered exposure (default) or the frame's own tick",

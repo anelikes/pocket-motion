@@ -252,6 +252,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/short-sections": {
+      "failures": [],
+      "nodes": 18,
+      "named": 18,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/shutter": {
       "failures": [],
       "nodes": 2,
