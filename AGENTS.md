@@ -143,7 +143,12 @@ that is said rather than implied.
   glyph the core cannot draw as declared — a colour glyph with a composite
   or a focal radial, a codepoint that is a picture only inside a shaped
   sequence — is left out of the slot by name at build, so it takes the same
-  road. `tests/colour-glyphs.test.ts` holds it.
+  road. `tests/colour-glyphs.test.ts` holds it. Its first sweep of the tree
+  found two: `compositions/curves-race` drew ∝ (U+221D, not in Inter) as a
+  box in two panel titles since it was generated, now `= k ·`; and
+  `compositions/fit`'s committed probe output sets Chinese in HarmonyOS Sans,
+  a Latin-only cut, which is what `scripts/fit-probe.ts` builds it with too —
+  `check` fails on it, and is right to.
 
 Four defects are **not** instances of either invariant, and forcing them in
 would make both rules useless.
