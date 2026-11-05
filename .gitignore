@@ -37,6 +37,8 @@ assets/audio/**/*.mp3
 # 烤进 pak 的，所以缺席不会安静——构建当场就失败，这正是可以忽略它的理由。
 # 拉丁字体只有 290 KB，留在库里（许可见 assets/fonts/）。
 assets/fonts/NotoSansSC-*.otf
+# 彩色 emoji 字体（Noto Color Emoji COLRv1，5 MB）同样按 sha256 取回，不入库。
+assets/fonts/Noto-COLRv1.ttf
 
 # 基准的原始日志留本地，结论进 baselines/*.md
 baselines/**/raw/

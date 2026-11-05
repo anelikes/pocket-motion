@@ -32,7 +32,14 @@ Noto Sans SC (Regular, Bold) — not checked in; fetched by SHA-256 by
   SIL Open Font License, Version 1.1, vendored verbatim at
   `assets/fonts/NotoSansSC_LICENSE.txt`.
 
-Both are pinned rather than resolved from the system, because a render's
+Noto Color Emoji (COLRv1, `Noto-COLRv1.ttf`) — not checked in; fetched by
+SHA-256 by `scripts/assets.ts` from googlefonts/noto-emoji at tag
+v2026-09-24-unicode18_0 (`2D/fonts/`).
+  Copyright the Noto Project Authors.
+  SIL Open Font License, Version 1.1, vendored verbatim at
+  `assets/fonts/NotoColorEmoji_LICENSE.txt`.
+
+All three are pinned rather than resolved from the system, because a render's
 identity includes the exact font bytes (`src/render/identity.ts`).
 See `assets/fonts/README.md`.
 

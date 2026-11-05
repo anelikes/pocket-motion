@@ -42,7 +42,7 @@ import { mkdir, mkdtemp, rename, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { readAtlases, type AtlasHeader } from "./atlas.ts";
+import { slotHeaders, type AtlasHeader } from "./atlas.ts";
 import type { Measure } from "./fit.ts";
 import { hardenedBootWorld, pocketjsRoot } from "../runtime/boot.ts";
 import { buildEnv } from "../vendor/cache.ts";
@@ -351,7 +351,7 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
   const dir = join(cache.dir ?? join(root, "dist", ".measure"), key);
   const dist = join(dir, "dist");
 
-  let bySize = await readCachedSlots(dist);
+  let bySize = await readCachedSlots(dist, density);
   if (!bySize) {
     // Unique per call, not per process: two misses on one key in one process
     // would otherwise build into the same directory at once.
@@ -373,7 +373,7 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }
-    bySize = await readCachedSlots(dist);
+    bySize = await readCachedSlots(dist, density);
     if (!bySize) throw new Error(`openMeasurer: the metrics cache at ${dir} did not come back readable`);
   }
   verifySlots(sizes, bySize, density);
@@ -410,12 +410,12 @@ async function cacheKey(
 }
 
 /** The slot table and atlases of a complete cache, or undefined when absent. */
-async function readCachedSlots(dist: string): Promise<Map<string, AtlasHeader> | undefined> {
+async function readCachedSlots(dist: string, density: number): Promise<Map<string, AtlasHeader> | undefined> {
   const slotsPath = join(dist, "slots.json");
   const pakPath = join(dist, "main.pak");
   if (!existsSync(slotsPath) || !existsSync(pakPath) || !existsSync(join(dist, "main.js"))) return undefined;
   const file = (await Bun.file(slotsPath).json()) as SlotsFile;
-  const atlases = await readAtlases(pakPath);
+  const atlases = slotHeaders(new Uint8Array(await Bun.file(pakPath).arrayBuffer()), density);
   const bySize = new Map<string, AtlasHeader>();
   for (const [k, slot] of Object.entries(file.slots)) {
     const header = atlases.get(slot);
@@ -484,7 +484,8 @@ async function buildMeasurement(
 
   const pakPath = join(dist, "main.pak");
   if (!existsSync(pakPath)) throw new Error(`openMeasurer: no pak at ${pakPath}`);
-  const atlases = await readAtlases(pakPath);
+  // A size past the face's atlas ceiling is a vector slot (patches/0063).
+  const atlases = slotHeaders(new Uint8Array(await Bun.file(pakPath).arrayBuffer()), density);
 
   const bySize = new Map<string, AtlasHeader>();
   for (const [slot, v] of Object.entries(generated.FONT_SLOTS)) {

@@ -96,6 +96,7 @@ const KNOWN_PATH_ISSUE_PREFIXES = new Set([
   "", // the default parameter, `sidecar.footage.src`
   "`sidecar.fonts.${key}`",
   "`sidecar.fonts.faces.${key}`",
+  '"sidecar.fonts.fallback"',
   "`sidecar.sound.${role}.src`",
 ]);
 
@@ -178,6 +179,15 @@ function extractSourceCodes(text: string): Set<string> {
       for (const suffix of PATH_ISSUE_SUFFIXES) {
         codes.add(`sidecar.fonts.faces.${key}.${suffix}`);
       }
+    }
+  }
+
+  // `fonts.fallback[i]` (patches/0063): one prefix, every entry of the list.
+  if (text.includes('pathIssue(value, `fonts.fallback[${i}]`, "sidecar.fonts.fallback")')) {
+    // The prefix is a plain string literal, so the scan above took it for a code.
+    codes.delete("sidecar.fonts.fallback");
+    for (const suffix of PATH_ISSUE_SUFFIXES) {
+      codes.add(`sidecar.fonts.fallback.${suffix}`);
     }
   }
 
