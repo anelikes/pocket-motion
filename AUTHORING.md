@@ -753,8 +753,11 @@ in order, at build time — never on the host:
 }
 ```
 
-A face with COLR colour glyphs (Noto Color Emoji, COLRv1, fetched by
-`scripts/assets.ts`) draws each as layered outlines, solid or under a linear
+A `render --spec` job declares the same chain in its own `fonts`
+(`"fallback": [...]`, the same path rules): the template's generator measures
+with it and writes it into the staged sidecar, so platform data with an emoji
+in it reaches the colour face. A face with COLR colour glyphs (Noto Color
+Emoji, COLRv1, fetched by `scripts/assets.ts`) draws each as layered outlines, solid or under a linear
 or radial gradient, in an atlas run or a vector one alike. The slot's own
 face wins where it maps a codepoint: Noto Sans SC draws U+26A0 ⚠ itself, in
 the text colour. What the core cannot draw is **left out by name**, and the

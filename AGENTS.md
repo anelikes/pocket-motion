@@ -134,8 +134,9 @@ that is said rather than implied.
   the face had, the core laid the codepoint out and drew the tofu box,
   counted the miss on a counter nothing read, and `lint`, `check`, `trace`
   and the digest all passed — seen. A face that can supply such codepoints is
-  now declared, `fonts.fallback` (`--font-fallback`), and never looked up on
-  the host; the core keeps the distinct codepoints that missed
+  now declared, `fonts.fallback` (`--font-fallback`) — in a sidecar, and in
+  a `render --spec` job's `fonts`, which every template measures with and
+  writes into the staged sidecar — and never looked up on the host; the core keeps the distinct codepoints that missed
   (`ui_glyph_missed`, `patches/0063`); `check` fails naming each codepoint
   and every text node whose string carries it, `trace` and `render` print
   them and put `missingGlyphs` in `--json`, and `render --spec` refuses the

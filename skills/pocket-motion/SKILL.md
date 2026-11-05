@@ -89,7 +89,8 @@ the face's atlas ceiling (176 px for Noto Sans SC) bakes as outlines, up to
 glyphs scale and turn with their node (`patches/0063`).
 
 **Emoji come from a declared face**: `"fonts": { …, "fallback":
-["assets/fonts/Noto-COLRv1.ttf"] }` draws colour emoji as layered outlines.
+["assets/fonts/Noto-COLRv1.ttf"] }` draws colour emoji as layered outlines —
+in a sidecar, and in a `render --spec` job's own `fonts`.
 A codepoint no declared face maps is drawn as the tofu box and reported —
 `check` fails naming it and the node, `render --spec` refuses the job — and so
 is one the core cannot draw (a flag, a ZWJ sequence, a skin tone: text is not

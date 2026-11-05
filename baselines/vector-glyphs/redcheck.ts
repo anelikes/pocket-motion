@@ -170,6 +170,18 @@ const MUTATIONS: Mutation[] = [
     test: ["tests/vector-glyphs.test.ts", "measures a size past the ceiling"],
   },
   {
+    name: "a job spec refusing fonts.fallback",
+    file: "src/manifest/spec.ts",
+    edits: [['export const SPEC_FONT_ALLOWED = new Set<string>([...FONT_WEIGHT_KEYS, "fallback"]);', "export const SPEC_FONT_ALLOWED = new Set<string>([...FONT_WEIGHT_KEYS]);"]],
+    test: ["tests/colour-glyphs.test.ts", "renders through the fallback face the job declares"],
+  },
+  {
+    name: "lower-third not writing the fallback into the staged sidecar",
+    file: "compositions/lower-third/gen.ts",
+    edits: [["          ...(spec.fonts.fallback !== undefined ? { fallback: spec.fonts.fallback } : {}),\n        },\n        ...(footage ? { footage } : {}),", "        },\n        ...(footage ? { footage } : {}),"]],
+    test: ["tests/colour-glyphs.test.ts", "renders through the fallback face the job declares"],
+  },
+  {
     name: "check not reading the missed codepoints",
     file: "src/cli/commands/check.ts",
     edits: [["    const missing = world.missingGlyphs();", "    const missing: number[] = [];"]],

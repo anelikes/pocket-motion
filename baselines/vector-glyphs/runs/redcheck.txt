@@ -45,3 +45,8 @@ base GREEN [cargo loading_order_keeps_one_owner_of_a_slots_metrics]
 base GREEN [tests/vector-glyphs.test.ts land where the atlas]
 RED   a supplement evicting its slot's atlas  [cargo loading_order_keeps_one_owner_of_a_slots_metrics]
 RED   a vector glyph's anchor not rounded where GLYPH_RUN rounds  [tests/vector-glyphs.test.ts land where the atlas]
+
+# fonts.fallback in render --spec jobs (2026-11-06)
+base GREEN [tests/colour-glyphs.test.ts renders through the fallback face the job declares]
+RED   a job spec refusing fonts.fallback  [tests/colour-glyphs.test.ts renders through the fallback face the job declares]
+RED   lower-third not writing the fallback into the staged sidecar  [tests/colour-glyphs.test.ts renders through the fallback face the job declares]

@@ -54,7 +54,7 @@ import {
   captionsStyleKeys,
 } from "../src/captions/spec.ts";
 import { STYLE_NAMES } from "../src/captions/styles.ts";
-import { SPEC_CAPTIONS_ROOT_KEYS, parseSpec } from "../src/manifest/spec.ts";
+import { SPEC_CAPTIONS_ROOT_KEYS, SPEC_FONT_ALLOWED, parseSpec } from "../src/manifest/spec.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SIDECAR_PATH = join(ROOT, "src/manifest/sidecar.ts");
@@ -226,6 +226,9 @@ function captionsKeys(): Set<string> {
   return new Set<string>([
     ...CAPTIONS_BODY_KEYS,
     ...CAPTIONS_ENVELOPE_RULES,
+    // The envelope's optional `fonts` keys, which every template shares
+    // (`parseSpec`); the required pair is the envelope's and has no row here.
+    ...[...SPEC_FONT_ALLOWED].filter((k) => k !== "regular" && k !== "bold").map((k) => `fonts.${k}`),
     ...[...CAPTIONS_TRANSCRIPT_KEYS].map((k) => `transcript.${k}`),
     ...STYLE_NAMES.flatMap((name) => [...captionsStyleKeys(name)].map((k) => `style.${k}`)),
     ...[...CAPTIONS_LAYOUT_KEYS].map((k) => `layout.${k}`),

@@ -71,6 +71,22 @@ export interface MeasurerOptions {
    * a face must find it here.
    */
   readonly faces?: Readonly<Record<string, FaceFiles>>;
+  /**
+   * The composition's `fonts.fallback`, absolute, in order: faces a codepoint
+   * the slot's own face does not map is baked from (`patches/0063`), so an
+   * emoji measures at the colour face's advance. Absent: none.
+   */
+  readonly fallback?: readonly string[];
+  /**
+   * What `measure` does with a codepoint of a string it was asked to bake that
+   * no declared face maps. `"refuse"` (the default) throws. `"tofu"` measures
+   * it at the tofu box's advance, which is what the core lays out, and leaves
+   * the refusal to the render: `render --spec` refuses a job whose mounted
+   * text misses a glyph, naming the node (`src/text/missing.ts`). A codepoint
+   * of a string NOT in `texts` is refused either way — that is a caller who
+   * forgot a string, not a face without a glyph.
+   */
+  readonly missing?: "refuse" | "tofu";
   /** Every size the caller will measure at. */
   readonly sizes: readonly SizeRequest[];
   /** Every string the caller will measure, so its codepoints are baked. */
@@ -310,9 +326,13 @@ async function openMeasurerPerCall(options: MeasurerOptions): Promise<Measurer> 
   const work = options.workdir ?? (await mkdtemp(join(tmpdir(), "pocketjs-measure-")));
   try {
     const dist = join(work, "dist");
-    const bySize = await buildMeasurement(work, dist, { face, faces, sizes, texts, density, root, extraArgs: [] });
+    const bySize = await buildMeasurement(work, dist, {
+      face, faces, sizes, texts, density, root, extraArgs: fallbackArgs(options),
+    });
     return measurerOver(dist, bySize, {
       metricsOnly: false,
+      missing: options.missing ?? "refuse",
+      asked: askedCodepoints(texts.join("")),
       close: async () => {
         if (!options.keep) await rm(work, { recursive: true, force: true });
       },
@@ -321,6 +341,19 @@ async function openMeasurerPerCall(options: MeasurerOptions): Promise<Measurer> 
     if (owned && !options.keep) await rm(work, { recursive: true, force: true });
     throw e;
   }
+}
+
+/** The build flags that declare the fallback chain. */
+function fallbackArgs(options: MeasurerOptions): string[] {
+  return (options.fallback ?? []).map((path) => `--font-fallback=${path}`);
+}
+
+/** The codepoints a bake of these strings is asked for; ASCII always is. */
+function askedCodepoints(text: string): Set<number> {
+  const out = new Set<number>();
+  for (let c = 32; c <= 126; c++) out.add(c);
+  for (const ch of text) out.add(ch.codePointAt(0)!);
+  return out;
 }
 
 /** `<cache dir>/slots.json`: the px -> slot table this bake was read with. */
@@ -347,7 +380,7 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
   checkedDensity(density);
   checkedFaces(options);
   const root = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/$/, "");
-  const key = await cacheKey(face, faces, sizes, density, cache.charset);
+  const key = await cacheKey(face, faces, sizes, density, cache.charset, options.fallback ?? []);
   const dir = join(cache.dir ?? join(root, "dist", ".measure"), key);
   const dist = join(dir, "dist");
 
@@ -360,7 +393,7 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
     try {
       const built = await buildMeasurement(tmp, join(tmp, "dist"), {
         face, faces, sizes, texts: [], density, root,
-        extraArgs: ["--metrics-only", `--extra-chars=${cache.charset}`],
+        extraArgs: ["--metrics-only", `--extra-chars=${cache.charset}`, ...fallbackArgs(options)],
       });
       const slots: Record<string, number> = {};
       for (const [k, h] of built) slots[k] = h.slot;
@@ -377,7 +410,12 @@ async function openCachedMeasurer(options: MeasurerOptions, cache: MeasureCache)
     if (!bySize) throw new Error(`openMeasurer: the metrics cache at ${dir} did not come back readable`);
   }
   verifySlots(sizes, bySize, density);
-  return measurerOver(dist, bySize, { metricsOnly: true, close: async () => {} });
+  return measurerOver(dist, bySize, {
+    metricsOnly: true,
+    missing: options.missing ?? "refuse",
+    asked: askedCodepoints(cache.charset),
+    close: async () => {},
+  });
 }
 
 async function cacheKey(
@@ -386,6 +424,7 @@ async function cacheKey(
   sizes: readonly SizeRequest[],
   density: number,
   charset: string,
+  fallback: readonly string[],
 ): Promise<string> {
   const h = new Bun.CryptoHasher("sha256");
   const digest = async (path: string): Promise<string> => {
@@ -399,6 +438,9 @@ async function cacheKey(
   for (const name of Object.keys(faces).sort()) {
     h.update(`face.${name}:${await digest(faces[name]!.regular)}:${await digest(faces[name]!.bold)}\n`);
   }
+  // The fallback chain, in order. Absent when none is declared, so a key
+  // without one is the key it always was.
+  for (const [i, path] of fallback.entries()) h.update(`fallback.${i}:${await digest(path)}\n`);
   h.update(`baker:${await digest(join(pocketjsRoot(), "framework/compiler/bake-font.ts"))}\n`);
   h.update(`build:${await digest(join(pocketjsRoot(), "tools/build.ts"))}\n`);
   h.update(`sizes:${[...new Set(sizes.map((s) => keyOf(s.px, s.bold === true, s.face)))].sort().join(",")}\n`);
@@ -501,7 +543,13 @@ async function buildMeasurement(
 async function measurerOver(
   dist: string,
   bySize: ReadonlyMap<string, AtlasHeader>,
-  o: { readonly metricsOnly: boolean; readonly close: () => Promise<void> },
+  o: {
+    readonly metricsOnly: boolean;
+    readonly missing: "refuse" | "tofu";
+    /** The codepoints the build was asked to bake (ASCII always is). */
+    readonly asked: ReadonlySet<number>;
+    readonly close: () => Promise<void>;
+  },
 ): Promise<Measurer> {
   const world = await hardenedBootWorld({
     bundlePath: join(dist, "main.js"),
@@ -540,7 +588,10 @@ async function measurerOver(
     measure: (px, bold = false, face) => {
       const slot = atlas(px, bold, face).slot;
       return (text: string) => {
-        const missing = unmapped(text, px, bold, face);
+        const unbaked = unmapped(text, px, bold, face);
+        // "tofu": a codepoint the build was asked for and no face maps is
+        // measured as the core will lay it out, and the render refuses it.
+        const missing = o.missing === "tofu" ? unbaked.filter((c) => !o.asked.has(c.codePointAt(0)!)) : unbaked;
         if (missing.length > 0) {
           throw new Error(
             `openMeasurer: ${missing.length} codepoint(s) of this string were never baked ` +

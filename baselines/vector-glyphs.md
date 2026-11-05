@@ -82,7 +82,7 @@ colour and never meets the src-in refusal.
 `bun baselines/vector-glyphs/redcheck.ts` writes each defect into the patch
 (one `+` line for another) or into this repository's file, rebuilds the
 vendored tree from the patches, runs the one test that names it, and
-restores. 24 defects; each test is green on the tree as it is first.
+restores. 26 defects; each test is green on the tree as it is first.
 
 | defect | test | |
 | --- | --- | --- |
@@ -110,6 +110,8 @@ restores. 24 defects; each test is green on the tree as it is first.
 | check not reading the missed codepoints | `colour-glyphs` "tofu fails check" | red |
 | a refusing render not checking its first frame | `colour-glyphs` "refuses tofu" | red |
 | trace not saying so | `colour-glyphs` "trace and render say so" | red |
+| a job spec refusing `fonts.fallback` | `colour-glyphs` "renders through the fallback face the job declares" | red |
+| lower-third not writing the fallback into the staged sidecar | the same | red |
 
 The first full run left two green, and both were the test's fault, not the
 defect's. The loading test fed the supplement before the atlas, so a

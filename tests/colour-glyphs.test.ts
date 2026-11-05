@@ -35,6 +35,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFil
 import { join, resolve } from "node:path";
 
 import { runBuild } from "../src/cli/build.ts";
+import { runFromArgv as renderFromArgv } from "../src/cli/commands/render.ts";
 import { dispatch } from "../src/cli/main.ts";
 import { resolveComposition, type ResolvedComposition } from "../src/cli/resolve.ts";
 import { MissingGlyphError, render } from "../src/render/render.ts";
@@ -232,4 +233,56 @@ describe("tofu is refused or reported, never shipped quietly", () => {
     expect((thrown as MissingGlyphError).codepoints).toEqual([0x1f525]);
     expect(existsSync(join(out, "frame-00000.png")) || (existsSync(out) && readdirSync(out).length > 0)).toBe(false);
   }, 60_000);
+});
+
+/**
+ * A `render --spec` job is where platform data arrives, so the fallback chain
+ * has to reach it: `fonts.fallback` in the job spec, measured with by the
+ * template's generator and written into the staged sidecar.
+ *
+ * Red, each watched (`baselines/vector-glyphs/redcheck.ts`):
+ *   - `parseSpec` not accepting the key: the job with it is refused as an
+ *     invalid spec;
+ *   - lower-third's generator not writing it into the staged sidecar: the
+ *     flame misses and the job is refused at mount.
+ */
+describe("a spec job's emoji", () => {
+  const DIR = join(ROOT, "compositions/lower-third");
+  const sample = JSON.parse(readFileSync(join(DIR, "spec.default.json"), "utf8")) as Record<string, unknown> & {
+    fonts: Record<string, unknown>;
+  };
+  const jobWith = (fallback: boolean) => ({
+    ...sample,
+    copy: { name: "林知远", title: `城南市图书馆 · 讲解员 ${FLAME}` },
+    fonts: { ...sample.fonts, ...(fallback ? { fallback: ["assets/fonts/Noto-COLRv1.ttf"] } : {}) },
+  });
+
+  test("renders through the fallback face the job declares", async () => {
+    const dir = scratchDir("spec-emoji");
+    const path = join(dir, "job.json");
+    writeFileSync(path, JSON.stringify(jobWith(true)));
+    const out = join(dir, "job.mp4");
+    const r = await renderFromArgv([DIR, "--spec", path, "--out", out, "--json"]);
+    const json = r.json as { ok: boolean; missingGlyphs?: string[]; identity?: { components: Record<string, string> } };
+    expect(r.exitCode, JSON.stringify(json).slice(0, 400)).toBe(0);
+    expect(json.missingGlyphs).toBeUndefined();
+    // The face that drew the flame is an input of this render, by name.
+    expect(Object.keys(json.identity!.components)).toContain("font:fallback/0/Noto-COLRv1.ttf");
+    expect(existsSync(out)).toBe(true);
+  }, 240_000);
+
+  test("without it, the job is refused at mount, naming the node and the codepoint", async () => {
+    const dir = scratchDir("spec-tofu");
+    const path = join(dir, "job.json");
+    writeFileSync(path, JSON.stringify(jobWith(false)));
+    const out = join(dir, "job.mp4");
+    const r = await renderFromArgv([DIR, "--spec", path, "--out", out, "--json"]);
+    const json = r.json as { ok: boolean; missingGlyphs?: string[]; missingGlyphNodes?: { text: string; codepoints: string[] }[] };
+    expect(r.exitCode).toBe(1);
+    expect(json.missingGlyphs).toEqual(["U+1F525"]);
+    expect(json.missingGlyphNodes).toHaveLength(1);
+    expect(json.missingGlyphNodes![0]!.text).toContain(FLAME);
+    expect(json.missingGlyphNodes![0]!.codepoints).toEqual(["U+1F525"]);
+    expect(existsSync(out)).toBe(false);
+  }, 240_000);
 });
