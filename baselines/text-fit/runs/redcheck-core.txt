@@ -1,0 +1,13 @@
+baseline: GREEN
+RED   a block's height is not a bound  [a_block_too_tall_for_its_box_gives_way_to_the_next_rung]
+RED   a rung that cuts a segment holds  [a_rung_that_must_cut_a_segment_does_not_hold]
+RED   U+200B is part of a segment  [a_line_breaks_at_spaces_and_u200b_and_u200b_is_never_drawn]
+RED   the clamp counts nothing it drops  [a_clamp_keeps_its_lines_ends_with_an_ellipsis_and_counts_what_it_left_out]
+RED   the ellipsis never shortens its line  [a_clamp_keeps_its_lines_ends_with_an_ellipsis_and_counts_what_it_left_out]
+RED   a mark is cut from its base  [a_clamp_keeps_its_lines_ends_with_an_ellipsis_and_counts_what_it_left_out]
+RED   the pen leaves tracking out  [a_fitted_block_measures_as_its_laid_out_text]
+RED   the clamped line's old width is kept  [a_fitted_block_measures_as_its_laid_out_text]
+RED   paint draws the style's slot  [layout_records_the_fit_and_paint_draws_it]
+RED   a node's height is never a bound  [layout_records_the_fit_and_paint_draws_it]
+RED   readback fits an unbounded height  [layout_records_the_fit_and_paint_draws_it]
+RED   the ladder ends at the first word  [the_ladder_unpacks_from_its_two_words]

@@ -173,8 +173,8 @@
       "failures": [
         "buried"
       ],
-      "nodes": 12,
-      "named": 12,
+      "nodes": 13,
+      "named": 13,
       "neverShown": 1,
       "buriedAfterShown": 0
     },
@@ -322,6 +322,13 @@
       "failures": [],
       "nodes": 16,
       "named": 16,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/text-fit": {
+      "failures": [],
+      "nodes": 13,
+      "named": 13,
       "neverShown": 0,
       "buriedAfterShown": 0
     },

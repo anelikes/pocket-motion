@@ -214,6 +214,11 @@ const ENTRIES = [
   // change to the inventory, the order it bakes in or the monotone curve
   // moves this digest; the same chart written as literals bakes the same pak.
   "compositions/data-chart",
+  // text-fit. patches/0059: runs fitted to a declared ladder, wrapped at
+  // spaces and U+200B and clamped with an ellipsis by layout, in fixed boxes
+  // and in boxes flex sizes. A change to the rung a box takes, where a line
+  // breaks, what a clamp keeps or which slot paint draws moves this digest.
+  "compositions/text-fit",
 ] as const;
 
 /**
