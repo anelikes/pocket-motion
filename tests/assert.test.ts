@@ -40,8 +40,6 @@ import {
 import type { SidecarAssertion } from "../src/manifest/sidecar.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
-const VENDOR = join(ROOT, "vendor", "pocketjs");
-process.env.POCKETJS_ROOT = VENDOR;
 
 const SAMPLES = 24;
 const FRAMES = sampleFrames(240, SAMPLES);

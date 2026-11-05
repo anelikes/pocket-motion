@@ -1,0 +1,4 @@
+# `bun test` loads tests/preload.ts before every test file. It refuses a run
+# that inherits POCKETJS_ROOT and removes the run's scratch root at the end.
+[test]
+preload = ["./tests/preload.ts"]

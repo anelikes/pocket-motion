@@ -69,8 +69,6 @@ const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
 const FRAMEWORK_TABLE = join(VENDOR, "framework", "src", "styles.generated.ts");
 
-process.env.POCKETJS_ROOT = VENDOR;
-
 const FACE = {
   regular: join(ROOT, "assets/fonts/HarmonyOS_Sans_Regular.ttf"),
   bold: join(ROOT, "assets/fonts/HarmonyOS_Sans_Bold.ttf"),

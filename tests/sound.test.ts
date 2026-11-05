@@ -58,10 +58,11 @@ import {
   envelopeFromAstatsLog,
   voicedFromEnvelope,
 } from "../src/sound/verify.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SMOKE = join(ROOT, "compositions", "smoke");
-const TMP = "/tmp/pocketjs-motion-sound-test";
+const TMP = scratchDir("sound");
 const COMP = join(TMP, "compositions", "probe");
 
 const MIN = { motion: 1 as const, durationFrames: 90, fps: 30 };
@@ -606,7 +607,7 @@ describe("reel sidecar is identity-neutral", () => {
 // verify — ffmpeg, short fixtures
 // ---------------------------------------------------------------------------
 
-const MIX_TMP = "/tmp/pocketjs-motion-sound-mix-test";
+const MIX_TMP = scratchDir("sound-mix");
 
 async function runFfmpeg(args: string[]): Promise<void> {
   const p = Bun.spawn(["ffmpeg", "-y", "-v", "error", ...args], {
@@ -1226,7 +1227,7 @@ describe("verify does not read a pause inside a line as an absence", () => {
   // Measured on a 6 s line silent from 2 s to 4 s, mixed in full:
   // windows at 0 s and 5.9 s read −24.08 dB residual, the window at 2.95 s
   // read −inf against a −50 dB floor, and the line reported `truncated`.
-  const TMP = "/tmp/pocketjs-motion-sound-pause-test";
+  const TMP = scratchDir("sound-pause");
   const p = (name: string) => join(TMP, name);
 
   beforeAll(async () => {
@@ -1749,7 +1750,7 @@ function rmsDb(pcmBytes: Uint8Array, rate: number, channels: number, from: numbe
 }
 
 describe("the four shapes, measured", () => {
-  const T = "/tmp/pocketjs-motion-sound-shapes-test";
+  const T = scratchDir("sound-shapes");
 
   beforeAll(async () => {
     rmSync(T, { recursive: true, force: true });
@@ -1925,7 +1926,7 @@ describe("the four shapes, measured", () => {
 
 describe("an optional element, end to end", () => {
   const OPT = join(TMP, "assets", "audio", "opt.wav");
-  const MT = "/tmp/pocketjs-motion-sound-optional-test";
+  const MT = scratchDir("sound-optional");
   const declare = () => ({
     narration: [{ id: "vo-1", src: "assets/audio/line.wav", startFrame: 0 }],
     cues: [{ id: "sting", src: "assets/audio/opt.wav", atFrame: 9, optional: true }],
@@ -1972,15 +1973,14 @@ describe("an optional element, end to end", () => {
 });
 
 describe("compositions/sound-roles, rendered", () => {
-  const VENDOR = join(ROOT, "vendor", "pocketjs");
-  const OUT = "/tmp/pocketjs-motion-sound-roles-render";
+  const OUT = scratchDir("sound-roles-render");
 
   async function cli(argv: readonly string[]): Promise<{ out: string; code: number }> {
     const proc = Bun.spawn(["bun", "src/cli/main.ts", ...argv], {
       cwd: ROOT,
       stdout: "pipe",
       stderr: "pipe",
-      env: { ...process.env, POCKETJS_ROOT: VENDOR },
+      env: { ...process.env },
     });
     const [stdout, stderr, code] = await Promise.all([
       new Response(proc.stdout).text(),

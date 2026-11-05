@@ -328,8 +328,9 @@ if it is red, so a RED below cannot be a test that fails anyway.
   started with `POCKETJS_ROOT` naming the main checkout's vendored tree (for
   `vendor.ts`'s clone), and `src/runtime/boot.ts` takes its core from that
   variable, so the test booted a core with no PATH op and drew nothing. The
-  test now pins it, as `tests/shutter.test.ts` does, and the harness keeps it
-  out of every test it runs.
+  test pinned it then, as `tests/shutter.test.ts` did, and the harness keeps
+  it out of every test it runs; `tests/preload.ts` now refuses a suite run
+  that inherits it.
 
 ### The fixture
 

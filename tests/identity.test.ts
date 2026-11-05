@@ -18,6 +18,7 @@ import {
   currentBuildRecord,
   type BuildRecord,
 } from "../src/render/build-record.ts";
+import { scratchDir } from "./scratch.ts";
 
 /** A record of the shape `build.json` holds, with nothing read off disk. */
 function record(overrides: Partial<BuildRecord> = {}): BuildRecord {
@@ -40,7 +41,7 @@ function record(overrides: Partial<BuildRecord> = {}): BuildRecord {
   };
 }
 
-const TMP = "/tmp/pocketjs-motion-identity-test";
+const TMP = scratchDir("identity");
 const BUNDLE = join(TMP, "bundle.js");
 const PAK = join(TMP, "main.pak");
 const FONT_REGULAR = join(TMP, "Regular.ttf");
