@@ -103,6 +103,7 @@ import {
   type Visibility,
 } from "../../render/visibility.ts";
 import type { LayoutAllowance, SidecarShutter } from "../../manifest/sidecar.ts";
+import { readTextFit, slotPxOf, type TextFitReading } from "../../render/text-fit.ts";
 import { describeShutter, hardenedBootWorld } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage } from "../footage.ts";
@@ -158,6 +159,9 @@ export interface LayoutNode {
    *  Measured for nodes carrying text when findings were asked for; `null`
    *  when the node contributes none. */
   readonly ink?: { x: number; y: number; w: number; h: number } | null;
+  /** What layout chose for a run declaring `text-fit-[..]`, `line-clamp-N`
+   *  or `text-wrap` (`src/render/text-fit.ts`). Absent on every other node. */
+  readonly fit?: TextFitReading;
   /** The codes this node is in, at this frame. Empty array rather than absent
    *  when findings were computed and there were none — a consumer branching on
    *  `findings.length` should not have to branch on the key first. */
@@ -266,6 +270,9 @@ export interface InspectOptions {
    * the one it has without the filter.
    */
   readonly names?: ReadonlySet<string>;
+  /** Slot -> px for the build (`slotPxOf`), so a fitted run's reading names
+   *  sizes. Absent, it names slots. */
+  readonly slotPx?: ReadonlyMap<number, number>;
 }
 
 export interface FindingScope {
@@ -383,6 +390,9 @@ export function inspectLayout(
       base,
       wantInk ? { width: scope!.physicalWidth, density: scope!.density } : undefined,
     );
+    // The record is layout's, so it needs no draw: the baseline's walk has
+    // already laid this frame out.
+    const fit = text ? readTextFit(world.exports, node.i, options.slotPx) : null;
     nodes.push({
       id: node.i,
       kind: node.t,
@@ -398,6 +408,7 @@ export function inspectLayout(
         ? {}
         : { paints: seen.paints, visibility: seen.visibility }),
       ...(seen.ink === undefined ? {} : { ink: seen.ink }),
+      ...(fit === null ? {} : { fit }),
     });
   }
   baseline(prober); // leave every latch clear
@@ -424,6 +435,7 @@ export function inspectLayout(
         inPicture: n?.inPicture ?? false,
         ...(n?.visibility ? { visibility: n.visibility } : {}),
         ...(n === undefined || n.ink === undefined ? {} : { ink: n.ink }),
+        ...(n?.fit === undefined ? {} : { fit: n.fit }),
         container: null,
       });
     }
@@ -571,6 +583,7 @@ export async function run(options: LayoutOptions): Promise<CommandResult> {
     } = inspectLayout(world, tree, {
       keepAll: options.all,
       classify: true,
+      slotPx: await slotPxOf(c.bundlePath),
       ...(options.read ? { read: options.read } : {}),
       findings: {
         viewport: { x: 0, y: 0, w: c.width, h: c.height },
@@ -586,7 +599,8 @@ export async function run(options: LayoutOptions): Promise<CommandResult> {
       if (!entry) continue;
       const dark = isNotInPicture(entry);
       const label = entry.name ?? entry.text ?? entry.kind;
-      const px = /text-\[(\d+)px\]/.exec(node.c ?? "")?.[1];
+      // A fitted run's size is the rung layout chose, not a literal.
+      const px = entry.fit?.px ?? /text-\[(\d+)px\]/.exec(node.c ?? "")?.[1];
       const codes = active(entry.findings ?? []).map((f) => f.code);
       printable.push(
         `${" ".repeat(depth)}${label.slice(0, 28).padEnd(28 - depth)} ` +
