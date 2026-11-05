@@ -75,18 +75,18 @@ describe("the build bakes what it can read and names what it refuses", () => {
   // Red with tools/build.ts's PathDataError catch removed: the build still
   // exits 1, on an uncaught throw whose stack names path-data.ts and no line
   // of main.tsx.
-  test("morph keys that part are refused at the <Path> that wrote them", () => {
+  // Keys whose commands differ are equalised since 0046, so the morph
+  // refusal left is the key count.
+  test("a morph the table cannot hold is refused at the <Path> that wrote it", () => {
     const { exitCode, stderr } = build([
       "mount(() => (",
       '  <View class="w-full h-full">',
-      '    <Path d={["M0 0 L10 0 Z", "M0 0 L10 0 L5 5 Z"]} class="fill-white" />',
+      `    <Path d={[${Array(9).fill('"M0 0 L10 0 L5 5 Z"').join(", ")}]} class="fill-white" />`,
       "  </View>",
       "));",
     ]);
     expect(exitCode).toBe(1);
-    expect(stderr).toContain(
-      "error: main.tsx:5:11: <Path> d does not bake: morph keys 0 and 1 differ at normalised command 2: key 0 has a close (source command 2), key 1 has a line (source command 2)",
-    );
+    expect(stderr).toContain("error: main.tsx:5:11: <Path> d does not bake: a <Path> morphs at most 8 keys, got 9");
   }, 120_000);
 
   test("a d that does not parse is refused the same way", () => {

@@ -695,6 +695,31 @@ mechanisms with the file or test beside them.
   watched red by `redcheck-ts.ts` beside it. `compositions/vector-paths` is
   the fixture, in both ledgers, its sidecar asserting that the caption is up
   before the signature is drawn — which a draw-on ignoring its trim fails.
+- **Dashes, a morph between unlike keys and motion along a path are three
+  declarations, each with a stated rule** (`patches/0045`, `0046`, class
+  `motion`, and `src/anim/path-motion.ts`; the design and the numbers in
+  `patches/0045-path-primitives.design.md` and `baselines/path-primitives.md`).
+  A dash pattern is style, not geometry — props 187-192, no op, no table —
+  and with none the core calls 0042's trim itself, so every stroke without
+  one is the bytes it was. The pattern is measured from each subpath's start,
+  so a trim reveals dashes without moving them; a zero-length dash is a dot
+  of its caps, wound so it joins the stroke's union; a pattern that would
+  draw solid is refused at the class, not drawn solid under a class that says
+  dashed. A morph whose keys' commands line up bakes the bytes 0043 baked
+  (three such key sets pinned by hash); keys drawn separately are equalised
+  by four rules in order — key 0 as written, pairing by size, a whole key
+  reversed or none, closed starts at the least squared distance, every key
+  cut at every key's vertices — splitting cubics only, so each key keeps its
+  outline. Motion along a path is baked by the kit into translate and rotate
+  keyframes, `atan2Deg` instead of the host's `Math.atan2` because the angle
+  reaches the pak. The core's guards are `engine/core/src/path_tests.rs`, the
+  compiler's and the kit's `tests/path-primitives.test.ts` and catalogue rows
+  `paint.dash`, `animation.morph` and `declare.motionPath`; all 17 core
+  defects in `baselines/path-primitives/redcheck.py` and all 17 host-side
+  ones in `redcheck-ts.ts` beside it were watched red.
+  `compositions/path-primitives` is the fixture, in both ledgers; its test
+  reads the movers' centres off `layout` against the outline and the dashed
+  connector's pixels against its pattern.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -1423,13 +1448,28 @@ mechanisms with the file or test beside them.
   39,864 rasters over the default grid, about 4½ hours at its raster cost,
   against 3,322 and 20 minutes with `--read tick` — the reading that misses
   `peek`. `reel` declares no shutter.
-- **A path's trim and morph do not blur, and nothing caches its geometry.**
-  The shutter integrates transform tracks only, so a moving `<Path>` blurs
-  and a draw-on's tip does not. The geometry is rebuilt every frame — and
+- **A path's trim, morph and dash offset do not blur, and nothing caches its
+  geometry.** The shutter integrates transform tracks only, so a moving
+  `<Path>` blurs and a draw-on's tip and a march do not. The geometry is rebuilt every frame — and
   under a shutter every sample — from the table: stage 1 measured a 1080p
   frame of 300 paths of 67 cubics at 20-70 ms of wasm, against 1.19 ms for a
   frame of the reel, so a dense illustration is a cost no ledger composition
   carries yet.
+- **A node following a path blurs along chords.** `motionPath` keys tick 0,
+  the odd ticks and the last, so every frame of a 30 fps film is on the
+  curve, shutter or not; between keys the core interpolates linearly, and a
+  shutter's samples and a 60 fps film's even ticks see the chord. The
+  fixture's own dart strays 3.75 px there (21 px a tick through a 58 px
+  loop), its orbiter 0.19 px; `chordError` reports it per move, and nothing
+  fails on it. An engine motion path that the shutter integrates would close
+  it, and is not built: the design says why and where it would start to
+  matter.
+- **Equalisation chooses a correspondence by size, not by position.** Two
+  keys whose largest shapes sit far apart cross the frame, a hole paired
+  with a separate shape morphs through a figure-eight because only a whole
+  key is ever reversed, and a corner travels along the other key's edge by
+  arc length rather than to its nearest corner. Keys whose commands line up
+  bypass the rule entirely.
 - **Abutting paths are still two blends.** The partition gives each seam
   sample to one path, but a pixel half-covered by each is blended twice, so
   a seam between two shapes of one colour lets `(1 - h_a/16)(1 - h_b/16)` of

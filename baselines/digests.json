@@ -106,6 +106,10 @@
       "frames": 90,
       "digest": "fefd5493b8dd398734ffaf9b10a57bbb608b4f239c7519e3d4320504b54f0f04"
     },
+    "compositions/path-primitives": {
+      "frames": 150,
+      "digest": "af7442ebde0c2fa248b1f1fc5d96ab199867a2cf969500a01834163598972ad9"
+    },
     "compositions/probe": {
       "frames": 2,
       "digest": "e400e20b2d067063bf315dc38ee2032885139dbbb3ce2657354163d15f426ac6"
