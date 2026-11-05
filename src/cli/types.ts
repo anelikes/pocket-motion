@@ -39,6 +39,36 @@ export interface CommandResult {
   readonly keepAlive?: Promise<void>;
 }
 
+/**
+ * What an embedding caller hands a command besides its argv: a way to stop it
+ * and a way to hear how far it has got. The CLI passes neither.
+ *
+ * Neither is an input to the result. A signal that never fires and a
+ * progress callback that is never read leave the command's object exactly as
+ * the argv alone would have produced it, which is what keeps `src/api.ts`'s
+ * claim — the function returns what `--json` prints — true for a call that
+ * carries them. A signal that DOES fire ends the command with a refusal
+ * carrying `cancelled: true` instead of its reading.
+ *
+ * Honoured by the two commands whose work is a frame loop, `render` and
+ * `trace` (`src/render/render.ts`); every other command ignores it and runs
+ * to completion.
+ */
+export interface RunContext {
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (progress: FrameProgress) => void;
+}
+
+/** One finished frame of a frame loop. */
+export interface FrameProgress {
+  /** Frames finished so far in this loop, from 1. */
+  readonly done: number;
+  /** Frames this loop will produce. */
+  readonly frames: number;
+  /** The spec file's name, when the loop is one job of a directory of jobs. */
+  readonly job?: string;
+}
+
 /** Flags common to composition-driving commands. */
 export interface GlobalFlags {
   readonly json: boolean;

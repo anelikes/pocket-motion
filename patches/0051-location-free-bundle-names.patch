@@ -1,0 +1,296 @@
+0051 — a bundle names its modules by what they are, not where they are.
+
+Bun writes each module's name on the line above its code when it does not
+minify whitespace, and the name is the module's realpath relative to the
+build process's working directory — not to `root`, which main sets to the
+same directory (measured on Bun 1.3.11 by building one entry from two cwds
+with one `root`). So the bytes of a bundle depend on three locations that
+are not inputs to it: where the app sits, where the PocketJS tree sits, and
+where the build was started. Built from a staging directory with a random
+name, the app's modules were `// dist/captions-job-Xq3/main.tsx`; built
+from a project outside the tree, every framework module was `//
+../../../Users/<someone>/<checkout>/vendor/pocketjs/framework/src/index.ts`;
+built against an installed package, `// node_modules/<pkg>/vendor/pocketjs/
+framework/src/index.ts`. Nothing the bundle executes reads a name, and a
+host that hashes the bundle to say which inputs produced a picture reads
+every one.
+
+`framework/compiler/bundle-names.ts` names a module by what it is:
+
+  inside the PocketJS tree        framework/src/index.ts   relative to the tree
+  inside the app's directory      ./app.tsx                relative to the app
+  the build's system-layer entry  .entries/main.ts         relative to --outdir
+  inside a node_modules           node_modules/x/index.js  from the last node_modules/
+  anywhere else                   ../shared/theme.ts       relative to the app
+
+The tree comes first, so an app inside it keeps the name a build from the
+tree's root gives it today (`apps/hero/app.tsx`), and a build of main's own
+apps from its root writes the bytes it did. A namespaced module keeps its
+namespace and has an absolute path after it named by the same rules, so
+main's `pocketjs-generated-styles:/<the checkout>/…` would come out
+`pocketjs-generated-styles:framework/src/styles.generated.ts`.
+
+`tools/build.ts` rewrites the name lines after pass 2 and writes the bundle
+over Bun's. The lines to rewrite are read off the metafile main already
+asks for: an input's key is the name Bun printed, and `bytesInOutput` says
+whether the module put code in the bundle. Bun prints a name line above
+each run of a module's code, and a module can have two — an entry that
+exports has its namespace object (`var exports_main`) placed ahead of the
+modules it imports, under a second copy of its name — so every whole line
+equal to `// <key>` is rewritten. The only other text a bundle can carry as
+such a line is the inside of a template literal, so the rewrite is checked:
+Bun's transpiler, which drops comments, must print the same program before
+and after (11 ms for both passes over the reel's 500 KB bundle). If it does
+not, the build fails naming the line, rather than shipping a rewritten
+string. A module that put code in the bundle with no name line fails it
+too, because Bun then printed names some other way than this reads them.
+
+pocket-motion `tests/build-location.test.ts` builds one composition from
+its checkout, from a randomly named directory under `dist/` and from a
+project outside the repository reached through a symlink, and holds the
+three bundles byte-identical. Red without this patch: the staged bundle
+differs in the app's one name line and the symlinked one in all 46 of
+the framework's. `tests/bundle-names.test.ts` there holds the rules and
+both refusals, and is red on each with its check removed; its
+`tests/style-table.test.ts` builds an entry that exports, which a first
+form of this patch, requiring one name line per module, refused. Every
+bundle of the pocket-motion digest ledger changes bytes in its name lines
+and in nothing else; every frame digest is unchanged, and each of its 42
+compositions rebuilt from a randomly named directory is the same bundle.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/framework/compiler/bundle-names.ts b/framework/compiler/bundle-names.ts
+new file mode 100644
+index 00000000..933a0f42
+--- /dev/null
++++ b/framework/compiler/bundle-names.ts
+@@ -0,0 +1,165 @@
++// Module names in a bundle that do not depend on where anything sits on disk.
++//
++// Bun's bundler writes each module's name on the line above its code when it
++// does not minify whitespace — `  // framework/src/index.ts` — and the name is
++// the module's realpath relative to the PROCESS'S working directory, not to
++// `root` (measured on Bun 1.3.11). So one app built from two directories, or
++// against a PocketJS tree installed in two places, is two different bundles,
++// and a module outside the working directory is named through the machine's
++// own directories: `// ../../../Users/<someone>/<checkout>/framework/src/
++// index.ts`. Nothing the bundle executes reads a name; a host that hashes the
++// bundle to say which inputs produced a picture reads every one.
++//
++// `bundleModuleName` names a module by what it is rather than where it is:
++//
++//   inside the PocketJS tree        framework/src/index.ts   relative to the tree
++//   inside the app's directory      ./app.tsx                relative to the app
++//   the build's system-layer entry  .entries/main.ts         relative to --outdir
++//   inside a node_modules           node_modules/x/index.js  from the last node_modules/
++//   anywhere else                   ../shared/theme.ts       relative to the app
++//
++// The tree comes first, so an app inside it (`apps/hero/app.tsx`) keeps the
++// name a build from the tree's root has always given it. A namespaced module
++// (`namespace:path`) keeps its namespace, and an absolute path after it is
++// named by the same rules.
++//
++// `renameBundleModules` rewrites the name lines after `Bun.build`, keyed by the
++// build's metafile: an input's key is the name Bun printed for it, and its
++// `bytesInOutput` says whether it put code in the bundle. Bun prints a name
++// line above each run of a module's code, and a module can have more than one
++// run — an entry that exports has its namespace object (`var exports_main`)
++// placed ahead of the modules it imports, under a second copy of its name — so
++// every whole line equal to `// <key>` is rewritten. The only other text a bundle can carry as such a
++// line is the inside of a template literal, so the rewrite is then checked:
++// Bun's transpiler, which drops comments, must print the same program before
++// and after. If it does not, a string repeated a name line, and the build fails
++// naming the module rather than shipping the rewritten string. A module that
++// put code in the bundle with no name line fails it too, because Bun then
++// printed names some other way than this reads them.
++
++import { isAbsolute, relative, resolve, sep } from "node:path";
++
++export interface BundleNameAnchors {
++  /** Realpath of the PocketJS tree (`tools/build.ts`'s ROOT). */
++  readonly tree: string;
++  /** Realpath of the directory holding the app's entry. */
++  readonly app: string;
++  /** Realpath of the build's `--outdir`. */
++  readonly outdir: string;
++  /** The working directory Bun named modules relative to. */
++  readonly cwd: string;
++}
++
++/** `abs` relative to `dir` with `/` separators, or null when it is not inside. */
++function inside(dir: string, abs: string): string | null {
++  const rel = relative(dir, abs);
++  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
++  return rel.split(sep).join("/");
++}
++
++const NAMESPACED = /^([A-Za-z][\w.+-]+):(.+)$/;
++
++function nameOfPath(abs: string, a: BundleNameAnchors): string {
++  const inTree = inside(a.tree, abs);
++  if (inTree !== null) return inTree;
++  const inApp = inside(a.app, abs);
++  if (inApp !== null) return `./${inApp}`;
++  const inEntries = inside(resolve(a.outdir, ".entries"), abs);
++  if (inEntries !== null) return `.entries/${inEntries}`;
++  const slashed = abs.split(sep).join("/");
++  const pkg = slashed.lastIndexOf("/node_modules/");
++  if (pkg >= 0) return slashed.slice(pkg + 1);
++  return relative(a.app, abs).split(sep).join("/");
++}
++
++/** The name a bundle gives the module Bun printed as `key`. */
++export function bundleModuleName(key: string, a: BundleNameAnchors): string {
++  const ns = NAMESPACED.exec(key);
++  if (ns) {
++    const [, namespace, path] = ns;
++    return isAbsolute(path!) ? `${namespace}:${nameOfPath(path!, a)}` : key;
++  }
++  return nameOfPath(resolve(a.cwd, key), a);
++}
++
++/** The parts of Bun's metafile this reads. */
++export interface BundleMetafile {
++  readonly inputs: Readonly<Record<string, unknown>>;
++  readonly outputs: Readonly<
++    Record<string, { readonly inputs?: Readonly<Record<string, { readonly bytesInOutput?: number }>> }>
++  >;
++}
++
++export class BundleNameError extends Error {}
++
++/**
++ * `code` with every module's name lines rewritten through `rename`.
++ *
++ * `output` is the metafile key of the bundle `code` is; its `inputs` say which
++ * modules put code there. See the header for the two refusals.
++ */
++export function renameBundleModules(
++  code: string,
++  metafile: BundleMetafile,
++  output: string,
++  rename: (key: string) => string,
++): string {
++  const emitted = metafile.outputs[output]?.inputs;
++  if (!emitted) {
++    throw new BundleNameError(`PocketJS build: the metafile has no output ${JSON.stringify(output)}`);
++  }
++  const names = new Map<string, string>();
++  for (const key of Object.keys(metafile.inputs)) {
++    if ((emitted[key]?.bytesInOutput ?? 0) <= 0) continue;
++    const name = rename(key);
++    if (name !== key) names.set(key, name);
++  }
++  if (names.size === 0) return code;
++
++  const lines = code.split("\n");
++  const changed: Array<{ line: number; key: string }> = [];
++  const seen = new Set<string>();
++  for (let i = 0; i < lines.length; i++) {
++    const m = /^( *)\/\/ (.+)$/.exec(lines[i]!);
++    const name = m ? names.get(m[2]!) : undefined;
++    if (name === undefined) continue;
++    lines[i] = `${m![1]}// ${name}`;
++    changed.push({ line: i, key: m![2]! });
++    seen.add(m![2]!);
++  }
++  for (const key of names.keys()) {
++    if (!seen.has(key)) {
++      throw new BundleNameError(
++        `PocketJS build: module ${key} put code in the bundle and has no name line \`// ${key}\`, ` +
++          "so Bun printed module names some other way than this reads them",
++      );
++    }
++  }
++  const renamed = lines.join("\n");
++  const program = new Bun.Transpiler({ loader: "js" });
++  const before = program.transformSync(code);
++  if (program.transformSync(renamed) !== before) {
++    const original = code.split("\n");
++    const inCode = changed.filter(({ line }) => {
++      const one = original.slice();
++      one[line] = lines[line]!;
++      return program.transformSync(one.join("\n")) !== before;
++    });
++    throw new BundleNameError(
++      "PocketJS build: a line that is not a comment repeats a module's name line — " +
++        inCode.map(({ line, key }) => `line ${line + 1}, \`// ${key}\``).join("; ") +
++        " — inside a template literal; renaming it would change the program, so the bundle is not written",
++    );
++  }
++  return renamed;
++}
++
++/** Bun 1.3.11 hands the metafile over as an object; its types say a string. */
++export function parseMetafile(metafile: unknown): BundleMetafile {
++  const m = (typeof metafile === "string" ? JSON.parse(metafile) : metafile) as BundleMetafile | undefined;
++  if (!m || typeof m !== "object" || !m.inputs || !m.outputs) {
++    throw new BundleNameError("PocketJS build: Bun.build returned no metafile; module names cannot be made location-free");
++  }
++  return m;
++}
++
+diff --git a/tools/build.ts b/tools/build.ts
+index d41f9cda..5f340643 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -42,7 +42,7 @@ import { BuildInputs } from "../framework/compiler/build-inputs.ts";
+ //                                literal that is the attribute's whole value
+ //                                fails the build either way
+ 
+-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
++import { existsSync, mkdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+ import { resolve as resolvePath, join, dirname } from "node:path";
+ import { pathToFileURL, fileURLToPath } from "node:url";
+ import { IMG_FLAG_LINEAR, PSM } from "../contracts/spec/spec.ts";
+@@ -72,6 +72,7 @@ import {
+ import { bakeAtlases } from "../framework/compiler/bake-font.ts";
+ import { readFontConfig } from "../framework/compiler/font-config.ts";
+ import { bakeSvg } from "../framework/compiler/bake-svg.ts";
++import { BundleNameError, bundleModuleName, parseMetafile, renameBundleModules } from "../framework/compiler/bundle-names.ts";
+ import { compilePathEntry, PathDataError } from "../framework/compiler/path-data.ts";
+ import { pathKey } from "../framework/src/path-key.ts";
+ import type { PathEntry } from "../contracts/spec/spec.ts";
+@@ -736,11 +737,40 @@ if (!result.success) {
+   process.exit(1);
+ }
+ const bundle = result.outputs.find((o) => o.path.endsWith(".js"));
++// Bun names each module above its code by its path relative to this
++// process's cwd, so the bundle's bytes would depend on where the app, the
++// outdir and this tree sit on disk. Rename them by what they are
++// (framework/compiler/bundle-names.ts) and write the bundle over Bun's.
++let bundleBytes = 0;
++if (bundle) {
++  const metafile = parseMetafile(result.metafile);
++  const outputs = Object.keys(metafile.outputs).filter((k) => k.endsWith(".js"));
++  if (outputs.length !== 1) {
++    console.error(`PocketJS build: expected one .js output in the metafile, found ${outputs.length}`);
++    process.exit(1);
++  }
++  const anchors = {
++    tree: realpathSync(ROOT),
++    app: realpathSync(dirname(entry)),
++    outdir: realpathSync(DIST),
++    cwd: process.cwd(),
++  };
++  let code: string;
++  try {
++    code = renameBundleModules(await bundle.text(), metafile, outputs[0]!, (key) =>
++      bundleModuleName(key, anchors));
++  } catch (e) {
++    if (!(e instanceof BundleNameError)) throw e;
++    console.error(e.message);
++    process.exit(1);
++  }
++  bundleBytes = await Bun.write(bundle.path, code);
++}
+ if (inputsFile) {
+   buildInputs.metafile(result.metafile);
+   await buildInputs.compiler([join(ROOT, "tools/build.ts"), join(ROOT, "tools/pocket.ts"),
+     ...(useConfig && existsSync(configPath) ? [configPath] : [])], ROOT);
+   await Bun.write(inputsFile, JSON.stringify(buildInputs.paths(), null, 2) + "\n");
+ }
+-console.log(`  pass 2: ${DIST}${outName}.js (${bundle ? (await bundle.arrayBuffer()).byteLength : 0} bytes)`);
++console.log(`  pass 2: ${DIST}${outName}.js (${bundleBytes} bytes)`);
+ console.log("PocketJS build: done");

@@ -12,6 +12,13 @@
  * `MOTION_RUN_ID` is set. `tests/api.test.ts` holds each function equal to
  * the CLI run as a separate process on the same input.
  *
+ * `render`, `concat` and `trace` take what an argv cannot carry: a `RunContext` of an
+ * `AbortSignal` and a per-frame progress callback, which reach the frame loop
+ * through `dispatch` and nothing else. Neither moves a
+ * field of the result; a signal that fires replaces the result with a refusal
+ * carrying `cancelled: true`, and a cancelled `render` or `concat` leaves
+ * no file it wrote. `src/mcp/server.ts` is the caller they exist for.
+ *
  * Nothing here re-derives a verdict, reshapes a section or adds a field.
  * A function that did would be a second implementation of the command, and
  * the second implementation is the one nobody tests — `verify`'s envelope is
@@ -37,7 +44,7 @@ import { dispatch } from "./cli/main.ts";
 import type { DoctorReport } from "./cli/commands/doctor.ts";
 import type { ConcatJson } from "./cli/commands/concat.ts";
 import type { RenderJson, SegmentJson } from "./cli/commands/render.ts";
-import type { TraceJson } from "./cli/types.ts";
+import type { FrameProgress, RunContext, TraceJson } from "./cli/types.ts";
 import type { BuildRecord } from "./render/build-record.ts";
 
 if (typeof Bun === "undefined") {
@@ -76,6 +83,11 @@ export interface RenderOptions extends CompositionFlags {
   readonly format?: "mp4" | "webm" | "mov" | "png-seq";
   /** Ask the codec for an alpha channel. Refused for mp4. */
   readonly alpha?: boolean;
+  /** With `spec`: skip each job's own `assertions[]`, which are otherwise
+   *  checked on its staged tree before it renders — a job is refused when one
+   *  fails, and `assert`'s object comes back as `assertions`. Refused without
+   *  `spec`. */
+  readonly noAssert?: boolean;
   /**
    * Render frames `first` to `last` (both included) as a segment for
    * `concat`: `--range first..last`. The result is a `SegmentJson`.
@@ -91,6 +103,13 @@ export interface ConcatOptions extends CompositionFlags {
   readonly out: string;
 }
 
+/**
+ * Under a declared shutter, which picture a node is classified in: the
+ * delivered exposure (the default) or the frame's own tick, at one raster a
+ * probe instead of `samples`. Ignored without a shutter.
+ */
+export type Read = "exposure" | "tick";
+
 export interface VerifyOptions extends CompositionFlags {
   /** How many layout frames. Mutually exclusive with `at`. */
   readonly samples?: number;
@@ -98,7 +117,25 @@ export interface VerifyOptions extends CompositionFlags {
   readonly at?: readonly number[];
   /** Count layout warnings towards the verdict. */
   readonly strict?: boolean;
+  readonly read?: Read;
 }
+
+export interface AssertOptions extends CompositionFlags {
+  /** How many evenly spaced frames to evaluate on; `durationFrames` is exact. Default 24. */
+  readonly samples?: number;
+  readonly read?: Read;
+}
+
+export interface LayoutOptions extends CompositionFlags {
+  /** The frame to lay out. */
+  readonly at: number;
+  /** Every node, unnamed scaffolding included, instead of the named and text ones. */
+  readonly all?: boolean;
+  readonly read?: Read;
+}
+
+/** What `render` and `trace` can be handed besides their options (`src/cli/types.ts`). */
+export type { FrameProgress, RunContext };
 
 /** Present on every result when `MOTION_RUN_ID` is set. */
 interface Run {
@@ -147,6 +184,8 @@ export type RenderResult =
         readonly outputPath: string;
         readonly digest: string;
         readonly frames: number;
+        /** `assert`'s object for the job, unless `noAssert` was set. */
+        readonly assertions?: unknown;
       }[];
     })
   | Refusal;
@@ -168,6 +207,34 @@ export type VerifyResult =
       readonly visibility: unknown;
       readonly layout: readonly unknown[];
       readonly assertions: unknown;
+    })
+  | Refusal;
+
+/** `assert --json`: one verdict per sidecar assertion, over the sampled frames it names. */
+export type AssertResult =
+  | (Run & {
+      readonly ok: boolean;
+      readonly frames: readonly number[];
+      readonly durationFrames: number;
+      readonly assertions: readonly unknown[];
+      readonly failures: readonly string[];
+      /** Present when the sidecar declares no assertions. */
+      readonly note?: string;
+    })
+  | Refusal;
+
+/** `layout --at N --json`: rects, in-picture verdicts and finding codes at one frame. */
+export type LayoutResult =
+  | (Run & {
+      readonly ok: true;
+      readonly frame: number;
+      readonly viewport: readonly [number, number];
+      readonly notInPicture: number;
+      readonly covered: number;
+      readonly findings: readonly unknown[];
+      readonly findingCounts: Readonly<Record<string, number>>;
+      readonly unusedAllow: readonly unknown[];
+      readonly nodes: readonly unknown[];
     })
   | Refusal;
 
@@ -199,8 +266,8 @@ export function argvOf(
   return argv;
 }
 
-async function call<T>(argv: readonly string[]): Promise<T> {
-  const result = await dispatch(argv);
+async function call<T>(argv: readonly string[], control: RunContext = {}): Promise<T> {
+  const result = await dispatch(argv, control);
   if (result === "help") {
     // `argvOf` never writes `--help`; this is a call this module cannot make.
     throw new Error(`pocket-motion: ${argv.join(" ")} asked for help, which is not an envelope`);
@@ -214,21 +281,30 @@ export function build(dir: string, options: CompositionFlags = {}): Promise<Buil
 }
 
 /** `trace <dir> --json`: the per-frame hashes, their digest, and input identity. */
-export function trace(dir: string, options: CompositionFlags = {}): Promise<TraceResult> {
-  return call(argvOf("trace", dir, { ...options }));
+export function trace(
+  dir: string,
+  options: CompositionFlags = {},
+  control: RunContext = {},
+): Promise<TraceResult> {
+  return call(argvOf("trace", dir, { ...options }), control);
 }
 
 /**
  * `render <dir> --out <file> --json`, or with `spec` a job rendered from the
  * composition's generator. `outputPath` is the file; `digest` and `identity`
- * are the values `trace` reports. A `--spec` job carries no `identity`:
- * it builds in a staged directory whose name is random and lands in the
- * build record, so the same job would report a different one every run.
+ * are the values `trace` reports. A `--spec` job carries its own
+ * `identity`, which the staged directory's random name does not reach, so
+ * one spec rendered twice reports one.
  */
-export function render(dir: string, options: RenderOptions): Promise<RenderResult> {
+export function render(
+  dir: string,
+  options: RenderOptions,
+  control: RunContext = {},
+): Promise<RenderResult> {
   const { range, ...rest } = options;
   return call(
     argvOf("render", dir, { ...rest, ...(range ? { range: `${range[0]}..${range[1]}` } : {}) }),
+    control,
   );
 }
 
@@ -236,21 +312,40 @@ export function render(dir: string, options: RenderOptions): Promise<RenderResul
  * `concat <dir> <segment>... --out <file> --json`: join segments `render`
  * wrote with `range`, each named by its `out` or its `.segment.json`, into
  * one film — refused when they are not one film — and mux the sound once.
- * `digest` is the value `trace` reports for the same identity.
+ * `digest` is the value `trace` reports for the same identity. A signal in
+ * `control` cancels it, and a cancelled join leaves `--out` as it was.
  */
 export function concat(
   dir: string,
   segments: readonly string[],
   options: ConcatOptions,
+  control: RunContext = {},
 ): Promise<ConcatResult> {
   const argv = argvOf("concat", dir, { ...options });
   argv.splice(2, 0, ...segments);
-  return call(argv);
+  return call(argv, control);
 }
 
 /** `verify <dir> --json`: lint, check, keyframes, visibility, layout and assert in one envelope. */
 export function verify(dir: string, options: VerifyOptions = {}): Promise<VerifyResult> {
   return call(argvOf("verify", dir, { ...options }));
+}
+
+/**
+ * `assert <dir> --json`: whether each of the sidecar's `assertions[]` holds
+ * in the picture, at the sampled frames the object names. An assertion
+ * naming a node the tree does not carry fails rather than being skipped.
+ */
+export function assert(dir: string, options: AssertOptions = {}): Promise<AssertResult> {
+  return call(argvOf("assert", dir, { ...options }));
+}
+
+/**
+ * `layout <dir> --at N --json`: where each node landed at frame N, whether
+ * hiding it changes a pixel, and the finding codes — reported, never failed on.
+ */
+export function layout(dir: string, options: LayoutOptions): Promise<LayoutResult> {
+  return call(argvOf("layout", dir, { ...options }));
 }
 
 /**

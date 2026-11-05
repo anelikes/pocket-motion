@@ -16,16 +16,31 @@
  *
  * `--json` is `render`'s object for the joined film — `digest` is the value
  * `trace` reports for this identity — plus `segments` and `join`.
+ *
+ * `--out` is held to `render`'s rule: the join is written to a hidden
+ * sibling (`partialPathOf`) and renamed over `--out` once it has been read
+ * back, so a join that is refused, fails its read-back or is cancelled
+ * leaves `--out` as it was. A cancel (the `RunContext` signal) is honoured
+ * before the join, after it and after the sound mux, and takes back what
+ * this run wrote.
  */
 
-import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { rename, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
 import type { InputIdentity } from "../../render/identity.ts";
 import { checkAndJoin, readSegment, type JoinReport, type Segment } from "../../render/segment.ts";
 import { UsageError, optionalString, parseArgs, requirePositional } from "../args.ts";
 import { errMsg, resolveComposition } from "../resolve.ts";
-import { EXIT_FAIL, EXIT_OK, type CommandResult, type GlobalFlags } from "../types.ts";
-import { deliverSound, describeJoin, joinRefused, resolveFormat, type RenderJson } from "./render.ts";
+import { EXIT_FAIL, EXIT_OK, type CommandResult, type GlobalFlags, type RunContext } from "../types.ts";
+import {
+  deliverSound,
+  describeJoin,
+  joinRefused,
+  partialPathOf,
+  resolveFormat,
+  type RenderJson,
+} from "./render.ts";
 import { compositionIdentity } from "./trace.ts";
 
 export interface ConcatJson extends Omit<RenderJson, "elapsedMs" | "msPerFrame" | "workers" | "identity"> {
@@ -44,8 +59,20 @@ export interface ConcatOptions {
   readonly flags: GlobalFlags;
 }
 
-export async function run(options: ConcatOptions): Promise<CommandResult> {
+function cancelledResult(signal: AbortSignal | undefined): CommandResult {
+  const message = `concat cancelled — ${errMsg(signal?.reason)}`;
+  return {
+    exitCode: EXIT_FAIL,
+    json: { ok: false, cancelled: true, error: message },
+    stderrLines: [message],
+    stdoutLines: [message],
+  };
+}
+
+export async function run(options: ConcatOptions, context: RunContext = {}): Promise<CommandResult> {
   const started = performance.now();
+  const signal = context.signal;
+  const cancelled = (): boolean => signal?.aborted === true;
   const segments: Segment[] = [];
   for (const arg of options.segments) {
     try {
@@ -86,7 +113,29 @@ export async function run(options: ConcatOptions): Promise<CommandResult> {
   }
   const c = resolved.value;
 
+  // What a cancel takes back: the delivered file and the mix manifest beside
+  // it, or the PNGs joined into the --out directory (the directory itself
+  // when this run made it). The partial goes on every way out.
+  const wrote: { partial: string | null; delivered: string[]; frameDir: string | null; madeFrameDir: boolean; frames: number } =
+    { partial: null, delivered: [], frameDir: null, madeFrameDir: false, frames: 0 };
+  const takeBack = async (): Promise<void> => {
+    for (const path of wrote.delivered) await rm(path, { force: true });
+    if (wrote.frameDir !== null) {
+      if (wrote.madeFrameDir) await rm(wrote.frameDir, { recursive: true, force: true });
+      else
+        for (let f = 0; f < wrote.frames; f++) {
+          await rm(join(wrote.frameDir, `${String(f).padStart(6, "0")}.png`), { force: true });
+        }
+    }
+  };
+  const interrupted = async (): Promise<CommandResult | null> => {
+    if (!cancelled()) return null;
+    await takeBack();
+    return cancelledResult(signal);
+  };
+
   try {
+    if (cancelled()) return cancelledResult(signal);
     const footage: Record<string, string> = {};
     const taken: string[] = [];
     for (const [key, hash] of Object.entries(segments[0]!.manifest.identity.components)) {
@@ -96,13 +145,35 @@ export async function run(options: ConcatOptions): Promise<CommandResult> {
     }
     const identity = await compositionIdentity(c, c.sidecar.footage.length > 0 ? footage : undefined);
 
-    if (format === "png-seq") mkdirSync(outputPath, { recursive: true });
+    if (format === "png-seq") {
+      // An existing directory that already holds files is refused by the join
+      // before it copies one, so the take-back below never removes a frame
+      // this run did not write.
+      wrote.madeFrameDir = !existsSync(outputPath);
+      mkdirSync(outputPath, { recursive: true });
+      if (readdirSync(outputPath).length === 0) wrote.frameDir = outputPath;
+    } else {
+      wrote.partial = partialPathOf(outputPath);
+    }
     const joined = await checkAndJoin(
       segments,
       { identity, filmFrames: c.durationFrames, hash: options.flags.hash },
-      outputPath,
+      wrote.partial ?? outputPath,
     );
-    if (!joined.ok) return joinRefused(joined.refusals, "concat");
+    if (!joined.ok) {
+      if (wrote.madeFrameDir) await rm(outputPath, { recursive: true, force: true });
+      return joinRefused(joined.refusals, "concat");
+    }
+    wrote.frames = joined.frames.length;
+    if (wrote.partial !== null) {
+      await rename(wrote.partial, outputPath);
+      wrote.partial = null;
+      wrote.delivered.push(outputPath);
+    }
+    {
+      const stop = await interrupted();
+      if (stop) return stop;
+    }
 
     const first = joined.ordered[0]!.manifest;
     const payload: ConcatJson = {
@@ -129,12 +200,23 @@ export async function run(options: ConcatOptions): Promise<CommandResult> {
         : []),
       ...describeJoin(joined.report),
     ];
-    const failed = await deliverSound(c, format, payload, stdoutLines);
+    const failed = await deliverSound(c, format, payload, stdoutLines, {
+      wrote: (path) => wrote.delivered.push(path),
+      interrupted,
+    });
     if (failed) return failed;
+    {
+      const stop = await interrupted();
+      if (stop) return stop;
+    }
     payload.elapsedMs = performance.now() - started;
     stdoutLines.push(`${payload.elapsedMs.toFixed(0)} ms`);
     return { exitCode: EXIT_OK, json: payload, stdoutLines };
   } catch (e) {
+    {
+      const stop = await interrupted();
+      if (stop) return stop;
+    }
     if (e instanceof UsageError) throw e;
     const message = errMsg(e);
     return {
@@ -143,10 +225,12 @@ export async function run(options: ConcatOptions): Promise<CommandResult> {
       stderrLines: [message],
       stdoutLines: [`concat failed — ${message}`],
     };
+  } finally {
+    if (wrote.partial !== null) await rm(wrote.partial, { force: true });
   }
 }
 
-export async function runFromArgv(argv: readonly string[]): Promise<CommandResult> {
+export async function runFromArgv(argv: readonly string[], context: RunContext = {}): Promise<CommandResult> {
   const parsed = parseArgs(["concat", ...argv]);
   const dir = requirePositional(parsed.positionals, 0, "composition-dir");
   const segments = parsed.positionals.slice(1);
@@ -158,5 +242,5 @@ export async function runFromArgv(argv: readonly string[]): Promise<CommandResul
   }
   const out = optionalString(parsed.flags, "out");
   if (out === undefined) throw new UsageError("flag --out is required");
-  return run({ dir, segments, out, flags: parsed.global });
+  return run({ dir, segments, out, flags: parsed.global }, context);
 }

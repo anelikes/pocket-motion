@@ -1,0 +1,288 @@
+pocket-motion-only: the inventory exists for a build that mounts the bundle it built, which is this repository's (`src/cli/build.ts`); it bakes `<Path>` outlines, which only 0042's PATH op draws.
+
+0054 — `<Path>` outlines a mount computes, baked. A `d` the collector cannot
+read where it is written — imported from another module, or built from data
+at mount, as d3-shape's `line()(rows)` builds a chart's — was refused at
+mount. A pocket-motion composition is mount-only, so every outline it will
+draw is in the tree right after mount: the build mounts once, takes the keys
+the tree asked for, bakes them, and mounts the result again.
+`docs/text-shaping.design.md` proposed the same inventory for strings.
+
+What the patch adds, by file:
+
+- `framework/compiler/jsx-plugin.ts`: the collector records, as
+  `unreadPaths`, every `d` attribute (and every one whose `viewBox` it
+  cannot read) it records no outline for, with its line and column. The
+  field rides in the transform cache entry, whose file is in the cache key.
+- `tools/build.ts`: the build prints them on one line,
+  `  paths at mount: N d attribute(s) not read by the build (file:line:col, …)`,
+  which is what tells pocket-motion's `runBuild` to mount. And
+  `--path-inventory=<file>` — `{ "outlines": [{ "d": [...], "viewBox"? }] }`
+  — bakes those outlines AFTER the literal ones, deduplicated by key, so a
+  build without the flag writes the bytes it wrote; one that does not bake
+  is `error: <file>: outline N, computed at mount: <Path> d does not bake: …`.
+- `framework/src/native-tree.ts`: `setPath`, on a key the build did not bake,
+  hands it to `ui.__unbakedPath` when the host installs one and clears the
+  node's outline; without one a strict host refuses it as before, its message
+  now naming the mount inventory.
+
+In this repository, `src/cli/build.ts` reads the line, mounts the bundle
+through `src/render/path-inventory.ts`, writes `<output>.paths.json` beside
+the pak, rebuilds with `--path-inventory=` (the argv `build.json` records)
+and mounts again; a mount that asks for more is refused.
+
+Red cases, run by `baselines/svg-import/redcheck.ts`, each an edit to one `+`
+line of this patch (the harness rebuilds the vendored tree from the edited
+patch and restores it) — or, for the last three, to `src/cli/build.ts` —
+each turning the named test of `tests/path-inventory.test.ts` red:
+- the collector does not report a d it cannot read -> -t a computed d and a forwarded prop are unread
+- the build ignores --path-inventory -> -t a d computed at mount is baked from an inventory and draws
+- an inventory outline that does not parse is not located -> -t does not parse is refused naming the inventory
+- mount refuses an unbaked outline even with an inventory host -> -t a d computed at mount is baked from an inventory and draws
+- runBuild never reads the paths-at-mount line -> -t a d computed at mount is baked from an inventory and draws
+- runBuild does not mount the rebuilt bundle -> -t a mount that computes different outlines
+- runBuild mounts and writes an inventory for every build -> -t every d is a literal is built once
+
+The fixture is `compositions/data-chart`, in both ledgers: a line chart
+whose rules, area, series and dots are computed at mount from rows in
+another module, by a monotone cubic written with + - * / only.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/framework/compiler/jsx-plugin.ts b/framework/compiler/jsx-plugin.ts
+index b83bacf..2b7fe88 100644
+--- a/framework/compiler/jsx-plugin.ts
++++ b/framework/compiler/jsx-plugin.ts
+@@ -239,6 +239,16 @@ export interface PathDecl {
+   column: number;
+ }
+ 
++/**
++ * Where a `d` attribute sits whose value the collector cannot read — an
++ * import, a computed string, a component's prop (pocket-motion). The build
++ * reports them so whoever runs it knows the outlines are taken from a mount.
++ */
++export interface UnreadPath {
++  line: number;
++  column: number;
++}
++
+ export interface TransformResult {
+   /** ESM JS: JSX compiled for the selected framework. */
+   code: string;
+@@ -269,6 +279,8 @@ export interface TransformResult {
+   literalSites: LiteralSite[];
+   /** Every `d` attribute whose value resolves to literals (see `pathValues`). */
+   pathDecls: PathDecl[];
++  /** Every other `d` attribute: its outline is known only once the tree mounts. */
++  unreadPaths: UnreadPath[];
+ }
+ 
+ interface Collected {
+@@ -277,6 +289,7 @@ interface Collected {
+   textCodepoints: Set<number>;
+   literalSites: LiteralSite[];
+   pathDecls: PathDecl[];
++  unreadPaths: UnreadPath[];
+ }
+ 
+ type BabelPath = {
+@@ -776,14 +789,21 @@ function makeCollector(out: Collected, framework: PocketFramework): PluginObj {
+               // prop passed through a component, say — is left to mount,
+               // which refuses an outline the build did not bake.
+               if (name.type === "JSXIdentifier" && name.name === "d" && path.node.value) {
++                const at = { line: path.node.loc?.start.line ?? 0, column: (path.node.loc?.start.column ?? -1) + 1 };
+                 const ds = pathValues(path.get("value") as unknown as BabelPath);
+-                if (ds === null) return;
++                if (ds === null) {
++                  out.unreadPaths.push(at);
++                  return;
++                }
+                 const opening = path.parentPath.node as { attributes: Array<{ type: string; name?: { type: string; name: string }; value?: unknown }> };
+                 const vbIndex = opening.attributes.findIndex((a) => a.type === "JSXAttribute" && a.name?.type === "JSXIdentifier" && a.name.name === "viewBox");
+                 let vbs: Array<string | undefined> = [undefined];
+                 if (vbIndex >= 0) {
+                   const vb = pathValues((path.parentPath.get("attributes") as unknown as BabelPath[])[vbIndex]!.get("value") as BabelPath);
+-                  if (vb === null || vb.some((v) => v.length !== 1)) return;
++                  if (vb === null || vb.some((v) => v.length !== 1)) {
++                    out.unreadPaths.push(at);
++                    return;
++                  }
+                   vbs = vb.map((v) => v[0]);
+                 }
+                 const loc = path.node.loc;
+@@ -937,6 +957,7 @@ interface CacheEntry {
+   textCodepoints: number[];
+   literalSites: LiteralSite[];
+   pathDecls: PathDecl[];
++  unreadPaths: UnreadPath[];
+   /** Files `<Svg>` expansions read (pocket-motion): the entry holds only while each is unchanged. */
+   svgDeps: SvgDep[];
+ }
+@@ -1039,12 +1060,13 @@ export async function transformFile(
+       textCodepoints: new Set(cached.textCodepoints),
+       literalSites: cached.literalSites ?? [],
+       pathDecls: cached.pathDecls,
++      unreadPaths: cached.unreadPaths,
+     };
+   }
+ 
+   if (isVueSfc) {
+     const result = compileVueSfc(src, path, { stripTypes: true, checkedAot: true });
+-    const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [], pathDecls: [] };
++    const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [], pathDecls: [], unreadPaths: [] };
+     const transformed = await transformAsync(result.code, {
+       filename: path,
+       presets: [],
+@@ -1068,6 +1090,7 @@ export async function transformFile(
+       // The collector read compiled SFC output: its positions are not the file's.
+       literalSites: [],
+       pathDecls: collected.pathDecls,
++      unreadPaths: collected.unreadPaths,
+       svgDeps: [],
+     };
+     await Bun.write(cacheFile, JSON.stringify(entry));
+@@ -1078,10 +1101,11 @@ export async function transformFile(
+       textCodepoints: new Set(entry.textCodepoints),
+       literalSites: [],
+       pathDecls: entry.pathDecls,
++      unreadPaths: entry.unreadPaths,
+     };
+   }
+ 
+-  const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [], pathDecls: [] };
++  const collected: Collected = { classStrings: solidAot ? Object.keys(solidAot.styles.ids) : [], classAttrStrings: [], textCodepoints: new Set(), literalSites: [], pathDecls: [], unreadPaths: [] };
+   const opts = transformOptions(framework);
+   const svgDeps: SvgDep[] = [];
+   const plugins = [
+@@ -1162,6 +1186,7 @@ export async function transformFile(
+     textCodepoints: [...collected.textCodepoints],
+     literalSites: positionsHold ? collected.literalSites : [],
+     pathDecls: collected.pathDecls,
++    unreadPaths: collected.unreadPaths,
+     svgDeps,
+   };
+   await Bun.write(cacheFile, JSON.stringify(entry));
+@@ -1172,6 +1197,7 @@ export async function transformFile(
+     textCodepoints: collected.textCodepoints,
+     literalSites: entry.literalSites,
+     pathDecls: entry.pathDecls,
++    unreadPaths: entry.unreadPaths,
+   };
+ }
+ 
+diff --git a/framework/src/native-tree.ts b/framework/src/native-tree.ts
+index f3c82ba..478cf6d 100644
+--- a/framework/src/native-tree.ts
++++ b/framework/src/native-tree.ts
+@@ -633,11 +633,20 @@ function setPath(node: NodeMirror, value: unknown): void {
+   }
+   const id = resolvePath(value);
+   if (id === undefined) {
++    // A host taking an inventory of the outlines a mount computes (pocket-motion's
++    // build) is handed the key and the node draws no outline; the build bakes the
++    // keys and mounts again, and on that mount every key resolves.
++    const inventory = (ops as { __unbakedPath?: (key: string) => void }).__unbakedPath;
++    if (typeof inventory === "function") {
++      inventory(value);
++      ops.setProp(node.id, PROP.path, encodePropValue("path", 0));
++      return;
++    }
+     if (getHost().strict) {
+       throw new Error(
+         `PocketJS: <Path> outline ${value.length > 120 ? value.slice(0, 117) + "..." : value} was not baked - ` +
+           "the build bakes the d and viewBox written as string literals, arrays of them, or module consts of either, " +
+-          "at the <Path> or at the component that passes them to it",
++          "at the <Path> or at the component that passes them to it, and pocket-motion's build bakes the ones a mount computes",
+       );
+     }
+     missCounters.unknownPath++;
+diff --git a/tools/build.ts b/tools/build.ts
+index 3f78511..285a777 100644
+--- a/tools/build.ts
++++ b/tools/build.ts
+@@ -135,6 +135,8 @@ let hzFlag: number | undefined;
+ let projectRoot = process.cwd();
+ let inputsFile: string | undefined;
+ let strictClasses = false;
++/** pocket-motion: outlines a mount computed, baked after the literal ones (`--path-inventory=`). */
++let pathInventory: string | undefined;
+ const buildInputs = new BuildInputs();
+ for (const a of args) {
+   if (a.startsWith("--extra-chars=")) extraChars = a.slice("--extra-chars=".length);
+@@ -153,6 +155,7 @@ for (const a of args) {
+   else if (a.startsWith("--hz=")) hzFlag = Number(a.slice("--hz=".length));
+   else if (a.startsWith("--inputs-file=")) inputsFile = resolvePath(a.slice("--inputs-file=".length));
+   else if (a === "--strict-classes") strictClasses = true;
++  else if (a.startsWith("--path-inventory=")) pathInventory = resolvePath(a.slice("--path-inventory=".length));
+   else if (!a.startsWith("-")) appArg = a;
+ }
+ 
+@@ -332,6 +335,8 @@ const codepoints = new Set<number>();
+ const visited = new Set<string>();
+ /** `<Path>` outlines written as literals (pocket-motion), in walk order. */
+ const pathDecls: Array<{ file: string; decl: PathDecl }> = [];
++/** `d` attributes the collector could not read (pocket-motion), in walk order. */
++const unreadPaths: Array<{ file: string; line: number; column: number }> = [];
+ 
+ async function walk(file: string): Promise<void> {
+   if (visited.has(file)) return;
+@@ -355,6 +360,7 @@ async function walk(file: string): Promise<void> {
+   for (const s of res.classAttrStrings) classAttrStrings.add(s);
+   for (const cp of res.textCodepoints) codepoints.add(cp);
+   for (const decl of res.pathDecls) pathDecls.push({ file, decl });
++  for (const at of res.unreadPaths) unreadPaths.push({ file, ...at });
+   // The framework's own modules are not the app author's to fix.
+   if (!file.startsWith(ROOT + "/framework/")) for (const site of res.literalSites) literalSites.push({ file, site });
+   for (const spec of importSpecifiers(src)) {
+@@ -411,12 +417,49 @@ const bakedPaths: Array<{ key: string; entry: PathEntry }> = [];
+       errors.push(`${file.startsWith(base) ? file.slice(base.length) : file}:${decl.line}:${decl.column}: <Path> d does not bake: ${e.message}`);
+     }
+   }
++  // Outlines a mount of this composition computed, which no literal names: a
++  // `d` imported or built at run time. The caller mounted the bundle, read
++  // every key the tree asked for and did not find, and hands them here; they
++  // follow the literal entries, so a build without the flag writes the bytes
++  // it wrote before.
++  let fromMount = 0;
++  if (pathInventory !== undefined) {
++    const shown = pathInventory.startsWith(base) ? pathInventory.slice(base.length) : pathInventory;
++    const inv = (await Bun.file(pathInventory).json()) as { outlines?: Array<{ d?: unknown; viewBox?: unknown }> };
++    if (!Array.isArray(inv.outlines)) throw new Error(`PocketJS build: ${shown} has no "outlines" array`);
++    buildInputs.add(pathInventory);
++    for (const [i, o] of inv.outlines.entries()) {
++      const d = o.d;
++      if (!Array.isArray(d) || !d.every((k) => typeof k === "string") || (o.viewBox !== undefined && typeof o.viewBox !== "string")) {
++        throw new Error(`PocketJS build: ${shown} outline ${i} is not { d: string[], viewBox?: string }`);
++      }
++      const viewBox = o.viewBox as string | undefined;
++      const key = pathKey(d as string[], viewBox);
++      if (seen.has(key)) continue;
++      seen.add(key);
++      try {
++        bakedPaths.push({ key, entry: compilePathEntry(d as string[], viewBox) });
++        fromMount++;
++      } catch (e) {
++        if (!(e instanceof PathDataError)) throw e;
++        errors.push(`${shown}: outline ${i}, computed at mount: <Path> d does not bake: ${e.message}`);
++      }
++    }
++  }
+   if (errors.length > 0) {
+     for (const line of errors) console.error(`error: ${line}`);
+     console.error(`PocketJS build: ${errors.length} <Path> outline(s) do not bake.`);
+     process.exit(1);
+   }
+-  if (bakedPaths.length > 0) console.log(`  paths: ${bakedPaths.length} outline(s) baked`);
++  if (bakedPaths.length > 0) {
++    console.log(`  paths: ${bakedPaths.length} outline(s) baked${fromMount > 0 ? `, ${fromMount} of them computed at mount` : ""}`);
++  }
++  // The `d` attributes nothing here could read, as one line a caller can find:
++  // their outlines exist only once the tree mounts.
++  if (unreadPaths.length > 0) {
++    const where = unreadPaths.map((u) => `${u.file.startsWith(base) ? u.file.slice(base.length) : u.file}:${u.line}:${u.column}`);
++    console.log(`  paths at mount: ${unreadPaths.length} d attribute(s) not read by the build (${where.join(", ")})`);
++  }
+ }
+ 
+ registerAnimationTheme(config.theme);

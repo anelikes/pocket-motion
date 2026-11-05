@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-short-sections",
+  "name": "pocketjs-motion-short-sections",
+  "title": "PocketJS Motion: sections shorter than the sampling stride",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/short-sections/main.tsx",
+    "output": "motion-short-sections",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [720, 1280], "presentation": "native" } }
+  }
+}

@@ -140,14 +140,20 @@ export interface PathProbe {
   readonly source?: string;
   readonly d?: readonly string[];
   readonly viewBox?: string;
+  /** An SVG document written beside the module as `./pic.svg`, for an `<Svg src>` (patches/0053). */
+  readonly svg?: string;
   readonly outcome:
     /** The collector records exactly these outlines (order-free); empty is a refusal. */
     | { readonly records: readonly { readonly d: readonly string[]; readonly viewBox?: string }[] }
     /** The baker's verb list (0 move, 1 line, 2 cubic, 3 close). */
     | { readonly verbs: readonly number[] }
-    /** The baker throws, with this substring in the message. */
+    /** The baker — or, for a module, the transform — throws, with this substring in the message. */
     | { readonly refuses: string };
 }
+
+/** The module an `<Svg>` path probe transforms, beside its `svg` written as `./pic.svg`. */
+const SVG_PROBE_MODULE =
+  'import { Svg } from "@pocketjs/framework/components";\nexport const A = () => <Svg src="./pic.svg" parts={{ a: "opacity-50" }} />;\n';
 
 /**
  * A frame's geometry, given directly, and the codes it must produce.
@@ -614,7 +620,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "[]",
     constraint:
-      "array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames; changes no pixel",
+      "array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames — the even grid plus the frames each entry names (inPicture's ends, entersBy, exitsBy and the frame after it, and the frames that pin a before pair's first showings); changes no pixel",
     source: "src/manifest/sidecar.ts:750",
     verification: "probed",
     diagnostics: [
@@ -1708,6 +1714,92 @@ export const SURFACE: readonly CapabilityRow[] = [
       "/^[\\w./-]+\\.(?:png|svg)$/i",
       'join(upstream, "assets/images", name)',
     ],
+  },
+  {
+    id: "assets.svg-tree",
+    group: "assets",
+    declaredIn: "<Svg src=… width height parts>",
+    key: "<Svg src> | parts={{ id: \"classes\" }}",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "an SVG file imported as a tree of nodes, from `@pocketjs/framework/components`. The build expands the element before it collects a literal: a View with the author's class and debugName, a canvas View named `svg:<src>` at the picture's size (`width`/`height`, else the file's, else its viewBox's; clipped unless the root says overflow=\"visible\"), a View per `<g>` with an id, and a `<Path>` per path, rect, circle, ellipse, line, polyline and polygon, each id its debugName. Every transform, the viewBox and preserveAspectRatio (all nine alignments, meet and slice, none) are folded into the outlines, rotations and skews through the arc conversion's exact-at-quarter-turns `cosSinDeg`; each part's box is its own bounds on whole px, so its transform origin is its centre. Paint (fill, stroke, their opacities, width scaled with the map, join, cap, miter limit, fill rule, opacity) becomes class tokens from attributes, `style=\"\"` and the cascade; a `parts` entry is joined to its part's tokens as one literal, so 0012's and 0041's refusals reach it at the entry. Refused, naming the element: gradients, patterns, clip paths, masks, filters, `<use>`, `<symbol>`, `<style>`, text, images, nested `<svg>`, markers, SMIL; a `url()` paint, a dash array, a stroke under a non-uniform map; a parts key naming no id. A cached transform is dropped when the file it read changes. Class motion, patches/0053; fixture compositions/svg-import",
+    source: "vendor/pocketjs/framework/compiler/svg-tree.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    pathProbes: [
+      {
+        what: "every shape is an outline the collector bakes, transforms folded in, each in its own box",
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="a" width="10" height="10" fill="#fff"/><g transform="rotate(90 30 5)"><line id="b" x1="25" y1="5" x2="35" y2="5" stroke="#fff" stroke-width="2"/></g></svg>',
+        outcome: { records: [{ d: ["M0 0L10 0L10 10L0 10Z"] }, { d: ["M1 1L1 11"] }] },
+      },
+      {
+        what: 'a gradient is refused by name, even in <defs>',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><defs><linearGradient id="g"/></defs><rect id="a" width="1" height="1"/></svg>',
+        outcome: { refuses: '<linearGradient id="g"> (line 1): gradients are not imported' },
+      },
+      {
+        what: 'a clip path is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><clipPath id="c"/><rect id="a" width="1" height="1"/></svg>',
+        outcome: { refuses: '<clipPath id="c"> (line 1): clip paths are not imported' },
+      },
+      {
+        what: '<use> is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="a" width="1" height="1"/><use href="#a"/></svg>',
+        outcome: { refuses: '<use> (line 1): <use> is not imported' },
+      },
+      {
+        what: 'a <style> sheet is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><style>rect{fill:red}</style><rect id="a" width="1" height="1"/></svg>',
+        outcome: { refuses: '<style> (line 1): style sheets are not imported' },
+      },
+      {
+        what: 'text is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="a" width="1" height="1"/><text>hi</text></svg>',
+        outcome: { refuses: '<text> (line 1): text is not imported' },
+      },
+      {
+        what: 'a filter is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><filter id="f"/><rect id="a" width="1" height="1"/></svg>',
+        outcome: { refuses: '<filter id="f"> (line 1): filters are not imported' },
+      },
+      {
+        what: 'a stroke under a non-uniform scale is refused',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="a" width="1" height="1" transform="scale(2 1)" stroke="#fff"/></svg>',
+        outcome: { refuses: 'it is stroked under a transform that is not a uniform scale and rotation' },
+      },
+      {
+        what: 'a parts key naming no id is refused at the key',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="b" width="1" height="1"/></svg>',
+        outcome: { refuses: 'parts names "a", which no element of ./pic.svg carries as its id (its ids: b)' },
+      },
+    ],
+  },
+  {
+    id: "assets.svg-tree.lint",
+    group: "assets",
+    declaredIn: "<Svg src=…>",
+    key: "<Svg src> missing or refused (lint)",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "`lint` and `check` fail with `svg.missingFile` when an `<Svg src>` names no file, and `svg.unsupported` when the import refuses the file, naming the module, line and column of the src. The build refuses both too, located; this answers without building, and `check` before booting a bundle that predates the loss. Discovery is the build's (`svgSites`: a JSX element named by a binding imported as `Svg` from the framework's components), over the entry and the relative imports reachable from it, and `images.missingFile` does not read an `<Svg>`'s src as a picture name",
+    source: "src/lint/svg-trees.ts:30",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: ['export const CODE_SVG_MISSING = "svg.missingFile";', 'export const CODE_SVG_UNSUPPORTED = "svg.unsupported";', "tree.svgSites(source, file)"],
   },
   {
     id: "assets.images-json",
@@ -2831,7 +2923,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "a View that also draws a baked vector outline, imported from `@pocketjs/framework/components`. `d` is the whole SVG path grammar (implicit repeats, exponents, arc flags without separators), normalised at build time to move, line, cubic and close — Q and T by exact degree elevation, an arc to cubics of at most 45 degrees by unit-vector bisection and square roots only, so a pak's bytes do not depend on the host's `Math.sin`. An array is the morph keys (at most 8): a line against a cubic is promoted exactly, any other difference is refused naming the first differing command, and point counts are never equalised. `viewBox` maps the coordinates onto the box, xMidYMid meet; without it `d` is in the node's own px. The build bakes a `d` written as literals — a string, a `+` of two, an array of them, a `const` of any of those, an element of a `const` array by literal index, the parameter of a `.map` callback over one, or the arms of a ternary — on any element, paired with the viewBox written beside it, so a component that forwards `d` to a `<Path>` is baked from its call site; any other `d` (an import, a computed string) is looked up at mount, which refuses an outline the build did not bake. Fill and stroke are the `fill-*`/`stroke-*` rows; geometry is rebuilt every frame in the core, so the world transform, a mask, a paint and a filter layer all apply. Drawn by this repository's rasteriser only (patches/0042 op 71 and 0043, class motion)",
+      "a View that also draws a baked vector outline, imported from `@pocketjs/framework/components`. `d` is the whole SVG path grammar (implicit repeats, exponents, arc flags without separators), normalised at build time to move, line, cubic and close — Q and T by exact degree elevation, an arc to cubics of at most 45 degrees by unit-vector bisection and square roots only, so a pak's bytes do not depend on the host's `Math.sin`. An array is the morph keys (at most 8): a line against a cubic is promoted exactly, any other difference is refused naming the first differing command, and point counts are never equalised. `viewBox` maps the coordinates onto the box, xMidYMid meet; without it `d` is in the node's own px. The build bakes a `d` written as literals — a string, a `+` of two, an array of them, a `const` of any of those, an element of a `const` array by literal index, the parameter of a `.map` callback over one, or the arms of a ternary — on any element, paired with the viewBox written beside it, so a component that forwards `d` to a `<Path>` is baked from its call site; any other `d` (an import, a computed string) is baked from a mount of the bundle (paint.path.mount), and a render's mount refuses an outline its build did not bake. Fill and stroke are the `fill-*`/`stroke-*` rows; geometry is rebuilt every frame in the core, so the world transform, a mask, a paint and a filter layer all apply. Drawn by this repository's rasteriser only (patches/0042 op 71 and 0043, class motion)",
     source: "vendor/pocketjs/framework/compiler/path-data.ts",
     verification: "probed",
     diagnostics: [],
@@ -2877,9 +2969,19 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { verbs: [0, 2, 2, 2, 2] },
       },
       {
-        what: "keys that differ in structure are refused, naming where",
+        what: "keys that differ in structure are equalised to one verb list (patches/0046)",
         d: ["M0 0 L10 0 Z", "M0 0 L10 0 L5 5 Z"],
-        outcome: { refuses: "morph keys 0 and 1 differ at normalised command 2" },
+        outcome: { verbs: [0, 2, 2, 2, 2, 2, 3] },
+      },
+      {
+        what: "an unpartnered subpath is a slot of its own in every key",
+        d: ["M0 0 L10 0 L10 10 Z", "M5 5 L15 5 L15 15 L5 15 Z M7 7 L9 7 L9 9 Z"],
+        outcome: { verbs: [0, 2, 2, 2, 2, 2, 2, 2, 3, 0, 2, 2, 2, 3] },
+      },
+      {
+        what: "more than eight keys are refused",
+        d: ["M0 0 L1 1", "M0 0 L1 1", "M0 0 L1 1", "M0 0 L1 1", "M0 0 L1 1", "M0 0 L1 1", "M0 0 L1 1", "M0 0 L1 1", "M0 0 L1 1"],
+        outcome: { refuses: "a <Path> morphs at most 8 keys, got 9" },
       },
       {
         what: "a number after a close is not a command",
@@ -2887,6 +2989,21 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { refuses: "unknown command \"5\"" },
       },
     ],
+  },
+  {
+    id: "paint.path.mount",
+    group: "paint",
+    declaredIn: "<Path d={computed}>",
+    key: "<Path d> computed at mount",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "a `d` the build cannot read where it is written — imported from another module, or computed from data at mount, as d3-shape's `line()(rows)` is — is baked from the tree. The collector reports each such attribute and the build prints them on a `paths at mount:` line; only then does `runBuild` mount the bundle with `ui.__unbakedPath` installed, take every outline the tree asked for and did not find, write them to `<output>.paths.json` beside the pak, build again with `--path-inventory=` (the argv `build.json` records), and mount the result, which must ask for none: a composition whose outlines change once its own are baked is refused. A composition whose every `d` is a literal never mounts at build and its artifacts are the bytes they were. The mount is the render's realm (no `Date`, `Math.random` or locale formatting); a `d` computed through the host's `Math.sin`/`cos`/`pow`/`log`/`atan2` is that host's. patches/0054, class motion; tests/path-inventory.test.ts; fixture compositions/data-chart",
+    source: "src/cli/build.ts:38",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: ["const PATHS_AT_MOUNT = /^\\s*paths at mount: (\\d+) /m;", "`--path-inventory=${inventoryPath}`", "mounts ${again.length} more"],
   },
   {
     id: "paint.fill",
@@ -2971,6 +3088,66 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
   {
+    id: "paint.dash",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "stroke-dash-[a_b...] | stroke-dash-none | stroke-dash-offset-[N]",
+    required: false,
+    defaultValue: "none; 0",
+    constraint:
+      "SVG's stroke-dasharray and stroke-dashoffset on a `<Path>`'s stroke: 1 to 4 lengths in the path's own units (`_` or `,` between them), dash, gap, dash, gap, an odd count repeated once as SVG repeats it. A length below 0, all of them 0, more than four or a token that is not a number does not parse, which a class= attribute refuses (each would be a solid stroke under a class that says dashed). The pattern starts on every subpath at its start point, measured on the flattened outline; the offset is the distance into the pattern there, so running it back one period marches the dashes forward along the path and loops seamlessly. A zero-length dash draws its caps alone, a disc under `stroke-cap-round` and a square under `stroke-cap-square` (dotted lines); a zero-length gap joins its two dashes. The trim window keeps the dashes it covers without moving them; a dash over a closed subpath's start is one piece through it. At most 65,536 dashes a stroke a frame are drawn. The offset animates as `dashOffset`, `strokeDashoffset` or `stroke-dashoffset`. patches/0045, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "stroke-dash-[12_8] compiles to two lengths",
+        literals: ["stroke-white stroke-dash-[12_8]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "dashCount", value: 2 } },
+      },
+      {
+        what: "and the first is 12.0",
+        literals: ["stroke-white stroke-dash-[12_8]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "dash0", value: 1094713344 } },
+      },
+      {
+        what: "stroke-dash-offset-[-4.5] compiles to dashOffset = -4.5",
+        literals: ["stroke-white stroke-dash-offset-[-4.5]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "dashOffset", value: 3230662656 } },
+      },
+      {
+        what: "five lengths are refused",
+        literals: ["stroke-white stroke-dash-[1_2_3_4_5]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`stroke-dash-[1_2_3_4_5]`" },
+      },
+      {
+        what: "a pattern of zeros is refused",
+        literals: ["stroke-white stroke-dash-[0_0]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`stroke-dash-[0_0]`" },
+      },
+      {
+        what: "a negative length is refused",
+        literals: ["stroke-white stroke-dash-[-1_2]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`stroke-dash-[-1_2]`" },
+      },
+      {
+        what: "marching is one keyframe on stroke-dashoffset",
+        keyframes: { march: { from: { "stroke-dashoffset": "0" }, to: { "stroke-dashoffset": "-20" } } },
+        animation: { march: { value: "march 1000ms linear infinite" } },
+        literals: ["stroke-white stroke-dash-[12_8] animate-march"],
+        outcome: { bakes: true },
+      },
+    ],
+  },
+  {
     id: "paint.bg-clip-path",
     group: "paint",
     declaredIn: "class literal",
@@ -3013,7 +3190,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "0, 1, 0; each",
     constraint:
-      "a `<Path>`'s stroke drawn between two fractions of its arc length, measured on the flattened outline in the path's own units: start and end are ordered and clamped to [0, 1], the offset moves the window round and wraps (a window past the end of a closed subpath is one piece through its start; of an open one, two). `trim-each` trims every subpath alike, `trim-whole` treats them as one sequence. A window of the whole length is no trim at all, byte for byte, and a path trimmed to nothing emits no geometry — invisible by declaration, not covered. The fill is never trimmed. All three animate as `trimStart`, `trimEnd`, `trimOffset`; a draw-on is one keyframe, `trimEnd` 0 -> 1. `stroke-dashoffset` is not a spelling: it is a length, and trim a fraction. patches/0042/0043, class motion",
+      "a `<Path>`'s stroke drawn between two fractions of its arc length, measured on the flattened outline in the path's own units: start and end are ordered and clamped to [0, 1], the offset moves the window round and wraps (a window past the end of a closed subpath is one piece through its start; of an open one, two). `trim-each` trims every subpath alike, `trim-whole` treats them as one sequence. A window of the whole length is no trim at all, byte for byte, and a path trimmed to nothing emits no geometry — invisible by declaration, not covered. The fill is never trimmed. All three animate as `trimStart`, `trimEnd`, `trimOffset`; a draw-on is one keyframe, `trimEnd` 0 -> 1. `stroke-dashoffset` is the dash pattern's offset (`paint.dash`), a length, not a spelling of trim; under a dash pattern the trim window reveals and hides dashes without moving them. patches/0042/0043, class motion",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -3046,11 +3223,11 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { bakes: true },
       },
       {
-        what: "stroke-dashoffset is not a spelling of it",
-        keyframes: { dash: { from: { "stroke-dashoffset": "100" }, to: { "stroke-dashoffset": "0" } } },
-        animation: { dash: { value: "dash 1200ms both" } },
-        literals: ["animate-dash"],
-        outcome: { refuses: "unsupported property `stroke-dashoffset`" },
+        what: "a trim fraction that is not a keyframe property is refused",
+        keyframes: { draw: { from: { trimMiddle: "0" }, to: { trimMiddle: "1" } } },
+        animation: { draw: { value: "draw 1200ms both" } },
+        literals: ["animate-draw"],
+        outcome: { refuses: "unsupported property `trimMiddle`" },
       },
     ],
   },
@@ -3062,7 +3239,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "0",
     constraint:
-      "which of a `<Path>`'s morph keys it draws: at f = k + t, the control points are key k's and key k+1's mixed as `a * (1 - t) + b * t`, which is exact at every key; past the last key it holds the last. Negative values do not parse. Animates as `morph`; between keys the shape moves point for point along the correspondence the author drew, never a resampled one. patches/0042/0043, class motion",
+      "which of a `<Path>`'s morph keys it draws: at f = k + t, the control points are key k's and key k+1's mixed as `a * (1 - t) + b * t`, which is exact at every key; past the last key it holds the last. Negative values do not parse. Animates as `morph`. Keys whose commands line up (a line against a cubic counts) move point for point as drawn, the bytes 0043 baked; keys drawn separately are equalised at build time by a stated rule (patches/0046): key 0 keeps its subpath order, start points and directions; later keys pair closed subpaths with closed by area and open with open by length, a subpath with no partner pairs with a point at its own box centre; a whole key is reversed when its largest closed pair winds the other way; each closed pair's start moves to the point of least squared distance over 64 arc-length samples; and every key is cut at every key's vertices by arc-length fraction. Only cubics are split, so each key's outline is the one it was written as. patches/0042/0043/0046, class motion",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -3138,6 +3315,27 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
 
+  {
+    id: "declare.motionPath",
+    group: "declare",
+    declaredIn: "<compositionDir>/pocket.config.ts",
+    key: "motionPath / PathFollower / El.along",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "motion along a path, baked: `motionPath({ d, node, durationMs, ease, rotate })` returns a keyframe set of translateX/translateY (and rotate, the direction of travel, unwrapped) and the `linear` animation value that plays it; `El.along` writes the same into a generator's element. The `d` is normalised as a `<Path>`'s is and placed through the same viewBox mapping, so a node follows exactly the cubics a `<Path>` draws; position is a fraction of arc length eased in time; the values are + - * / and sqrt only (`atan2Deg`, never the host's Math.atan2). Keys sit on tick 0, every odd tick and the last, so every frame of a 30 fps film whose delay is a whole number of frames is on the curve; between keys the node moves on the chord, which a shutter shows, and `chordError` reports how far. `every: 1` keys every tick: exact at 60 fps, and sharp under a shutter, which reads a one-tick segment as a cut",
+    source: "src/anim/path-motion.ts:286",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: [
+      "export function motionPath(o: MotionPathOptions): MotionPath {",
+      "export class PathFollower {",
+      "export function atan2Deg(y: number, x: number): number {",
+      "const keys = keyTicks(ticks, every, 1);",
+    ],
+  },
+
   // -------------------------------------------------------------------------
   // Output (render flags)
   //
@@ -3160,8 +3358,8 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "mp4",
     constraint:
-      "mp4 | webm | mov | png-seq. mp4 is libx264 yuv420p; webm is libvpx-vp9 yuv420p with `-b:v 0` so --crf means quality; mov is prores_ks, profile 3 (422 HQ, yuv422p10le); png-seq writes <out>/%06d.png with no ffmpeg in the path and is byte-identical to `frame --at N`. With no --format the --out extension decides; a --format that disagrees with the extension is refused rather than silently winning. Read back with ffprobe in tests/format.test.ts",
-    source: "src/render/encode.ts:106",
+      "mp4 | webm | mov | png-seq. mp4 is libx264 yuv420p; webm is libvpx-vp9 yuv420p with `-b:v 0` so --crf means quality; mov is prores_ks, profile 3 (422 HQ, yuv422p10le); png-seq writes <out>/%06d.png with no ffmpeg in the path and is byte-identical to `frame --at N`. With no --format the --out extension decides; a --format that disagrees with the extension is refused rather than silently winning, and ffmpeg is told the container with -f rather than left to read it off --out. Every ffmpeg format is converted to YUV with the BT.709 matrix at video range and tagged BT.709 primaries, transfer and matrix. With declared sound the mix is muxed into the same container — AAC in mp4, Opus at 48 kHz in webm, 24-bit PCM at 48 kHz in mov — and padded to the film's length. Read back from the file in tests/format.test.ts",
+    source: "src/render/encode.ts:62",
     verification: "pinned",
     diagnostics: [],
     probes: [],
@@ -3170,6 +3368,7 @@ export const SURFACE: readonly CapabilityRow[] = [
       "libvpx-vp9",
       "prores_ks",
       "yuv422p10le",
+      'matrix: "bt709"',
     ],
   },
   {
@@ -3181,11 +3380,29 @@ export const SURFACE: readonly CapabilityRow[] = [
     defaultValue: "off",
     constraint:
       "asks the codec for an alpha channel: mov becomes ProRes 4444 (yuva444p10le in, yuva444p12le out — the 4444 bitstream is 12-bit), webm becomes yuva420p and the container gains alpha_mode=1 while the stream's own pix_fmt stays yuv420p, png-seq always carries all four channels. Refused for mp4, whose yuv420p has no alpha plane. The channel carries the picture: the rasteriser clears to transparent black (patches/0014), so a pixel no declared ground reaches has alpha 0 and a composition with a full-bleed ground is 255 everywhere — `render` measures and prints the floor rather than restating this",
-    source: "src/render/encode.ts:169",
+    source: "src/render/encode.ts:216",
     verification: "pinned",
     diagnostics: [],
     probes: [],
     pinned: ['alpha ? "yuva444p10le" : "yuv422p10le"', 'alpha ? "yuva420p" : "yuv420p"'],
+  },
+  {
+    id: "output.no-assert",
+    group: "output",
+    declaredIn: "render command",
+    key: "--no-assert",
+    required: false,
+    defaultValue: "off: a job's assertions are checked",
+    constraint:
+      "with --spec only. Without it a job's own assertions[] are evaluated on its staged tree after the build and before the render — the frames `assert` samples on a composition, the even grid plus every frame an assertion names — and the job is refused (exit 1, nothing written) when one fails; `assert`'s JSON is carried verbatim as `assertions` in render's --json, on the refusal and on the delivery, and per job for a directory of jobs. A sidecar with no assertions costs no boot. --no-assert skips the check. Refused without --spec: a composition's render checks no assertions, `assert <dir>` does. Held by tests/spec.test.ts",
+    source: "src/cli/commands/render.ts:404",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: [
+      "assertions = await assertComposition(c);",
+      "--no-assert skips a job's own assertions and needs --spec",
+    ],
   },
   {
     id: "output.range",
@@ -3195,8 +3412,8 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "the whole film",
     constraint:
-      "renders frames first to last, both included, as a SEGMENT: every earlier frame runs its frame boundary, guest turn and ticks exactly as a whole render runs them and is not drawn, hashed or encoded. Writes the file and <out>.segment.json beside it — the frame hashes, the film's input identity (durationFrames included), the hash algorithm and the encoder argv — and muxes no sound. The JSON carries no `digest`, because the digest of some frames is not `trace`'s. Refused past the film's last frame, with --workers, and with --spec (each staging of a job has its own identity). Held to `trace` hash for hash in tests/segments.test.ts",
-    source: "src/cli/commands/render.ts:146",
+      "renders frames first to last, both included, as a SEGMENT: every earlier frame runs its frame boundary, guest turn and ticks exactly as a whole render runs them and is not drawn, hashed or encoded. Writes the file and <out>.segment.json beside it — the frame hashes, the film's input identity (durationFrames included), the hash algorithm and the encoder argv — and muxes no sound. The JSON carries no `digest`, because the digest of some frames is not `trace`'s. Refused past the film's last frame, with --workers, and with --spec (a job's composition exists only inside its staging, and concat joins against a composition directory). Held to `trace` hash for hash in tests/segments.test.ts",
+    source: "src/cli/commands/render.ts:175",
     verification: "pinned",
     diagnostics: [],
     probes: [],
@@ -3210,8 +3427,8 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "joins `render --range` segments, in any order, into one film and reports the digest `trace` reports for that identity. Refuses before joining: segments of two identities or not the composition's (`join.identity`, naming the components), frames in no segment (`join.gap`), frames in two (`join.overlap`), a different format, alpha, hash algorithm, encoder argv or ffmpeg (`join.encoding`), a file that is not the bytes its manifest recorded (`join.media`), and bitstreams that differ in codec, picture, time base, parameter set or reorder delay (`join.bitstream` — libx264 medium writes no reorder delay for a segment of one or two frames). Joins by stream copy (WebM with its timestamps rewritten from the packet index, because Matroska's milliseconds drift a segment boundary by 1 ms) or, for png-seq, by file copy, then reads the result back: one packet per frame, increasing decode timestamps, a keyframe at every segment start, presentation timestamps exactly i/fps, every decoded frame equal to its segment's own decode. Muxes the declared sound once, over the joined film. Footage identity components are taken from the segments, since concat ingests nothing, and listed in `identityFromSegments`",
-    source: "src/render/segment.ts:260",
+      "joins `render --range` segments, in any order, into one film and reports the digest `trace` reports for that identity. Refuses before joining: segments of two identities or not the composition's (`join.identity`, naming the components), frames in no segment (`join.gap`), frames in two (`join.overlap`), a different format, alpha, hash algorithm, encoder argv or ffmpeg (`join.encoding`), a file that is not the bytes its manifest recorded (`join.media`), and bitstreams that differ in codec, picture, time base, parameter set or reorder delay (`join.bitstream` — libx264 medium writes no reorder delay for a segment of one or two frames). Joins by stream copy, each segment's duration stated from its frame count because an x264 MP4's edit list can make its container's short (WebM's timestamps also rewritten from the packet index, because Matroska's milliseconds drift a segment boundary by 1 ms), or, for png-seq, by file copy, then reads the result back: one packet per frame, increasing decode timestamps, a keyframe at every segment start, presentation timestamps exactly i/fps, every decoded frame equal to its segment's own decode. Writes a hidden partial and renames it over --out only then. Muxes the declared sound once, over the joined film. Footage identity components are taken from the segments, since concat ingests nothing, and listed in `identityFromSegments`",
+    source: "src/render/segment.ts:267",
     verification: "pinned",
     diagnostics: [],
     probes: [],
@@ -3231,8 +3448,8 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "1 process, no split",
     constraint:
-      "renders the film as N `render --range` child processes into a scratch directory beside --out, then runs the join `concat` runs and muxes the sound once. A footage ingest is warmed first so no two workers write its cache. No segment is shorter than MIN_SEGMENT_FRAMES (3), so a short film gets fewer workers than asked. `digest` and `identity` are `trace`'s; `workers` gives each segment's range and wall time and `join` what reading the joined file back found",
-    source: "src/render/parallel.ts:70",
+      "renders the film as N `render --range` child processes into a scratch directory beside --out, then runs the join `concat` runs and muxes the sound once. A footage ingest is warmed first so no two workers write its cache. No segment is shorter than MIN_SEGMENT_FRAMES (3), so a short film gets fewer workers than asked. With --spec the job is staged, built and asserted once and every worker renders that staging. A cancel kills the workers. `digest` and `identity` are `trace`'s; `workers` gives each segment's range and wall time and `join` what reading the joined file back found",
+    source: "src/render/parallel.ts:74",
     verification: "pinned",
     diagnostics: [],
     probes: [],

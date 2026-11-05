@@ -5,6 +5,7 @@
 
 import { existsSync } from "node:fs";
 import { lintImages } from "../../lint/images.ts";
+import { lintSvgTrees } from "../../lint/svg-trees.ts";
 import { lintSource, type LintFinding } from "../../lint/mount-only.ts";
 import { countingOps } from "../../lint/oracle.ts";
 import { describeShutter, hardenedBootWorld, totalPendingWork } from "../../runtime/boot.ts";
@@ -62,22 +63,30 @@ export async function run(options: CheckOptions): Promise<CommandResult> {
     entryPath: c.entryPath,
     compositionDir: c.dir,
   });
-  if (missingImages.length > 0) {
+  // And an `<Svg src>` a build could not expand now (`patches/0053`): the
+  // bundle predates the file's loss or its edit, and boots without a sign.
+  const svgRefusals = await lintSvgTrees({ entryPath: c.entryPath });
+  if (missingImages.length > 0 || svgRefusals.length > 0) {
+    const staticFindings = [...missingImages, ...svgRefusals];
     return {
       exitCode: EXIT_FAIL,
       json: {
         ok: false,
         mountOnly: false,
-        staticFindings: missingImages,
+        staticFindings,
         compositionId: c.compositionId,
-        error: "referenced image not on disk",
+        error: missingImages.length > 0 ? "referenced image not on disk" : "an <Svg> does not import",
       },
       stdoutLines: [
-        `check failed — ${missingImages.length} referenced image(s) not on disk`,
-        ...missingImages.map((f) => `  ${f.file}:${f.line}:${f.column} ${f.code} — ${f.message}`),
+        missingImages.length > 0
+          ? `check failed — ${missingImages.length} referenced image(s) not on disk`
+          : `check failed — ${svgRefusals.length} <Svg> file(s) missing or refused by the import`,
+        ...staticFindings.map((f) => `  ${f.file}:${f.line}:${f.column} ${f.code} — ${f.message}`),
       ],
       stderrLines: [
-        "the build bakes a 32×32 placeholder for each of these and succeeds, so the realm is clean and the digest is stable with the picture missing",
+        missingImages.length > 0
+          ? "the build bakes a 32×32 placeholder for each of these and succeeds, so the realm is clean and the digest is stable with the picture missing"
+          : "a build of this composition now refuses at the <Svg>; the bundle on disk is from before",
       ],
     };
   }

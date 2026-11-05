@@ -40,6 +40,10 @@ export interface SegmentWorkersOptions {
    * worker rendering another film — which the join's identity check refuses.
    */
   readonly forward: readonly string[];
+  /** Kills every worker when it fires; `renderSegments` then rejects with its reason. */
+  readonly signal?: AbortSignal;
+  /** Called as each segment finishes, in the order they finish. */
+  readonly onSegment?: (report: WorkerReport) => void;
 }
 
 export interface WorkerReport {
@@ -68,8 +72,19 @@ export function workerArgv(o: SegmentWorkersOptions, first: number, last: number
  * stopping the rest.
  */
 export async function renderSegments(o: SegmentWorkersOptions): Promise<WorkerReport[]> {
+  o.signal?.throwIfAborted();
   const ranges = splitRange(o.filmFrames, o.workers, MIN_SEGMENT_FRAMES);
   const procs: Array<ReturnType<typeof Bun.spawn>> = [];
+  const killAll = (): void => {
+    for (const p of procs) {
+      try {
+        p.kill(9);
+      } catch {
+        /* already gone */
+      }
+    }
+  };
+  o.signal?.addEventListener("abort", killAll, { once: true });
   const jobs = ranges.map(async ([start, end], i): Promise<WorkerReport> => {
     const out = join(o.scratchDir, `segment-${String(i).padStart(4, "0")}${o.extension}`);
     const t0 = performance.now();
@@ -95,19 +110,19 @@ export async function renderSegments(o: SegmentWorkersOptions): Promise<WorkerRe
       }
       throw new Error(`worker ${i} (render --range ${start}..${end - 1}) exited ${code}: ${error}`);
     }
-    return { first: start, last: end - 1, manifestPath: segmentManifestPath(out), elapsedMs: performance.now() - t0 };
+    const report = { first: start, last: end - 1, manifestPath: segmentManifestPath(out), elapsedMs: performance.now() - t0 };
+    o.onSegment?.(report);
+    return report;
   });
   try {
     return await Promise.all(jobs);
   } catch (e) {
-    for (const p of procs) {
-      try {
-        p.kill(9);
-      } catch {
-        /* already gone */
-      }
-    }
+    killAll();
     await Promise.allSettled(procs.map((p) => p.exited));
+    // A worker killed by the signal fails like any other; the signal is why.
+    o.signal?.throwIfAborted();
     throw e;
+  } finally {
+    o.signal?.removeEventListener("abort", killAll);
   }
 }

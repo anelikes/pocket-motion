@@ -28,6 +28,9 @@
  *   `logo.png` and `logo.svg` as job template strings, and it is a program
  *   that WRITES the composition rather than one the build compiles. Flagging
  *   those would fail a composition that builds and renders correctly.
+ * - not the `src` of an `<Svg>`. The build expands that element into the
+ *   picture's nodes before it collects a literal (`patches/0053`), so the
+ *   name never reaches the image discovery; `svg-trees.ts` checks the file.
  *
  * What is not checked here: the dimensions (`encodeImageEntry` refuses a
  * side of 0 or over 2048 loudly already) and the `images.json` /
@@ -42,6 +45,7 @@ import { dirname, join } from "node:path";
 
 import { pocketjsRoot } from "../runtime/boot.ts";
 import type { LintFinding } from "./mount-only.ts";
+import { svgSitesIn } from "./svg-trees.ts";
 
 /** Upstream's asset-name test, character for character. */
 export const IMAGE_NAME = /^[\w./-]+\.(?:png|svg)$/i;
@@ -185,8 +189,10 @@ export async function lintImages(options: {
   const reported = new Set<string>();
   for (const file of await compositionModules(options.entryPath)) {
     const source = await Bun.file(file).text();
+    const svgSrc = new Set((await svgSitesIn(file, source)).map((s) => `${s.line}:${s.column}`));
     for (const literal of stringLiterals(source)) {
       if (!IMAGE_NAME.test(literal.value)) continue;
+      if (svgSrc.has(`${literal.line}:${literal.column}`)) continue;
       if (reported.has(literal.value)) continue;
       const candidates = imageCandidates(literal.value, options.compositionDir);
       if (candidates.some((p) => existsSync(p))) continue;

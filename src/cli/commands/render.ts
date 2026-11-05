@@ -1,9 +1,27 @@
 /**
  * `render <composition-dir> --out <file.mp4>`
  * Question: produce the video.
+ *
+ * `--out` NEVER HOLDS A PARTIAL FILE. A container is encoded to a hidden
+ * sibling (`partialPathOf`) and renamed over `--out` once ffmpeg has finished
+ * it, so a render that fails or is cancelled part-way leaves whatever `--out`
+ * held before — an earlier delivery, or nothing — and removes its own partial.
+ * Before this, ffmpeg wrote `--out` directly: `-y` truncated an earlier
+ * delivery the moment the encode started, and a render that stopped left a
+ * file that existed, had the right name, and did not play. `png-seq` writes
+ * frames into a directory that may hold other files, so there is nothing to
+ * rename; a CANCELLED png-seq render removes the frames it wrote, and the
+ * directory if it made it, while one that fails keeps them as before.
+ *
+ * Cancellation is a signal in the `RunContext` an embedding caller passes
+ * (`src/api.ts`, `src/mcp/server.ts`); the CLI passes none. It is honoured at
+ * every frame boundary, after staging a job, after building it and around
+ * the sound mux, and a cancelled render resolves with
+ * `{ ok: false, cancelled: true, error }` and leaves no file it wrote.
  */
 
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { render as renderComposition } from "../../render/render.ts";
 import {
@@ -58,7 +76,9 @@ import {
   EXIT_OK,
   type CommandResult,
   type GlobalFlags,
+  type RunContext,
 } from "../types.ts";
+import { assertComposition } from "./assert.ts";
 import { compositionIdentity } from "./trace.ts";
 
 /** What `render --json` prints for one finished render. */
@@ -71,8 +91,13 @@ export interface RenderJson {
   frames: number;
   /** The frame-sequence digest — the same value `trace` reports. */
   digest: string;
-  /** `trace`'s input identity. Absent for a `--spec` job (see `run`). */
-  identity?: InputIdentity;
+  /** `trace`'s input identity, for a `--spec` job as for a composition. */
+  identity: InputIdentity;
+  /** `assert --json`'s object for a job's staged tree, verbatim. Present on
+   *  every `--spec` job unless `--no-assert` — and here only when every
+   *  assertion held, because a job whose assertions fail is refused before it
+   *  renders. */
+  assertions?: unknown;
   elapsedMs: number;
   msPerFrame: number;
   shutter?: SidecarShutter;
@@ -132,6 +157,10 @@ export interface RenderOptions {
   readonly format?: OutputFormat;
   /** Ask the codec for an alpha channel. Refused for `mp4`. */
   readonly alpha?: boolean;
+  /** With `spec`: evaluate the job's own `assertions[]` on its staged tree
+   *  after the build and before the render, and refuse the job when one
+   *  fails. Absent means true; `--no-assert` is false. */
+  readonly assert?: boolean;
   /** `--range first..last`: render frames `first` to `last` of the film as a segment. */
   readonly range?: readonly [first: number, last: number];
   /** `--workers N`: render as N segments in N processes, then join them. */
@@ -235,6 +264,33 @@ export function encodeScaleTo(c: {
   return c.supersample > 1 ? [c.width, c.height] : undefined;
 }
 
+/**
+ * Where a container is encoded until ffmpeg has finished it: beside `--out`,
+ * so the rename that delivers it stays on one filesystem; hidden, so a reader
+ * listing the directory mid-render does not take it for a delivery; and
+ * ending in `--out`'s own extension, because ffmpeg chooses the muxer by it.
+ */
+export function partialPathOf(outputPath: string): string {
+  const ext = extname(outputPath);
+  const tag = `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
+  return join(dirname(outputPath), `.${basename(outputPath, ext)}.partial-${tag}${ext}`);
+}
+
+/** The frame names `png-seq` writes, `first` to `first + count - 1` (`pngSequenceSink`). */
+function pngFrameNames(count: number, first = 0): string[] {
+  return Array.from({ length: count }, (_, i) => `${String(first + i).padStart(6, "0")}.png`);
+}
+
+function cancelledResult(signal: AbortSignal | undefined, extra: Record<string, unknown> = {}): CommandResult {
+  const message = `render cancelled — ${errMsg(signal?.reason)}`;
+  return {
+    exitCode: EXIT_FAIL,
+    json: { ok: false, cancelled: true, error: message, ...extra },
+    stderrLines: [message],
+    stdoutLines: [message],
+  };
+}
+
 export async function stageSpec(dir: string, specPath: string): Promise<{ dir: string; dispose: () => Promise<void> }> {
   const genPath = resolve(dir, "gen.ts");
   if (!existsSync(genPath)) {
@@ -249,7 +305,12 @@ export async function stageSpec(dir: string, specPath: string): Promise<{ dir: s
   return mod.stageJob(resolve(specPath));
 }
 
-export async function run(options: RenderOptions): Promise<CommandResult> {
+export async function run(
+  options: RenderOptions,
+  context: RunContext = {},
+): Promise<CommandResult> {
+  const signal = context.signal;
+  const cancelled = (): boolean => signal?.aborted === true;
   let staged: { dir: string; dispose: () => Promise<void> } | undefined;
   if (options.spec) {
     try {
@@ -266,8 +327,27 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
     }
   }
 
+  // Everything this run has written that a cancel must take back. `partial`
+  // is removed on every way out; the rest only when the signal fired.
+  const wrote: {
+    partial: string | null;
+    delivered: string[];
+    frames: number;
+    firstFrame: number;
+    frameDir: string | null;
+    madeFrameDir: boolean;
+  } = { partial: null, delivered: [], frames: 0, firstFrame: 0, frameDir: null, madeFrameDir: false };
+  const takeBack = async (): Promise<void> => {
+    for (const path of wrote.delivered) await rm(path, { force: true });
+    if (wrote.frameDir !== null) {
+      if (wrote.madeFrameDir) await rm(wrote.frameDir, { recursive: true, force: true });
+      else for (const name of pngFrameNames(wrote.frames, wrote.firstFrame)) await rm(join(wrote.frameDir, name), { force: true });
+    }
+  };
+
   const bound: { footage: FootageHandle | null } = { footage: null };
   try {
+    if (cancelled()) return cancelledResult(signal);
     // A job builds into its staged tree so `dispose()` removes the artifacts.
     // `--bundle` / `--pak` with `--spec` are refused at argv parse.
     const flags = staged
@@ -301,10 +381,49 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
         `--range ${options.range[0]}..${options.range[1]} runs past the film: its frames are 0..${c.durationFrames - 1}`,
       );
     }
+    // A job's assertions are evaluated on the tree it was staged into, which
+    // is removed when this returns, so this is the last place they can be
+    // read. Before the render rather than after: a job that fails them is
+    // refused before paying for the encode, as `openFootage` refuses an
+    // undeclared fit before paying for the ingest. `assert`'s own object is
+    // carried verbatim either way.
+    //
+    // On by default, and the measurement is why. In CPU over the whole job
+    // (stage, build, render, encode), on an M4 at a load of 25–50: a 6 s
+    // alpha captions job 9.3 s → 10.0 s, a 3.4 s burn-in over footage
+    // 13.5 s → 17.8 s, a 60 s transcript of 132 words 57.8 s → 66.4 s. That
+    // is 7–32%, and nothing for a template whose sidecar declares no
+    // assertions, which returns before it boots. A job is the render nobody
+    // looks at, so the check is the part of it that reads the picture;
+    // `--no-assert` is for the run that wants the video of a failing job.
+    let assertions: CommandResult | undefined;
     if (options.spec) {
       await runBuild(c);
+      if (cancelled()) return cancelledResult(signal);
+      if (options.assert !== false) {
+        assertions = await assertComposition(c);
+        if (assertions.exitCode !== EXIT_OK) {
+          const failures = (assertions.json as { failures?: readonly string[] }).failures ?? [];
+          const error =
+            failures.length > 0
+              ? `the job's assertions do not hold: ${failures.join(", ")}`
+              : `the job's assertions could not be evaluated: ${(assertions.json as { error?: string }).error ?? "assert failed"}`;
+          return {
+            exitCode: EXIT_FAIL,
+            json: { ok: false, error, assertions: assertions.json },
+            stderrLines: assertions.stderrLines ?? [error],
+            stdoutLines: [`render refused — ${error}`, "", ...(assertions.stdoutLines ?? [])],
+          };
+        }
+      }
     }
-    if (format === "png-seq") mkdirSync(outputPath, { recursive: true });
+    if (format === "png-seq") {
+      wrote.madeFrameDir = !existsSync(outputPath);
+      mkdirSync(outputPath, { recursive: true });
+      wrote.frameDir = outputPath;
+    } else {
+      wrote.partial = partialPathOf(outputPath);
+    }
     // Upstream's PNG encoder, reached through a computed specifier the way
     // `frame` reaches it. Loaded only for the one format that needs it, so
     // an mp4 render does not pay an import for a leg it never runs.
@@ -322,23 +441,29 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       readonly elapsedMs: number;
       readonly msPerFrame: number;
       readonly alphaFloor?: number;
-      readonly outputPath?: string;
     };
-    let identity: InputIdentity | undefined;
+    let identity: InputIdentity;
+    let rendered: Awaited<ReturnType<typeof renderComposition>> | undefined;
     let split: Pick<RenderJson, "workers" | "join"> = {};
     if (options.workers !== undefined) {
       // `flags`, not `options.flags`: a job's workers render its staged build.
-      const w = await renderWithWorkers(c, { ...options, flags }, outputPath, format);
+      const w = await renderWithWorkers(
+        c,
+        { ...options, flags },
+        { out: outputPath, join: wrote.partial ?? outputPath },
+        format,
+        context,
+      );
       if (!w.ok) return w.result;
+      if (format === "png-seq") wrote.frames = w.frames;
       result = w;
-      // Computed either way — the join checks every segment against it — and
-      // reported only where `trace` could reproduce it (see below).
-      identity = staged ? undefined : w.identity;
+      identity = w.identity;
       split = { workers: w.workers, join: w.join };
     } else {
       const declared = c.sidecar.footage.length > 0;
       const tree = declared ? await scratchTree(c) : null;
-      const rendered = await renderComposition({
+      if (options.range) wrote.firstFrame = options.range[0];
+      rendered = await renderComposition({
         compositionId: c.compositionId,
         bundlePath: c.bundlePath,
         pakPath: existsSync(c.pakPath) ? c.pakPath : undefined,
@@ -351,7 +476,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
         buildCommand: c.buildCommand,
         scaleTo: encodeScaleTo(c),
         hashAlgorithm: options.flags.hash,
-        outputPath,
+        outputPath: wrote.partial ?? outputPath,
         format,
         alpha: options.alpha === true,
         encodePNG,
@@ -363,29 +488,49 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
             }
           : undefined,
         onFrameBoundary: (frame) => bound.footage?.present(frame),
+        signal,
+        onProgress: (frame, frames) => {
+          wrote.frames = frame + 1;
+          context.onProgress?.({ done: frame + 1, frames });
+        },
       });
-      if (options.range) {
-        return await segmentResult(c, options, rendered, outputPath, format, bound.footage?.hashes);
-      }
       result = rendered;
-
       // The identity `trace` would report, from the same function, so a delivery
-      // carries the pair a reader on another machine compares against. Not for
-      // a job: `--spec` builds in a staged directory whose name is random and
-      // lands in `build.json`'s argv, so two renders of one job would report two
-      // identities — the reason `trace` does not accept `--spec` either.
-      identity = staged ? undefined : await compositionIdentity(c, bound.footage?.hashes);
+      // carries the pair a reader on another machine compares against. A job's
+      // too: its staged directory's random name reaches neither the bundle
+      // (`patches/0051`) nor `build.json` (`src/render/build-record.ts`), so one
+      // spec staged twice reports one identity (`tests/build-location.test.ts`).
+      identity = await compositionIdentity(c, bound.footage?.hashes);
+    }
+    if (wrote.partial !== null) {
+      await rename(wrote.partial, outputPath);
+      wrote.partial = null;
+      wrote.delivered.push(outputPath);
+    }
+    if (cancelled()) {
+      await takeBack();
+      return cancelledResult(signal);
+    }
+    if (options.range && rendered) {
+      const segment = await segmentResult(c, options, rendered, identity, outputPath, format);
+      wrote.delivered.push(segment.manifestPath);
+      if (cancelled()) {
+        await takeBack();
+        return cancelledResult(signal);
+      }
+      return segment.result;
     }
 
     const payload: RenderJson = {
       ok: true,
-      outputPath: result.outputPath ?? outputPath,
+      outputPath,
       format,
       alpha: options.alpha === true,
       ...(result.alphaFloor !== undefined ? { alphaFloor: result.alphaFloor } : {}),
       frames: result.frames,
       digest: result.digest,
-      ...(identity ? { identity } : {}),
+      identity,
+      ...(assertions ? { assertions: assertions.json } : {}),
       elapsedMs: result.elapsedMs,
       msPerFrame: result.msPerFrame,
       ...(c.shutter ? { shutter: c.shutter } : {}),
@@ -395,7 +540,8 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
     const stdoutLines = [
       `render ok — ${result.frames} frames → ${payload.outputPath} (${format})`,
       `digest ${result.digest}`,
-      ...(identity ? [`identity ${identity.digest}`] : []),
+      `identity ${identity.digest}`,
+      ...(assertions?.stdoutLines?.[0] ? [assertions.stdoutLines[0]] : []),
       `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
       ...(split.workers
         ? [
@@ -421,15 +567,33 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       );
     }
 
-    const failed = await deliverSound(c, format, payload, stdoutLines);
+    const failed = await deliverSound(c, format, payload, stdoutLines, {
+      wrote: (path) => wrote.delivered.push(path),
+      interrupted: async () => {
+        if (!cancelled()) return null;
+        await takeBack();
+        return cancelledResult(signal);
+      },
+    });
     if (failed) return failed;
 
+    // The last await is behind us, so a cancel read after this line can only
+    // find the result already returned.
+    if (cancelled()) {
+      await takeBack();
+      return cancelledResult(signal);
+    }
     return {
       exitCode: EXIT_OK,
       json: payload,
       stdoutLines,
     };
   } catch (e) {
+    // A fired signal is why the loop stopped, whatever it threw on the way out.
+    if (cancelled()) {
+      await takeBack();
+      return cancelledResult(signal);
+    }
     if (e instanceof UsageError) throw e;
     const message = errMsg(e);
     return {
@@ -439,6 +603,7 @@ export async function run(options: RenderOptions): Promise<CommandResult> {
       stdoutLines: [`render failed — ${message}`],
     };
   } finally {
+    if (wrote.partial !== null) await rm(wrote.partial, { force: true });
     await bound.footage?.close();
     await staged?.dispose();
   }
@@ -455,13 +620,19 @@ function withoutTail(sound: SidecarSound): SidecarSound {
  * `concat` all end here, so a segment is never given a mix of its own and a
  * joined film is mixed exactly as a one-shot render is. Returns the failure
  * to report, or null when the delivery is complete; `payload` and
- * `stdoutLines` gain what was muxed.
+ * `stdoutLines` gain what was muxed. `hooks.wrote` is told each file the mix
+ * adds, and `hooks.interrupted` is asked once the mix is done, because the
+ * mix itself is not interruptible.
  */
 export async function deliverSound(
   c: ResolvedComposition,
   format: OutputFormat,
   payload: { ok: boolean; outputPath: string; digest: string; soundSkipped?: string; sound?: SoundJson },
   stdoutLines: string[],
+  hooks: {
+    readonly wrote: (path: string) => void;
+    readonly interrupted: () => Promise<CommandResult | null>;
+  },
 ): Promise<CommandResult | null> {
   // Mux after the frames are encoded and hashed. `trace` hashes without an
   // outputPath and never reaches this function, so a sound declaration
@@ -476,7 +647,7 @@ export async function deliverSound(
       "png-seq is a directory of stills, not a container: the declared sound has nowhere " +
       "to go. Render this composition to mp4, webm or mov for the mix.";
     stdoutLines.push(`sound not muxed — ${payload.soundSkipped}`);
-  } else if (soundDeclared(c.sidecar.sound)) {
+  } else if (soundDeclared(c.sidecar.sound) && format !== "png-seq") {
     const resolved = resolveSound(c.sidecar, c.dir);
     if (!resolved.ok) {
       return {
@@ -533,8 +704,14 @@ export async function deliverSound(
       outputPath: payload.outputPath,
       graph,
       durationSec: framesToMs(c.durationFrames, c.fps) / 1000,
+      format,
       ...(sound.silentTailMs !== undefined ? { silentTailMs: sound.silentTailMs } : {}),
     });
+    // The mix is not interruptible; a cancel that arrived during it is
+    // honoured here, and takes back the manifest beside the video too.
+    hooks.wrote(mixed.manifestPath);
+    const stop = await hooks.interrupted();
+    if (stop) return stop;
     payload.sound = {
       sha256: mixed.sha256,
       bytes: mixed.bytes,
@@ -589,12 +766,11 @@ async function segmentResult(
   c: ResolvedComposition,
   options: RenderOptions,
   result: Awaited<ReturnType<typeof renderComposition>>,
+  identity: InputIdentity,
   outputPath: string,
   format: OutputFormat,
-  footageHashes: Readonly<Record<string, string>> | undefined,
-): Promise<CommandResult> {
+): Promise<{ result: CommandResult; manifestPath: string }> {
   const [first, last] = options.range!;
-  const identity = await compositionIdentity(c, footageHashes);
   const manifest: SegmentManifest = {
     kind: SEGMENT_KIND,
     version: SEGMENT_VERSION,
@@ -637,15 +813,18 @@ async function segmentResult(
     ...(soundDeferred ? { soundDeferred } : {}),
   };
   return {
-    exitCode: EXIT_OK,
-    json: payload,
-    stdoutLines: [
-      `render ok — segment ${first}..${last} of a ${c.durationFrames}-frame film → ${outputPath} (${format})`,
-      `manifest ${manifestPath}`,
-      `identity ${identity.digest}`,
-      `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
-      ...(soundDeferred ? [`sound deferred — ${soundDeferred}`] : []),
-    ],
+    manifestPath,
+    result: {
+      exitCode: EXIT_OK,
+      json: payload,
+      stdoutLines: [
+        `render ok — segment ${first}..${last} of a ${c.durationFrames}-frame film → ${outputPath} (${format})`,
+        `manifest ${manifestPath}`,
+        `identity ${identity.digest}`,
+        `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
+        ...(soundDeferred ? [`sound deferred — ${soundDeferred}`] : []),
+      ],
+    },
   };
 }
 
@@ -713,14 +892,17 @@ export function describeJoin(join: JoinReport): string[] {
 
 /**
  * `render --workers N`: N `render --range` processes into a scratch
- * directory beside the output, then the join `concat` runs. The scratch is
- * removed whether or not the join succeeds; the delivery is the joined file.
+ * directory beside the output, then the join `concat` runs, into
+ * `paths.join` — `run`'s partial file, renamed over `--out` by the caller as
+ * a one-process render's is. The scratch is removed whether or not the join
+ * succeeds. A fired signal kills the workers and rejects with its reason.
  */
 async function renderWithWorkers(
   c: ResolvedComposition,
   options: RenderOptions,
-  outputPath: string,
+  paths: { readonly out: string; readonly join: string },
   format: OutputFormat,
+  context: RunContext,
 ): Promise<
   | {
       ok: true;
@@ -737,8 +919,10 @@ async function renderWithWorkers(
 > {
   const started = performance.now();
   const identity = await compositionIdentity(c, await ingestFootageOnce(c));
-  const scratch = mkdtempSync(join(dirname(outputPath), `.${basename(outputPath)}.segments-`));
+  context.signal?.throwIfAborted();
+  const scratch = mkdtempSync(join(dirname(paths.out), `.${basename(paths.out)}.segments-`));
   try {
+    let done = 0;
     const reports = await renderSegments({
       dir: c.dir,
       filmFrames: c.durationFrames,
@@ -746,12 +930,17 @@ async function renderWithWorkers(
       scratchDir: scratch,
       extension: formatExtension(format) ?? "",
       forward: forwardedFlags(options.flags, format, options.alpha === true),
+      signal: context.signal,
+      onSegment: (r) => {
+        done += r.last - r.first + 1;
+        context.onProgress?.({ done, frames: c.durationFrames });
+      },
     });
     const segments: Segment[] = await Promise.all(reports.map((r) => readSegment(r.manifestPath)));
     const joined = await checkAndJoin(
       segments,
       { identity, filmFrames: c.durationFrames, hash: options.flags.hash },
-      outputPath,
+      paths.join,
     );
     if (!joined.ok) return { ok: false, result: joinRefused(joined.refusals, "render") };
     const elapsedMs = performance.now() - started;
@@ -774,15 +963,19 @@ async function renderWithWorkers(
   }
 }
 
-async function runBatch(options: {
-  readonly dir: string;
-  readonly specDir: string;
-  readonly outDir: string;
-  readonly flags: GlobalFlags;
-  readonly format: OutputFormat;
-  readonly alpha: boolean;
-  readonly workers?: number;
-}): Promise<CommandResult> {
+async function runBatch(
+  options: {
+    readonly dir: string;
+    readonly specDir: string;
+    readonly outDir: string;
+    readonly flags: GlobalFlags;
+    readonly format: OutputFormat;
+    readonly alpha: boolean;
+    readonly assert: boolean;
+    readonly workers?: number;
+  },
+  context: RunContext,
+): Promise<CommandResult> {
   const files = readdirSync(options.specDir)
     .filter((n) => n.endsWith(".json"))
     .sort();
@@ -841,11 +1034,22 @@ async function runBatch(options: {
     };
   }
   mkdirSync(options.outDir, { recursive: true });
-  const jobs: Array<{ spec: string; outputPath: string; digest: string; frames: number }> = [];
+  const jobs: Array<{
+    spec: string;
+    outputPath: string;
+    digest: string;
+    frames: number;
+    assertions?: unknown;
+  }> = [];
   const stdoutLines: string[] = [];
   for (let i = 0; i < files.length; i++) {
     const name = files[i]!;
     const specPath = join(options.specDir, name);
+    // A finished job's output is a whole file and stays; the cancelled job's
+    // own run takes back what it wrote.
+    if (context.signal?.aborted) {
+      return cancelledResult(context.signal, { done: jobs, pending: files.slice(i) });
+    }
     // One output per job, named after the job. `png-seq` makes each of those
     // a directory rather than a file, which is why the extension comes from
     // the format instead of being spelled `.mp4` here.
@@ -853,17 +1057,28 @@ async function runBatch(options: {
       options.outDir,
       `${basename(name, ".json")}${formatExtension(options.format) ?? ""}`,
     );
-    const result = await run({
-      dir: options.dir,
-      out,
-      flags: options.flags,
-      spec: specPath,
-      format: options.format,
-      alpha: options.alpha,
-      ...(options.workers !== undefined ? { workers: options.workers } : {}),
-    });
+    const result = await run(
+      {
+        dir: options.dir,
+        out,
+        flags: options.flags,
+        spec: specPath,
+        format: options.format,
+        alpha: options.alpha,
+        assert: options.assert,
+        ...(options.workers !== undefined ? { workers: options.workers } : {}),
+      },
+      {
+        signal: context.signal,
+        onProgress: (progress) => context.onProgress?.({ ...progress, job: name }),
+      },
+    );
+    if ((result.json as { cancelled?: boolean } | undefined)?.cancelled === true) {
+      return cancelledResult(context.signal, { done: jobs, pending: files.slice(i) });
+    }
     if (result.exitCode !== EXIT_OK) {
       const pending = files.slice(i + 1);
+      const verdict = (result.json as { assertions?: unknown } | undefined)?.assertions;
       return {
         exitCode: result.exitCode,
         json: {
@@ -873,6 +1088,7 @@ async function runBatch(options: {
             {
               spec: name,
               error: (result.json as { error?: string } | undefined)?.error ?? "render failed",
+              ...(verdict === undefined ? {} : { assertions: verdict }),
             },
           ],
           done: jobs,
@@ -882,8 +1098,14 @@ async function runBatch(options: {
         stdoutLines: [`render failed — ${name}`],
       };
     }
-    const json = result.json as { digest: string; frames: number; outputPath: string };
-    jobs.push({ spec: name, outputPath: json.outputPath, digest: json.digest, frames: json.frames });
+    const json = result.json as RenderJson;
+    jobs.push({
+      spec: name,
+      outputPath: json.outputPath,
+      digest: json.digest,
+      frames: json.frames,
+      ...(json.assertions === undefined ? {} : { assertions: json.assertions }),
+    });
     stdoutLines.push(`${name}  ${json.digest}`);
   }
   return {
@@ -895,6 +1117,7 @@ async function runBatch(options: {
 
 export async function runFromArgv(
   argv: readonly string[],
+  context: RunContext = {},
 ): Promise<CommandResult> {
   const parsed = parseArgs(["render", ...argv]);
   const dir = requirePositional(parsed.positionals, 0, "composition-dir");
@@ -904,6 +1127,7 @@ export async function runFromArgv(
   const outDir = optionalString(parsed.flags, "out-dir");
   const requestedFormat = optionalString(parsed.flags, "format");
   const alpha = parsed.flags.alpha === true;
+  const assert = parsed.flags["no-assert"] !== true;
   const rawRange = optionalString(parsed.flags, "range");
   const range = rawRange === undefined ? undefined : parseRange(rawRange);
   const workers = optionalInt(parsed.flags, "workers");
@@ -919,16 +1143,26 @@ export async function runFromArgv(
     ...(range !== undefined ? { range } : {}),
     ...(workers !== undefined ? { workers } : {}),
   };
+  if (!assert && spec === undefined) {
+    // A composition's render never reads its assertions — they are
+    // `assert <dir>`'s — so there is nothing here for the flag to turn off,
+    // and accepting it would be a flag that does nothing.
+    throw new UsageError(
+      "--no-assert skips a job's own assertions and needs --spec; a composition's render does not check them (`assert <dir>` does)",
+    );
+  }
 
   if (spec !== undefined) {
-    // A segment is joined by identity, and a job's identity is not stable:
-    // its staged directory's random name is in `build.json`'s argv, so two
-    // segments of one job staged twice would be refused as two films. A
-    // job's `--workers` share one staging, which is why that is accepted.
+    // `concat` joins against a composition directory — the identity every
+    // segment must carry and the sound it muxes come from there — and a
+    // job's composition exists only inside its own staging, removed when the
+    // render returns. A job's `--workers` share one staging, which is why
+    // that is accepted.
     if (range !== undefined) {
       throw new UsageError(
-        "--range cannot be used with --spec: each staging of a job has its own identity, so its " +
-          "segments could not be joined. Render the job whole, or with --workers N.",
+        "--range cannot be used with --spec: concat joins segments against a composition directory, " +
+          "and a job's exists only inside its staging. Render the job with --workers N, or generate " +
+          "it into a directory and render that.",
       );
     }
     const specPath = resolve(spec);
@@ -947,15 +1181,19 @@ export async function runFromArgv(
       // check the format against — `--format` alone decides, defaulting to mp4.
       const batchFormat = resolveFormat(requestedFormat, "");
       assertAlphaSupported(batchFormat, alpha);
-      return runBatch({
-        dir,
-        specDir: specPath,
-        outDir: resolve(outDir),
-        flags: parsed.global,
-        format: batchFormat,
-        alpha,
-        ...split,
-      });
+      return runBatch(
+        {
+          dir,
+          specDir: specPath,
+          outDir: resolve(outDir),
+          flags: parsed.global,
+          format: batchFormat,
+          alpha,
+          assert,
+          ...split,
+        },
+        context,
+      );
     }
     if (outDir !== undefined) {
       throw new UsageError("--out-dir is for a directory of jobs; a single spec uses --out");
@@ -974,7 +1212,7 @@ export async function runFromArgv(
     }
     const format = resolveFormat(requestedFormat, out);
     assertAlphaSupported(format, alpha);
-    return run({ dir, out, flags: parsed.global, spec: specPath, format, alpha, ...split });
+    return run({ dir, out, flags: parsed.global, spec: specPath, format, alpha, assert, ...split }, context);
   }
 
   if (outDir !== undefined) {
@@ -985,5 +1223,5 @@ export async function runFromArgv(
   }
   const format = resolveFormat(requestedFormat, out);
   assertAlphaSupported(format, alpha);
-  return run({ dir, out, flags: parsed.global, format, alpha, ...split });
+  return run({ dir, out, flags: parsed.global, format, alpha, ...split }, context);
 }

@@ -37,9 +37,8 @@
  *   cases do not: nothing in sound-roles is drawn outside its track's window.
  */
 
-import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, expect, test } from "bun:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
@@ -51,6 +50,7 @@ import {
   type Segment,
   type SegmentManifest,
 } from "../src/render/segment.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const CLI = join(ROOT, "src/cli/main.ts");
@@ -58,11 +58,7 @@ const SOUND_ROLES = "compositions/sound-roles";
 const SMOKE = "compositions/smoke";
 const GRADIENTS = "compositions/gradients";
 const FOOTAGE_TRACKS = "compositions/footage-tracks";
-const scratch = mkdtempSync(join(tmpdir(), "motion-segments-"));
-
-afterAll(() => {
-  rmSync(scratch, { recursive: true, force: true });
-});
+const scratch = scratchDir("segments");
 
 async function cli(argv: readonly string[]): Promise<{ code: number; json: Record<string, unknown>; stderr: string }> {
   const proc = Bun.spawn(["bun", CLI, ...argv, "--json"], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });

@@ -737,3 +737,114 @@ describe("render --spec", () => {
   }, 180_000);
 });
 
+
+// A job's `assertions[]` live in a tree `render --spec` stages and removes, so
+// the job's own render is the one place they can be read, and it reads them
+// unless told `--no-assert`. No shipped template lets a job
+// write a false one — the captions template derives every window from its own
+// layout — so this stages `compositions/short-sections` under a sidecar the
+// job supplies, through a `stageJob` written here.
+describe("render --spec checks the job's own assertions", () => {
+  const stager = `
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+const ROOT = ${JSON.stringify(ROOT)};
+const FIXTURE = join(ROOT, "compositions", "short-sections");
+export async function stageJob(specPath: string) {
+  await mkdir(join(ROOT, "dist"), { recursive: true });
+  const dir = await mkdtemp(join(ROOT, "dist", "assert-job-"));
+  for (const name of ["main.tsx", "pocket.config.ts", "pocket.json"]) {
+    await cp(join(FIXTURE, name), join(dir, name));
+  }
+  const job = JSON.parse(await readFile(specPath, "utf8"));
+  const sidecar = JSON.parse(await readFile(join(FIXTURE, "pocket-motion.json"), "utf8"));
+  await writeFile(join(dir, "pocket-motion.json"), JSON.stringify({ ...sidecar, assertions: job.assertions }));
+  await writeFile(specPath + ".staged", dir);
+  return { dir, dispose: () => rm(dir, { recursive: true, force: true }) };
+}
+`;
+  // title-r3 is up from frame 111; asserting it from 108 is the broken one.
+  const broken = [
+    { node: "num-r3", inPicture: [108, 116] },
+    { node: "title-r3", inPicture: [108, 116] },
+  ];
+  const holds = [
+    { node: "num-r3", inPicture: [108, 116] },
+    { node: "title-r3", inPicture: [111, 116] },
+  ];
+
+  async function job(
+    scratch: string,
+    assertions: unknown,
+    extra: readonly string[],
+  ): Promise<{ exitCode: number; json: Record<string, unknown>; out: string }> {
+    await Bun.write(join(scratch, "gen.ts"), stager);
+    const spec = join(scratch, "job.json");
+    await Bun.write(spec, JSON.stringify({ assertions }));
+    const out = join(scratch, "job.mp4");
+    const r = await renderFromArgv([scratch, "--spec", spec, "--out", out, "--json", ...extra]);
+    return { exitCode: r.exitCode, json: r.json as Record<string, unknown>, out };
+  }
+
+  test("a job whose assertion the picture does not bear out is refused before it renders", async () => {
+    await withScratch(async (scratch) => {
+      const r = await job(scratch, broken, []);
+      expect(r.exitCode).toBe(EXIT_FAIL);
+      expect(r.json.ok).toBe(false);
+      expect(r.json.error).toBe("the job's assertions do not hold: title-r3 inPicture");
+      // `assert`'s own object, carried verbatim: the failing frames are named.
+      const verdict = r.json.assertions as {
+        ok: boolean;
+        failures: string[];
+        assertions: Array<{ node: string; ok: boolean; detail: string }>;
+      };
+      expect(verdict.ok).toBe(false);
+      expect(verdict.failures).toEqual(["title-r3 inPicture"]);
+      expect(verdict.assertions[1]!.detail).toContain("not shown at 108");
+      // Refused before the encode, and the staged tree is gone.
+      expect(await Bun.file(r.out).exists()).toBe(false);
+      const staged = await Bun.file(join(scratch, "job.json.staged")).text();
+      expect(await Bun.file(join(staged, "pocket-motion.json")).exists()).toBe(false);
+    });
+  }, 300_000);
+
+  test("--no-assert renders the same job: the refusal is the check's", async () => {
+    await withScratch(async (scratch) => {
+      const r = await job(scratch, broken, ["--no-assert"]);
+      expect(r.exitCode).toBe(EXIT_OK);
+      expect(r.json.assertions).toBeUndefined();
+      expect(await Bun.file(r.out).exists()).toBe(true);
+    });
+  }, 300_000);
+
+  test("a job whose assertions hold renders, and carries the verdict", async () => {
+    await withScratch(async (scratch) => {
+      const r = await job(scratch, holds, []);
+      expect(r.exitCode).toBe(EXIT_OK);
+      const verdict = r.json.assertions as { ok: boolean; failures: string[]; frames: number[] };
+      expect(verdict.ok).toBe(true);
+      expect(verdict.failures).toEqual([]);
+      // Rank 3 holds no frame of the even grid; the windows' own ends are read.
+      expect(verdict.frames).toContain(111);
+      expect(await Bun.file(r.out).exists()).toBe(true);
+    });
+  }, 300_000);
+
+  test("--no-assert without --spec is usage: a composition's render checks none", async () => {
+    await expect(
+      renderFromArgv(["compositions/smoke", "--out", "out.mp4", "--no-assert"]),
+    ).rejects.toThrow(/--no-assert skips a job's own assertions and needs --spec/);
+    expect(() => parseArgs(["trace", "compositions/smoke", "--no-assert"])).toThrow();
+    expect(helpText()).toContain("--no-assert");
+  });
+
+  test("a job whose sidecar declares no assertions renders, and says so", async () => {
+    await withScratch(async (scratch) => {
+      const r = await job(scratch, [], []);
+      expect(r.exitCode).toBe(EXIT_OK);
+      const verdict = r.json.assertions as { ok: boolean; note?: string };
+      expect(verdict.ok).toBe(true);
+      expect(verdict.note).toBe("the sidecar declares no assertions");
+    });
+  }, 300_000);
+});

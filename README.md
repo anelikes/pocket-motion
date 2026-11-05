@@ -213,6 +213,17 @@ part was not. Every command line in the skill is executed by
 `tests/authoring.test.ts` under the same rule `AUTHORING.md`'s are, so a flag
 that stops existing fails a test rather than an agent.
 
+An agent that calls tools rather than a shell can have the same objects over
+the Model Context Protocol: `bun src/cli/main.ts mcp` serves `verify`,
+`assert`, `layout`, `render`, `trace` and `doctor` on stdio, each tool
+returning what its `src/api.ts` function returns. Renders report frame
+progress and can be cancelled without leaving a partial file; the skill has
+the details.
+
+```bash
+claude mcp add pocket-motion -- bun src/cli/main.ts mcp
+```
+
 ## Contributing
 
 [`CONTRIBUTING.md`](./CONTRIBUTING.md) is the setup and the checks a change has

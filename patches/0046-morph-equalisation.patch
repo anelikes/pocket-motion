@@ -1,0 +1,595 @@
+pocket-motion-only: the equalised keys fill 0042's PATH TABLE, which only 0042's PATH op draws; upstream has no `<Path>`, so the change has nothing to land on there.
+
+0046 — a morph between keys drawn separately. 0043 refused morph keys
+whose commands differed after normalisation, because resampling chooses a
+point correspondence nobody declared. This patch chooses one by a rule
+written down here, in `framework/compiler/path-data.ts` and in
+`patches/0045-path-primitives.design.md` in the motion repository, so the
+correspondence is a function of the keys and nothing else, and any keys can
+morph — an icon into another icon.
+
+Keys whose commands line up are untouched: `compilePathEntry` first aligns
+them as 0043 did (a line against a cubic is promoted), and only when that
+fails does it call `equalizeKeys`. So every morph that baked before bakes to
+the same bytes, and a single key never reaches the new code. In the motion
+repository the only multi-key `<Path>`s are `compositions/vector-paths`'
+two, and both key sets, with a line/cubic promotion, are pinned by hash in
+its `tests/path-primitives.test.ts` as 0043 baked them.
+
+The rule, in order (every key keeps every point it was written with; cubics
+are only split, by de Casteljau, which leaves a curve where it was; a line
+is a cubic with controls at 1/3 and 2/3):
+
+1. Subpaths. Key 0 keeps its subpaths' order, start points and directions,
+   so a trim or dash on key 0 is what was written. Each later key is paired
+   with the key before it: closed subpaths with closed ones by area, open
+   with open by length, largest with largest, ties in written order. A
+   subpath with no partner pairs with a point at the centre of its own
+   bounding box, so it grows out of or shrinks into itself; a later key's
+   subpaths take the order of the slots they pair with.
+2. Winding. If the largest closed pair winds opposite ways, every subpath of
+   the later key is reversed; with no closed pair, the largest open pair
+   decides by which way round its ends sit closer. A whole key or none of
+   it: reversing one subpath can change what a nonzero fill covers, and
+   reversing all of them cannot.
+3. Start points. On each closed pair the later key's start moves to the
+   point that minimises the summed squared distance between the two
+   outlines at 64 equal fractions of arc length; the candidates are its own
+   vertices and 64 equal fractions; the first of equal scores wins.
+4. Points. On each slot every key is cut at every vertex any key has, by
+   fraction of arc length (fractions within 1e-9 are one vertex, and a key
+   that repeats a point there gets as many), so a corner of one key meets a
+   point at the same fraction of the other and every key has the same number
+   of cubics.
+
+Arc length is measured on 16 chords a cubic, and a fraction becomes a
+parameter by interpolating along those chords: that decides where a cut
+lands on the curve, never whether a point is on it. + - * / and Math.sqrt in
+f64 only, so the bytes do not depend on the host.
+
+The one refusal left is the table's: more than eight keys.
+
+Red cases, run by `baselines/path-primitives/redcheck-ts.ts` (an edit to one
+`+` line of this patch, the vendored tree rebuilt from it and restored),
+each turning the named test of the motion repository red, against its test
+run green first (`baselines/path-primitives/runs/redcheck-ts.txt`):
+- keys that line up are equalised too -> -t keys that already line up bake the bytes 0043 baked
+- a split's second half from the wrong control point -> -t every key keeps its outline
+- no start search -> -t one outline written another way morphs to itself
+- no winding rule -> -t one outline written another way morphs to itself
+- subpaths paired in written order, not by size -> -t one outline written another way morphs to itself
+- a cut inside a cubic becomes a nowhere-cubic at its end -> -t one outline written another way morphs to itself
+- an unpartnered subpath shrinks to the origin -> -t a subpath with no partner is a point
+- arc length through Math.hypot -> -t nothing reaches the host's trigonometry
+
+All 8 red (`tests/path-primitives.test.ts`), and `tests/catalog.test.ts` G9
+probes an equalised verb list, an unpartnered slot and the eight-key
+refusal.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/framework/compiler/path-data.ts b/framework/compiler/path-data.ts
+index 84c13bc7..2ebb41a6 100644
+--- a/framework/compiler/path-data.ts
++++ b/framework/compiler/path-data.ts
+@@ -385,8 +385,6 @@ const EIGHTH_COS = Math.SQRT1_2 - 1e-9;
+ 
+ // ---- morph keys and the entry ---------------------------------------------------------
+ 
+-const VERB_NAME = ["move", "line", "cubic", "close"];
+-
+ /** Promote line `k` of a normalised path to a cubic with controls at 1/3 and 2/3 (exact). */
+ function promote(p: NormalPath, k: number): void {
+   let at = 0;
+@@ -400,23 +398,11 @@ function promote(p: NormalPath, k: number): void {
+ }
+ 
+ /**
+- * The PATH TABLE entry for one `<Path>`: its morph keys (one or more `d`
+- * strings) aligned to one verb list, and its viewBox. A line in one key
+- * where another has a cubic is promoted; any other difference is refused,
+- * naming the first differing command of each key. Point counts are never
+- * equalised: a resampled correspondence is a picture nobody declared.
++ * Keys aligned command for command, as 0043 aligned them: a line in one key
++ * where another has a cubic is promoted, and the keys are drawn point for
++ * point as written. Null when any other command differs.
+  */
+-export function compilePathEntry(keys: readonly string[], viewBox?: string): PathEntry {
+-  if (keys.length === 0) throw new PathDataError("a <Path> needs at least one d");
+-  if (keys.length > PATH_MAX_SHAPES) throw new PathDataError(`a <Path> morphs at most ${PATH_MAX_SHAPES} keys, got ${keys.length}`);
+-  const paths = keys.map((d, i) => {
+-    try {
+-      return normalizePathData(d);
+-    } catch (e) {
+-      if (e instanceof PathDataError && keys.length > 1) throw new PathDataError(`morph key ${i}: ${e.message}`);
+-      throw e;
+-    }
+-  });
++function alignByCommands(paths: NormalPath[]): NormalPath[] | null {
+   const first = paths[0]!;
+   for (let i = 1; i < paths.length; i++) {
+     const p = paths[i]!;
+@@ -432,17 +418,36 @@ export function compilePathEntry(keys: readonly string[], viewBox?: string): Pat
+         promote(p, k);
+         continue;
+       }
+-      const name = (q: NormalPath, j: number): string =>
+-        q.verbs[j] === undefined ? "nothing (it has ended)" : `a ${VERB_NAME[q.verbs[j]!]} (source command ${q.src[j]})`;
+-      throw new PathDataError(
+-        `morph keys 0 and ${i} differ at normalised command ${k}: key 0 has ${name(first, k)}, key ${i} has ${name(p, k)}. ` +
+-          "Keys must share their commands (a line against a cubic is promoted); draw them with the same structure.",
+-      );
++      return null;
+     }
+   }
++  return paths;
++}
++
++/**
++ * The PATH TABLE entry for one `<Path>`: its morph keys (one or more `d`
++ * strings) on one verb list, and its viewBox. Keys whose commands line up
++ * (a line against a cubic counts as lining up) are morphed point for point
++ * as written, byte for byte what 0043 baked. Keys whose commands differ are
++ * equalised (`equalizeKeys`, patch 0046) by a rule this file states, so the
++ * correspondence is a function of the keys and nothing else.
++ */
++export function compilePathEntry(keys: readonly string[], viewBox?: string): PathEntry {
++  if (keys.length === 0) throw new PathDataError("a <Path> needs at least one d");
++  if (keys.length > PATH_MAX_SHAPES) throw new PathDataError(`a <Path> morphs at most ${PATH_MAX_SHAPES} keys, got ${keys.length}`);
++  const parse = (): NormalPath[] =>
++    keys.map((d, i) => {
++      try {
++        return normalizePathData(d);
++      } catch (e) {
++        if (e instanceof PathDataError && keys.length > 1) throw new PathDataError(`morph key ${i}: ${e.message}`);
++        throw e;
++      }
++    });
++  const aligned = alignByCommands(parse()) ?? equalizeKeys(parse());
+   const entry: PathEntry = {
+-    verbs: first.verbs.slice(),
+-    shapes: paths.map((p) => p.pts.map((v) => Math.fround(v))),
++    verbs: aligned[0]!.verbs.slice(),
++    shapes: aligned.map((p) => p.pts.map((v) => Math.fround(v))),
+   };
+   for (const [i, shape] of entry.shapes.entries()) {
+     const bad = shape.find((v) => !Number.isFinite(v));
+@@ -453,6 +458,438 @@ export function compilePathEntry(keys: readonly string[], viewBox?: string): Pat
+   return entry;
+ }
+ 
++// ---- morph equalisation (pocket-motion patch 0046) -------------------------------------
++//
++// Keys drawn separately — an icon and another icon — share no command list,
++// and a morph needs one. `equalizeKeys` gives them one without changing any
++// key's outline: every key keeps every point it was written with, cubics are
++// only ever split (de Casteljau, which leaves the curve where it was), and a
++// line is a cubic with controls at 1/3 and 2/3. What it chooses is the
++// correspondence, and it chooses it by these rules, in this order:
++//
++//   1. Subpaths. Key 0's subpaths keep their order, start points and
++//      directions, so a trim or dash on key 0 is what was written. Each
++//      later key is paired with the key before it, closed subpaths with
++//      closed ones by area and open ones with open ones by length, largest
++//      with largest (ties in written order). A subpath with no partner
++//      pairs with a point: the centre of its own bounding box, so it grows
++//      out of or shrinks into itself. A later key's subpaths take the order
++//      of the slots they pair with.
++//   2. Winding. If the largest closed pair winds opposite ways, every
++//      subpath of the later key is reversed; with no closed pair, the
++//      largest open pair decides by which way round its ends sit closer.
++//      A whole key is reversed or none of it, because reversing one subpath
++//      can change what a nonzero fill covers and reversing all of them
++//      cannot.
++//   3. Start points. On each closed pair the later key's start moves to the
++//      point that minimises the summed squared distance between the two
++//      outlines sampled at 64 equal fractions of their arc lengths. The
++//      candidates are the later key's own vertices and 64 equal fractions
++//      of its length; the first of equal scores wins. Open subpaths keep
++//      their ends.
++//   4. Points. On each slot every key is cut at every vertex any key has,
++//      by fraction of arc length, so a corner of one key meets a point at
++//      the same fraction of the other and every key has the same number of
++//      cubics. Fractions within 1e-9 of each other are one vertex.
++//
++// Arc length is measured on 16 chords a cubic, and a fraction becomes a
++// cubic's parameter by interpolating along those chords; that decides only
++// where a cut lands on the curve, never whether a point is on it. All of it
++// is + - * / and Math.sqrt in f64, which IEEE 754 rounds the same on every
++// host, so the bytes a key set bakes to do not depend on the machine.
++
++type Seg = [number, number, number, number, number, number]; // x1 y1 x2 y2 x3 y3
++interface Sub {
++  closed: boolean;
++  x: number;
++  y: number;
++  segs: Seg[];
++}
++
++const CHORDS = 16;
++const SAMPLES = 64;
++const SAME_FRACTION = 1e-9;
++
++function subsOf(p: NormalPath): Sub[] {
++  const out: Sub[] = [];
++  let k = 0;
++  let cur: Sub | null = null;
++  let cx = 0, cy = 0;
++  for (const v of p.verbs) {
++    if (v === PATH_VERB.move) {
++      cur = { closed: false, x: p.pts[k]!, y: p.pts[k + 1]!, segs: [] };
++      out.push(cur);
++      cx = cur.x;
++      cy = cur.y;
++      k += 2;
++    } else if (v === PATH_VERB.line) {
++      const x = p.pts[k]!, y = p.pts[k + 1]!;
++      const dx = x - cx, dy = y - cy;
++      cur!.segs.push([cx + dx / 3, cy + dy / 3, cx + (2 * dx) / 3, cy + (2 * dy) / 3, x, y]);
++      cx = x;
++      cy = y;
++      k += 2;
++    } else if (v === PATH_VERB.cubic) {
++      cur!.segs.push(p.pts.slice(k, k + 6) as Seg);
++      cx = p.pts[k + 4]!;
++      cy = p.pts[k + 5]!;
++      k += 6;
++    } else {
++      // The closing edge made explicit, so a closed subpath's cubics are its
++      // whole cycle and its start can move along it.
++      const s = cur!;
++      s.closed = true;
++      if (cx !== s.x || cy !== s.y) {
++        const dx = s.x - cx, dy = s.y - cy;
++        s.segs.push([cx + dx / 3, cy + dy / 3, cx + (2 * dx) / 3, cy + (2 * dy) / 3, s.x, s.y]);
++      }
++      cx = s.x;
++      cy = s.y;
++    }
++  }
++  return out;
++}
++
++function segStart(s: Sub, i: number): [number, number] {
++  if (i === 0) return [s.x, s.y];
++  const p = s.segs[i - 1]!;
++  return [p[4], p[5]];
++}
++
++function bez(x0: number, y0: number, g: Seg, t: number): [number, number] {
++  const mt = 1 - t;
++  const a = mt * mt * mt, b = 3 * mt * mt * t, c = 3 * mt * t * t, d = t * t * t;
++  return [a * x0 + b * g[0] + c * g[2] + d * g[4], a * y0 + b * g[1] + c * g[3] + d * g[5]];
++}
++
++/** Cumulative chord lengths: CHORDS + 1 per cubic, and the total. */
++interface Measure {
++  cum: number[][];
++  starts: number[];
++  total: number;
++}
++
++function measure(s: Sub): Measure {
++  const cum: number[][] = [];
++  const starts: number[] = [];
++  let total = 0;
++  for (let i = 0; i < s.segs.length; i++) {
++    const [x0, y0] = segStart(s, i);
++    const row = [0];
++    let px = x0, py = y0, acc = 0;
++    for (let j = 1; j <= CHORDS; j++) {
++      const [x, y] = bez(x0, y0, s.segs[i]!, j / CHORDS);
++      acc += Math.sqrt((x - px) * (x - px) + (y - py) * (y - py));
++      row.push(acc);
++      px = x;
++      py = y;
++    }
++    starts.push(total);
++    cum.push(row);
++    total += acc;
++  }
++  return { cum, starts, total };
++}
++
++/** The cubic and its parameter at arc length `at` (0 <= at <= total). */
++function locate(m: Measure, at: number): [number, number] {
++  // The last cubic starting at or before `at`.
++  let lo = 0, hi = m.starts.length - 1;
++  while (lo < hi) {
++    const mid = (lo + hi + 1) >> 1;
++    if (m.starts[mid]! <= at) lo = mid;
++    else hi = mid - 1;
++  }
++  const i = lo;
++  const row = m.cum[i]!;
++  const local = at - m.starts[i]!;
++  let j = 0;
++  while (j + 1 < CHORDS && row[j + 1]! < local) j++;
++  const span = row[j + 1]! - row[j]!;
++  let u = span > 0 ? (local - row[j]!) / span : 0;
++  if (u < 0) u = 0;
++  if (u > 1) u = 1;
++  return [i, (j + u) / CHORDS];
++}
++
++function pointAt(s: Sub, m: Measure, f: number): [number, number] {
++  if (s.segs.length === 0 || !(m.total > 0)) return [s.x, s.y];
++  const [i, t] = locate(m, f * m.total);
++  const [x0, y0] = segStart(s, i);
++  return bez(x0, y0, s.segs[i]!, t);
++}
++
++/** Split cubic `g` from (x0, y0) at t: the two halves. */
++function split(x0: number, y0: number, g: Seg, t: number): [Seg, Seg] {
++  const lerp = (a: number, b: number): number => a + (b - a) * t;
++  const ax = lerp(x0, g[0]), ay = lerp(y0, g[1]);
++  const bx = lerp(g[0], g[2]), by = lerp(g[1], g[3]);
++  const cx = lerp(g[2], g[4]), cy = lerp(g[3], g[5]);
++  const dx = lerp(ax, bx), dy = lerp(ay, by);
++  const ex = lerp(bx, cx), ey = lerp(by, cy);
++  const fx = lerp(dx, ex), fy = lerp(dy, ey);
++  return [
++    [ax, ay, dx, dy, fx, fy],
++    [ex, ey, cx, cy, g[4], g[5]],
++  ];
++}
++
++function signedArea(s: Sub): number {
++  if (!s.closed) return 0;
++  let a = 0;
++  for (let i = 0; i < s.segs.length; i++) {
++    const [x0, y0] = segStart(s, i);
++    let px = x0, py = y0;
++    for (let j = 1; j <= CHORDS; j++) {
++      const [x, y] = bez(x0, y0, s.segs[i]!, j / CHORDS);
++      a += px * y - x * py;
++      px = x;
++      py = y;
++    }
++  }
++  return a / 2;
++}
++
++function centre(s: Sub): [number, number] {
++  let x0 = s.x, x1 = s.x, y0 = s.y, y1 = s.y;
++  for (const g of s.segs) {
++    for (let k = 0; k < 6; k += 2) {
++      if (g[k]! < x0) x0 = g[k]!;
++      if (g[k]! > x1) x1 = g[k]!;
++      if (g[k + 1]! < y0) y0 = g[k + 1]!;
++      if (g[k + 1]! > y1) y1 = g[k + 1]!;
++    }
++  }
++  return [(x0 + x1) / 2, (y0 + y1) / 2];
++}
++
++const pointSub = (closed: boolean, [x, y]: [number, number]): Sub => ({ closed, x, y, segs: [] });
++
++function reversed(s: Sub): Sub {
++  if (s.segs.length === 0) return s;
++  const last = s.segs[s.segs.length - 1]!;
++  const segs: Seg[] = [];
++  for (let i = s.segs.length - 1; i >= 0; i--) {
++    const g = s.segs[i]!;
++    const [x0, y0] = segStart(s, i);
++    segs.push([g[2], g[3], g[0], g[1], x0, y0]);
++  }
++  return { closed: s.closed, x: last[4], y: last[5], segs };
++}
++
++/** A closed subpath started at fraction f of its length instead (split there unless f is a vertex). */
++function rotated(s: Sub, m: Measure, f: number): Sub {
++  if (f === 0 || s.segs.length === 0) return s;
++  const [i, t] = locate(m, f * m.total);
++  const [x0, y0] = segStart(s, i);
++  let head: Seg[], tail: Seg[];
++  if (t <= 0) {
++    head = s.segs.slice(i);
++    tail = s.segs.slice(0, i);
++  } else if (t >= 1) {
++    head = s.segs.slice(i + 1);
++    tail = s.segs.slice(0, i + 1);
++  } else {
++    const [l, r] = split(x0, y0, s.segs[i]!, t);
++    head = [r, ...s.segs.slice(i + 1)];
++    tail = [...s.segs.slice(0, i), l];
++  }
++  const segs = [...head, ...tail];
++  const st = tail[tail.length - 1]!;
++  return { closed: true, x: st[4], y: st[5], segs };
++}
++
++/** Arc-length fractions of a subpath's interior vertices (a closed one's start is 0). */
++function vertexFractions(s: Sub, m: Measure): number[] {
++  if (!(m.total > 0)) return [];
++  const out: number[] = [];
++  for (let i = 1; i < s.segs.length; i++) out.push(m.starts[i]! / m.total);
++  return out;
++}
++
++/**
++ * A subpath re-cut so it has a vertex at every cut: `cuts` are sorted
++ * fractions in (0, 1), `need[g]` how many vertices every key has at cut g
++ * (more than one where a key repeats a point), and `own[g]` how many of
++ * them are this subpath's own. A cut it does not own splits the cubic it
++ * falls in; a vertex it lacks is a cubic that goes nowhere.
++ */
++function resample(s: Sub, m: Measure, cuts: number[], need: number[], own: number[]): Sub {
++  const n = need.reduce((a, b) => a + b, 1);
++  const zero = (x: number, y: number): Seg => [x, y, x, y, x, y];
++  if (s.segs.length === 0 || !(m.total > 0)) {
++    // A point, or a subpath of no length: n cubics that go nowhere.
++    return { closed: s.closed, x: s.x, y: s.y, segs: Array.from({ length: n }, () => zero(s.x, s.y)) };
++  }
++  // Where each cut lands: inside cubic i at t (a split), or on the vertex
++  // that ends cubic i (this subpath's own, or a split that met the end).
++  const inside: { t: number; extra: number }[][] = s.segs.map(() => []);
++  const after: number[] = s.segs.map(() => 0); // nowhere-cubics after cubic i
++  const before = { extra: 0 }; // nowhere-cubics before the first cubic
++  let ownSeen = 0; // own interior vertices passed so far
++  for (let g = 0; g < cuts.length; g++) {
++    if (own[g]! > 0) {
++      // Vertex ownSeen + 1 ends cubic ownSeen.
++      after[ownSeen]! += need[g]! - own[g]!;
++      ownSeen += own[g]!;
++      continue;
++    }
++    const [i, t] = locate(m, cuts[g]! * m.total);
++    if (t <= 0 && i === 0) before.extra += need[g]!;
++    else if (t <= 0) after[i - 1]! += need[g]!;
++    else if (t >= 1) after[i]! += need[g]!;
++    else inside[i]!.push({ t, extra: need[g]! - 1 });
++  }
++  const segs: Seg[] = [];
++  for (let k = 0; k < before.extra; k++) segs.push(zero(s.x, s.y));
++  for (let i = 0; i < s.segs.length; i++) {
++    let [x0, y0] = segStart(s, i);
++    let g = s.segs[i]!;
++    let done = 0;
++    for (const { t, extra } of inside[i]!) {
++      const [l, r] = split(x0, y0, g, (t - done) / (1 - done));
++      segs.push(l);
++      for (let k = 0; k < extra; k++) segs.push(zero(l[4], l[5]));
++      x0 = l[4];
++      y0 = l[5];
++      g = r;
++      done = t;
++    }
++    segs.push(g);
++    for (let k = 0; k < after[i]!; k++) segs.push(zero(g[4], g[5]));
++  }
++  if (segs.length !== n) throw new PathDataError(`morph equalisation cut a subpath into ${segs.length} cubics, not ${n}`);
++  return { closed: s.closed, x: s.x, y: s.y, segs };
++}
++
++function score(a: Sub, ma: Measure, b: Sub, mb: Measure, shift: number): number {
++  let sum = 0;
++  for (let i = 0; i < SAMPLES; i++) {
++    const f = i / SAMPLES;
++    let g = f + shift;
++    if (g >= 1) g -= 1;
++    const [ax, ay] = pointAt(a, ma, f);
++    const [bx, by] = pointAt(b, mb, g);
++    sum += (ax - bx) * (ax - bx) + (ay - by) * (ay - by);
++  }
++  return sum;
++}
++
++/** Morph keys whose commands differ, on one verb list by the rules above. */
++function equalizeKeys(paths: NormalPath[]): NormalPath[] {
++  const keys = paths.map(subsOf);
++  // slots[s][k]: key k's subpath in slot s.
++  const slots: Sub[][] = keys[0]!.map((s) => [s]);
++  for (let k = 1; k < keys.length; k++) {
++    let mine = keys[k]!.slice();
++    const prev = slots.map((sl) => sl[k - 1]!);
++    const size = (s: Sub): number => {
++      const m = measure(s);
++      return s.closed ? Math.abs(signedArea(s)) : m.total;
++    };
++    // 1. Pair closed with closed and open with open, largest with largest.
++    const placed: (Sub | null)[] = prev.map(() => null);
++    const extra: Sub[] = [];
++    for (const closed of [true, false]) {
++      const slotIx = prev.map((s, i) => [i, s] as const).filter(([, s]) => s.closed === closed);
++      const ours = mine.map((s, i) => [i, s] as const).filter(([, s]) => s.closed === closed);
++      const bySize = <T extends readonly [number, Sub]>(xs: T[]): T[] =>
++        xs.map((x) => [x, size(x[1])] as const).sort((a, b) => b[1] - a[1] || a[0][0] - b[0][0]).map(([x]) => x);
++      const sa = bySize(slotIx), sb = bySize(ours);
++      for (let r = 0; r < Math.max(sa.length, sb.length); r++) {
++        if (r < sa.length && r < sb.length) placed[sa[r]![0]] = sb[r]![1];
++        else if (r < sa.length) placed[sa[r]![0]] = pointSub(closed, centre(sa[r]![1]));
++        else extra.push(sb[r]![1]);
++      }
++    }
++    // A subpath with no partner opens a slot every earlier key holds as a point.
++    for (const s of extra) {
++      const c = centre(s);
++      slots.push(Array.from({ length: k }, () => pointSub(s.closed, c)));
++      placed.push(s);
++    }
++    mine = placed as Sub[];
++    const before = slots.map((sl) => sl[k - 1]!);
++    // 2. Winding: the whole key, decided by its largest pair.
++    let flip = false;
++    let best = -1;
++    for (let i = 0; i < before.length; i++) {
++      const a = before[i]!, b = mine[i]!;
++      if (!a.closed || a.segs.length === 0 || b.segs.length === 0) continue;
++      const area = Math.abs(signedArea(a));
++      if (area > best) {
++        best = area;
++        flip = signedArea(a) * signedArea(b) < 0;
++      }
++    }
++    if (best < 0) {
++      let longest = -1;
++      for (let i = 0; i < before.length; i++) {
++        const a = before[i]!, b = mine[i]!;
++        if (a.closed || a.segs.length === 0 || b.segs.length === 0) continue;
++        const l = measure(a).total;
++        if (l > longest) {
++          longest = l;
++          const [ax0, ay0] = [a.x, a.y], [ax1, ay1] = segStart(a, a.segs.length);
++          const [bx0, by0] = [b.x, b.y], [bx1, by1] = segStart(b, b.segs.length);
++          const d = (px: number, py: number, qx: number, qy: number): number => Math.sqrt((px - qx) * (px - qx) + (py - qy) * (py - qy));
++          flip = d(ax0, ay0, bx1, by1) + d(ax1, ay1, bx0, by0) < d(ax0, ay0, bx0, by0) + d(ax1, ay1, bx1, by1);
++        }
++      }
++    }
++    if (flip) mine = mine.map(reversed);
++    // 3. Start points of closed pairs.
++    for (let i = 0; i < before.length; i++) {
++      const a = before[i]!, b = mine[i]!;
++      if (!a.closed || a.segs.length === 0 || b.segs.length === 0) continue;
++      const ma = measure(a), mb = measure(b);
++      if (!(ma.total > 0) || !(mb.total > 0)) continue;
++      const cands = [...new Set([0, ...vertexFractions(b, mb), ...Array.from({ length: SAMPLES }, (_, j) => j / SAMPLES)])].sort((x, y) => x - y);
++      let bestShift = 0;
++      let bestScore = Infinity;
++      for (const c of cands) {
++        const sc = score(a, ma, b, mb, c);
++        if (sc < bestScore) {
++          bestScore = sc;
++          bestShift = c;
++        }
++      }
++      mine[i] = rotated(b, mb, bestShift);
++    }
++    mine.forEach((s, i) => slots[i]!.push(s));
++  }
++  // 4. Every key cut at every key's vertices, slot by slot.
++  const out: NormalPath[] = keys.map(() => ({ verbs: [], pts: [], src: [] }));
++  for (const sl of slots) {
++    const ms = sl.map(measure);
++    const marks: { f: number; k: number }[] = [];
++    sl.forEach((s, k) => vertexFractions(s, ms[k]!).forEach((f) => marks.push({ f, k })));
++    marks.sort((a, b) => a.f - b.f || a.k - b.k);
++    const cuts: number[] = [];
++    const counts: number[][] = []; // counts[g][k]: key k's vertices at cut g
++    for (const mk of marks) {
++      if (cuts.length === 0 || mk.f - cuts[cuts.length - 1]! >= SAME_FRACTION) {
++        cuts.push(mk.f);
++        counts.push(sl.map(() => 0));
++      }
++      counts[counts.length - 1]![mk.k]! += 1;
++    }
++    const need = counts.map((c) => Math.max(...c));
++    sl.forEach((s, k) => {
++      const r = resample(s, ms[k]!, cuts, need, counts.map((c) => c[k]!));
++      const p = out[k]!;
++      p.verbs.push(PATH_VERB.move);
++      p.pts.push(r.x, r.y);
++      for (const g of r.segs) {
++        p.verbs.push(PATH_VERB.cubic);
++        p.pts.push(...g);
++      }
++      if (r.closed) p.verbs.push(PATH_VERB.close);
++    });
++  }
++  return out;
++}
++
+ /** `"x y w h"` (whitespace and/or commas) with w, h > 0, as f32. */
+ export function parseViewBox(viewBox: string): [number, number, number, number] {
+   const parts = viewBox.trim().split(/[\s,]+/).filter((s) => s.length > 0);

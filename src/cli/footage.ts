@@ -15,9 +15,16 @@
  * bundle+pak, so the scratch tree is valid against the main world's ops.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { ingestFootage, type IngestManifest } from "../footage/ingest.ts";
+import {
+  ffmpegVersionText,
+  ingestFootage,
+  ingestRecipe,
+  unionSpans,
+  type IngestManifest,
+  type SourceSpan,
+} from "../footage/ingest.ts";
 import { FootageLayer } from "../footage/layer.ts";
 import { gridOf, tileNamePrefix } from "../footage/tiling.ts";
 import type { FootageFit, FootageTrack } from "../manifest/sidecar.ts";
@@ -40,17 +47,39 @@ export interface OpenFootageOptions {
 }
 
 /**
- * The ingest's own arguments, hashed. A cache hit reuses the decoded tiles,
- * so the key is exactly what `ingestFootage` is called with and nothing else.
+ * Everything a decode's bytes depend on, hashed. A cache hit hands back an
+ * artifact a miss would have decoded, so the key is what a miss would run,
+ * on what, with what — and nothing that only says where the result goes.
  *
- * Placement — `startFrame`, `endFrame`, `sourceFrame` — and the film's length
- * select frames out of a decode; they do not change its pixels. Keying on
- * them would re-decode a whole clip every time an author moved a cut, which
- * under a brief assembled from ten-second takes is most edits.
+ * `spans` is the union of the source frames the tracks reading this artifact
+ * can show (`reachableSpan`), so a cut that changes which frames are shown
+ * re-decodes, and one that only moves them in the film — the same
+ * `sourceFrame` and length at another `startFrame` — does not. It used to be
+ * the whole clip, keyed on the clip's length and on nothing about placement:
+ * a whole decode never had to change when a cut moved, and it cost a
+ * 179-frame artifact for a 101-frame window.
  *
- * `fit` is one of those arguments: cover / contain / stretch decode to
- * different bytes. The value here is the resolved one, including the
- * matched-aspect case (always `stretch`, today's filter), so the key is total.
+ * `recipe` is the ingest argv with the source path taken out
+ * (`ingestRecipe`), built by the function that builds the argv the decode
+ * runs. Before it was here, the key held what the sidecar decides and nothing
+ * the ingest code decides: an edit to the `-vf` string or a scaler flag left
+ * every warm `dist` serving the artifact the previous recipe made, and CI —
+ * which starts with no `dist` — could not notice. `width`, `height`, `fps`
+ * and `fit` are in the argv as well and are kept as fields so `cache.json`
+ * reads without decoding a filter string.
+ *
+ * `ffmpeg` is a digest of all of `ffmpeg -version` (`ffmpegVersionText`). A
+ * miss runs whatever ffmpeg is installed, and the bytes it writes are that
+ * build's: the H.264 decode to YUV is bit-exact by specification, but the
+ * conversion to RGBA, the lanczos resample and the `-r` rate conversion are
+ * library and fftools code, and `accurate_rnd`/`bitexact` pin how one build
+ * rounds across architectures, not what another release computes. Without
+ * it, upgrading ffmpeg under a warm `dist` would leave the old build's bytes
+ * in front of every footage frame, and a fresh checkout on the same machine
+ * would decode something else from the same revision. The cost is one
+ * re-decode per footage artifact after an upgrade, including one that moved
+ * nothing. `tile` does not reach the bytes; it is here because the manifest
+ * written beside them carries the grid.
  */
 export interface FootageCacheKeyInput {
   readonly srcSha256: string;
@@ -58,8 +87,10 @@ export interface FootageCacheKeyInput {
   readonly fps: number;
   readonly width: number;
   readonly height: number;
-  readonly frames: number;
   readonly fit: FootageFit;
+  readonly spans: readonly SourceSpan[];
+  readonly recipe: readonly string[];
+  readonly ffmpeg: string;
 }
 
 interface TreeNode {
@@ -83,8 +114,10 @@ export function footageCacheKey(input: FootageCacheKeyInput): string {
         fps: input.fps,
         width: input.width,
         height: input.height,
-        frames: input.frames,
         fit: input.fit,
+        spans: input.spans,
+        recipe: input.recipe,
+        ffmpeg: input.ffmpeg,
       }),
     )
     .digest("hex");
@@ -123,103 +156,123 @@ export async function openFootage(
   const repoRoot = repoRootOf(c.dir);
   const footageRoot = join(dirname(c.bundlePath), "footage");
 
+  // Everything the tree can refuse, for every track, before anything costs a
+  // process: an author fixing a name should not wait on ffprobe to hear it.
+  const drawn: { track: FootageTrack; srcPath: string; size: { width: number; height: number } }[] = [];
+  for (const track of tracks) {
+    const srcPath = resolve(repoRoot, track.src);
+    if (!existsSync(srcPath)) {
+      throw new Error(
+        `PocketJS Motion: footage track ${JSON.stringify(track.id)} source is missing: ${srcPath}\n` +
+          `The sidecar names this file as ${JSON.stringify(track.src)}.\n` +
+          "Place the clip at that path (fetched assets: `bun scripts/assets.ts`) and retry.",
+      );
+    }
+
+    const under = names.filter((n) => n === track.nodePrefix || n.startsWith(`${track.nodePrefix}/`));
+    if (under.length === 0) {
+      const shown = names.slice(0, 20).map((n) => JSON.stringify(n)).join(", ");
+      const extra = names.length > 20 ? ` (+${names.length - 20} more)` : "";
+      throw new Error(
+        `PocketJS Motion: footage track ${JSON.stringify(track.id)} declared ` +
+          `nodePrefix ${JSON.stringify(track.nodePrefix)} but the composition tree ` +
+          `has no nodes under that prefix.\n` +
+          `Looked for ${JSON.stringify(track.nodePrefix)} and ${JSON.stringify(`${tileNamePrefix(track.nodePrefix)}…`)}.\n` +
+          `Found: ${names.length > 0 ? shown + extra : "(no debugNames)"}.\n` +
+          "The tile nodes come from `tileNodes` in `src/footage/declare.ts`, which a " +
+          "composition's gen.ts calls with the picture's drawn size; `footageTrack` " +
+          "beside it writes this sidecar entry from the same numbers, so the grid and " +
+          "the nodes cannot be edited apart. Emitting the names by hand means keeping " +
+          `${track.grid[0]}x${track.grid[1]} names, this sidecar's grid and each tile's ` +
+          "drawn size in agreement yourself, and the drawn size IS the ingested size.",
+      );
+    }
+
+    const size = pictureSizeFromTree(tree, track);
+    if (!size) {
+      throw new Error(
+        `PocketJS Motion: footage track ${JSON.stringify(track.id)} has tile nodes ` +
+          `under ${JSON.stringify(track.nodePrefix)} but none carry w-[Npx] h-[Npx], ` +
+          `so the ingest size cannot be read from the tree.\n` +
+          "Each tile Image needs an explicit pixel size (drawn size equals ingested size).",
+      );
+    }
+
+    const derived = gridOf(size.width, size.height, track.tile);
+    if (derived[0] !== track.grid[0] || derived[1] !== track.grid[1]) {
+      throw new Error(
+        `PocketJS Motion: footage track ${JSON.stringify(track.id)} sidecar grid ` +
+          `[${track.grid[0]}, ${track.grid[1]}] does not match its tile nodes ` +
+          `(${size.width}×${size.height} at tile ${track.tile} → [${derived[0]}, ${derived[1]}]).`,
+      );
+    }
+    drawn.push({ track, srcPath, size });
+  }
+
+  const ffmpeg = await requireFfmpeg();
+
+  // Tracks that would decode to the same bytes share one artifact holding the
+  // union of what each can show. `footage-tracks` maps one clip twice, at
+  // [0, 60) and [89, 179): one decode of 150 frames rather than two of 179.
+  const groups = new Map<string, Group>();
+  const groupOf = new Map<string, Group>();
+  for (const { track, srcPath, size } of drawn) {
+    const srcSha256 = await sha256File(srcPath);
+    const frames = await sourceFrameCount(srcPath, c.fps);
+    const srcSize = await sourceDimensions(srcPath);
+    // Before the ingest, not after: a declared window that cannot fit is
+    // knowable from the clip's duration alone. Cutting 10-second takes into a
+    // minute-long film makes this the most common thing to get wrong, and
+    // paying an ingest to be told so is a slow way to learn it. The same is
+    // true of a source whose aspect does not match the box — the squeeze is
+    // visible in the frozen artifact, and the hash then treats it as an input.
+    assertWindowFitsClip(track, frames);
+    const fit = assertAspectFit(track, srcSize, size);
+    const id = JSON.stringify([srcSha256, size.width, size.height, fit, track.tile]);
+    let group = groups.get(id);
+    if (!group) {
+      // Under the first track that reads it, so the directory is stable while
+      // the sidecar's order is; a re-decode replaces it in place.
+      group = { dir: join(footageRoot, track.id), srcPath, srcSha256, size, fit, tile: track.tile, spans: [] };
+      groups.set(id, group);
+    }
+    group.spans.push(reachableSpan(track, c.sidecar.durationFrames));
+    groupOf.set(track.id, group);
+  }
+
+  pruneUnread(footageRoot, new Set([...groups.values()].map((g) => g.dir)));
+
+  const artifacts = new Map<Group, { manifest: IngestManifest; rawPath: string }>();
+  for (const group of groups.values()) {
+    const spans = unionSpans(group.spans);
+    const recipe = { width: group.size.width, height: group.size.height, fps: c.fps, spans, fit: group.fit };
+    const keyInput: FootageCacheKeyInput = {
+      srcSha256: group.srcSha256,
+      tile: group.tile,
+      fps: c.fps,
+      width: group.size.width,
+      height: group.size.height,
+      fit: group.fit,
+      spans,
+      recipe: ingestRecipe(recipe),
+      ffmpeg,
+    };
+    const key = footageCacheKey(keyInput);
+    const cached = await readCache(group.dir, key);
+    if (cached) {
+      artifacts.set(group, cached);
+      continue;
+    }
+    const manifest = await ingestFootage({ ...recipe, src: group.srcPath, outDir: group.dir, tile: group.tile });
+    await writeCache(group.dir, key, keyInput);
+    artifacts.set(group, { manifest, rawPath: join(group.dir, "frames.rgba") });
+  }
+
   const layers: LayerBind[] = [];
   const hashes: Record<string, string> = {};
   try {
-    for (const track of tracks) {
-      const srcPath = resolve(repoRoot, track.src);
-      if (!existsSync(srcPath)) {
-        throw new Error(
-          `PocketJS Motion: footage track ${JSON.stringify(track.id)} source is missing: ${srcPath}\n` +
-            `The sidecar names this file as ${JSON.stringify(track.src)}.\n` +
-            "Place the clip at that path (fetched assets: `bun scripts/assets.ts`) and retry.",
-        );
-      }
-
-      const under = names.filter((n) => n === track.nodePrefix || n.startsWith(`${track.nodePrefix}/`));
-      if (under.length === 0) {
-        const shown = names.slice(0, 20).map((n) => JSON.stringify(n)).join(", ");
-        const extra = names.length > 20 ? ` (+${names.length - 20} more)` : "";
-        throw new Error(
-          `PocketJS Motion: footage track ${JSON.stringify(track.id)} declared ` +
-            `nodePrefix ${JSON.stringify(track.nodePrefix)} but the composition tree ` +
-            `has no nodes under that prefix.\n` +
-            `Looked for ${JSON.stringify(track.nodePrefix)} and ${JSON.stringify(`${tileNamePrefix(track.nodePrefix)}…`)}.\n` +
-            `Found: ${names.length > 0 ? shown + extra : "(no debugNames)"}.\n` +
-            "The tile nodes come from `tileNodes` in `src/footage/declare.ts`, which a " +
-            "composition's gen.ts calls with the picture's drawn size; `footageTrack` " +
-            "beside it writes this sidecar entry from the same numbers, so the grid and " +
-            "the nodes cannot be edited apart. Emitting the names by hand means keeping " +
-            `${track.grid[0]}x${track.grid[1]} names, this sidecar's grid and each tile's ` +
-            "drawn size in agreement yourself, and the drawn size IS the ingested size.",
-        );
-      }
-
-      const size = pictureSizeFromTree(tree, track);
-      if (!size) {
-        throw new Error(
-          `PocketJS Motion: footage track ${JSON.stringify(track.id)} has tile nodes ` +
-            `under ${JSON.stringify(track.nodePrefix)} but none carry w-[Npx] h-[Npx], ` +
-            `so the ingest size cannot be read from the tree.\n` +
-            "Each tile Image needs an explicit pixel size (drawn size equals ingested size).",
-        );
-      }
-
-      const derived = gridOf(size.width, size.height, track.tile);
-      if (derived[0] !== track.grid[0] || derived[1] !== track.grid[1]) {
-        throw new Error(
-          `PocketJS Motion: footage track ${JSON.stringify(track.id)} sidecar grid ` +
-            `[${track.grid[0]}, ${track.grid[1]}] does not match its tile nodes ` +
-            `(${size.width}×${size.height} at tile ${track.tile} → [${derived[0]}, ${derived[1]}]).`,
-        );
-      }
-
-      await requireFfmpeg();
-
-      const srcSha256 = await sha256File(srcPath);
-      const frames = await sourceFrameCount(srcPath, c.fps);
-      const srcSize = await sourceDimensions(srcPath);
-      // Before the ingest, not after: `ingestFootage` decodes the whole clip to
-      // a raw file and a declared window that cannot fit is knowable from the
-      // clip's duration alone. Cutting 10-second takes into a minute-long film
-      // makes this the most common thing to get wrong, and paying a full ingest
-      // to be told so is a slow way to learn it. The same is true of a source
-      // whose aspect does not match the box — the squeeze is visible in the
-      // frozen artifact, and the hash then treats it as an input.
-      assertWindowFitsClip(track, frames);
-      const fit = assertAspectFit(track, srcSize, size);
-      const keyInput: FootageCacheKeyInput = {
-        srcSha256,
-        tile: track.tile,
-        fps: c.fps,
-        width: size.width,
-        height: size.height,
-        frames,
-        fit,
-      };
-      const key = footageCacheKey(keyInput);
-      const outDir = join(footageRoot, track.id);
-      const cached = await readCache(outDir, key);
-      let manifest: IngestManifest;
-      let rawPath: string;
-      if (cached) {
-        manifest = cached.manifest;
-        rawPath = cached.rawPath;
-      } else {
-        manifest = await ingestFootage({
-          src: srcPath,
-          outDir,
-          width: size.width,
-          height: size.height,
-          fps: c.fps,
-          frames,
-          tile: track.tile,
-          fit,
-        });
-        rawPath = join(outDir, "frames.rgba");
-        await writeCache(outDir, key, keyInput);
-      }
-
+    for (const { track } of drawn) {
+      const { manifest, rawPath } = artifacts.get(groupOf.get(track.id)!)!;
       const layer = await FootageLayer.create({
         manifest,
         rawPath,
@@ -256,6 +309,42 @@ export async function openFootage(
   };
 }
 
+/**
+ * Remove artifact directories beside the bundle that no track of this sidecar
+ * reads: a renamed track's, and one a shared artifact replaced. A tree built
+ * before spans holds `footage-tracks`' whole 179-frame `wide-return` decode,
+ * which `wide-open`'s artifact now serves; left alone it would sit in `dist`
+ * for good and the ledger's end-of-run count would report a sixth file on
+ * every warm tree. Only a directory holding what an ingest writes is touched.
+ * A process still reading one keeps its open descriptor, so an unlink under
+ * it changes nothing it presents.
+ */
+function pruneUnread(footageRoot: string, keep: ReadonlySet<string>): void {
+  let entries: string[];
+  try {
+    entries = readdirSync(footageRoot);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    const dir = join(footageRoot, name);
+    if (keep.has(dir)) continue;
+    if (!existsSync(join(dir, "cache.json")) && !existsSync(join(dir, "manifest.json"))) continue;
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Tracks whose decodes are the same bytes, and the spans each can show. */
+interface Group {
+  readonly dir: string;
+  readonly srcPath: string;
+  readonly srcSha256: string;
+  readonly size: { readonly width: number; readonly height: number };
+  readonly fit: FootageFit;
+  readonly tile: number;
+  readonly spans: SourceSpan[];
+}
+
 interface LayerBind {
   readonly layer: FootageLayer;
   readonly startFrame: number;
@@ -276,6 +365,24 @@ export function clipFrameAt(
     return undefined;
   }
   return track.sourceFrame + (compositionFrame - track.startFrame);
+}
+
+/**
+ * The source frames a track can show: `clipFrameAt` over every composition
+ * frame of its window, which the film's length ends. The parser already
+ * refuses an `endFrame` past `durationFrames`; the clip here is the same rule
+ * stated where the span is derived, so a span never depends on that refusal.
+ *
+ * `durationFrames` is the sidecar's, not a `--frames` given to one command: a
+ * `check` over 30 frames and a `trace` over the film read the same artifact,
+ * rather than each re-decoding the span the other just wrote.
+ */
+export function reachableSpan(
+  track: Pick<FootageTrack, "startFrame" | "endFrame" | "sourceFrame">,
+  durationFrames: number,
+): SourceSpan {
+  const shown = Math.max(0, Math.min(track.endFrame, durationFrames) - track.startFrame);
+  return [track.sourceFrame, track.sourceFrame + shown];
 }
 
 /**
@@ -396,11 +503,11 @@ function walk(node: TreeNode | null | undefined, visit: (n: TreeNode) => void): 
   for (const child of node.k ?? []) walk(child, visit);
 }
 
-async function requireFfmpeg(): Promise<void> {
+/** The `ffmpeg` half of the cache key: a digest of all of `ffmpeg -version`. */
+async function requireFfmpeg(): Promise<string> {
   try {
-    const proc = Bun.spawn(["ffmpeg", "-version"], { stdout: "pipe", stderr: "pipe" });
-    const code = await proc.exited;
-    if (code === 0) return;
+    const text = await ffmpegVersionText();
+    return new Bun.CryptoHasher("sha256").update(text).digest("hex");
   } catch {
     // spawn throws when the binary is not on PATH
   }
