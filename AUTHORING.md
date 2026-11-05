@@ -185,6 +185,11 @@ Worked examples, roughly in reading order:
   wedges sharing their edges, a wireframe globe in a viewBox with a trimmed
   ring orbiting it, and a wave morphing under an `overflow-mask` window. Its
   sidecar asserts what each is for.
+- `compositions/path-primitives` — dashed, dotted and marching connectors,
+  three morphs between keys drawn separately (play into pause, heart into
+  star, ring into square), and a dart flying a drawn route turned to its
+  direction of travel, its keyframes made by `motionPath` in
+  `pocket.config.ts`. Its sidecar asserts what each is for.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
@@ -418,23 +423,76 @@ and `stroke-[Npx]` stroke it in the path's own units — viewBox units under a
 viewBox — with `stroke-join-*`, `stroke-cap-*` and `stroke-miter-[N]`; and
 `trim-start-[f]`, `trim-end-[f]` and `trim-offset-[f]` draw only part of the
 stroke, by fractions of its length. A draw-on is one keyframe, `trimEnd` from
-`"0"` to `"1"`; `stroke-dashoffset` is not a spelling of it, being a length.
-`d={[A, B]}` gives morph keys, and `morph-[f]` (keyframe `morph`) moves
-between them; `bg-clip-path` paints the node's ground, a gradient included,
-into the fill. Colours, width, trim and morph all animate. The outline is
-baked at build time, so write `d` where the build can read it — a string, a
-`+` of two, an array of them, a `const` of any of those, or a `.map` over a
-`const` array — and a `d` it cannot read, an import or a string computed at
-run time, is refused at mount, naming the outline. The keys of a morph must
-have the same commands once normalised: a line against a curve is promoted,
-anything else is refused at the line that wrote it, and nothing resamples one
-key to fit another. Two paths sharing an edge split its samples instead of
+`"0"` to `"1"`. `d={[A, B]}` gives morph keys, and `morph-[f]` (keyframe
+`morph`) moves between them; `bg-clip-path` paints the node's ground, a
+gradient included, into the fill. Colours, width, trim and morph all
+animate. The outline is baked at build time, so write `d` where the build can
+read it — a string, a `+` of two, an array of them, a `const` of any of
+those, or a `.map` over a `const` array — and a `d` it cannot read, an import
+or a string computed at run time, is refused at mount, naming the outline.
+Keys whose commands line up once normalised (a line against a curve counts)
+morph point for point as drawn. Keys drawn separately — a play icon and a
+pause icon, a heart and a star — are equalised at build time by a stated
+rule (`patches/0046`): key 0 keeps its subpaths, start points and direction;
+a later key's subpaths pair with the earlier key's by size, a subpath with no
+partner grows out of or shrinks into the centre of its own box, a whole key
+is reversed if it winds the other way, a closed subpath's start moves to
+where the two outlines sit closest, and every key is cut where any key has a
+vertex. Each key keeps the outline it was written as; to choose the
+correspondence yourself, draw keys whose commands line up. More than eight
+keys is refused. Two paths sharing an edge split its samples instead of
 both drawing them, but each is still blended alone, so a seam between two
 shapes of one colour shows a trace of what is behind it; overlap them by a
 hair where that matters. A path trimmed to nothing emits nothing, which
 `layout` reports as `text_not_painted` and `visibility` as invisible by
 declaration, not covered. Drawn by this repository's rasteriser only
 (`patches/0042` and `0043`; the design is `patches/0042-vector-paths.design.md`).
+
+**A stroke can be dashed.** `stroke-dash-[12_8]` is SVG's
+`stroke-dasharray`: one to four lengths in the path's own units, dash, gap,
+dash, gap, an odd count repeated as SVG repeats it; `stroke-dash-offset-[N]`
+is `stroke-dashoffset`, the distance into the pattern at each subpath's
+start, and it animates as `dashOffset` or `stroke-dashoffset`. Running the
+offset back by one period, `linear infinite`, is marching ants that loop
+without a seam. A zero-length dash draws its caps alone, so
+`stroke-dash-[0_14] stroke-cap-round` is a dotted line. The pattern restarts
+on every subpath and is measured from its start, so a `trimEnd` draw-on
+reveals dashes without sliding them, and a dash over a closed subpath's start
+is one piece through it. A pattern that would draw solid — more than four
+lengths, a negative one, all zero — is refused at the class. At most 65,536
+dashes a stroke a frame are drawn (`patches/0045`; the design, with the morph
+rule and motion along a path, is `patches/0045-path-primitives.design.md`).
+
+**A node can follow an outline.** `motionPath` in `src/anim/path-motion.ts`
+turns a `d` into a keyframe set of `translateX`, `translateY` and, with
+`rotate`, the direction of travel; call it in `pocket.config.ts`:
+
+```ts
+import { motionPath } from "../../src/anim/path-motion.ts";
+import { bezier } from "../../src/anim/sampled.ts";
+
+const ROUTE = "M70 430 C230 430 250 150 410 150 S600 360 890 430";
+const fly = motionPath({ d: ROUTE, node: { x: 0, y: 0, w: 56, h: 56 }, durationMs: 3600, ease: bezier(0.65, 0, 0.35, 1), rotate: true });
+// theme.keyframes.fly = fly.keyframes; theme.animation.fly = { value: fly.value("fly", { delayMs: 400 }) }
+```
+
+`node` is the moving node's box in the same containing block as the path: its
+centre is put on the path and it turns about its centre, so keep it
+`absolute` at that box and leave its transform origin at the centre. Without
+`node`, the path's coordinates are the node's translation. The `d` is
+followed exactly as a `<Path>` with that `d` draws it, through the same
+`viewBox` mapping when `path: { viewBox, box }` names the `<Path>`'s; a
+transform on the `<Path>` node is not followed. A `d` used by both has to be
+written in both files, because `main.tsx` may not import its outlines.
+`ease` is progress along the path in time; `from`/`to` run part of it, or
+backward; `iterations: "infinite"` loops a closed path. Keys sit on tick 0,
+every odd tick and the last, so every frame of a 30 fps film whose delay is a
+whole number of frames is on the curve. Between keys the node moves on the
+chord, which a 60 fps film or a `shutter` shows: `chordError` reports how far
+before you render — 3.75 px on a 21 px-a-tick swoop through a 58 px loop,
+0.19 px on a 7 px-a-tick ellipse. `every: 1` keys every tick, exact at 60
+fps but sharp under a shutter, which reads a one-tick segment as a cut.
+`El.along` does the same for a generator's element.
 
 **Text can carry an outline.** `text-stroke-[6px] text-stroke-[#7c2d12]`
 draws a 6 px outline around a Text node's glyphs; `text-stroke-outside` (the

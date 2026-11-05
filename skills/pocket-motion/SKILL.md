@@ -92,9 +92,15 @@ subtree as one unit, and gradients of up to six stops at any angle, radial, or
 clipped to text (`via-*`, `bg-linear-*`, `bg-radial`, `bg-clip-text`). All
 paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
 `0016`–`0019`). Any outline is a `<Path d="…">` — filled (`fill-*`), stroked
-(`stroke-*`), drawn on by a `trimEnd` keyframe, morphed between `d={[A, B]}`
-by `morph` — with `d` written as literals the build can read
-(`patches/0042`–`0043`, `compositions/vector-paths`).
+(`stroke-*`), dashed (`stroke-dash-[12_8]`, marching by a `dashOffset`
+keyframe, dotted with `stroke-dash-[0_14] stroke-cap-round`), drawn on by a
+`trimEnd` keyframe, morphed between `d={[A, B]}` by `morph`, keys drawn
+separately included — with `d` written as literals the build can read
+(`patches/0042`–`0046`, `compositions/vector-paths`,
+`compositions/path-primitives`). A node follows an outline, turned to its
+direction of travel, through `motionPath` in `src/anim/path-motion.ts`,
+called in `pocket.config.ts`; `chordError` says how far a shutter or a 60 fps
+film sees it cut corners.
 
 **Motion blur is the sidecar's `shutter`** (`{ "angle": 180, "samples": 8 }`):
 each frame is the integer average of that many renders across the open
