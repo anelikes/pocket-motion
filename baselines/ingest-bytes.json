@@ -1,37 +1,107 @@
 [
  {
+  "artifact": "dist/compositions/captions/burn-zh/footage/plate/manifest.json",
+  "src": "assets/synthetic/bars-9x16-30fps.mp4",
+  "tracks": [
+   "plate"
+  ],
+  "spans": [
+   [
+    0,
+    101
+   ]
+  ],
+  "frames": 101,
+  "sha256": "97717af591591f2a785382d32e4a96528e3cf700900999fc1583d7be081a6114",
+  "wholeClip": {
+   "frames": 179,
+   "sha256": "1b36fdb6941c20049821e406b43a9277e8621838fe685bf809f6bf7e70bbc156"
+  },
+  "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
+ },
+ {
   "artifact": "dist/compositions/footage-tracks/footage/portrait-cover/manifest.json",
   "src": "assets/synthetic/bars-9x16-30fps.mp4",
-  "frames": 179,
-  "sha256": "54b06d78851d73418c36221766043bea3b34c9f1b45b5a73a51c5f4dd4808732",
+  "tracks": [
+   "portrait-cover"
+  ],
+  "spans": [
+   [
+    0,
+    150
+   ]
+  ],
+  "frames": 150,
+  "sha256": "dbe21b2e25f80abefd962533f8f2990faddb1a24836b30a8f470eab542bb4871",
+  "wholeClip": {
+   "frames": 179,
+   "sha256": "54b06d78851d73418c36221766043bea3b34c9f1b45b5a73a51c5f4dd4808732"
+  },
   "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
  },
  {
   "artifact": "dist/compositions/footage-tracks/footage/wide-contain/manifest.json",
   "src": "assets/synthetic/wide-2x1-30fps.mp4",
+  "tracks": [
+   "wide-contain"
+  ],
+  "spans": [
+   [
+    0,
+    89
+   ]
+  ],
   "frames": 89,
   "sha256": "fb40e716ff49eb031113ed51c405ccdf78e12d980a5727f87385b3cfcb962716",
+  "wholeClip": {
+   "frames": 89,
+   "sha256": "fb40e716ff49eb031113ed51c405ccdf78e12d980a5727f87385b3cfcb962716"
+  },
   "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
  },
  {
   "artifact": "dist/compositions/footage-tracks/footage/wide-open/manifest.json",
   "src": "assets/synthetic/bars-16x9-24fps.mp4",
-  "frames": 179,
-  "sha256": "297f4b27ee5c0e01ac70ab986c3bdd135db1902f0463f22d27a1505b8a3d0754",
-  "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
- },
- {
-  "artifact": "dist/compositions/footage-tracks/footage/wide-return/manifest.json",
-  "src": "assets/synthetic/bars-16x9-24fps.mp4",
-  "frames": 179,
-  "sha256": "297f4b27ee5c0e01ac70ab986c3bdd135db1902f0463f22d27a1505b8a3d0754",
+  "tracks": [
+   "wide-open",
+   "wide-return"
+  ],
+  "spans": [
+   [
+    0,
+    60
+   ],
+   [
+    89,
+    179
+   ]
+  ],
+  "frames": 150,
+  "sha256": "8d622640b751359a680136a5c39c5dd391cd840212347677dc6990ae559c9795",
+  "wholeClip": {
+   "frames": 179,
+   "sha256": "297f4b27ee5c0e01ac70ab986c3bdd135db1902f0463f22d27a1505b8a3d0754"
+  },
   "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
  },
  {
   "artifact": "dist/compositions/sound-roles/footage/clip/manifest.json",
   "src": "assets/synthetic/bars-16x9-24fps.mp4",
-  "frames": 179,
-  "sha256": "297f4b27ee5c0e01ac70ab986c3bdd135db1902f0463f22d27a1505b8a3d0754",
+  "tracks": [
+   "clip"
+  ],
+  "spans": [
+   [
+    20,
+    140
+   ]
+  ],
+  "frames": 120,
+  "sha256": "f8212e1a4eca6c01dd881743c6a7a2521cff946a6611ae878b4c4b26888d589a",
+  "wholeClip": {
+   "frames": 179,
+   "sha256": "297f4b27ee5c0e01ac70ab986c3bdd135db1902f0463f22d27a1505b8a3d0754"
+  },
   "ffmpeg": "ffmpeg version 8.0 Copyright (c) 2000-2025 the FFmpeg developers"
  }
 ]
