@@ -34,11 +34,19 @@
  *   a segment fails;
  * - the frame boundary skipped for folded frames, so footage is presented
  *   from `start` on → the footage-tracks case fails, and the sound-roles
- *   cases do not: nothing in sound-roles is drawn outside its track's window.
+ *   cases do not: nothing in sound-roles is drawn outside its track's window;
+ * - `renderSegments` not killing its workers when the signal fires → the
+ *   cancelled `--workers` case fails, every segment having finished.
+ *
+ * What is NOT guarded here: the hidden partial a join is written to. Every
+ * refusal happens before a byte is joined, so the gap case's untouched --out
+ * holds the refusal to writing nothing, not the partial; the partial is the
+ * mechanism `render` already has (`partialPathOf`), whose red case is the
+ * cancelled render in tests/api.test.ts.
  */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import {
@@ -50,6 +58,7 @@ import {
   type Segment,
   type SegmentManifest,
 } from "../src/render/segment.ts";
+import { concat, render } from "../src/api.ts";
 import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -251,11 +260,15 @@ describe("three segments and a concat are the one-shot render", () => {
     900_000,
   );
 
-  test("join.gap through the CLI", async () => {
+  test("join.gap through the CLI, and --out keeps what it held", async () => {
+    // A refused join writes nothing over --out: the join goes to a hidden
+    // partial that is renamed over it only once it has been read back.
+    writeFileSync(join(scratch, "gap.mp4"), "an earlier delivery");
     const r = await cli(["concat", SOUND_ROLES, seg(0, 59), seg(120, 179), "--out", join(scratch, "gap.mp4")]);
     expect(r.code).toBe(1);
     expect(codes(r.json)).toEqual(["join.gap"]);
-    expect(existsSync(join(scratch, "gap.mp4"))).toBe(false);
+    expect(readFileSync(join(scratch, "gap.mp4"), "utf8")).toBe("an earlier delivery");
+    expect(readdirSync(scratch).filter((n) => n.includes(".partial-"))).toEqual([]);
   }, 300_000);
 
   test(
@@ -366,4 +379,54 @@ describe("every container joins to the film trace reports", () => {
     },
     600_000,
   );
+});
+
+describe("a split render that is stopped", () => {
+  test(
+    "a cancelled --workers render kills its workers and leaves --out as it was",
+    async () => {
+      expect((await cli(["build", SMOKE])).code).toBe(0);
+      const out = join(scratch, "stopped.mp4");
+      writeFileSync(out, "an earlier delivery");
+      const controller = new AbortController();
+      // Abort once the workers' scratch directory exists, i.e. while they run.
+      const watch = setInterval(() => {
+        if (readdirSync(scratch).some((n) => n.startsWith(".stopped.mp4.segments-"))) {
+          clearInterval(watch);
+          setTimeout(() => controller.abort(new Error("enough")), 300);
+        }
+      }, 25);
+      // `--workers` reports progress as each segment finishes. Killed, none does;
+      // left running, all three finish before the join sees the signal.
+      const finished: unknown[] = [];
+      const result = (await render(
+        join(ROOT, SMOKE),
+        { out, workers: 3 },
+        { signal: controller.signal, onProgress: (p) => finished.push(p) },
+      )) as Record<string, unknown>;
+      clearInterval(watch);
+      expect(finished).toEqual([]);
+      expect(result).toMatchObject({ ok: false, cancelled: true, error: "render cancelled — enough" });
+      expect(readFileSync(out, "utf8")).toBe("an earlier delivery");
+      expect(readdirSync(scratch).filter((n) => n.includes(".partial-") || n.includes(".segments-"))).toEqual([]);
+      // No worker outlived the cancel: each was this process's child.
+      const left = Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", "render .*--range"]).stdout.toString().trim();
+      expect(left).toBe("");
+    },
+    600_000,
+  );
+
+  test("a cancelled concat resolves with cancelled: true and writes nothing", async () => {
+    const out = join(scratch, "stopped-concat.mp4");
+    const controller = new AbortController();
+    controller.abort("before it started");
+    const result = (await concat(
+      join(ROOT, SOUND_ROLES),
+      [join(scratch, "sr-0-59.mp4"), join(scratch, "sr-60-119.mp4"), join(scratch, "sr-120-179.mp4")],
+      { out },
+      { signal: controller.signal },
+    )) as Record<string, unknown>;
+    expect(result).toMatchObject({ ok: false, cancelled: true });
+    expect(existsSync(out)).toBe(false);
+  }, 300_000);
 });

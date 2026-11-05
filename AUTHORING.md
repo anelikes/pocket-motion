@@ -1640,9 +1640,15 @@ the same mix a one-shot render muxes, decoded-audio hash for hash. Footage
 is the one input `concat` takes from the segments rather than measuring: its
 identity components are hashes of ingest artifacts, `concat` ingests
 nothing, and `--json` lists them under `identityFromSegments`. `--range`
-refuses `--spec`, because each staging of a job builds under a fresh
-directory name that lands in its identity; `--workers` with `--spec` shares
-one staging and is accepted.
+refuses `--spec`: `concat` joins against a composition directory, and a
+job's composition exists only inside its staging, removed when the render
+returns. `--workers` with `--spec` stages, builds and checks the job's
+assertions once, and every worker renders that staging.
+
+Both write the film to a hidden file beside `--out` and rename it over
+`--out` only once the join has been read back, so a refused join, a failed
+one or a cancelled one leaves `--out` as it was — the rule every `render`
+follows.
 
 ### What `--json` will and will not say about your machine
 
