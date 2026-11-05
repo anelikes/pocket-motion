@@ -50,8 +50,8 @@
  * turns a finding into an exit code is `verify --strict`, and what turns one
  * off is a `layoutAllow` entry in the sidecar with a written reason.
  *
- * TWO CARVE-OUTS, both measured rather than assumed, both in `overlaps()` and
- * `boxContains()` below:
+ * THREE CARVE-OUTS, all measured rather than assumed — the first two in
+ * `overlaps()` and `boxContains()` below, the third in `onePicture()`:
  *
  *   - containment is not a collision. A full-bleed background CONTAINS the
  *     caption over it, which is the ordinary stacking relation and not
@@ -60,6 +60,12 @@
  *   - touching is not overlapping. A tile grid's neighbours share an edge, and
  *     `footage:<track>/tile:<col>:<row>` is the most common `debugName` in any
  *     tree with footage in it. Overlap is positive area.
+ *   - parts of one picture are not a collision. `<Svg src>` (patches/0053)
+ *     names its canvas `svg:<src>` and gives every part a box of its own, so
+ *     a picture's parts overlap where the file draws them over each other.
+ *     `compositions/svg-import` produced 14 findings at its last frame, every
+ *     one a pair of lighthouse parts. A part and a node outside its picture
+ *     are still a pair.
  */
 
 import type { LayoutAllowance, LayoutAllowScope } from "../manifest/sidecar.ts";
@@ -343,6 +349,7 @@ export function findingsFor(inputs: FindingInputs): Finding[] {
       if (isAncestor(a, b) || isAncestor(b, a)) continue;
       if (!overlaps(a.box, b.box)) continue;
       if (boxContains(a.box, b.box) || boxContains(b.box, a.box)) continue;
+      if (onePicture(a, b)) continue;
       out.push({
         code: "content_overlap",
         id: a.id,
@@ -363,6 +370,17 @@ export function findingsFor(inputs: FindingInputs): Finding[] {
   const order = new Map(FINDING_CODES.map((c, i) => [c, i]));
   out.sort((p, q) => order.get(p.code)! - order.get(q.code)! || p.id - q.id || (p.with ?? 0) - (q.with ?? 0));
   return applyAllowances(out, inputs.allow);
+}
+
+/** The `debugName` prefix of an imported picture's canvas: `svg:<src>`. */
+export const SVG_CANVAS_PREFIX = "svg:";
+
+/** `a` and `b` are both inside one imported picture's canvas. */
+function onePicture(a: FindingNode, b: FindingNode): boolean {
+  for (let up = a.container; up; up = up.container) {
+    if (up.name?.startsWith(SVG_CANVAS_PREFIX) && isAncestor(up, b)) return true;
+  }
+  return false;
 }
 
 /** `a` is `b`'s container, or its container's container, and so on. */

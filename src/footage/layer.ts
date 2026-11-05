@@ -13,7 +13,7 @@
  */
 
 import { closeSync, openSync, readSync } from "node:fs";
-import type { IngestManifest } from "./ingest.ts";
+import { spanFrames, storedIndex, type IngestManifest } from "./ingest.ts";
 import { interiorOf, placeTile, texelRun, tileDebugName } from "./tiling.ts";
 
 /** Subset of HostOps this layer needs. */
@@ -146,6 +146,14 @@ export class FootageLayer {
       }
     }
 
+    if (spanFrames(o.manifest.spans) !== o.manifest.frames) {
+      throw new Error(
+        `PocketJS Motion: footage manifest for ${JSON.stringify(o.nodePrefix)} holds ` +
+          `${o.manifest.frames} frames but its spans ${JSON.stringify(o.manifest.spans)} ` +
+          `cover ${spanFrames(o.manifest.spans)}.`,
+      );
+    }
+
     // The raw file is width*height*4*frames. present() only ever consumes one
     // window of that; keeping the rest resident is a function of duration
     // and is what made a multi-track film an allocation failure.
@@ -157,15 +165,32 @@ export class FootageLayer {
     return this.#m.frames;
   }
 
-  /** Bind frame `n`'s pixels. Call once per rendered frame, before render(). */
+  /**
+   * Bind source frame `n`'s pixels. Call once per rendered frame, before
+   * render().
+   *
+   * `n` is the clip's own frame — `sourceFrame + (compositionFrame -
+   * startFrame)` — and the manifest's spans say where it is stored. A frame
+   * no span holds is refused. It used to be clamped to the nearest stored
+   * one, which with a whole clip on disk only ever met an index past either
+   * end; with spans it would also meet the gap between two, and show a
+   * picture from the wrong side of it.
+   */
   present(n: number): void {
     if (this.#fd < 0) {
       throw new Error("PocketJS Motion: FootageLayer.present after close");
     }
-    const { width, height, tile, grid, frames } = this.#m;
+    const { width, height, tile, grid, spans } = this.#m;
     const [cols, rows] = grid;
-    // Clamp before the offset so an out-of-range n is not a read past EOF.
-    const frame = Math.min(Math.max(n, 0), frames - 1);
+    const frame = storedIndex(spans, n);
+    if (frame === undefined) {
+      throw new Error(
+        `PocketJS Motion: footage frame ${n} is outside the decoded spans ` +
+          `${JSON.stringify(spans)} of ${JSON.stringify(this.#m.src)}.\n` +
+          "The ingest decodes the source frames the sidecar's placement can reach " +
+          "(`src/cli/footage.ts`); a frame outside them was never written.",
+      );
+    }
     const frameBytes = width * height * 4;
 
     // Sequential present of the same n is one read, not one per call. The

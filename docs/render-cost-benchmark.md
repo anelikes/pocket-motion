@@ -313,6 +313,10 @@ to 9.6 s and 14.0 s for about the same CPU. pocket-motion's `render` runs one
 raster thread; `src/render/parallel.ts` splits a render across processes but
 no command uses it (`baselines/phase5-throughput.md` measured it plateauing
 at four workers, and losing its gain once each worker runs its own encoder).
+(Since 2026-11-05 a command does: `render --workers N` renders N
+`render --range` segments and joins them, and `concat` joins segments
+rendered on other machines. `baselines/segments.md` measures it on `reel` and
+on the hajibang ranking.)
 `swangle` is Remotion's Lambda default: on this Mac it cost 942 ms of CPU a
 frame, about 9× Remotion's default path. That is macOS's SwiftShader, not
 Linux's, and it is not used for the Lambda estimate below. Its 300-frame render, run

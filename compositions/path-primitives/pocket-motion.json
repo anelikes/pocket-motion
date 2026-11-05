@@ -1,0 +1,30 @@
+{
+  "motion": 1,
+  "durationFrames": 150,
+  "fps": 30,
+  "supersample": 1,
+  "layoutAllow": [
+    {"node": "dashed-ring", "allow": "occlusion", "reason": "trimmed to nothing until its draw-on starts at tick 12: no geometry is the declaration, not a burial"},
+    {"node": "route", "allow": "occlusion", "reason": "frames 0 and 1 draw the route's first few px, which the dot and the dart waiting at its start cover; it is in the picture from frame 2"}
+  ],
+  "assertions": [
+    {"node": "connector-dashed", "inPicture": [0, 149]},
+    {"node": "connector-dotted", "inPicture": [0, 149]},
+    {"node": "connector-marching", "inPicture": [0, 149]},
+    {"node": "selection", "inPicture": [0, 149]},
+    {"node": "play-pause", "inPicture": [0, 149]},
+    {"node": "heart-star", "inPicture": [0, 149]},
+    {"node": "ring-square", "inPicture": [0, 149]},
+    {"node": "route", "entersBy": 6},
+    {"node": "route", "inPicture": [2, 149]},
+    {"node": "dart", "inPicture": [0, 149]},
+    {"node": "dart", "insideBox": true},
+    {"node": "trail", "inPicture": [0, 149]},
+    {"node": "trail", "insideBox": true},
+    {"node": "dashed-ring", "entersBy": 8},
+    {"node": "dashed-ring", "dwellFrames": 140},
+    {"node": "orbit-track", "inPicture": [0, 149]},
+    {"node": "orbiter", "inPicture": [0, 149]},
+    {"node": "orbiter", "insideBox": true}
+  ]
+}

@@ -24,7 +24,6 @@ import { WasmFrameSource } from "../src/runtime/frame-source.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const DIR = join(ROOT, "compositions", "masked");
-process.env.POCKETJS_ROOT = join(ROOT, "vendor", "pocketjs");
 
 type Rgb = readonly [number, number, number];
 const A_GROUND: Rgb = [30, 41, 59]; // slate-800, both scenes A

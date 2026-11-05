@@ -2,10 +2,13 @@
  * `trace <composition-dir>`
  * Question: what is the frame-hash sequence + digest?
  *
- * `--json` is `{ frames, digest, identity }`, plus `shutter` when the sidecar
- * declares one. `digest` is the frame sequence — the field the ledger and
- * `diff` compare. `identity` is the input hash (`src/render/identity.ts`),
- * and the shutter is part of it.
+ * `--json` is `{ frames, digest, identity, reusedFrames }`, plus `shutter`
+ * when the sidecar declares one. `digest` is the frame sequence — the field
+ * the ledger and `diff` compare. `identity` is the input hash
+ * (`src/render/identity.ts`), and the shutter is part of it. `reusedFrames`
+ * is how many frames skipped their raster (`src/render/reuse.ts`); every one
+ * is hashed all the same, so `trace --no-reuse`, which rasterises them all,
+ * reports the same digest or the reuse is wrong.
  */
 
 import { existsSync } from "node:fs";
@@ -25,12 +28,28 @@ import {
   EXIT_OK,
   type CommandResult,
   type GlobalFlags,
+  type RunContext,
   type TraceJson,
 } from "../types.ts";
 
 export interface TraceOptions {
   readonly dir: string;
   readonly flags: GlobalFlags;
+  /** `--no-reuse` sets this false: every frame rasterised (`src/render/reuse.ts`). */
+  readonly reuse?: boolean;
+}
+
+/**
+ * One line for how many frames were rasterised, printed by `trace` and
+ * `render`. Every frame is hashed either way; a reused frame is hashed from
+ * the pixels it was delivered with.
+ */
+export function describeReuse(frames: number, reused: number, enabled: boolean): string {
+  if (!enabled) return `raster ${frames} of ${frames} frames — --no-reuse`;
+  return (
+    `raster ${frames - reused} of ${frames} frames — ${reused} reused the frame before, ` +
+    "whose draw list and raster revision they share"
+  );
 }
 
 /**
@@ -68,7 +87,10 @@ export async function compositionIdentity(
   });
 }
 
-export async function run(options: TraceOptions): Promise<CommandResult> {
+export async function run(
+  options: TraceOptions,
+  context: RunContext = {},
+): Promise<CommandResult> {
   const resolved = await resolveComposition({
     dir: options.dir,
     flags: options.flags,
@@ -103,6 +125,7 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
       shutter: c.shutter,
       buildCommand: c.buildCommand,
       hashAlgorithm: options.flags.hash,
+      reuse: options.reuse,
       // no outputPath — hash-only path
       setup: declared
         ? async (source) => {
@@ -113,6 +136,10 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
           }
         : undefined,
       onFrameBoundary: (frame) => bound.footage?.present(frame),
+      signal: context.signal,
+      onProgress: context.onProgress
+        ? (frame, frames) => context.onProgress?.({ done: frame + 1, frames })
+        : undefined,
     });
 
     const identity = await compositionIdentity(c, bound.footage?.hashes);
@@ -122,6 +149,7 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
       digest: result.digest,
       identity,
       ...(c.shutter ? { shutter: c.shutter } : {}),
+      reusedFrames: result.reusedFrames,
     };
 
     return {
@@ -134,14 +162,22 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
         // A digest says which picture it is a digest of: with a shutter
         // declared every frame hashed above is an exposure.
         ...(c.shutter ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure`] : []),
+        describeReuse(result.frames, result.reusedFrames, options.reuse !== false),
         ...result.frameHashes.map((h, i) => `  [${i}] ${h}`),
       ],
     };
   } catch (e) {
-    const message = errMsg(e);
+    // Whatever the loop threw on the way out, a fired signal is why it stopped.
+    const cancelled = context.signal?.aborted === true;
+    const message = cancelled ? `trace cancelled — ${errMsg(context.signal?.reason)}` : errMsg(e);
     return {
       exitCode: EXIT_FAIL,
-      json: { frames: [] as string[], digest: "", error: message },
+      json: {
+        frames: [] as string[],
+        digest: "",
+        error: message,
+        ...(cancelled ? { cancelled: true } : {}),
+      },
       stderrLines: [message],
       stdoutLines: [`trace failed — ${message}`],
     };
@@ -152,8 +188,9 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
 
 export async function runFromArgv(
   argv: readonly string[],
+  context: RunContext = {},
 ): Promise<CommandResult> {
   const parsed = parseArgs(["trace", ...argv]);
   const dir = requirePositional(parsed.positionals, 0, "composition-dir");
-  return run({ dir, flags: parsed.global });
+  return run({ dir, flags: parsed.global, reuse: parsed.flags["no-reuse"] !== true }, context);
 }

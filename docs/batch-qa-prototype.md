@@ -346,6 +346,13 @@ because the bundle carries repo-relative module paths
 A runner that stages into a per-job temporary directory, as
 `render --spec` does, gives every row its own identity.
 
+Closed after this report: the bundle names its modules by what they are
+(`patches/0051`) and `build.json` writes the entry relative to the
+composition and `--outdir` as `.`, so the staging path reaches neither, and
+`tests/build-location.test.ts` holds one composition built from a checkout,
+a random staging directory and a symlinked project to one identity. The
+runner here was not re-run against it.
+
 ## What the checks caught that a skim would miss
 
 - **A missing mandatory disclaimer, in a picture with nothing wrong in it.**
@@ -546,9 +553,10 @@ variant staged by `scripts/batch-qa/variant.ts --keep`.
   every variant without changing what is read.
 - **Rects from one layout pass.** Every box costs a raster today; see
   amendment 2.
-- **Identity across staging paths.** Identity names the staging directory
+- **Identity across staging paths.** Identity named the staging directory
   through the bundle's module paths and the recorded argv. A content-
-  addressed path works around it here, while `render --spec`'s temporary
-  directories do not.
+  addressed path worked around it here, while `render --spec`'s temporary
+  directories did not. Closed since; see "Identity dedupes only because the
+  staging path is content-addressed" above.
 - **Hyphenation.** `wrapLines` has no hyphenation at all, so a compound
   wider than its box is broken without a mark.

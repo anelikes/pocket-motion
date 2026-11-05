@@ -16,13 +16,12 @@
 
 import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import { envelope, redactPaths, redactString } from "../src/cli/emit.ts";
 import { EXIT_OK } from "../src/cli/types.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
-const VENDOR = join(ROOT, "vendor", "pocketjs");
 const ROOTS = { repoRoot: "/home/u/checkout", home: "/home/u" };
 
 describe("redaction", () => {
@@ -98,7 +97,7 @@ async function jsonOf(
     cwd: ROOT,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR, ...env },
+    env: { ...process.env, ...env },
   });
   const [text, code] = await Promise.all([
     new Response(proc.stdout).text(),

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Line-art lighthouse for compositions/svg-import. Every part an author
+     animates carries an id; the unnamed <g> only carries a transform. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"
+     preserveAspectRatio="xMidYMax meet" fill="none" stroke="#e2e8f0" stroke-width="4"
+     stroke-linecap="round" stroke-linejoin="round">
+  <title>Lighthouse</title>
+  <line id="horizon" x1="20" y1="300" x2="380" y2="300" stroke="#334155" stroke-width="2"/>
+  <path id="sea" d="M20 340 q20 -12 40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0 t40 0" stroke="#38bdf8"/>
+  <polygon id="rock" points="110,330 140,302 260,302 290,330" stroke="#94a3b8"/>
+  <path id="tower" d="M165 302 L178 152 L222 152 L235 302 Z" style="stroke: #f8fafc; stroke-width: 5"/>
+  <g id="stripes" stroke="#f87171">
+    <polyline id="stripe-low" points="170,250 230,250"/>
+    <polyline id="stripe-high" points="174,200 226,200"/>
+  </g>
+  <rect id="gallery" x="166" y="136" width="68" height="16" rx="4"/>
+  <polygon id="roof" points="178,96 200,70 222,96"/>
+  <g transform="translate(200 116)">
+    <g id="beam" fill="#fef08a" fill-opacity="0.35" stroke="none">
+      <polygon points="0,0 170,-34 170,34"/>
+      <polygon points="0,0 -170,-34 -170,34"/>
+    </g>
+    <circle id="lamp" r="16" fill="#fde047" stroke="none"/>
+  </g>
+  <ellipse id="moon" cx="330" cy="54" rx="22" ry="22" stroke="#fef9c3" stroke-width="3"/>
+  <polyline id="gull" points="70,90 84,80 98,90 112,80 126,90" stroke="#cbd5e1" stroke-width="3" transform="rotate(-8 98 85)"/>
+</svg>

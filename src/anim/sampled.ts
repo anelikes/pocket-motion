@@ -27,8 +27,14 @@
  *     unless one is already there: after `set(t0, …)` that key is the state
  *     BEFORE the change, and overwriting it ramped the change in from tick 0.
  *
- * A frame shows tick `2f` at 30 fps and tick `f` at 60 fps, so an instant
- * meant to be seen at 30 fps belongs on an even tick.
+ * Keys are written in ticks and a frame shows one tick: the LAST of its
+ * window, `clockOfFrame` in `src/runtime/clock.ts` — `2f + 1` at 30 fps,
+ * `f` at 60. So a move keyed from an even tick at 30 fps is first seen one
+ * tick in and one keyed from an odd tick is seen at its first key; run
+ * `keyframes` to read which instants a film's frames land on. A change
+ * written by `set` or `step` is a one-tick segment, which no frame lands
+ * inside at either parity, and `decodeSeq`'s two-tick glyphs each hold
+ * exactly one sampled tick at 30 fps wherever they start.
  */
 
 export const inOut = (u: number) => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2);
@@ -276,6 +282,37 @@ export class El {
       this.key(t);
     }
     return this;
+  }
+
+  /**
+   * Along a path over [t0, t1], keyed as `path` keys: the element's centre on
+   * the outline (a `PathFollower` in `path-motion.ts`, placed in the same
+   * containing block as `home`) from fraction `from` to `to` of its arc
+   * length, eased by `ease`; with `rotate`, the element turned to the
+   * direction of travel plus `rotate` degrees (true is 0), unwrapped so it
+   * never spins the long way between two keys.
+   */
+  along(
+    t0: number,
+    t1: number,
+    path: { at(u: number): { x: number; y: number; angle: number } },
+    o: { ease?: (u: number) => number; from?: number; to?: number; rotate?: boolean | number } = {},
+  ) {
+    const ease = o.ease ?? inOut;
+    const from = o.from ?? 0;
+    const to = o.to ?? 1;
+    const turn = o.rotate === undefined || o.rotate === false ? null : o.rotate === true ? 0 : o.rotate;
+    const back = to < from ? 180 : 0;
+    let prev = this.s.rot;
+    return this.path(t0, t1, (t) => {
+      const p = path.at(from + (to - from) * ease((t - t0) / Math.max(1, t1 - t0)));
+      if (turn === null) return { cx: p.x, cy: p.y };
+      let r = p.angle + back + turn;
+      while (r - prev > 180) r -= 360;
+      while (r - prev <= -180) r += 360;
+      prev = r;
+      return { cx: p.x, cy: p.y, rot: r };
+    });
   }
 
   /** A turn of `deg` about the pivot (px, py) over [t0, t1]: position on the arc, and the element's own angle with it. */

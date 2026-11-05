@@ -31,10 +31,12 @@
  * that late and a ramp moved in 85 ms stairs; with 480-sample frames the step
  * is 10 ms at 48 kHz (10.9 at 44.1).
  *
- * A declared `silentTailMs` ends the graph with `atrim=end` at the GATE —
+ * Every graph ends with `apad` to the film's length, so the delivered audio
+ * is as long as the picture whatever its last element is. A declared
+ * `silentTailMs` puts `atrim=end` at the GATE ahead of the pad —
  * `SILENT_TAIL_GUARD_MS` before the tail, because the codec's overlapping
- * frames carry sound past the last non-zero input — and `apad` to the film's
- * length. `atrim` is sample-exact where an `enable=` gate is frame-quantised.
+ * frames carry sound past the last non-zero input. `atrim` is sample-exact
+ * where an `enable=` gate is frame-quantised.
  * The bed's fade-out completes at the gate. Whether the delivered file IS
  * silent across the tail is measured after the mux (`src/sound/tail.ts`):
  * the encoder runs after this graph.
@@ -701,15 +703,20 @@ export function mixGraph(
     };
   }
 
+  // The mix ends where its longest leg does, and a bed shorter than the film
+  // or a last cue before the end left the delivered audio short of the
+  // picture: measured, a 1 s tone under a 2 s film muxed to a 1 s AAC stream
+  // in a 2 s MP4. `apad` takes every mix to the film's length; the mux's
+  // `-t` is what cuts one that runs longer. A declared tail trims at the
+  // gate first, so what is padded there is the tail.
   const amix = `${legs.join("")}amix=inputs=${legs.length}:normalize=0:dropout_transition=0`;
-  if (gate === null) {
-    filters.push(`${amix}[a]`);
-  } else {
-    filters.push(
-      `${amix}[mix]`,
-      `[mix]atrim=end=${formatFilterNumber(gate)},apad=whole_dur=${formatFilterNumber(durationSec)}[a]`,
-    );
-  }
+  const pad = `apad=whole_dur=${formatFilterNumber(durationSec)}`;
+  filters.push(
+    `${amix}[mix]`,
+    gate === null
+      ? `[mix]${pad}[a]`
+      : `[mix]atrim=end=${formatFilterNumber(gate)},${pad}[a]`,
+  );
 
   return {
     inputArgs,

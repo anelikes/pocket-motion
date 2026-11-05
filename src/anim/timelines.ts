@@ -7,18 +7,22 @@
  * bake rate. The bake rate is the realm's tick rate — 60 — and it is not the
  * composition's `fps`. The realm steps `60 / fps` ticks per rendered frame and
  * rasterises once, at the end, so **only every `60 / fps`-th tick is ever
- * looked at**. An endpoint that lands between two of them is not wrong and not
- * nondeterministic; it is simply never observed, and the transition it declares
- * appears at the next sampled tick instead.
+ * looked at, and it is the last tick of each frame's window**: frame `f` shows
+ * tick `(f + 1) * 60 / fps - 1` — `2f + 1` at 30 fps, not `2f`
+ * (`clockOfFrame`, `src/runtime/clock.ts`, which says how that was measured).
+ * An instant on any other tick is not wrong and not nondeterministic; it is
+ * simply never observed, and the first frame past it shows what it declares
+ * already under way.
  *
  * The declared timing is therefore quantised twice: once by
  * `msToFrames` at bake time (round-half-up to 60 Hz), and once by the sampling
  * grid at render time. The second one is invisible everywhere — the pak is
  * valid, the realm is clean, the digest is stable — and it does not shift a
  * whole stagger evenly. `compositions/curves` asks for six ghost lags 45 ms
- * apart; they bake to ticks 3, 5, 8, 11, 14, 16 and are sampled at 4, 6, 8, 12,
- * 14, 16 — gaps of 2, 2, 4, 2, 2 where the author wrote five equal ones. That
- * composition exists to read curve speed off ghost spacing.
+ * apart; they bake to ticks 3, 5, 8, 11, 14, 16 and are first shown at ticks
+ * 3, 5, 9, 11, 15, 17, by frames 1, 2, 4, 5, 7, 8 — gaps of 1, 2, 1, 2, 1
+ * frames where the author wrote five equal ones. That composition exists to
+ * read curve speed off ghost spacing.
  *
  * Two more readings come off the same table, each the shape of a defect that
  * shipped in a composition here before anything reported it:
@@ -26,9 +30,11 @@
  *   - a CUT the grid lands inside. A segment no longer than one rendered frame
  *     is a step, not a tween — the author wanted the next frame to show the
  *     other state. When its endpoints straddle a sampled tick, the one frame
- *     taken inside it shows the step part-way: a 34 ms gate (two ticks) at an
- *     odd tick, sampled at 30 fps, arrives a frame late and half drawn. A
- *     17 ms gate is one tick and no frame can land inside it.
+ *     taken inside it shows the step part-way: a 34 ms gate (two ticks) from
+ *     an even tick, sampled at 30 fps, is shown half drawn by the frame whose
+ *     tick is its midpoint. The same gate from an odd tick has a frame on each
+ *     end and none inside. A 17 ms gate is one tick and no frame can land
+ *     inside it.
  *   - a PROPERTY two animations of one comma list write at once. The core
  *     takes the LAST animation currently writing a property, and an animation
  *     with `both` or `backwards` fill is writing from tick 0
@@ -54,7 +60,8 @@
  * time, and neither command answers it across a node's whole span.
  */
 
-import { pocketjsRoot } from "../runtime/boot.ts";
+import { pocketjsRoot, TICKS_PER_SECOND } from "../runtime/boot.ts";
+import { clockOfFrame, firstFrameShowing, ticksPerFrame as ticksPerFrameAt } from "../runtime/clock.ts";
 
 /** One baked timeline as a style record uses it. */
 export interface TimelineUse {
@@ -129,6 +136,10 @@ export interface PartialCut {
   readonly t1: number;
   /** The sampled tick strictly between them. */
   readonly sampledTick: number;
+  /** The rendered frame that samples it — the composition's frame for a node
+   *  whose clock starts with the film, as every node of a mount-only
+   *  composition's does, on a loop's first pass. */
+  readonly frame: number;
   /** (sampledTick - t0) / (t1 - t0): how far along the step that frame shows,
    *  before easing. */
   readonly fraction: number;
@@ -156,6 +167,9 @@ export interface UnsampledInstant {
   readonly tick: number;
   /** The first sampled tick at or after it. */
   readonly observedTick: number;
+  /** The rendered frame that samples `observedTick`, counted as
+   *  `PartialCut.frame` is. */
+  readonly observedFrame: number;
   /** observedTick - tick, in rendered frames. Always in (0, 1). */
   readonly shiftFrames: number;
 }
@@ -496,9 +510,10 @@ function partialCut(
   const length = t1 - t0;
   if (length <= 0 || length > ticksPerFrame) return null;
   if (t0 >= windowTicks) return null;
-  const sampledTick = Math.ceil((t0 + 1) / ticksPerFrame) * ticksPerFrame;
+  const frame = firstFrameShowing(t0 + 1, ticksPerFrame);
+  const sampledTick = clockOfFrame(frame, ticksPerFrame);
   if (sampledTick >= t1 || sampledTick >= windowTicks) return null;
-  return { t0, t1, sampledTick, fraction: (sampledTick - t0) / length };
+  return { t0, t1, sampledTick, frame, fraction: (sampledTick - t0) / length };
 }
 
 /** The instant, and where the render first shows it — or null when it is sampled. */
@@ -507,18 +522,22 @@ function unsampledInstant(
   tick: number,
   ticksPerFrame: number,
 ): UnsampledInstant | null {
-  if (tick % ticksPerFrame === 0) return null;
-  const observedTick = Math.ceil(tick / ticksPerFrame) * ticksPerFrame;
+  const observedFrame = firstFrameShowing(tick, ticksPerFrame);
+  const observedTick = clockOfFrame(observedFrame, ticksPerFrame);
+  if (observedTick === tick) return null;
   return {
     what,
     tick,
     observedTick,
+    observedFrame,
     shiftFrames: (observedTick - tick) / ticksPerFrame,
   };
 }
 
-/** Milliseconds that bake to a tick the given fps samples. */
+/** Milliseconds that bake to the tick the given fps samples nearest to `ms`. */
 export function nearestSampledMs(ms: number, fps: number): number {
-  const perFrameMs = 1000 / fps;
-  return Math.round(ms / perFrameMs) * perFrameMs;
+  const ticksPerFrame = ticksPerFrameAt(fps);
+  const tick = (ms * TICKS_PER_SECOND) / 1000;
+  const frame = Math.max(0, Math.round((tick + 1) / ticksPerFrame - 1));
+  return (clockOfFrame(frame, ticksPerFrame) * 1000) / TICKS_PER_SECOND;
 }
