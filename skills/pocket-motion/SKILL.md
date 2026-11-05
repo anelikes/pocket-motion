@@ -93,8 +93,32 @@ clipped to text (`via-*`, `bg-linear-*`, `bg-radial`, `bg-clip-text`). All
 paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
 `0016`–`0019`). Any outline is a `<Path d="…">` — filled (`fill-*`), stroked
 (`stroke-*`), drawn on by a `trimEnd` keyframe, morphed between `d={[A, B]}`
-by `morph` — with `d` written as literals the build can read
-(`patches/0042`–`0043`, `compositions/vector-paths`).
+by `morph` (`patches/0042`–`0043`, `compositions/vector-paths`). A `d` written
+as literals is baked from the source; one imported or computed at mount — a
+chart's `line()(rows)` — is baked from the mounted tree: the build prints
+`paths at mount:`, mounts, bakes what the tree asked for and mounts again
+(`patches/0054`, `compositions/data-chart`). Compute it with `+ - * /`:
+`Math.sin`, `cos`, `pow` and `log` are the host's last bit.
+
+**An SVG file is a tree of parts**: `<Svg src="./x.svg" parts={{ id: "…" }} />`
+(`patches/0053`, `compositions/svg-import`). The build expands it into Views
+and `<Path>`s — every element's `id` its `debugName`, every transform and the
+viewBox folded into the outlines, each part's box its own bounds so it turns
+and scales about its own centre — and joins each `parts` entry to that part's
+classes. Gradients, clip paths, masks, filters, `<use>`, `<style>` and text
+are refused by name: flatten them in the editor, or give the part the effect
+through its class.
+
+| GSAP / SVG idiom | here |
+|---|---|
+| `drawSVG: 0` → `"100%"`, a `stroke-dashoffset` draw-on | a `trimEnd` keyframe `0` → `1` on the `<Path>`; `drawSVG: "40% 60%"` is `trim-start-[0.4] trim-end-[0.6]` |
+| `morphSVG` | `<Path d={[A, B]}>` and a `morph` keyframe `0` → `1`; the keys share their commands (a line against a cubic is promoted), and nothing is resampled |
+| `stagger: 0.33` | one animation name per part, the same keyframes, the delay stepped by 333 ms |
+| `transformOrigin: "50% 50%"` on a part | the default for an `<Svg>` part: its box is its own bounds |
+| an inline `<svg>` animated by selector | `<Svg src parts={{ id: "animate-…" }}>`, the ids also what `assertions[]` name |
+| d3 `line()(data)` | `<Path d={line(rows)}>`, baked from the mount |
+| `repeat: -1, yoyo: true` | `infinite` with the mirrored keyframes written out: `alternate` is not baked |
+| `autoAlpha` | an `opacity` keyframe |
 
 **Motion blur is the sidecar's `shutter`** (`{ "angle": 180, "samples": 8 }`):
 each frame is the integer average of that many renders across the open
@@ -327,4 +351,5 @@ Each of these is a decision with a reason, not a gap to fill.
   ellipses, rounded rects, lines, polylines and polygons, fills and strokes
   with joins and caps, and `<g transform>` are drawn; `<text>`, `<use>`,
   `<image>`, `clip-path`, `stroke-dasharray` and the rest are refused by
-  name. The table is in AUTHORING.md under "Still pictures".
+  name. The table is in AUTHORING.md under "Still pictures". The same holds
+  for an `<Svg>` import, whose refusals are in "SVG files as parts".

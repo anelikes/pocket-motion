@@ -544,7 +544,8 @@ In this repository:
 
 ## SVG import
 
-**Not in the first patch.** The first patch's `d` grammar is the whole SVG
+**Landed as `0053`**, after the scope below; how it was decided follows it.
+The first patch's `d` grammar is the whole SVG
 path grammar, arcs included, so a `d` pasted from any editor's export is
 already a `<Path>`; that covers a signature, an icon, or a single drawn line.
 Importing a whole SVG document is something else:
@@ -576,6 +577,39 @@ reasons; `0040` fixed one:
 Gradients, clip paths, `<use>`, CSS `<style>` sheets, text and filters stay
 out of any import until there is a composition that needs them.
 
+### As built (0053)
+
+- **The element is a build-time expansion, not a runtime component.** A
+  Babel plugin ahead of the collector replaces `<Svg src parts>` with the
+  tree (`framework/compiler/svg-tree.ts` reads the document), so every
+  outline is a literal the existing collector bakes and the PATH TABLE, the
+  op and the core are untouched. The `Svg` function exists only to refuse an
+  element the build did not see.
+- **The class map is joined at build time.** A node takes one class string,
+  and a part needs its paint (from the file) and its animation (from the
+  author) together. Joined at mount, the string would be one the build never
+  compiled; joined in the expansion, it is one literal — or a ternary of them
+  — that is the whole value of a `class=` attribute, so 0012's record holds
+  it and 0041 refuses a bad token in it at the map entry.
+- **Transforms are folded, not carried.** A View's transform props compose in
+  one fixed order about one origin, so a transform list would need a View per
+  function, and the author's animation on that View would replace the file's
+  static transform rather than add to it. Folding applies the list, the
+  viewBox and preserveAspectRatio to the outline, through `cosSinDeg` — the
+  hole `bake-svg.ts` has, closed here — and leaves the View's props to the
+  author. Each part's node is its own bounds, so its default origin is the
+  part's centre: CSS's `transform-box: fill-box`. The cost is the stroke
+  under a skew or non-uniform scale, which no longer has one width and is
+  refused.
+- **One picture is one picture to `layout`.** The canvas is named
+  `svg:<src>`, and `content_overlap` does not pair two nodes inside one.
+- **The transform cache learns a second input.** The key is the module's
+  text; an entry now lists the files its expansions read by sha256 and is a
+  miss when one has changed.
+
+`0054` closes the other gap this section's list implied: a `d` from another
+module, or computed from data, is baked from the mounted tree.
+
 ## What it does not do, stated
 
 - **Dashes.** A dash pattern is trim applied periodically; it is a loop over
@@ -589,7 +623,8 @@ out of any import until there is a composition that needs them.
 - **A `d` from another module.** The collector reads a module's own
   literals; an imported `const` is looked up at mount and refused. A
   generator writes the literals into the composition, which is how this
-  repository's compositions are written anyway.
+  repository's compositions are written anyway. (Closed by `0054`: the build
+  mounts the bundle and bakes the outlines the tree asked for.)
 - **Trim and morph under a shutter.** They hold the frame's tick in every
   sample (above); only the path's transform blurs.
 - **`<Path>` for Octane and Vue Vapor.** The component is Solid's, like every
@@ -613,7 +648,8 @@ repository, the fixture, `tests/vector-paths.test.ts`, the catalogue rows
 and gate, and the documents.
 
 Separately, in this order of use: dashes (a periodic trim), gradient
-strokes, a coverage-merging op for flat illustration, SVG import.
+strokes, a coverage-merging op for flat illustration, SVG import (landed as
+`0053`).
 
 ## What building it changed
 
