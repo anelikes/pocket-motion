@@ -68,9 +68,10 @@ repository's op, not upstream's: keep to `overflow-hidden` where a composition
 must stay portable.
 
 **Timing is quantised twice.** A duration in ms bakes to whole frames at 60 Hz,
-and the render then samples every `60 / fps`-th tick. At 30 fps only even ticks
-are observed, so 45/90/135/180 ms land on frames 4/6/8/12 — gaps of 2, 2, 4
-where four equal ones were written. Write times that are whole rendered frames
+and the render then samples every `60 / fps`-th tick, the last of each frame's
+window: frame `f` shows tick `2f + 1` at 30 fps. So 45/90/135/180 ms bake to
+ticks 3/5/8/11 and are first shown by frames 1/2/4/5 — gaps of 1, 2, 1 where
+three equal ones were written. Write times that are whole rendered frames apart
 when the spacing carries meaning, and run `keyframes` to see which declared
 instants the render never samples.
 

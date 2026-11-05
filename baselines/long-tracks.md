@@ -121,6 +121,8 @@ tick f × 60 / fps; the two agree at 60 fps only. `late-anim`'s `gated` — a 34
 step baked to ticks 3–5, which `keyframes` reports as shown half done by
 frame 2 — measures 248 red at full opacity in its box at frame 2 and at
 frame 3, and frame 1 does not paint it: no frame shows it part-way.
+`keyframes` has since moved onto the last tick (`clockOfFrame`,
+`src/runtime/clock.ts`); what that moved is in `keyframes-phase.md`.
 
 ## Byte identity of every other composition
 

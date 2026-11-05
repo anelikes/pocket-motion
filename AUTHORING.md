@@ -336,14 +336,19 @@ are read the same — and every arm of a `?:`, `||` or `??` is checked.
 **Timing is quantised twice, and the second one depends on `fps`.** A duration
 or a delay written in ms bakes to whole frames at the realm's 60 Hz —
 `round(ms × 60 / 1000)` — and the render then samples every `60 / fps`-th of
-those ticks, because that is how many the core steps between rasterises. At
-30 fps only even ticks are ever looked at, so a 45 ms delay bakes to tick 3 and
-is first seen at tick 4. The shift is under one frame and it is not spread
-evenly across a stagger: 45/90/135/180 ms bake to ticks 3/5/8/11 and are shown
-at 4/6/8/12 — gaps of 2, 2, 4 where four equal ones were written. Nothing here
-is nondeterministic and no digest moves; the timing is simply not the timing you
-wrote. When the spacing carries meaning, write times that are whole rendered
-frames (33.333 ms at 30 fps) rather than round-looking ms, and run
+those ticks, because that is how many the core steps between rasterises. It
+samples the LAST of them: frame `f` shows tick `(f + 1) × 60 / fps − 1`
+(`clockOfFrame`, `src/runtime/clock.ts`). At 30 fps only odd ticks are ever
+looked at — frame 0 shows tick 1 — so an entrance written at 0 ms is a tick
+under way in the first frame, and a delay of one frame, 33 ms, bakes to tick 2
+and is first seen at tick 3. The shift is under one frame and it is not spread
+evenly across a stagger: 45/90/135/180 ms bake to ticks 3/5/8/11 and are first
+shown by frames 1/2/4/5 — gaps of 1, 2, 1 frames where three equal ones were
+written. Nothing here is nondeterministic and no digest moves; the timing is
+simply not the timing you wrote. When the spacing carries meaning, write times
+that are whole rendered frames apart (33.333 ms at 30 fps) rather than
+round-looking ms; to have each land on the tick its frame shows, start the
+count one tick in — 16.667, 50, 83.333 ms … at 30 fps. Run
 `bun src/cli/main.ts keyframes compositions/<name>` to see which of your
 instants the render never samples. At `fps: 60` every tick is rendered and the
 question does not arise.
@@ -356,8 +361,8 @@ on it (`compositions/late-anim`).
 It reports two more things, each the shape of a defect a composition here
 shipped with. **A step the grid lands inside**: a segment no longer than one
 rendered frame is a cut, and when its two ticks straddle a sampled one, the
-frame taken there shows the cut half done — a `gin 34ms` gate at an odd tick,
-rendered at 30 fps, arrives a frame late and grey. A 17 ms gate is one tick
+frame taken there shows the cut half done — a `gin 34ms` gate from an even
+tick, rendered at 30 fps, arrives a frame late and grey. A 17 ms gate is one tick
 and no frame can land inside it (`compositions/rename-card`'s close uses
 those). **A property two animations of one comma list write at once**: the
 core takes the LAST animation currently writing a property, and `both` or
