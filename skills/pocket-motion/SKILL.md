@@ -83,7 +83,16 @@ and text wider than its box draws past it or is clipped by an
 worked example. Every font size is baked, so only sizes that appear in class
 literals get an atlas. An axis-aligned `scale` resizes glyphs by resampling
 the baked size, softer when magnified, so bake the size text is shown at; a
-rotated run, or one with a text stroke, moves without resizing.
+rotated run, or one with a text stroke, moves without resizing. A size bakes
+only up to the face's ceiling — a glyph cell is at most 255 px, about 176 px
+of Noto Sans SC, 210 of Inter, 217 of HarmonyOS Sans — and the build refuses
+past it naming the number. Hero type larger than that is the face's glyph
+outlines in a `<Path>` (opentype.js `charToGlyph(c).getPath(x, y, px)` in a
+`gen.ts`; its contours carry no `Z`, which a fill does not need and a stroke
+or a morph does), filled at the size it is shown; a larger viewport, which the
+refusal suggests, is a larger film. opentype.js reads no kerning from Inter's
+GPOS (an extension lookup) and its `getPath` on a whole string throws on
+Inter's contextual substitutions; HarmonyOS Sans reads.
 
 **Paint beyond boxes and text**: `overflow-mask` (a window shaped by its
 outline), named font faces (`font-[name]` over the sidecar's `fonts.faces`),
@@ -113,7 +122,9 @@ viewBox folded into the outlines, each part's box its own bounds so it turns
 and scales about its own centre — and joins each `parts` entry to that part's
 classes. Gradients, clip paths, masks, filters, `<use>`, `<style>` and text
 are refused by name: flatten them in the editor, or give the part the effect
-through its class.
+through its class. Illustrator's default export is a `<style>` sheet of
+classes: export with Styling: Presentation Attributes, or write each class's
+declarations onto its shapes.
 
 | GSAP / SVG idiom | here |
 |---|---|
@@ -211,6 +222,8 @@ both keys, and a test proves it.
    `assert`, in one `--json` envelope. This is the gate.
 5. **`snapshot`** — PNGs at sampled frames, `--annotate` for the boxes and
    finding codes drawn over them. This is how you look, when looking helps.
+   With `supersample` above 1, `snapshot` and `frame` write the supersampled
+   picture (3840 × 2160 for a 1080p canvas at 2); `render` scales it down.
 6. **`render`** — the video: `--format mp4|webm|mov|png-seq`, and `--alpha`
    for the three that can carry a channel. For mp4, `--preset` is libx264's
    (default `medium`) and `--encoder h264_videotoolbox` is macOS's hardware
@@ -259,7 +272,10 @@ bun src/cli/main.ts render compositions/captions/alpha-en --spec compositions/ca
 ```
 
 `compositions/captions/alpha-en` and `compositions/captions/burn-zh` are the
-two samples; either takes any captions job. `assert` reads each word at both
+two samples; either takes any captions job. A job kept as a composition of
+your own — to edit it, or to deliver the directory — is written by a
+sample's generator: `bun compositions/captions/alpha-en/gen.ts --spec
+<job.json> --out-dir compositions/<name>`. `assert` reads each word at both
 ends of its window besides its 24 evenly spaced frames, so a word shorter than
 the stride is still read; `assert --samples <durationFrames>` checks every
 word at every frame. A job's render runs that same check on the job's own
@@ -370,8 +386,17 @@ claude mcp add pocket-motion -- bun src/cli/main.ts mcp
   painted, and an intended lower third does overlap the shot under it.
   `verify --strict` is what turns one into an exit code, and `layoutAllow` is
   what turns one off.
+- `text_not_painted` on a node at a frame before its entrance or after its
+  exit is that node's timing, read correctly, on a View as on a Text; `verify`
+  passes with it. Quieting it for `--strict` costs a `layoutAllow` with the
+  `occlusion` scope, which has no frame window and also excuses
+  `text_occluded` — a burial — on that node at every frame; `visibility` and
+  `assert` still read burials either way.
 - Rects are captured before the opacity cull, so a rect is not proof anything
   is on screen. `inPicture` is the proof, and `visibility` sweeps it.
+- Rects are read after transforms: a slide-in that leaves its parent's box
+  reads `escaped_container` while it moves and fails `insideBox`, so size the
+  parent for the motion, not for the resting text.
 - `snapshot --annotate` draws those boxes over a copy of the frame, host-side.
   The un-annotated PNG is the same bytes `frame --at N` writes.
 
