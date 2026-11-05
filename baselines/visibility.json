@@ -224,6 +224,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/path-primitives": {
+      "failures": [],
+      "nodes": 20,
+      "named": 20,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/probe": {
       "failures": [],
       "nodes": 3,

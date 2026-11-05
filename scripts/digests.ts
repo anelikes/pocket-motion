@@ -195,6 +195,13 @@ const ENTRIES = [
   // 320×180. A count read short, a segment found wrong by the core's search,
   // or a kit that splits or thins a long move moves this digest and no other.
   "compositions/long-track",
+  // path-primitives. patches/0045-0046 and src/anim/path-motion.ts over 150
+  // frames: dashed, dotted and marching connectors, three morphs between keys
+  // drawn separately, a dart and a dot flying a dashed route by keyframes the
+  // kit bakes in pocket.config.ts, and a dashed ring drawn on. A change to
+  // where a dash falls, to the equalisation rule or to the kit's keys moves
+  // this digest; a stroke without a pattern moves none.
+  "compositions/path-primitives",
 ] as const;
 
 /**
