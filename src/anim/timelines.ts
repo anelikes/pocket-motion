@@ -40,7 +40,8 @@
  *     a later one is the ordinary hand-off and is not reported.
  *
  *   - a JUMP in a transform track, for a composition that declares a shutter.
- *     The shutter evaluates translate, scale, rotate and skew between ticks
+ *     The shutter evaluates translate, scale, rotate, skew and the transform
+ *     origin between ticks
  *     and never across a place the realm itself shows no motion in progress
  *     (`engine/core/src/shutter.rs`, patches/0034): a one-tick segment, or a
  *     value that changes between two ticks with no segment between them — a
@@ -109,6 +110,12 @@ export const SHUTTER_INTEGRATED: readonly string[] = [
   "rotateX",
   "rotateY",
   "skewX",
+  // The transform origin, both halves (patches/0056 made it animatable,
+  // 0057 integrates it).
+  "originX",
+  "originY",
+  "originXPx",
+  "originYPx",
 ];
 
 /** A place in a transform track the shutter never samples across. */

@@ -1,0 +1,1774 @@
+pocket-motion-only: a colour filter is applied to a filter layer (0018) — a span of the draw list rendered offscreen, read back and composited — which no upstream backend draws; a stream carrying LAYER_PUSH stops there on every upstream target.
+
+0055 — colour filters: CSS's `brightness`, `contrast`, `grayscale`,
+`hue-rotate`, `invert`, `saturate` and `sepia`, as Tailwind classes, as
+keyframe properties and in a keyframe `filter` list.
+
+Each is the colour matrix Filter Effects 1 gives the function, applied to
+the node's filter layer — the node and its whole subtree — on straight-alpha
+colour, after the layer's blur and before its shadow: the place Tailwind's
+`filter` composition gives them, in its order (brightness, contrast,
+grayscale, hue-rotate, invert, saturate, sepia) whatever order the classes
+are written in. Each result is clamped to 0..1 before the next, as each CSS
+filter primitive's is, so `brightness(2) contrast(0.5)` is not one matrix.
+Alpha is untouched: a shadow or glow, made from alpha, keeps its own colour,
+and a luma glow (0033) reads the filtered colour.
+
+Fixed point, integer: a 3x3 matrix in 1/16384ths and an offset, on channels
+held as c * 257 (0..65535, so 8-bit levels map in and out exactly), each
+step rounded and clamped in i64. The coefficients come from the amount by
+f32 arithmetic and the core's own `sinf`/`cosf` (fmath.rs), then rounded, so
+the words alone decide the pixels on every host. Hue-rotate is reduced to
+0..360 degrees first, so a whole turn is identity to the bit. Amounts are
+clamped as CSS clamps them — grayscale, invert and sepia at 1, a negative
+amount to 0 — and brightness, contrast and saturate at COLOR_FILTER_MAX
+(256), past which every 8-bit channel is a threshold already.
+
+What the patch adds, by file:
+
+- `contracts/spec/spec.ts`, `gen-rust.ts`, the regenerated `spec.rs`, the
+  microts spec and component types: props `brightness` .. `sepia`
+  (212-218, f32), animatable at bits 65-71 (timeline and `animate()`);
+  `COLOR_FILTER` (each filter's order and bit), `COLOR_FILTER_MAX`; LAYER_PUSH
+  documented as 8 + k words — bits 24-30 of the blend word name the filters
+  present, and one f32 amount per set bit follows the eighth word. A layer
+  with no colour filter is the eight words it was.
+- `engine/core/src/style.rs`: the seven fields, CSS's identities as defaults.
+- `engine/core/src/draw.rs`: `color_filters` clamps the amounts and masks
+  out every filter at identity; any left makes the node layered.
+- `engine/core/src/raster.rs`: `layer_push_len`; `ColorStep` (one filter's
+  quantised matrix) and `ColorProgram` (the layer's, decoded from the op);
+  `composite_layer` runs it after the blur over the content rectangle,
+  computing a colour once per run of equal pixels. And the layer's bounds:
+  `LayerTarget` records the columns it touched beside the rows, so the alpha
+  scan and the pool's clear cover the touched rectangle and not whole rows,
+  and `composite_layer` returns that rectangle. A word-sized layer at 1080p
+  had scanned and cleared 1920-pixel rows: 0.20 to 0.05 ms a layer native,
+  byte-identical, for every filter layer.
+- `compositor.rs`, `damage.rs`, `lib.rs`: each draw-list walker takes
+  LAYER_PUSH's length from `layer_push_len`.
+- `framework/compiler/tailwind.ts`: `grayscale`, `sepia`, `invert`;
+  `<filter>-N` as N percent and `hue-rotate-N` / `-hue-rotate-N` as degrees;
+  `<filter>-[x]` as a CSS amount or, for hue-rotate, a CSS angle (deg, grad,
+  rad, turn). Negative amounts, an angle with no unit and a brightness,
+  contrast or saturate past 256 do not parse.
+- `framework/compiler/animation.ts`: `COLOR_FILTERS`, `filterAmount`,
+  `filterAngle`; the seven as keyframe properties by function name
+  (`hueRotate`); and `filter` lists as CSS interpolates them — a keyframe
+  that writes `filter` pins every function any keyframe names, at its
+  initial value where it does not name it (`none` included, a missing
+  drop-shadow fading to its colour at alpha 0); a list out of the one order
+  (blur, the colour filters, drop-shadow), a function named twice, and two
+  neighbouring lists neither a prefix of the other — which CSS interpolates
+  discretely — are refused, as is a prop set both by a `filter` and by its
+  own keyframe property. Until now a keyframe that named fewer functions
+  left the rest unpinned there; no composition in pocket-motion's tree
+  wrote such a list.
+
+Layer or draw time was measured, not assumed (pocket-motion
+`baselines/colour-filters.md`; `colour_filter_layer_cost` below, ignored,
+reproduces the native half). A draw-time recolour would save the layer's
+cost, now about 0.05 ms a word-sized node native, and is exact only for a
+subtree of one op that cannot overlap itself: where two ops of the subtree
+cover one pixel, two blends round differently from the layer's one, and a
+text run's glyphs meet in pixels. So a colour filter is always a layer.
+
+Guards (`engine/core/src/tests.rs`), each watched red under the edit named:
+`each_colour_filter_is_its_css_matrix_to_a_level` — every function at three
+to five amounts over seven colours within 0.55 of a level of an f64
+transcription of the spec (measured worst 0.504); red with a grayscale
+coefficient 0.7152 written 0.7125, and with a hue-rotate one 0.140 written
+0.104, which the +-1 comparison it replaced let through.
+`colour_filters_apply_in_tailwinds_order_each_clamped` — red with the clamp
+moved to after the last step (and the canonical order against the
+reference). `a_colour_filter_at_identity_is_no_layer_and_a_whole_turn_is_identity`
+— red with the identity mask removed, and with hue's reduction removed.
+`a_colour_filter_leaves_alpha_and_the_shadow_alone` — red with the shadow's
+colour filtered. `a_colour_filter_applies_to_the_blurred_picture` — red with
+the pass before the blur (a black and white split under contrast(8), which
+before a blur changes nothing). `a_colour_filter_reaches_everything_the_blur_spread`
+— red with the pass over the unblurred rectangle.
+`every_draw_list_walker_steps_over_a_colour_filtered_layer` — a sibling and
+a compositor surface after a colour-filtered layer; red with the length left
+at 8 in compositor.rs, in damage.rs, and in lib.rs's
+`compositor_surface_frames`. `validate_drawlist` holds the
+blend word's new bits and every amount's range. Vendored
+`tests/tailwind.test.ts` pins the compiler, its refusals included.
+
+Ledgers, against what main recorded without this patch: no existing digest
+and no existing `visibility` row moves — 42 compositions, `filters`,
+`bloom`, `stroke`, `shutter-blur` and every other one that draws a filter
+layer among them, so the column-bounded layer is byte-identical where it is
+used. `compositions/colour-filters` is new in both: 30 frames; 25 nodes, 13
+named, every one shown.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
+index 09414125..d1e07626 100644
+--- a/contracts/spec/gen-rust.ts
++++ b/contracts/spec/gen-rust.ts
+@@ -102,6 +102,8 @@ import {
+   STROKE_MAX_WIDTH,
+   LAYER_MAX_DEPTH,
+   BLUR_MAX,
++  COLOR_FILTER,
++  COLOR_FILTER_MAX,
+   PAINT_MAX_STOPS,
+   ENUMS,
+   FIXED_DT,
+@@ -494,6 +496,13 @@ export function generateRust(): string {
+   put(`    pub const STROKE_MAX_WIDTH: f32 = ${STROKE_MAX_WIDTH}.0;`);
+   put(`    pub const LAYER_MAX_DEPTH: usize = ${LAYER_MAX_DEPTH};`);
+   put(`    pub const BLUR_MAX: f32 = ${BLUR_MAX}.0;`);
++  put("    /// Colour filters a LAYER_PUSH carries: bit 24 + n of its blend word,");
++  put("    /// applied in this order.");
++  for (const [name, n] of Object.entries(COLOR_FILTER)) {
++    put(`    pub const COLOR_FILTER_${name.replace(/([A-Z])/g, "_$1").toUpperCase()}: u32 = ${n};`);
++  }
++  put(`    pub const COLOR_FILTER_COUNT: u32 = ${Object.keys(COLOR_FILTER).length};`);
++  put(`    pub const COLOR_FILTER_MAX: f32 = ${COLOR_FILTER_MAX}.0;`);
+   put(`    pub const PAINT_MAX_STOPS: usize = ${PAINT_MAX_STOPS};`);
+   put("}");
+   put("");
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 38e53662..6a48917e 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -509,6 +509,19 @@ export const PROP = {
+   trimOffset: 209, //      f32, wraps (1 = once round)
+   trimMode: 210, //        enum TrimMode
+   morph: 211, //           f32 morph key, 0..keys-1
++  // Colour filters (pocket-motion): CSS's colour filter functions, each a
++  // per-pixel colour matrix on the node's filter layer, applied after the
++  // layer's blur and before its shadow in Tailwind's `filter` order —
++  // brightness, contrast, grayscale, hue-rotate, invert, saturate, sepia —
++  // each clamped to 0..1 before the next (spec DRAW_OP.layerPush).
++  brightness: 212, //      f32 multiplier (1 = identity; >= 0, at most
++  //                       COLOR_FILTER_MAX)
++  contrast: 213, //        f32 slope about mid-grey (1 = identity; >= 0)
++  grayscale: 214, //       f32 0..1 (0 = identity)
++  hueRotate: 215, //       f32 degrees (0 = identity)
++  invert: 216, //          f32 0..1 (0 = identity)
++  saturate: 217, //        f32 (1 = identity; >= 0, at most COLOR_FILTER_MAX)
++  sepia: 218, //           f32 0..1 (0 = identity)
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -594,6 +607,13 @@ export const ANIMATABLE: readonly PropName[] = [
+   "trimEnd", //       62
+   "trimOffset", //    63
+   "morph", //         64
++  "brightness", //    65
++  "contrast", //      66
++  "grayscale", //     67
++  "hueRotate", //     68
++  "invert", //        69
++  "saturate", //      70
++  "sepia", //         71
+ ];
+ 
+ /** Anim bit index for a prop, or -1 if not animatable. */
+@@ -692,6 +712,9 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   strokeJoin: VALUE_KIND.int, strokeCap: VALUE_KIND.int, strokeMiter: VALUE_KIND.f32,
+   trimStart: VALUE_KIND.f32, trimEnd: VALUE_KIND.f32, trimOffset: VALUE_KIND.f32,
+   trimMode: VALUE_KIND.int, morph: VALUE_KIND.f32,
++  brightness: VALUE_KIND.f32, contrast: VALUE_KIND.f32,
++  grayscale: VALUE_KIND.f32, hueRotate: VALUE_KIND.f32,
++  invert: VALUE_KIND.f32, saturate: VALUE_KIND.f32, sepia: VALUE_KIND.f32,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -1833,18 +1856,27 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+ //                           edge offset (0.5 - coverage), so a width of 0 is
+ //                           the glyph's own coverage. Width is clamped to
+ //                           STROKE_MAX_WIDTH. Software rasteriser only.
+-//   LAYER_PUSH  (8 words):  op, blendMode (BlendMode in bits 0-7; GlowMode
++//   LAYER_PUSH  (8 + k words): op, blendMode (BlendMode in bits 0-7; GlowMode
+ //                           in bits 8-15 and, for Luma, glowThreshold x 255
+ //                           rounded in bits 16-23 — all 0 for an alpha glow,
+-//                           so its word is the blend mode alone), blur (f32 bits,
++//                           so its word is the blend mode alone; bits 24-30
++//                           the colour filters present, one bit each in
++//                           COLOR_FILTER order, k of them set), blur (f32 bits,
+ //                           LOGICAL px standard deviation), shadowX,
+ //                           shadowY (f32 bits, LOGICAL px), shadowBlur (f32
+ //                           bits, LOGICAL px radius), shadowColor, shadowGain
+-//                           (f32 bits). Every op until the matching
++//                           (f32 bits), then k f32 amounts, one per set bit
++//                           in that order (hue-rotate in degrees, 0..360;
++//                           the others as the PROP says, clamped). A layer
++//                           with no colour filter is 8 words, as before.
++//                           Every op until the matching
+ //                           LAYER_POP paints into a transparent layer
+ //                           instead of the target. At the pop the layer is
+ //                           blurred (separable three-pass extended box, the
+-//                           standard deviation continuous), a shadow is
++//                           standard deviation continuous), each colour
++//                           filter is applied to its straight-alpha colour
++//                           in order (a fixed-point matrix, each result
++//                           clamped; alpha untouched), a shadow is
+ //                           made from its alpha (offset rounded to whole
+ //                           physical px, blurred, times gain, tinted), the
+ //                           layer is composited over its shadow, and that
+@@ -1952,6 +1984,21 @@ export const PAINT_MAX_STOPS = 6;
+ 
+ /** Deepest nesting of filter layers (LAYER_PUSH). */
+ export const LAYER_MAX_DEPTH = 4;
++/** The colour filters a LAYER_PUSH can carry, in the order they apply and
++ *  the order of their bits (24 upward) in its blend word: Tailwind's
++ *  `filter` composition. */
++export const COLOR_FILTER = {
++  brightness: 0,
++  contrast: 1,
++  grayscale: 2,
++  hueRotate: 3,
++  invert: 4,
++  saturate: 5,
++  sepia: 6,
++} as const;
++/** Largest brightness, contrast or saturate amount; larger is drawn at this.
++ *  Every 8-bit channel is already a threshold well before it. */
++export const COLOR_FILTER_MAX = 256;
+ /** Largest blur standard deviation, and largest drop-shadow blur radius / 2,
+  *  in logical px; larger is drawn at this. */
+ export const BLUR_MAX = 128;
+diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
+index 667dae5d..c438efd8 100644
+--- a/engine/core/src/compositor.rs
++++ b/engine/core/src/compositor.rs
+@@ -31,7 +31,7 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+         crate::spec::draw_op::MASK_PUSH => 2 + 2 * *words.get(at + 1)? as usize,
+         crate::spec::draw_op::MASK_POP => 1,
+         crate::spec::draw_op::GLYPH_STROKE => 5 + 2 * ((*words.get(at + 1)? >> 16) as usize),
+-        crate::spec::draw_op::LAYER_PUSH => 8,
++        crate::spec::draw_op::LAYER_PUSH => raster::layer_push_len(*words.get(at + 1)?),
+         crate::spec::draw_op::LAYER_POP => 1,
+         crate::spec::draw_op::PAINT_PUSH => 9 + 2 * *words.get(at + 2)? as usize,
+         crate::spec::draw_op::PAINT_POP => 1,
+diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
+index 219f0adf..3bccbd46 100644
+--- a/engine/core/src/damage.rs
++++ b/engine/core/src/damage.rs
+@@ -462,7 +462,9 @@ impl<'a> DamageDecoder<'a> {
+                     .checked_add(count.checked_mul(2).ok_or(())?)
+                     .ok_or(())?
+             }
+-            spec::draw_op::LAYER_PUSH => 8,
++            spec::draw_op::LAYER_PUSH => {
++                crate::raster::layer_push_len(self.words.get(start + 1).copied().ok_or(())?)
++            }
+             spec::draw_op::LAYER_POP => 1,
+             spec::draw_op::PAINT_PUSH => {
+                 let n = self.words.get(start + 2).copied().ok_or(())? as usize;
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 4713d470..268fc27c 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -285,6 +285,36 @@ fn alpha(color: u32) -> u32 {
+     color >> 24
+ }
+ 
++/// The colour filters a node declares (pocket-motion), as a LAYER_PUSH
++/// carries them: bit n set for each filter that is not identity, in
++/// `spec::draw_op::COLOR_FILTER_*` order, and every amount clamped to what
++/// CSS allows (negative amounts are 0; grayscale, invert and sepia stop at
++/// 1; the rest at COLOR_FILTER_MAX), hue-rotate reduced to 0..360 degrees so
++/// a whole turn is identity.
++fn color_filters(r: &style::Resolved) -> (u32, [f32; 7]) {
++    const IDENTITY: [f32; 7] = [1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
++    let max = spec::draw_op::COLOR_FILTER_MAX;
++    let or = |x: f32, d: f32| if x.is_finite() { x } else { d };
++    let hue = or(r.hue_rotate, 0.0);
++    let hue = hue - 360.0 * floorf(hue / 360.0);
++    let amounts = [
++        clampf(or(r.brightness, 1.0), 0.0, max),
++        clampf(or(r.contrast, 1.0), 0.0, max),
++        clampf(or(r.grayscale, 0.0), 0.0, 1.0),
++        if hue >= 0.0 && hue < 360.0 { hue } else { 0.0 },
++        clampf(or(r.invert, 0.0), 0.0, 1.0),
++        clampf(or(r.saturate, 1.0), 0.0, max),
++        clampf(or(r.sepia, 0.0), 0.0, 1.0),
++    ];
++    let mut mask = 0;
++    for (i, (a, id)) in amounts.iter().zip(IDENTITY).enumerate() {
++        if *a != id {
++            mask |= 1 << i;
++        }
++    }
++    (mask, amounts)
++}
++
+ #[inline]
+ fn with_alpha_abgr(color: u32, a: u32) -> u32 {
+     (color & 0x00ff_ffff) | ((a & 0xff) << 24)
+@@ -1289,7 +1319,8 @@ impl<'a> Walker<'a> {
+         // scaled by `op`: the shadow is made from the layer's alpha, which
+         // already carries it. Past LAYER_MAX_DEPTH the node paints unfiltered.
+         let shadow = alpha(r.drop_shadow_color) > 0 && r.drop_shadow_gain > 0.0;
+-        let layered = (r.blur > 0.0 || shadow || r.blend_mode != spec::BlendMode::Normal as u8)
++        let (colors, amounts) = color_filters(&r);
++        let layered = (r.blur > 0.0 || shadow || colors != 0 || r.blend_mode != spec::BlendMode::Normal as u8)
+             && (self.layer_depth as usize) < spec::draw_op::LAYER_MAX_DEPTH;
+         if layered {
+             dl.words.push(spec::draw_op::LAYER_PUSH);
+@@ -1302,13 +1333,21 @@ impl<'a> Walker<'a> {
+             } else {
+                 0
+             };
+-            dl.words.push(r.blend_mode as u32 | glow);
++            // Colour filters (pocket-motion patch 0055) are bits 24-30, and
++            // their amounts follow the eight words; a layer with none is the
++            // eight words it was.
++            dl.words.push(r.blend_mode as u32 | glow | colors << 24);
+             dl.words.push(r.blur.max(0.0).min(spec::draw_op::BLUR_MAX).to_bits());
+             dl.words.push(r.drop_shadow_x.to_bits());
+             dl.words.push(r.drop_shadow_y.to_bits());
+             dl.words.push(r.drop_shadow_blur.max(0.0).min(2.0 * spec::draw_op::BLUR_MAX).to_bits());
+             dl.words.push(if shadow { r.drop_shadow_color } else { 0 });
+             dl.words.push(r.drop_shadow_gain.max(0.0).to_bits());
++            for (i, a) in amounts.iter().enumerate() {
++                if colors & (1 << i) != 0 {
++                    dl.words.push(a.to_bits());
++                }
++            }
+             self.layer_depth += 1;
+         }
+         self.paint_body(slot, &r, world, op, clip, in_transform, dl);
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index 8739a75b..413be184 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -1291,7 +1291,10 @@ impl Ui {
+                     let Some(meta) = words.get(i + 1) else { break };
+                     5 + 2 * ((*meta >> 16) as usize)
+                 }
+-                x if x == spec::draw_op::LAYER_PUSH => 8,
++                x if x == spec::draw_op::LAYER_PUSH => {
++                    let Some(blend) = words.get(i + 1) else { break };
++                    crate::raster::layer_push_len(*blend)
++                }
+                 x if x == spec::draw_op::LAYER_POP => 1,
+                 x if x == spec::draw_op::PAINT_PUSH => {
+                     let Some(n) = words.get(i + 2) else { break };
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index 09bf9d0a..266a5ec0 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -1074,22 +1074,26 @@ fn render_ops<T: RenderTarget>(
+                 i += 5 + 2 * n;
+             }
+             draw_op::LAYER_PUSH => {
+-                if i + 8 > words.len() {
++                let Some(&blend) = words.get(i + 1) else { return i };
++                let len = layer_push_len(blend);
++                if i + len > words.len() {
+                     return i;
+                 }
+-                let fx = LayerFx::decode(&words[i + 1..i + 8]);
+-                i += 8;
++                let fx = LayerFx::decode(&words[i + 1..i + len]);
++                i += len;
+                 if layers >= spec::draw_op::LAYER_MAX_DEPTH {
+                     ignored_layers += 1;
+                     continue;
+                 }
+-                let mut layer = LayerTarget::new(pool.take(target.pixel_len()));
++                let mut layer = LayerTarget::new(pool.take(target.pixel_len()), width as usize);
+                 i += render_ops(ui, &words[i..], &mut layer, width, scale, screen, clip, layers + 1, pool);
+-                let (y0, y1) = composite_layer(target, &mut layer, &fx, clip, width, scale);
+-                // Hand the buffer back transparent: only the rows the layer
+-                // or its blur wrote can be non-zero.
++                let written = composite_layer(target, &mut layer, &fx, clip, width, scale);
++                // Hand the buffer back transparent: only the rectangle the
++                // layer, its blur or its colour filters wrote can be non-zero.
+                 let row = width as usize * 4;
+-                layer.bytes[y0 * row..y1 * row].fill(0);
++                for y in written.y0 as usize..written.y1 as usize {
++                    layer.bytes[y * row + written.x0 as usize * 4..y * row + written.x1 as usize * 4].fill(0);
++                }
+                 pool.free.push(layer.bytes);
+             }
+             draw_op::PAINT_PUSH => {
+@@ -2294,6 +2298,13 @@ impl RenderTarget for Painted<'_> {
+ 
+ // ---- LAYER_PUSH / LAYER_POP: filter layers (pocket-motion patch 0018) ----------------
+ 
++/// Words in a LAYER_PUSH whose blend word is `blend`: eight, and one more
++/// per colour filter it carries (bits 24-30, pocket-motion patch 0055).
++#[inline]
++pub(crate) fn layer_push_len(blend: u32) -> usize {
++    8 + ((blend >> 24) & 0x7f).count_ones() as usize
++}
++
+ /// A LAYER_PUSH's parameters, decoded (spec.ts DRAWLIST op format).
+ struct LayerFx {
+     blend: u32,
+@@ -2310,9 +2321,13 @@ struct LayerFx {
+     luma: bool,
+     /// Luma only: brightest-channel level, 0..=255, where emission starts.
+     threshold: u32,
++    /// Colour filters (pocket-motion patch 0055), applied after the blur.
++    colors: ColorProgram,
+ }
+ 
+ impl LayerFx {
++    /// `w` is the op's words after the opcode: seven, then the colour
++    /// filters' amounts.
+     fn decode(w: &[u32]) -> LayerFx {
+         let finite = |x: f32| if x.is_finite() { x } else { 0.0 };
+         LayerFx {
+@@ -2325,17 +2340,197 @@ impl LayerFx {
+             shadow_blur: finite(f32::from_bits(w[4])).max(0.0).min(2.0 * spec::draw_op::BLUR_MAX),
+             shadow_color: w[5],
+             shadow_gain: finite(f32::from_bits(w[6])).max(0.0),
++            colors: ColorProgram::decode(w[0] >> 24, &w[7..]),
++        }
++    }
++}
++
++/// One colour filter as the rasteriser applies it: `out = M * c + t` on
++/// straight-alpha channels held as `c * 257` (0..=65535, so 8-bit levels map
++/// in and out exactly), M in 1/16384ths, t in the same units times 16384.
++/// The result is rounded and clamped to 0..=65535 before the next filter, as
++/// each CSS filter function clamps its result. Integer, so the same words
++/// give the same pixels on every host.
++#[derive(Clone, Copy)]
++struct ColorStep {
++    m: [[i64; 3]; 3],
++    t: [i64; 3],
++}
++
++/// Fixed-point unit of a colour matrix coefficient.
++const COLOR_ONE: f32 = 16384.0;
++
++impl ColorStep {
++    const IDENTITY: ColorStep = ColorStep { m: [[16384, 0, 0], [0, 16384, 0], [0, 0, 16384]], t: [0; 3] };
++
++    /// The matrix CSS Filter Effects 1 gives filter function `n` at amount
++    /// `a` (already in range: the core clamps before emitting, and this
++    /// clamps again because the words may come from anywhere), quantised.
++    fn of(n: u32, a: f32) -> ColorStep {
++        let a = if a.is_finite() { a } else { 0.0 };
++        let max = spec::draw_op::COLOR_FILTER_MAX;
++        let unit = |a: f32| a.max(0.0).min(1.0);
++        let diag = |k: f32, t: f32| ([[k, 0.0, 0.0], [0.0, k, 0.0], [0.0, 0.0, k]], [t; 3]);
++        // The luminance-preserving family: grayscale, sepia and saturate are
++        // a lerp from a fixed matrix toward identity.
++        let (m, t): ([[f32; 3]; 3], [f32; 3]) = match n {
++            spec::draw_op::COLOR_FILTER_BRIGHTNESS => diag(a.max(0.0).min(max), 0.0),
++            spec::draw_op::COLOR_FILTER_CONTRAST => {
++                let k = a.max(0.0).min(max);
++                diag(k, 0.5 - 0.5 * k)
++            }
++            spec::draw_op::COLOR_FILTER_GRAYSCALE => {
++                let g = 1.0 - unit(a);
++                (
++                    [
++                        [0.2126 + 0.7874 * g, 0.7152 - 0.7152 * g, 0.0722 - 0.0722 * g],
++                        [0.2126 - 0.2126 * g, 0.7152 + 0.2848 * g, 0.0722 - 0.0722 * g],
++                        [0.2126 - 0.2126 * g, 0.7152 - 0.7152 * g, 0.0722 + 0.9278 * g],
++                    ],
++                    [0.0; 3],
++                )
++            }
++            spec::draw_op::COLOR_FILTER_HUE_ROTATE => {
++                // Degrees reduced to 0..360 first, so a whole turn is
++                // identity to the bit; the trig is the core's own
++                // deterministic polynomial.
++                let d = a - 360.0 * crate::layout::floorf(a / 360.0);
++                let rad = d * (core::f32::consts::PI / 180.0);
++                let (c, s) = (crate::fmath::cosf(rad), crate::fmath::sinf(rad));
++                (
++                    [
++                        [0.213 + 0.787 * c - 0.213 * s, 0.715 - 0.715 * c - 0.715 * s, 0.072 - 0.072 * c + 0.928 * s],
++                        [0.213 - 0.213 * c + 0.143 * s, 0.715 + 0.285 * c + 0.140 * s, 0.072 - 0.072 * c - 0.283 * s],
++                        [0.213 - 0.213 * c - 0.787 * s, 0.715 - 0.715 * c + 0.715 * s, 0.072 + 0.928 * c + 0.072 * s],
++                    ],
++                    [0.0; 3],
++                )
++            }
++            spec::draw_op::COLOR_FILTER_INVERT => {
++                let k = unit(a);
++                diag(1.0 - 2.0 * k, k)
++            }
++            spec::draw_op::COLOR_FILTER_SATURATE => {
++                let k = a.max(0.0).min(max);
++                (
++                    [
++                        [0.213 + 0.787 * k, 0.715 - 0.715 * k, 0.072 - 0.072 * k],
++                        [0.213 - 0.213 * k, 0.715 + 0.285 * k, 0.072 - 0.072 * k],
++                        [0.213 - 0.213 * k, 0.715 - 0.715 * k, 0.072 + 0.928 * k],
++                    ],
++                    [0.0; 3],
++                )
++            }
++            spec::draw_op::COLOR_FILTER_SEPIA => {
++                let g = 1.0 - unit(a);
++                (
++                    [
++                        [0.393 + 0.607 * g, 0.769 - 0.769 * g, 0.189 - 0.189 * g],
++                        [0.349 - 0.349 * g, 0.686 + 0.314 * g, 0.168 - 0.168 * g],
++                        [0.272 - 0.272 * g, 0.534 - 0.534 * g, 0.131 + 0.869 * g],
++                    ],
++                    [0.0; 3],
++                )
++            }
++            _ => return ColorStep::IDENTITY,
++        };
++        let q = |x: f32| crate::layout::roundf(x * COLOR_ONE) as i64;
++        let mut step = ColorStep::IDENTITY;
++        for i in 0..3 {
++            for j in 0..3 {
++                step.m[i][j] = q(m[i][j]);
++            }
++            step.t[i] = q(t[i]) * 65535;
++        }
++        step
++    }
++}
++
++/// The colour filters of one LAYER_PUSH, in the order they apply. `len` 0
++/// is no colour filter, and the layer's pixels are not visited for one.
++#[derive(Clone, Copy)]
++struct ColorProgram {
++    steps: [ColorStep; spec::draw_op::COLOR_FILTER_COUNT as usize],
++    len: usize,
++}
++
++impl ColorProgram {
++    /// `mask` is the blend word's bits 24-30 shifted down, `amounts` the
++    /// words after the eighth, one per set bit in filter order.
++    fn decode(mask: u32, amounts: &[u32]) -> ColorProgram {
++        let mut p = ColorProgram { steps: [ColorStep::IDENTITY; spec::draw_op::COLOR_FILTER_COUNT as usize], len: 0 };
++        let mut k = 0;
++        for n in 0..spec::draw_op::COLOR_FILTER_COUNT {
++            if mask & (1 << n) == 0 {
++                continue;
++            }
++            let Some(&bits) = amounts.get(k) else { break };
++            k += 1;
++            p.steps[p.len] = ColorStep::of(n, f32::from_bits(bits));
++            p.len += 1;
++        }
++        p
++    }
++
++    /// One straight-alpha colour through every step.
++    #[inline]
++    fn apply(&self, r: u32, g: u32, b: u32) -> (u32, u32, u32) {
++        let mut v = [r as i64 * 257, g as i64 * 257, b as i64 * 257];
++        for s in &self.steps[..self.len] {
++            let mut o = [0i64; 3];
++            for (i, row) in s.m.iter().enumerate() {
++                let acc = row[0] * v[0] + row[1] * v[1] + row[2] * v[2] + s.t[i] + 8192;
++                o[i] = (acc >> 14).clamp(0, 65535);
++            }
++            v = o;
++        }
++        let out = |x: i64| (x as u32 * 255 + 32767) / 65535;
++        (out(v[0]), out(v[1]), out(v[2]))
++    }
++
++    /// Every pixel of `rect` in a straight-alpha RGBA buffer `w` pixels wide
++    /// that carries any alpha, in place. A run of one colour is computed
++    /// once.
++    fn apply_rect(&self, bytes: &mut [u8], w: usize, rect: Clip) {
++        if self.len == 0 || rect.x0 >= rect.x1 || rect.y0 >= rect.y1 {
++            return;
++        }
++        let mut last: Option<([u8; 3], [u8; 3])> = None;
++        for y in rect.y0 as usize..rect.y1 as usize {
++            for x in rect.x0 as usize..rect.x1 as usize {
++                let o = (y * w + x) * 4;
++                if bytes[o + 3] == 0 {
++                    continue;
++                }
++                let src = [bytes[o], bytes[o + 1], bytes[o + 2]];
++                let dst = match last {
++                    Some((s, d)) if s == src => d,
++                    _ => {
++                        let (r, g, b) = self.apply(src[0] as u32, src[1] as u32, src[2] as u32);
++                        let d = [r as u8, g as u8, b as u8];
++                        last = Some((src, d));
++                        d
++                    }
++                };
++                bytes[o..o + 3].copy_from_slice(&dst);
++            }
+         }
+     }
+ }
+ 
+ /// A transparent full-frame RGBA layer. Writes use `RgbaTarget`'s own
+-/// arithmetic, and the touched span of pixel offsets is recorded so the
+-/// composite reads only the rows something reached.
++/// arithmetic, and the touched span of pixel offsets and the columns it
++/// reached are recorded, so the composite reads — and the pool clears — only
++/// the rectangle something reached (pocket-motion patch 0055: a word-sized
++/// layer on a 1080p frame scanned and cleared whole 1920-pixel rows, measured
++/// 0.27 ms a layer).
+ struct LayerTarget {
+     bytes: Vec<u8>,
+     lo: usize,
+     hi: usize,
++    width: usize,
++    x0: usize,
++    x1: usize,
+ }
+ 
+ /// Transparent layer buffers reused within one render: a layer is handed
+@@ -2357,14 +2552,23 @@ impl LayerPool {
+ }
+ 
+ impl LayerTarget {
+-    fn new(bytes: Vec<u8>) -> LayerTarget {
+-        LayerTarget { bytes, lo: usize::MAX, hi: 0 }
++    fn new(bytes: Vec<u8>, width: usize) -> LayerTarget {
++        LayerTarget { bytes, lo: usize::MAX, hi: 0, width, x0: usize::MAX, x1: 0 }
+     }
+ 
+     #[inline]
+     fn touch(&mut self, start: usize, len: usize) {
+         self.lo = self.lo.min(start);
+         self.hi = self.hi.max(start + len);
++        let x = start % self.width;
++        if x + len <= self.width {
++            self.x0 = self.x0.min(x);
++            self.x1 = self.x1.max(x + len);
++        } else {
++            // A span across a row end: every column.
++            self.x0 = 0;
++            self.x1 = self.width;
++        }
+     }
+ }
+ 
+@@ -2676,21 +2880,23 @@ fn composite_layer<T: RenderTarget>(
+     clip: Clip,
+     stride: i32,
+     scale: i32,
+-) -> (usize, usize) {
++) -> Clip {
+     if layer.lo >= layer.hi {
+-        return (0, 0);
++        return Clip { x0: 0, y0: 0, x1: 0, y1: 0 };
+     }
+     let w = stride as usize;
+-    // Content bounds: the touched rows, then the columns with any alpha.
++    // Content bounds: the touched rows and columns, then within them the
++    // columns with any alpha.
+     let (ry0, ry1) = (layer.lo / w, (layer.hi - 1) / w + 1);
+-    let written = (ry0, ry1);
++    let (tx0, tx1) = (layer.x0.min(w), layer.x1.min(w));
++    let written = Clip { x0: tx0 as i32, y0: ry0 as i32, x1: tx1 as i32, y1: ry1 as i32 };
+     if clip.x0 >= clip.x1 || clip.y0 >= clip.y1 {
+         return written;
+     }
+     let (mut x0, mut x1) = (w, 0usize);
+     for y in ry0..ry1 {
+         let row = &layer.bytes[y * w * 4..(y + 1) * w * 4];
+-        for x in 0..w {
++        for x in tx0..tx1 {
+             if row[x * 4 + 3] != 0 {
+                 x0 = x0.min(x);
+                 x1 = x1.max(x + 1);
+@@ -2756,7 +2962,18 @@ fn composite_layer<T: RenderTarget>(
+         }
+         content = region;
+     }
+-    let written = (written.0.min(content.y0 as usize), written.1.max(content.y1 as usize));
++    let written = Clip {
++        x0: written.x0.min(content.x0),
++        y0: written.y0.min(content.y0),
++        x1: written.x1.max(content.x1),
++        y1: written.y1.max(content.y1),
++    };
++
++    // Colour filters (pocket-motion patch 0055): after the blur and before
++    // the shadow, the place Tailwind's `filter` gives them, on straight
++    // colour. Alpha is untouched, so the shadow below is made from the alpha
++    // an unfiltered layer has; a luma glow reads the filtered colour.
++    fx.colors.apply_rect(&mut layer.bytes, w, content);
+ 
+     // Shadow: the layer's alpha, offset, blurred, times gain, tinted.
+     let (sr, sg, sb, sa) = channels(fx.shadow_color);
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 7f240725..b34d9695 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -227,6 +227,13 @@ pub mod prop {
+     pub const TRIM_OFFSET: u8 = 209;
+     pub const TRIM_MODE: u8 = 210;
+     pub const MORPH: u8 = 211;
++    pub const BRIGHTNESS: u8 = 212;
++    pub const CONTRAST: u8 = 213;
++    pub const GRAYSCALE: u8 = 214;
++    pub const HUE_ROTATE: u8 = 215;
++    pub const INVERT: u8 = 216;
++    pub const SATURATE: u8 = 217;
++    pub const SEPIA: u8 = 218;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -251,7 +258,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
+-    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ ];
+@@ -272,13 +279,13 @@ pub const ANIM_BIT: [u8; 256] = [
+     0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0x2f, 0x30, 0x31, 0x32, 0x33,
+     0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3a, 0xff, 0x3b, 0x3c, 0xff, 0xff, 0xff, 0x3d,
+-    0x3e, 0x3f, 0xff, 0x40, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x3e, 0x3f, 0xff, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ ];
+ 
+ /// Bitset over prop ids: animatable props (tween/spring/transition targets).
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x00000000000b8d00];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x0000000007fb8d00];
+ /// Bitset over prop ids: props whose change invalidates layout.
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ 
+@@ -621,6 +628,17 @@ pub mod draw_op {
+     pub const STROKE_MAX_WIDTH: f32 = 64.0;
+     pub const LAYER_MAX_DEPTH: usize = 4;
+     pub const BLUR_MAX: f32 = 128.0;
++    /// Colour filters a LAYER_PUSH carries: bit 24 + n of its blend word,
++    /// applied in this order.
++    pub const COLOR_FILTER_BRIGHTNESS: u32 = 0;
++    pub const COLOR_FILTER_CONTRAST: u32 = 1;
++    pub const COLOR_FILTER_GRAYSCALE: u32 = 2;
++    pub const COLOR_FILTER_HUE_ROTATE: u32 = 3;
++    pub const COLOR_FILTER_INVERT: u32 = 4;
++    pub const COLOR_FILTER_SATURATE: u32 = 5;
++    pub const COLOR_FILTER_SEPIA: u32 = 6;
++    pub const COLOR_FILTER_COUNT: u32 = 7;
++    pub const COLOR_FILTER_MAX: f32 = 256.0;
+     pub const PAINT_MAX_STOPS: usize = 6;
+ }
+ 
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index e4c2bd04..a1105e99 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -352,6 +352,16 @@ pub struct Resolved {
+     pub glow_mode: u8,
+     /// Luma glow: the brightest-channel level (0..1) where emission starts.
+     pub glow_threshold: f32,
++    /// Colour filters (pocket-motion; spec.ts PROP.brightness..sepia), CSS
++    /// amounts: 1 is identity for brightness, contrast and saturate, 0 for
++    /// the rest; hue_rotate in degrees.
++    pub brightness: f32,
++    pub contrast: f32,
++    pub grayscale: f32,
++    pub hue_rotate: f32,
++    pub invert: f32,
++    pub saturate: f32,
++    pub sepia: f32,
+     /// Gradient paint (pocket-motion; spec.ts PROP.gradKind..bgClip).
+     /// spec::GradKind ordinal; Legacy keeps the gradDir path.
+     pub grad_kind: u8,
+@@ -460,6 +470,13 @@ impl Default for Resolved {
+             blend_mode: spec::BlendMode::Normal as u8,
+             glow_mode: spec::GlowMode::Alpha as u8,
+             glow_threshold: 0.5,
++            brightness: 1.0,
++            contrast: 1.0,
++            grayscale: 0.0,
++            hue_rotate: 0.0,
++            invert: 0.0,
++            saturate: 1.0,
++            sepia: 0.0,
+             grad_kind: spec::GradKind::Legacy as u8,
+             grad_angle: 180.0,
+             grad_from_pos: 0.0,
+@@ -588,6 +605,13 @@ impl Resolved {
+             p::BLEND_MODE => self.blend_mode = bits as u8,
+             p::GLOW_MODE => self.glow_mode = bits as u8,
+             p::GLOW_THRESHOLD => self.glow_threshold = f,
++            p::BRIGHTNESS => self.brightness = f,
++            p::CONTRAST => self.contrast = f,
++            p::GRAYSCALE => self.grayscale = f,
++            p::HUE_ROTATE => self.hue_rotate = f,
++            p::INVERT => self.invert = f,
++            p::SATURATE => self.saturate = f,
++            p::SEPIA => self.sepia = f,
+             p::GRAD_KIND => self.grad_kind = bits as u8,
+             p::GRAD_ANGLE => self.grad_angle = f,
+             p::GRAD_FROM_POS => self.grad_from_pos = f,
+@@ -706,6 +730,13 @@ impl Resolved {
+             p::BLEND_MODE => self.blend_mode as u32,
+             p::GLOW_MODE => self.glow_mode as u32,
+             p::GLOW_THRESHOLD => self.glow_threshold.to_bits(),
++            p::BRIGHTNESS => self.brightness.to_bits(),
++            p::CONTRAST => self.contrast.to_bits(),
++            p::GRAYSCALE => self.grayscale.to_bits(),
++            p::HUE_ROTATE => self.hue_rotate.to_bits(),
++            p::INVERT => self.invert.to_bits(),
++            p::SATURATE => self.saturate.to_bits(),
++            p::SEPIA => self.sepia.to_bits(),
+             p::GRAD_KIND => self.grad_kind as u32,
+             p::GRAD_ANGLE => self.grad_angle.to_bits(),
+             p::GRAD_FROM_POS => self.grad_from_pos.to_bits(),
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 5dfd45e4..4467fdc6 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -397,12 +397,37 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+             spec::draw_op::LAYER_PUSH => {
+                 assert!(i + 8 <= words.len(), "truncated LAYER_PUSH");
+                 // Blend mode in the low byte; GlowMode and its threshold
+-                // above it (patch 0033), and nothing above those.
++                // above it (patch 0033); the colour filters present in bits
++                // 24-30 (patch 0055), and nothing above those.
+                 assert!(words[i + 1] & 0xff <= 4, "bad BlendMode");
+                 assert!((words[i + 1] >> 8) & 0xff <= 1, "bad GlowMode");
+-                assert!(words[i + 1] >> 24 == 0, "LAYER_PUSH blend word past its fields");
++                assert!(words[i + 1] >> 31 == 0, "LAYER_PUSH blend word past its fields");
++                let colors = (words[i + 1] >> 24) & 0x7f;
++                let k = colors.count_ones() as usize;
++                assert!(i + 8 + k <= words.len(), "truncated LAYER_PUSH colour filters");
++                let mut a = i + 8;
++                for n in 0..spec::draw_op::COLOR_FILTER_COUNT {
++                    if colors & (1 << n) == 0 {
++                        continue;
++                    }
++                    let v = f32::from_bits(words[a]);
++                    let (lo, hi) = match n {
++                        spec::draw_op::COLOR_FILTER_HUE_ROTATE => (0.0, 360.0),
++                        spec::draw_op::COLOR_FILTER_GRAYSCALE
++                        | spec::draw_op::COLOR_FILTER_INVERT
++                        | spec::draw_op::COLOR_FILTER_SEPIA => (0.0, 1.0),
++                        _ => (0.0, spec::draw_op::COLOR_FILTER_MAX),
++                    };
++                    assert!(v >= lo && v <= hi && !(n == spec::draw_op::COLOR_FILTER_HUE_ROTATE && v == 360.0), "colour filter {n} amount {v} out of range");
++                    let identity = matches!(
++                        n,
++                        spec::draw_op::COLOR_FILTER_BRIGHTNESS | spec::draw_op::COLOR_FILTER_CONTRAST | spec::draw_op::COLOR_FILTER_SATURATE
++                    );
++                    assert!(v != if identity { 1.0 } else { 0.0 }, "colour filter {n} emitted at identity");
++                    a += 1;
++                }
+                 if (words[i + 1] >> 8) & 0xff == 0 {
+-                    assert_eq!(words[i + 1] >> 16, 0, "an alpha glow carries no threshold");
++                    assert_eq!((words[i + 1] >> 16) & 0xff, 0, "an alpha glow carries no threshold");
+                 }
+                 for k in 2..=5 {
+                     let f = f32::from_bits(words[i + k]);
+@@ -410,7 +435,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+                 }
+                 layer_depth += 1;
+                 assert!(layer_depth as usize <= spec::draw_op::LAYER_MAX_DEPTH, "layers nested too deep");
+-                i += 8;
++                i += 8 + k;
+             }
+             spec::draw_op::PAINT_PUSH => {
+                 let n = words[i + 2] as usize;
+@@ -7080,6 +7105,430 @@ fn a_reused_layer_buffer_carries_nothing_from_the_layer_before() {
+     }
+ }
+ 
++// ---- colour filters on a filter layer (pocket-motion patch 0055) ---------------------
++
++/// CSS Filter Effects 1's colour filter functions, typed from the spec in
++/// f64 rather than from raster.rs, on 0..1 channels; each result clamped
++/// to 0..1, as the spec clamps every filter primitive's result.
++fn css_color_filter(name: &str, a: f64, c: [f64; 3]) -> [f64; 3] {
++    let apply = |m: [[f64; 3]; 3], t: f64| {
++        let mut o = [0.0; 3];
++        for i in 0..3 {
++            o[i] = (m[i][0] * c[0] + m[i][1] * c[1] + m[i][2] * c[2] + t).clamp(0.0, 1.0);
++        }
++        o
++    };
++    let diag = |k: f64| [[k, 0.0, 0.0], [0.0, k, 0.0], [0.0, 0.0, k]];
++    match name {
++        "brightness" => apply(diag(a), 0.0),
++        "contrast" => apply(diag(a), 0.5 - 0.5 * a),
++        "invert" => apply(diag(1.0 - 2.0 * a), a),
++        "grayscale" => {
++            let g = 1.0 - a.min(1.0);
++            apply(
++                [
++                    [0.2126 + 0.7874 * g, 0.7152 - 0.7152 * g, 0.0722 - 0.0722 * g],
++                    [0.2126 - 0.2126 * g, 0.7152 + 0.2848 * g, 0.0722 - 0.0722 * g],
++                    [0.2126 - 0.2126 * g, 0.7152 - 0.7152 * g, 0.0722 + 0.9278 * g],
++                ],
++                0.0,
++            )
++        }
++        "sepia" => {
++            let g = 1.0 - a.min(1.0);
++            apply(
++                [
++                    [0.393 + 0.607 * g, 0.769 - 0.769 * g, 0.189 - 0.189 * g],
++                    [0.349 - 0.349 * g, 0.686 + 0.314 * g, 0.168 - 0.168 * g],
++                    [0.272 - 0.272 * g, 0.534 - 0.534 * g, 0.131 + 0.869 * g],
++                ],
++                0.0,
++            )
++        }
++        "saturate" => apply(
++            [
++                [0.213 + 0.787 * a, 0.715 - 0.715 * a, 0.072 - 0.072 * a],
++                [0.213 - 0.213 * a, 0.715 + 0.285 * a, 0.072 - 0.072 * a],
++                [0.213 - 0.213 * a, 0.715 - 0.715 * a, 0.072 + 0.928 * a],
++            ],
++            0.0,
++        ),
++        "hue-rotate" => {
++            let (s, k) = a.to_radians().sin_cos();
++            apply(
++                [
++                    [0.213 + 0.787 * k - 0.213 * s, 0.715 - 0.715 * k - 0.715 * s, 0.072 - 0.072 * k + 0.928 * s],
++                    [0.213 - 0.213 * k + 0.143 * s, 0.715 + 0.285 * k + 0.140 * s, 0.072 - 0.072 * k - 0.283 * s],
++                    [0.213 - 0.213 * k - 0.787 * s, 0.715 - 0.715 * k + 0.715 * s, 0.072 + 0.928 * k + 0.072 * s],
++                ],
++                0.0,
++            )
++        }
++        _ => unreachable!("{name}"),
++    }
++}
++
++/// The prop each CSS function name sets.
++fn color_filter_prop(name: &str) -> u8 {
++    match name {
++        "brightness" => spec::prop::BRIGHTNESS,
++        "contrast" => spec::prop::CONTRAST,
++        "grayscale" => spec::prop::GRAYSCALE,
++        "hue-rotate" => spec::prop::HUE_ROTATE,
++        "invert" => spec::prop::INVERT,
++        "saturate" => spec::prop::SATURATE,
++        "sepia" => spec::prop::SEPIA,
++        _ => unreachable!("{name}"),
++    }
++}
++
++/// `filters` applied to an 8-bit colour by the reference, in the order
++/// given: 0..255, unrounded.
++fn css_color_filters(filters: &[(&str, f64)], rgb: [u8; 3]) -> [f64; 3] {
++    let mut c = rgb.map(|v| v as f64 / 255.0);
++    for &(name, a) in filters {
++        c = css_color_filter(name, a, c);
++    }
++    c.map(|v| v * 255.0)
++}
++
++/// How far the rasteriser may land from the exact CSS value, in levels:
++/// half a level for its own rounding, and a twentieth for the 1/16384
++/// coefficients and the 1/257-level steps between filters. Measured worst
++/// over the two tests below (2026-11-05): 0.504 for one filter, 0.505 for a
++/// chain.
++const CSS_LEVEL_TOLERANCE: f64 = 0.55;
++
++/// An opaque box of `rgb` on an opaque ground with `filters` set on it: the
++/// box's pixel.
++fn color_filtered(filters: &[(&str, f64)], rgb: [u8; 3]) -> [u8; 4] {
++    let fx: Vec<(u8, f64)> = filters.iter().map(|&(n, a)| (color_filter_prop(n), a)).collect();
++    let (mut ui, _, words) = filtered_box(abgr(17, 34, 51, 255), abgr(rgb[0], rgb[1], rgb[2], 255), &fx);
++    assert_eq!(validate_drawlist(&words)[spec::draw_op::LAYER_PUSH as usize], 1);
++    let fb = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&fb, 10, 10), [17, 34, 51, 255], "the ground is not filtered");
++    sample_rgba(&fb, 100, 100)
++}
++
++const FILTER_COLOURS: [[u8; 3]; 7] =
++    [[200, 100, 50], [255, 0, 0], [0, 255, 0], [10, 200, 90], [255, 255, 255], [0, 0, 0], [128, 128, 128]];
++
++#[test]
++fn each_colour_filter_is_its_css_matrix_to_a_level() {
++    let cases: &[(&str, &[f64])] = &[
++        ("brightness", &[0.0, 0.5, 1.5, 3.0]),
++        ("contrast", &[0.0, 0.5, 2.0, 40.0]),
++        ("grayscale", &[0.25, 0.5, 1.0]),
++        ("hue-rotate", &[30.0, 90.0, 180.0, 270.0, 333.3]),
++        ("invert", &[0.25, 0.5, 1.0]),
++        ("saturate", &[0.0, 0.5, 2.0, 5.0]),
++        ("sepia", &[0.25, 0.75, 1.0]),
++    ];
++    for &(name, amounts) in cases {
++        for &a in amounts {
++            for rgb in FILTER_COLOURS {
++                let got = color_filtered(&[(name, a)], rgb);
++                let want = css_color_filters(&[(name, a)], rgb);
++                assert_eq!(got[3], 255, "{name}({a}) leaves alpha");
++                for ch in 0..3 {
++                    let d = (got[ch] as f64 - want[ch]).abs();
++                    assert!(d <= CSS_LEVEL_TOLERANCE, "{name}({a}) of {rgb:?}: {got:?}, CSS {want:?}");
++                }
++            }
++        }
++    }
++    // Known values a reader can check by hand: grayscale(1) of red is its
++    // luminance, 0.2126 * 255; hue-rotate(180deg) of red is a dark cyan.
++    assert_eq!(color_filtered(&[("grayscale", 1.0)], [255, 0, 0]), [54, 54, 54, 255]);
++    assert_eq!(color_filtered(&[("hue-rotate", 180.0)], [255, 0, 0]), [0, 109, 109, 255]);
++    assert_eq!(color_filtered(&[("invert", 1.0)], [10, 200, 90]), [245, 55, 165, 255]);
++}
++
++#[test]
++fn colour_filters_apply_in_tailwinds_order_each_clamped() {
++    // brightness(2) then contrast(0.5) on grey 200: 400 clamps to 255, then
++    // 0.5 * 255 + 63.75 = 191. One matrix with no clamp between would give
++    // 0.5 * 400 + 63.75, white.
++    assert_eq!(color_filtered(&[("brightness", 2.0), ("contrast", 0.5)], [200, 200, 200]), [191, 191, 191, 255]);
++    // Brightness before sepia, whatever order the props were set in: white
++    // halved then sepia is (172, 153, 119); sepia first would be (128, 128, 119).
++    let order = ["brightness", "contrast", "grayscale", "hue-rotate", "invert", "saturate", "sepia"];
++    let want = |set: &[(&'static str, f64)]| -> Vec<(&'static str, f64)> {
++        let mut sorted = set.to_vec();
++        sorted.sort_by_key(|(n, _)| order.iter().position(|o| o == n).unwrap());
++        sorted
++    };
++    for set in [
++        &[("sepia", 1.0), ("brightness", 0.5)][..],
++        &[("invert", 0.8), ("hue-rotate", 120.0), ("saturate", 3.0)][..],
++        &[("sepia", 0.6), ("grayscale", 0.4), ("contrast", 1.8), ("brightness", 1.3)][..],
++        &[("saturate", 0.2), ("invert", 1.0), ("hue-rotate", 45.0), ("grayscale", 0.3), ("contrast", 0.7), ("brightness", 0.9), ("sepia", 0.5)][..],
++    ] {
++        for rgb in FILTER_COLOURS {
++            let got = color_filtered(set, rgb);
++            let canon = css_color_filters(&want(set), rgb);
++            for ch in 0..3 {
++                let d = (got[ch] as f64 - canon[ch]).abs();
++                assert!(d <= CSS_LEVEL_TOLERANCE, "{set:?} of {rgb:?}: {got:?}, in order {canon:?}");
++            }
++        }
++    }
++    assert_eq!(color_filtered(&[("sepia", 1.0), ("brightness", 0.5)], [255, 255, 255]), [172, 153, 119, 255]);
++}
++
++#[test]
++fn a_colour_filter_at_identity_is_no_layer_and_a_whole_turn_is_identity() {
++    let ground = abgr(0, 0, 0, 255);
++    let white = abgr(255, 255, 255, 255);
++    let (mut plain, _, words) = filtered_box(ground, white, &[]);
++    for fx in [
++        &[(spec::prop::BRIGHTNESS, 1.0), (spec::prop::CONTRAST, 1.0), (spec::prop::SATURATE, 1.0)][..],
++        &[(spec::prop::GRAYSCALE, 0.0), (spec::prop::INVERT, 0.0), (spec::prop::SEPIA, 0.0)][..],
++        &[(spec::prop::HUE_ROTATE, 360.0)][..],
++        &[(spec::prop::HUE_ROTATE, -720.0)][..],
++        &[(spec::prop::GRAYSCALE, -0.5)][..],
++    ] {
++        let (mut ui, _, w) = filtered_box(ground, white, fx);
++        assert_eq!(w, words, "{fx:?} draws as no filter at all");
++        assert_eq!(raster_fb(&mut ui), raster_fb(&mut plain));
++    }
++    // -90 degrees is 270, to the word.
++    let (_, _, a) = filtered_box(ground, white, &[(spec::prop::HUE_ROTATE, -90.0)]);
++    let (_, _, b) = filtered_box(ground, white, &[(spec::prop::HUE_ROTATE, 270.0)]);
++    assert_eq!(a, b);
++    // A layer with no colour filter is the eight words it was.
++    let (_, _, blurred) = filtered_box(ground, white, &[(spec::prop::BLUR, 3.0)]);
++    let push = blurred.iter().position(|&w| w == spec::draw_op::LAYER_PUSH).unwrap();
++    assert_eq!(blurred[push + 1] >> 24, 0);
++    assert_eq!(blurred[push + 8], spec::draw_op::RECT, "the layer's content follows its eighth word");
++}
++
++#[test]
++fn a_colour_filter_leaves_alpha_and_the_shadow_alone() {
++    // Red at half alpha inverted is cyan at half alpha: the same pixels as
++    // a cyan box drawn so, shadow included — the shadow is made from alpha,
++    // and keeps its own colour.
++    let white = abgr(255, 255, 255, 255);
++    let shadow = [
++        (spec::prop::DROP_SHADOW_X, 12.0),
++        (spec::prop::DROP_SHADOW_Y, 9.0),
++        (spec::prop::DROP_SHADOW_BLUR, 6.0),
++        (spec::prop::DROP_SHADOW_COLOR, abgr(0, 160, 0, 255) as f64),
++    ];
++    let mut fx = shadow.to_vec();
++    fx.push((spec::prop::INVERT, 1.0));
++    let (mut inverted, _, _) = filtered_box(white, abgr(255, 0, 0, 128), &fx);
++    let (mut cyan, _, _) = filtered_box(white, abgr(0, 255, 255, 128), &shadow);
++    let (a, b) = (raster_fb(&mut inverted), raster_fb(&mut cyan));
++    assert!(a == b, "inverting the content touched its alpha or its shadow");
++    assert_ne!(sample_rgba(&a, 126, 123), [255, 255, 255, 255], "the shadow is there to be compared");
++}
++
++#[test]
++fn a_colour_filter_reaches_everything_the_blur_spread() {
++    // A red box blurred and greyed over a grey ground: every pixel of the
++    // frame is grey, the blurred fringe outside the box's own rows and
++    // columns included.
++    let grey = abgr(128, 128, 128, 255);
++    let (mut ui, _, _) = filtered_box(grey, abgr(255, 0, 0, 255), &[(spec::prop::BLUR, 6.0), (spec::prop::GRAYSCALE, 1.0)]);
++    let fb = raster_fb(&mut ui);
++    for y in 0..200 {
++        for x in 0..200 {
++            let [r, g, b, _] = sample_rgba(&fb, x, y);
++            assert!(r == g && g == b, "({x},{y}) is ({r},{g},{b})");
++        }
++    }
++    assert!(sample_rgba(&fb, 100, 100)[0] < 70, "the box is the grey of red");
++    assert!(sample_rgba(&fb, 75, 100)[0] < 128, "and its fringe is darker than the ground");
++}
++
++#[test]
++fn a_colour_filter_applies_to_the_blurred_picture() {
++    // A box half black, half white, blurred and then given a steep contrast:
++    // CSS's `blur() contrast()` thresholds the blurred edge back to a step
++    // a few pixels wide. Before the blur the contrast would change nothing
++    // (black and white are already its extremes) and the edge would stay a
++    // 6 px gaussian ramp.
++    let mut ui = Ui::new();
++    let g = ui.create_node(0);
++    ui.set_prop(g, spec::prop::WIDTH, 300.0);
++    ui.set_prop(g, spec::prop::HEIGHT, 200.0);
++    ui.set_prop(g, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
++    ui.insert_before(spec::ROOT_ID, g, 0);
++    let b = ui.create_node(0);
++    ui.set_prop(b, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(b, spec::prop::INSET_L, 60.0);
++    ui.set_prop(b, spec::prop::INSET_T, 60.0);
++    ui.set_prop(b, spec::prop::FLEX_DIR, spec::FlexDir::Row as u32 as f64);
++    ui.set_prop(b, spec::prop::BLUR, 6.0);
++    ui.set_prop(b, spec::prop::CONTRAST, 8.0);
++    ui.insert_before(g, b, 0);
++    for (k, c) in [(0, abgr(0, 0, 0, 255)), (1, abgr(255, 255, 255, 255))] {
++        let half = ui.create_node(0);
++        ui.set_prop(half, spec::prop::WIDTH, 90.0);
++        ui.set_prop(half, spec::prop::HEIGHT, 80.0);
++        ui.set_prop(half, spec::prop::BG_COLOR, c as f64);
++        ui.insert_before(b, half, k);
++    }
++    ui.tick();
++    let fb = raster_fb(&mut ui);
++    // The halves meet at x = 150; the blurred ramp is grey at 145 and 155.
++    assert_eq!(sample_rgba(&fb, 145, 100), [0, 0, 0, 255], "5 px into the black half is black again");
++    assert_eq!(sample_rgba(&fb, 155, 100), [255, 255, 255, 255], "5 px into the white half is white again");
++}
++
++#[test]
++fn every_draw_list_walker_steps_over_a_colour_filtered_layer() {
++    use crate::damage::{DamagePolicy, DamageTracker, DEFAULT_DAMAGE_REGIONS};
++    use crate::raster::{render_scaled, render_scaled_incremental};
++    // A colour-filtered box, then a sibling that moves and a compositor
++    // surface. Each walker must land on the ops after the layer's amounts,
++    // not inside them.
++    let mut ui = Ui::new();
++    let g = ui.create_node(0);
++    ui.set_prop(g, spec::prop::WIDTH, 400.0);
++    ui.set_prop(g, spec::prop::HEIGHT, 200.0);
++    ui.set_prop(g, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
++    ui.insert_before(spec::ROOT_ID, g, 0);
++    let b = ui.create_node(0);
++    ui.set_prop(b, spec::prop::WIDTH, 60.0);
++    ui.set_prop(b, spec::prop::HEIGHT, 60.0);
++    ui.set_prop(b, spec::prop::BG_COLOR, abgr(200, 120, 40, 255) as f64);
++    ui.set_prop(b, spec::prop::BRIGHTNESS, 0.5);
++    ui.set_prop(b, spec::prop::HUE_ROTATE, 90.0);
++    ui.set_prop(b, spec::prop::SEPIA, 0.5);
++    ui.insert_before(g, b, 0);
++    let s = ui.create_node(0);
++    ui.set_prop(s, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(s, spec::prop::INSET_L, 200.0);
++    ui.set_prop(s, spec::prop::INSET_T, 20.0);
++    ui.set_prop(s, spec::prop::WIDTH, 30.0);
++    ui.set_prop(s, spec::prop::HEIGHT, 30.0);
++    ui.set_prop(s, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.insert_before(g, s, 1);
++    let surface = ui.create_node(spec::NodeType::Surface as u8);
++    for (p, v) in [
++        (spec::prop::WIDTH, 40.0),
++        (spec::prop::HEIGHT, 30.0),
++        (spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64),
++        (spec::prop::INSET_L, 120.0),
++        (spec::prop::INSET_T, 120.0),
++    ] {
++        ui.set_prop(surface, p, v);
++    }
++    ui.set_compositor_surface(surface, 3, false);
++    ui.insert_before(spec::ROOT_ID, surface, 0);
++    ui.tick();
++    let first = ui.draw().words.clone();
++    validate_drawlist(&first);
++    let push = first.iter().position(|&w| w == spec::draw_op::LAYER_PUSH).unwrap();
++    assert_eq!((first[push + 1] >> 24) & 0x7f, 0b100_1001, "brightness, hue-rotate and sepia");
++    assert!(push < first.iter().position(|&w| w == spec::draw_op::SURFACE_QUAD).expect("a surface op"));
++    // The surface after the layer is found, and a composite with no surface
++    // raster draws what the plain render draws.
++    let frames = ui.compositor_surface_frames();
++    assert_eq!(frames.len(), 1, "the surface after the layer is found");
++    let (vw, vh) = ui.viewport();
++    let mut plain = alloc::vec![0u8; vw as usize * vh as usize * 4];
++    crate::raster::render(&ui, &first, &mut plain);
++    let mut composed = alloc::vec![0u8; vw as usize * vh as usize * 4];
++    crate::compositor::render(&ui, &first, &mut composed, 1, &[]);
++    assert!(plain == composed, "the composite draws what the plain render draws");
++    // The compositor's op lengths walk the list to its end.
++    let mut at = 0;
++    while at < first.len() {
++        let n = crate::compositor::draw_op_len(&first, at).expect("a known op");
++        if at == push {
++            assert_eq!(n, 11);
++        }
++        at += n;
++    }
++    assert_eq!(at, first.len());
++    // The damage decoder bounds the sibling's move rather than giving up.
++    ui.set_prop(s, spec::prop::INSET_L, 260.0);
++    ui.tick();
++    let second = ui.draw().words.clone();
++    let pixels = spec::SCREEN_W as usize * spec::SCREEN_H as usize;
++    let mut fb = alloc::vec![0u8; pixels * 4];
++    let mut state = DamageTracker::<DEFAULT_DAMAGE_REGIONS>::new();
++    render_scaled_incremental(&ui, &first, &mut fb, 1, &mut state, DamagePolicy::default()).unwrap();
++    let plan = render_scaled_incremental(&ui, &second, &mut fb, 1, &mut state, DamagePolicy::default()).unwrap();
++    assert!(!plan.is_full_redraw(), "a move outside the layer has a sound partial bound");
++    let mut full = alloc::vec![0u8; pixels * 4];
++    render_scaled(&ui, &second, &mut full, 1);
++    assert!(fb == full);
++    // A changed amount is a change to the layer: a full redraw, equal to the
++    // full render.
++    ui.set_prop(b, spec::prop::HUE_ROTATE, 200.0);
++    ui.tick();
++    let third = ui.draw().words.clone();
++    let plan = render_scaled_incremental(&ui, &third, &mut fb, 1, &mut state, DamagePolicy::default()).unwrap();
++    assert!(plan.is_full_redraw());
++    render_scaled(&ui, &third, &mut full, 1);
++    assert!(fb == full);
++}
++
++/// What a colour filter's layer costs against drawing the colours it would
++/// produce directly — which is what applying the filter at draw time would
++/// emit. Not a guard: run it with
++/// `cargo test --release --lib colour_filter_layer_cost -- --ignored --nocapture`.
++/// Numbers and the decision they support: pocket-motion
++/// `baselines/colour-filters.md`.
++#[test]
++#[ignore]
++fn colour_filter_layer_cost() {
++    use std::time::Instant;
++    // `n` boxes of w x h on a 1920x1080 ground (a gradient when full-frame),
++    // hue-rotated and saturated through a layer, or given the colour that
++    // filter makes and drawn directly. Minimum of 40 renders.
++    let scene = |n: usize, w: f64, h: f64, layered: bool| {
++        let mut ui = Ui::new();
++        ui.set_viewport(1920.0, 1080.0);
++        let g = ui.create_node(0);
++        ui.set_prop(g, spec::prop::WIDTH, 1920.0);
++        ui.set_prop(g, spec::prop::HEIGHT, 1080.0);
++        ui.set_prop(g, spec::prop::BG_COLOR, abgr(20, 24, 40, 255) as f64);
++        ui.insert_before(spec::ROOT_ID, g, 0);
++        for k in 0..n {
++            let b = ui.create_node(0);
++            ui.set_prop(b, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++            ui.set_prop(b, spec::prop::INSET_L, (40 + (k % 10) * 185) as f64);
++            ui.set_prop(b, spec::prop::INSET_T, ((40 + (k / 10) * 100) % 1000) as f64);
++            ui.set_prop(b, spec::prop::WIDTH, w);
++            ui.set_prop(b, spec::prop::HEIGHT, h);
++            ui.set_prop(b, spec::prop::RADIUS, 8.0);
++            if w > 1000.0 {
++                ui.set_prop(b, spec::prop::GRAD_KIND, spec::GradKind::Linear as u32 as f64);
++                ui.set_prop(b, spec::prop::GRAD_ANGLE, 63.0);
++                ui.set_prop(b, spec::prop::GRAD_FROM, abgr(255, 0, 40, 255) as f64);
++                ui.set_prop(b, spec::prop::GRAD_TO, abgr(0, 90, 255, 255) as f64);
++            }
++            if layered {
++                ui.set_prop(b, spec::prop::BG_COLOR, abgr(220, 120, 40, 255) as f64);
++                ui.set_prop(b, spec::prop::HUE_ROTATE, 90.0);
++                ui.set_prop(b, spec::prop::SATURATE, 1.5);
++            } else {
++                ui.set_prop(b, spec::prop::BG_COLOR, abgr(120, 200, 40, 255) as f64);
++            }
++            ui.insert_before(g, b, 0);
++        }
++        ui.tick();
++        let words = ui.draw().words.clone();
++        let mut fb = alloc::vec![0u8; 1920 * 1080 * 4];
++        let mut best = f64::MAX;
++        for _ in 0..40 {
++            let t = Instant::now();
++            crate::raster::render(&ui, &words, &mut fb);
++            best = best.min(t.elapsed().as_secs_f64() * 1000.0);
++        }
++        best
++    };
++    for (n, w, h) in [(1, 160.0, 64.0), (40, 160.0, 64.0), (100, 160.0, 64.0), (1, 1920.0, 1080.0)] {
++        let (d, l) = (scene(n, w, h, false), scene(n, w, h, true));
++        std::eprintln!("{n} x {w}x{h}: direct {d:.2} ms, layered {l:.2} ms, {:.3} ms a layer", (l - d) / n as f64);
++    }
++}
++
+ // ---- PAINT_PUSH / PAINT_POP: gradient paint (pocket-motion) -------------------------
+ 
+ /// A 200x40 box at (0, 100) over white, painted by a gradient.
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index a88b1a84..d7f9c0e9 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -119,6 +119,13 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("trimOffset", 209, "f32"),
+     ("trimMode", 210, "i32"),
+     ("morph", 211, "f32"),
++    ("brightness", 212, "f32"),
++    ("contrast", 213, "f32"),
++    ("grayscale", 214, "f32"),
++    ("hueRotate", 215, "f32"),
++    ("invert", 216, "f32"),
++    ("saturate", 217, "f32"),
++    ("sepia", 218, "f32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
+index 21016d06..e95d25ee 100644
+--- a/framework/compiler/animation.ts
++++ b/framework/compiler/animation.ts
+@@ -31,6 +31,7 @@ import {
+   ANIMATABLE,
+   ANIM_FILL_BACKWARDS,
+   ANIM_FILL_FORWARDS,
++  COLOR_FILTER_MAX,
+   ENUMS,
+   PROP,
+   abgr,
+@@ -224,6 +225,73 @@ function parseDeg(value: string | number, where: string): number {
+ 
+ type Encode = (value: string | number, where: string) => number; // -> u32 bits
+ 
++/**
++ * The colour filter functions (pocket-motion patch 0055), in the order they
++ * apply: Tailwind's `filter` composition, and the bit order of the
++ * LAYER_PUSH that carries them. `unit` amounts stop at 1, as CSS clamps
++ * grayscale, invert and sepia; the others stop at COLOR_FILTER_MAX.
++ */
++export const COLOR_FILTERS = [
++  { fn: "brightness", prop: PROP.brightness, identity: 1, unit: false },
++  { fn: "contrast", prop: PROP.contrast, identity: 1, unit: false },
++  { fn: "grayscale", prop: PROP.grayscale, identity: 0, unit: true },
++  { fn: "hue-rotate", prop: PROP.hueRotate, identity: 0, unit: false },
++  { fn: "invert", prop: PROP.invert, identity: 0, unit: true },
++  { fn: "saturate", prop: PROP.saturate, identity: 1, unit: false },
++  { fn: "sepia", prop: PROP.sepia, identity: 0, unit: true },
++] as const;
++
++/** Every `filter` function, in the one order this renderer applies them. */
++const FILTER_ORDER = ["blur", ...COLOR_FILTERS.map((f) => f.fn), "drop-shadow"] as const;
++
++/**
++ * A colour filter's amount, CSS's `<number> | <percentage>`: `0.5`, `50%`,
++ * `1.25`. Negative is not an amount (null); a `unit` filter's amount is
++ * clamped to 1 as CSS clamps it; any other above COLOR_FILTER_MAX is null,
++ * as a blur past BLUR_MAX is.
++ */
++export function filterAmount(text: string, unit: boolean): number | null {
++  const m = /^(\d*\.?\d+)(%)?$/.exec(text.trim());
++  if (!m) return null;
++  const v = parseFloat(m[1]!) / (m[2] ? 100 : 1);
++  if (unit) return Math.min(v, 1);
++  return v > COLOR_FILTER_MAX ? null : v;
++}
++
++/** CSS `<angle>` in degrees: `90deg`, `-0.25turn`, `1.5rad`, `100grad`, or
++ *  a bare `0`. A bare non-zero number is not an angle in CSS (null). */
++export function filterAngle(text: string): number | null {
++  const t = text.trim();
++  if (/^-?0*\.?0+$/.test(t)) return 0;
++  const m = /^(-?\d*\.?\d+)(deg|grad|rad|turn)$/.exec(t);
++  if (!m) return null;
++  const v = parseFloat(m[1]!);
++  switch (m[2]) {
++    case "deg": return v;
++    case "grad": return (v * 360) / 400;
++    case "turn": return v * 360;
++    default: return (v * 180) / Math.PI;
++  }
++}
++
++/** Keyframe encoder for one colour filter property: a number, or a string
++ *  CSS would accept inside the function (hue-rotate: a number is degrees). */
++function colorFilterBits(f: (typeof COLOR_FILTERS)[number]): Encode {
++  return (value, where) => {
++    if (f.fn === "hue-rotate") {
++      if (typeof value === "number") return f32Bits(value);
++      const deg = filterAngle(value);
++      if (deg === null) err(`${where}: \`${value}\` is not an angle (deg, grad, rad or turn).`);
++      return f32Bits(deg);
++    }
++    const v = filterAmount(String(value), f.unit);
++    if (v === null) {
++      err(`${where}: \`${value}\` is not a ${f.fn} amount (a number or percentage, 0 or more${f.unit ? "" : `, at most ${COLOR_FILTER_MAX}`}).`);
++    }
++    return f32Bits(v);
++  };
++}
++
+ const pxBits: Encode = (v, w) => f32Bits(parsePx(v, w));
+ const scalarBits: Encode = (v, w) => f32Bits(parseScalar(v, w));
+ const degBits: Encode = (v, w) => f32Bits(parseDeg(v, w));
+@@ -273,6 +341,11 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   dropShadowBlur: [[PROP.dropShadowBlur], pxBits],
+   dropShadowColor: [[PROP.dropShadowColor], colorBits],
+   dropShadowGain: [[PROP.dropShadowGain], scalarBits],
++  // Colour filters (pocket-motion patch 0055), by CSS function name
++  // camel-cased: `hueRotate` takes degrees or a CSS angle.
++  ...Object.fromEntries(
++    COLOR_FILTERS.map((f) => [f.fn.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()), [[f.prop], colorFilterBits(f)]]),
++  ),
+   gradFrom: [[PROP.gradFrom], colorBits],
+   gradTo: [[PROP.gradTo], colorBits],
+   gradAngle: [[PROP.gradAngle], degBits],
+@@ -300,17 +373,32 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   morph: [[PROP.morph], scalarBits],
+ };
+ 
++/** One keyframe's `filter`: the functions in the order written, and the
++ *  props they set. */
++interface FilterList {
++  fns: string[];
++  values: Map<number, number>;
++}
++
+ /**
+- * `filter: "blur(8px) drop-shadow(0px 0px 12px #fbbf24)"` -> props (pocket-
+- * motion). `blur()` is the standard deviation; `drop-shadow(x y [blur]
+- * [color])` takes px lengths and one colour in any order after the two
+- * offsets, as CSS. Functions a keyframe does not name are not pinned by it, so
+- * write the same functions at from/0% and to/100%.
++ * `filter: "blur(8px) grayscale(1) drop-shadow(0px 0px 12px #fbbf24)"` ->
++ * props (pocket-motion). `blur()` is the standard deviation; `drop-shadow(x y
++ * [blur] [color])` takes px lengths and one colour in any order after the two
++ * offsets, as CSS; the colour filters (patch 0055) take CSS's amounts —
++ * `brightness(1.5)`, `grayscale(50%)`, `hue-rotate(0.5turn)`, a bare
++ * `grayscale()` being 1.
++ *
++ * The functions apply in ONE order, blur, the colour filters in Tailwind's
++ * order, drop-shadow (FILTER_ORDER), each clamped before the next, so the
++ * order is visible in the picture: a list written in another order, or
++ * naming a function twice, is refused rather than reordered. Padding a
++ * keyframe's list against the others is `decomposeKeyframes`'s.
+  */
+-function parseFilter(value: string | number, where: string): Map<number, number> {
++function parseFilter(value: string | number, where: string): FilterList {
+   if (typeof value === "number") err(`${where}: filter must be a string.`);
+-  rejectUnbakeable(value, where);
++  rejectUnbakeable(value.replace(/(grayscale|sepia|invert|brightness|contrast|saturate)\(\s*\d*\.?\d+%\s*\)/g, "$1()"), where);
+   const out = new Map<number, number>();
++  const fns: string[] = [];
+   const re = /([a-z-]+)\(([^()]*(?:\([^()]*\))?[^()]*)\)/g;
+   let m: RegExpExecArray | null;
+   let matched = 0;
+@@ -318,7 +406,25 @@ function parseFilter(value: string | number, where: string): Map<number, number>
+     matched++;
+     const fn = m[1];
+     const w = `${where} filter ${fn}()`;
+-    if (fn === "blur") {
++    const rank = (FILTER_ORDER as readonly string[]).indexOf(fn);
++    if (rank >= 0) {
++      if (fns.includes(fn)) err(`${w}: \`${fn}\` is listed twice; each filter function applies once here.`);
++      const late = fns.find((f) => (FILTER_ORDER as readonly string[]).indexOf(f) > rank);
++      if (late !== undefined) {
++        const written = value.trim().replace(/\s+/g, " ");
++        err(
++          `${where}: \`${fn}()\` is written after \`${late}()\` in \`${written}\`. Filters apply in one order here — ` +
++            `${FILTER_ORDER.join(", ")} — each clamped before the next, so the order shows in the picture; ` +
++            `write the list in that order.`,
++        );
++      }
++      fns.push(fn);
++    }
++    const color = COLOR_FILTERS.find((f) => f.fn === fn);
++    if (color !== undefined) {
++      const arg = m[2].trim();
++      out.set(color.prop, arg === "" ? f32Bits(color.fn === "hue-rotate" ? 0 : 1) : colorFilterBits(color)(arg, w));
++    } else if (fn === "blur") {
+       out.set(PROP.blur, f32Bits(parsePx(m[2].trim(), w)));
+     } else if (fn === "drop-shadow") {
+       const parts = m[2].trim().split(/\s+/);
+@@ -335,11 +441,25 @@ function parseFilter(value: string | number, where: string): Map<number, number>
+       out.set(PROP.dropShadowBlur, f32Bits(lengths[2] ?? 0));
+       if (color !== undefined) out.set(PROP.dropShadowColor, color);
+     } else {
+-      err(`${w}: unsupported filter function (blur and drop-shadow are).`);
++      err(`${w}: unsupported filter function (${FILTER_ORDER.join(", ")} are).`);
+     }
+   }
+   if (matched === 0 && value.trim() !== "none") err(`${where}: cannot parse filter \`${value}\`.`);
+-  return out;
++  return { fns, values: out };
++}
++
++/** The props a `filter` function sets, for padding a list that omits it. */
++function filterProps(fn: string): number[] {
++  if (fn === "blur") return [PROP.blur];
++  if (fn === "drop-shadow") return [PROP.dropShadowX, PROP.dropShadowY, PROP.dropShadowBlur];
++  return [COLOR_FILTERS.find((f) => f.fn === fn)!.prop];
++}
++
++/** A filter prop's value in a list that does not name its function: CSS's
++ *  initial value for interpolation. */
++function filterIdentity(prop: number): number {
++  const color = COLOR_FILTERS.find((f) => f.prop === prop);
++  return f32Bits(color ? color.identity : 0);
+ }
+ 
+ /** kebab-case -> camelCase (accepts `background-color` next to `backgroundColor`). */
+@@ -552,6 +672,11 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+   // keyframes (pcts) mention `transform` at all.
+   const transformPcts: Array<[number, Map<number, number>]> = [];
+   const transformUnion = new Set<number>();
++  // Filter lists the same way, with CSS's rule for when two lists
++  // interpolate (below); and the props they set, which a separate keyframe
++  // property must not set again.
++  const filterPcts: Array<[number, FilterList, string]> = [];
++  const filterUnion = new Set<string>();
+ 
+   for (const [sel, props] of Object.entries(frames)) {
+     const pcts = sel.split(",").map((s) => parsePct(s.trim(), where));
+@@ -565,7 +690,9 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+           continue;
+         }
+         if (key === "filter") {
+-          for (const [prop, bits] of parseFilter(value, where)) put(prop, pct, bits);
++          const list = parseFilter(value, where);
++          for (const fn of list.fns) filterUnion.add(fn);
++          filterPcts.push([pct, list, String(value).trim()]);
+           continue;
+         }
+         const spec = KEYFRAME_PROPS[key];
+@@ -583,6 +710,55 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+       put(prop, pct, f32Bits(v));
+     }
+   }
++  // Fill filter union. CSS interpolates two filter lists when one is a
++  // prefix of the other (the shorter padded with initial values) or one is
++  // `none`; any other pair is DISCRETE, a picture no baked track draws, so
++  // it is refused. Then a keyframe that mentions `filter` pins every
++  // function any keyframe names.
++  filterPcts.sort((a, b) => a[0] - b[0]);
++  for (let i = 0; i + 1 < filterPcts.length; i++) {
++    const [p0, a, va] = filterPcts[i]!;
++    const [p1, b, vb] = filterPcts[i + 1]!;
++    const [short, long] = a.fns.length <= b.fns.length ? [a.fns, b.fns] : [b.fns, a.fns];
++    if (short.length > 0 && short.some((fn, k) => long[k] !== fn)) {
++      err(
++        `${where}: \`filter\` at ${p0}% (\`${va}\`) and at ${p1}% (\`${vb}\`) name different functions, ` +
++          `neither list a prefix of the other, which CSS interpolates discretely. Name the same functions in both, ` +
++          `at their identity where one should have no effect.`,
++      );
++    }
++  }
++  const filterSet = new Set<number>();
++  for (const [pct, list] of filterPcts) {
++    for (const fn of filterUnion) {
++      for (const prop of filterProps(fn)) {
++        filterSet.add(prop);
++        put(prop, pct, list.values.get(prop) ?? filterIdentity(prop));
++      }
++    }
++    // A colour is a prop drop-shadow sets only when written, and pinned
++    // where a list writes one. A list with no drop-shadow at all takes CSS's
++    // initial value, transparent: the nearest written colour at alpha 0, so
++    // the shadow fades rather than darkening on its way out.
++    const color = list.values.get(PROP.dropShadowColor);
++    if (color !== undefined) {
++      put(PROP.dropShadowColor, pct, color);
++    } else if (filterUnion.has("drop-shadow") && !list.fns.includes("drop-shadow")) {
++      const near = filterPcts
++        .filter(([, l]) => l.values.has(PROP.dropShadowColor))
++        .sort((x, y) => Math.abs(x[0] - pct) - Math.abs(y[0] - pct))[0];
++      if (near !== undefined) put(PROP.dropShadowColor, pct, (near[1].values.get(PROP.dropShadowColor)! & 0x00ffffff) >>> 0);
++    }
++  }
++  for (const [sel, props] of Object.entries(frames)) {
++    for (const rawKey of Object.keys(props)) {
++      const spec = KEYFRAME_PROPS[camel(rawKey)];
++      const twice = spec?.[0].find((p) => filterSet.has(p));
++      if (twice !== undefined) {
++        err(`${where} ${sel}: \`${rawKey}\` sets a prop this animation's \`filter\` also sets; animate it in one place.`);
++      }
++    }
++  }
+   // Every animated prop must be animatable + pinned at 0% and 100%.
+   for (const [prop, m] of mentions) {
+     if (!ANIMATABLE_IDS.has(prop)) err(`${where}: prop id ${prop} is not animatable.`);
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index f545e06a..a1ea9720 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -40,7 +40,15 @@ import {
+   type StyleRecord,
+   type StyleTransition,
+ } from "../../contracts/spec/spec.ts";
+-import { bakedTimelines, declaredAnimationNames, loopToFrames, resolveAnimation } from "./animation.ts";
++import {
++  COLOR_FILTERS,
++  bakedTimelines,
++  declaredAnimationNames,
++  filterAmount,
++  filterAngle,
++  loopToFrames,
++  resolveAnimation,
++} from "./animation.ts";
+ 
+ // ---------------------------------------------------------------------------
+ // Font slots (build-assigned, pinned here — bake-font.ts uses the same table)
+@@ -826,11 +834,21 @@ function arbPx(part: string): number | null {
+  *                     luma: a bloom from the bright pixels' own colour,
+  *                     added over the content (pocket-motion patch 0033)
+  *   mix-blend-normal|multiply|screen|overlay|plus-lighter|add
++ *   grayscale, sepia, invert               the full amount, 1
++ *   <colour filter>-N                      N percent: brightness-150 is 1.5,
++ *                                          grayscale-50 is 0.5
++ *   <colour filter>-[x]                    a CSS amount, [0.5] or [50%]
++ *   hue-rotate-N, -hue-rotate-N            N degrees, either way round
++ *   hue-rotate-[x]                         a CSS angle: [270deg], [-0.25turn]
++ *                     the colour filters are brightness, contrast, grayscale,
++ *                     hue-rotate, invert, saturate and sepia (pocket-motion
++ *                     patch 0055), applied in that order after the blur
+  *
+  * A shadow draws only with a colour; B is the CSS blur radius (deviation =
+  * B / 2), as drop-shadow() and text-shadow.
+  */
+ function parseFilterUtility(tok: string, D: Decl[]): boolean {
++  if (parseColorFilterUtility(tok, D)) return true;
+   if (tok in BLUR_STEPS) { D.push([PROP.blur, px(BLUR_STEPS[tok]!)]); return true; }
+   if (tok.startsWith("blur-[")) {
+     const v = arbPx(tok.slice(5));
+@@ -904,6 +922,37 @@ function parseFilterUtility(tok: string, D: Decl[]): boolean {
+   return false;
+ }
+ 
++/**
++ * The colour filter utilities (see parseFilterUtility). Amounts above 100%
++ * are kept for brightness, contrast and saturate, up to COLOR_FILTER_MAX,
++ * and clamped to 1 for grayscale, invert and sepia, as CSS clamps them; a
++ * negative amount, and an angle with no unit, do not parse.
++ */
++function parseColorFilterUtility(tok: string, D: Decl[]): boolean {
++  const negative = tok.startsWith("-hue-rotate-");
++  const body = negative ? tok.slice(1) : tok;
++  for (const f of COLOR_FILTERS) {
++    if (body === f.fn && f.unit) {
++      D.push([f.prop, px(1)]);
++      return true;
++    }
++    if (!body.startsWith(`${f.fn}-`)) continue;
++    const rest = body.slice(f.fn.length + 1);
++    const inner = /^\[([^\]]+)\]$/.exec(rest)?.[1];
++    let v: number | null;
++    if (f.fn === "hue-rotate") {
++      v = plainNum(rest) ?? (inner === undefined ? null : filterAngle(inner));
++      if (v !== null && negative) v = -v;
++    } else {
++      v = plainNum(rest) !== null ? filterAmount(`${rest}%`, f.unit) : inner === undefined ? null : filterAmount(inner, f.unit);
++    }
++    if (v === null) return false;
++    D.push([f.prop, px(v)]);
++    return true;
++  }
++  return false;
++}
++
+ const LINEAR_TO: Record<string, number> = { t: 0, r: 90, b: 180, l: 270 };
+ const DIR_ANGLE: Record<number, number> = {
+   [ENUMS.GradDir.ToTop]: 0, [ENUMS.GradDir.ToRight]: 90,
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index c217cca3..2a18c69d 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -114,6 +114,13 @@ export interface MicroTsStyleProps {
+   trimOffset?: MicroTsFloatInput;
+   trimMode?: i32;
+   morph?: MicroTsFloatInput;
++  brightness?: MicroTsFloatInput;
++  contrast?: MicroTsFloatInput;
++  grayscale?: MicroTsFloatInput;
++  hueRotate?: MicroTsFloatInput;
++  invert?: MicroTsFloatInput;
++  saturate?: MicroTsFloatInput;
++  sepia?: MicroTsFloatInput;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index fce557ce..62ccb15f 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -816,6 +816,76 @@ describe("filter layers (pocket-motion)", () => {
+   });
+ });
+ 
++describe("colour filters (pocket-motion)", () => {
++  const bake = (keyframes: Record<string, Record<string, Record<string, string | number>>>) => {
++    resetAnimationBake();
++    setAnimationTickRate(60);
++    const animation = Object.fromEntries(Object.keys(keyframes).map((k) => [k, { value: `${k} 1s linear both` }]));
++    registerAnimationTheme({ keyframes, animation });
++    const name = Object.keys(keyframes)[0]!;
++    const rec = parseClassLiteral(`animate-${name} w-[1px]`);
++    const tl = bakedTimelines()[rec!.animation!.anims[0]!]!;
++    return new Map(tl.tracks.map((t) => [t.prop, t.segments.map((s) => [bitsF32(s.from), bitsF32(s.to)])]));
++  };
++  test("Tailwind's names, steps as percentages, arbitrary CSS amounts", () => {
++    expect(f32Of(props(parseClassLiteral("grayscale")), PROP.grayscale)).toBe(1);
++    expect(f32Of(props(parseClassLiteral("grayscale-50")), PROP.grayscale)).toBe(0.5);
++    expect(f32Of(props(parseClassLiteral("sepia-[30%]")), PROP.sepia)).toBeCloseTo(0.3, 6);
++    expect(f32Of(props(parseClassLiteral("invert-[0.25]")), PROP.invert)).toBe(0.25);
++    expect(f32Of(props(parseClassLiteral("brightness-150")), PROP.brightness)).toBe(1.5);
++    expect(f32Of(props(parseClassLiteral("contrast-[2.5]")), PROP.contrast)).toBe(2.5);
++    expect(f32Of(props(parseClassLiteral("saturate-0")), PROP.saturate)).toBe(0);
++    expect(f32Of(props(parseClassLiteral("hue-rotate-90")), PROP.hueRotate)).toBe(90);
++    expect(f32Of(props(parseClassLiteral("-hue-rotate-15")), PROP.hueRotate)).toBe(-15);
++    expect(f32Of(props(parseClassLiteral("hue-rotate-[0.5turn]")), PROP.hueRotate)).toBe(180);
++    expect(f32Of(props(parseClassLiteral("hue-rotate-[-200grad]")), PROP.hueRotate)).toBe(-180);
++  });
++  test("CSS clamps grayscale, invert and sepia at 1; a negative amount, an angle with no unit and a value past the maximum do not parse", () => {
++    expect(f32Of(props(parseClassLiteral("grayscale-200")), PROP.grayscale)).toBe(1);
++    expect(f32Of(props(parseClassLiteral("sepia-[1.5]")), PROP.sepia)).toBe(1);
++    expect(f32Of(props(parseClassLiteral("brightness-[256]")), PROP.brightness)).toBe(256);
++    expect(parseClassLiteral("brightness-[257]")).toBeNull();
++    expect(parseClassLiteral("contrast-[-1]")).toBeNull();
++    expect(parseClassLiteral("hue-rotate-[90]")).toBeNull();
++    expect(parseClassLiteral("brightness")).toBeNull();
++    expect(parseClassLiteral("-grayscale-50")).toBeNull();
++  });
++  test("filter keyframes: CSS amounts, and the keyframe property names", () => {
++    const t = bake({
++      grade: {
++        from: { filter: "grayscale(100%) hue-rotate(0deg)" },
++        to: { filter: "grayscale(0) hue-rotate(1turn)" },
++      },
++    });
++    expect(t.get(PROP.grayscale)).toEqual([[1, 0]]);
++    expect(t.get(PROP.hueRotate)).toEqual([[0, 360]]);
++    const flash = bake({ flash: { "0%, 100%": { brightness: 1 }, "50%": { brightness: "300%" } } });
++    expect(flash.get(PROP.brightness)).toEqual([[1, 3], [3, 1]]);
++    expect(bake({ spin: { from: { hueRotate: 0 }, to: { hueRotate: "0.25turn" } } }).get(PROP.hueRotate)).toEqual([[0, 90]]);
++  });
++  test("a filter list is padded with CSS's initial values, `none` included", () => {
++    const t = bake({ fade: { from: { filter: "blur(4px) sepia(1)" }, "50%": { filter: "blur(4px)" }, to: { filter: "none" } } });
++    expect(t.get(PROP.blur)).toEqual([[4, 4], [4, 0]]);
++    expect(t.get(PROP.sepia)).toEqual([[1, 0], [0, 0]]);
++    // A drop shadow a list leaves out fades to its own colour at alpha 0.
++    const s = bake({ lift: { from: { filter: "none" }, to: { filter: "drop-shadow(0px 8px 12px #ff000080)" } } });
++    expect(s.get(PROP.dropShadowY)).toEqual([[0, 8]]);
++    resetAnimationBake();
++  });
++  test("a list in another order, a function twice, lists CSS would not interpolate, and a prop set twice are refused", () => {
++    expect(() => bake({ x: { from: { filter: "sepia(1) brightness(0.5)" }, to: { filter: "sepia(0) brightness(1)" } } })).toThrow(
++      /`brightness\(\)` is written after `sepia\(\)`.*blur, brightness, contrast, grayscale, hue-rotate, invert, saturate, sepia, drop-shadow/,
++    );
++    expect(() => bake({ x: { from: { filter: "grayscale(1) grayscale(0.5)" }, to: { filter: "none" } } })).toThrow(/listed twice/);
++    expect(() => bake({ x: { from: { filter: "grayscale(1)" }, to: { filter: "sepia(1)" } } })).toThrow(/interpolates discretely/);
++    expect(() => bake({ x: { from: { filter: "grayscale(1)" }, to: { filter: "brightness(2) grayscale(0)" } } })).toThrow(/discretely/);
++    expect(() => bake({ x: { from: { filter: "grayscale(1)", grayscale: 1 }, to: { filter: "grayscale(0)" } } })).toThrow(/animate it in one place/);
++    expect(() => bake({ x: { from: { grayscale: -0.5 }, to: { grayscale: 1 } } })).toThrow(/not a grayscale amount/);
++    expect(() => bake({ x: { from: { hueRotate: "90" }, to: { hueRotate: "0deg" } } })).toThrow(/not an angle/);
++    resetAnimationBake();
++  });
++});
++
+ describe("gradient paint (pocket-motion)", () => {
+   const stopsOf = (m: Map<number, number>) => ({
+     kind: m.get(PROP.gradKind),

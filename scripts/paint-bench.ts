@@ -83,6 +83,18 @@ const CASES: readonly Case[] = [
       "bg-[linear-gradient(30deg,#1e3a8a,#7c3aed_35%,#ec4899_70%,#fde68a)]",
     ),
   },
+  // Colour filters (patches/0055). A greyed line drawn directly in the grey
+  // `grayscale` gives it costs what `baseline` costs — one colour word
+  // changes — which is all a draw-time filter could save.
+  { name: "grayscale", what: "+ grayscale on every line (six layers)", source: lyrics("grayscale") },
+  {
+    name: "grade-frame",
+    what: "+ hue-rotate-90 saturate-150 over gradient-ground's whole frame (one layer)",
+    source: lyrics("").replace(
+      "bg-[#0f172a]",
+      "bg-[linear-gradient(30deg,#1e3a8a,#7c3aed_35%,#ec4899_70%,#fde68a)] hue-rotate-90 saturate-150",
+    ),
+  },
 ];
 
 async function build(dir: string, source: string): Promise<void> {

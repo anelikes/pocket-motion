@@ -195,6 +195,20 @@ const ENTRIES = [
   // 320×180. A count read short, a segment found wrong by the core's search,
   // or a kit that splits or thins a long move moves this digest and no other.
   "compositions/long-track",
+  // colour-filters. patches/0055 over 30 frames: one gradient card plain and
+  // under each of the seven colour filters, grey to colour as a `filter`
+  // list, a brightness flash, a looping hue cycle, a greyed disc whose glow
+  // keeps its colour, and `brightness-200 contrast-50`, where the clamp
+  // between the steps is the picture. A change to a matrix, its fixed point,
+  // the clamp, the order or where the pass sits in the layer moves this
+  // digest and no other.
+  "compositions/colour-filters",
+  // origin. patches/0056 over 30 frames: three bars turned about a keyword,
+  // a px and a calc() origin, and a card held at scale 2 whose origin moves
+  // corner to corner. A change to how an origin's length is parsed, stored
+  // or added to its fraction, or to how the origin animates, moves this
+  // digest and no other.
+  "compositions/origin",
 ] as const;
 
 /**

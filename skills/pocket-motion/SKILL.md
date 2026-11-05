@@ -87,7 +87,10 @@ rotated run, or one with a text stroke, moves without resizing.
 **Paint beyond boxes and text**: `overflow-mask` (a window shaped by its
 outline), named font faces (`font-[name]` over the sidecar's `fonts.faces`),
 text stroke (`text-stroke-[Npx] text-stroke-<color>`), and filter layers —
-`blur-*`, `drop-shadow-*`, `glow-*`, `mix-blend-*` — that paint a node and its
+`blur-*`, `drop-shadow-*`, `glow-*`, `mix-blend-*`, and CSS's colour filters
+`brightness-*`, `contrast-*`, `grayscale`, `hue-rotate-*`, `invert`,
+`saturate-*`, `sepia`, all keyframe-animatable (`patches/0055`,
+`compositions/colour-filters`) — that paint a node and its
 subtree as one unit, and gradients of up to six stops at any angle, radial, or
 clipped to text (`via-*`, `bg-linear-*`, `bg-radial`, `bg-clip-text`). All
 paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
@@ -99,7 +102,8 @@ by `morph` — with `d` written as literals the build can read
 **Motion blur is the sidecar's `shutter`** (`{ "angle": 180, "samples": 8 }`):
 each frame is the integer average of that many renders across the open
 fraction of the frame, centred on its tick (`patches/0034`). Only translate,
-scale, rotate and skew move between samples — opacity and colour keep the
+scale, rotate, skew and the transform origin move between samples — opacity,
+colour and colour filters keep the
 frame's tick, and no sample crosses a keyframe jump, so gates and cuts stay
 sharp. `shutter-hold` keeps one node's own timelines at the tick; it is not
 inherited, so hold the moving group, not the caption inside it. It is part of
@@ -109,8 +113,14 @@ classifies the frame's own tick at one raster a probe and says so in its
 output; it misses a node only the blur reveals, so use it to iterate and the
 default for the verdict.
 
-**What does not exist**: backdrop blur, conic gradients, footage effects at
-render time (grading and filtering belong to the ingest).
+**A transform turns about any point**: `origin-[25%_75%]`, `origin-[12px_0]`,
+`origin-[calc(100%_-_20px)_bottom]` — CSS's `transform-origin` — and the
+origin animates (`transformOrigin` in a keyframe), so a held `scale-200` with a
+moving origin is a zoom that travels (`patches/0056`, `compositions/origin`).
+
+**What does not exist**: backdrop blur, conic gradients, LUT grades, keying and
+other footage effects at render time (they belong to the ingest; the colour
+filters apply to a footage track's tiles as to any node).
 
 **Footage is declared once, by a generator.** `tileNodes` emits the placeholder
 `Image` nodes and `footageTrack` emits the sidecar entry, both derived from one

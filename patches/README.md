@@ -113,6 +113,9 @@ patch's own header carries the full note.
 | 0042 | motion | vector paths, the op: PATH (71) fills any set of contours by sample winding on POLY's 4x4 lattice with a top-left rule, so abutting paths partition their seam; a PATH TABLE after the ANIM TABLE in `styles.bin`, counted by the header's reserved u16; and per frame in the core, an entry's morph keys mixed, its cubics flattened in local space, its stroke trimmed by arc length and outlined as positively wound cycles, mapped through the world affine and clipped to a 4 px guard band (`engine/core/src/path.rs`). Props `path` … `morph` are 199-211, bits 58-64; design in `0042-vector-paths.design.md` | never; the header says why | written on 66caf4e5, after `0041`; the stage-1 prototype was on e0b37e2 |
 | 0043 | motion | vector paths, the declaration: `<Path d viewBox>`, the whole SVG path grammar normalised to move, line, cubic and close at build time — arcs by unit-vector bisection and square roots, never `Math.sin` — morph keys aligned or refused, the `d` literals a `class=`-style collector reads, `fill-*`, `stroke-*`, `trim-*`, `morph-[f]` and `bg-clip-path`, and the keyframe names `trimEnd`, `morph`, `fill`, `stroke`, `stroke-width` and the rest | never; the header says why | written on 66caf4e5, after `0042` |
 | 0050 | upstream | a baked track holds up to 65,535 segments: a track header's `segCount` byte of 0 (`ANIM_SEG_COUNT_WIDE`), which every earlier core refuses, is followed by a u16 count, written only above 255, so a table with no long track is the bytes it was. The core finds a tick's segment by binary search where it walked from the first, and `StyleTable::parse` refuses a track whose segments overlap, run backwards or have zero length, the order spec.ts has always required. The ceiling was the encoder's 255 and the core's one-byte read; the baker had none, and the next ceiling is a timeline's u16 period, 18 min 12 s at 60 Hz | unsubmitted | written on 66caf4e5; numbered 0050 so the vector-path patches can take 0042 onward |
+| 0055 | motion | colour filters: `grayscale`, `sepia`, `invert`, `brightness-*`, `contrast-*`, `saturate-*`, `hue-rotate-*` and `-hue-rotate-*` with CSS amounts and angles, as classes, as keyframe properties and in a keyframe `filter` list; each the Filter Effects 1 matrix in 1/16384ths on the filter layer's straight colour, after the blur and before the shadow, in Tailwind's order, clamped between steps. Carried in LAYER_PUSH's blend word (bits 24-30) and one f32 per filter after its eighth word, so a layer with none is the words it was; props 212-218, bits 65-71. A keyframe `filter` list is CSS's list: padded with initial values, `none` included, a pair CSS interpolates discretely refused, another order refused. A layer's scan and clear are bounded by the columns it touched as well as its rows — 0.20 to 0.05 ms for a word-sized layer at 1080p, byte-identical | never; the header says why | written on 66caf4e5, after `0050` |
+| 0056 | upstream | a transform origin anywhere: `origin-[x_y]` is CSS's 2D `transform-origin` (keywords either way round, percentages, px, `calc()` of the two), a fraction of the box and a length beside it (props `originXPx`/`originYPx`, 219-220); the origin animates (bits 72-75), and `transformOrigin` is a keyframe property. A keyword origin writes the fraction alone, so every record that names one is the bytes it was | unsubmitted | written on 66caf4e5, after `0055` |
+| 0057 | motion | a declared shutter samples the transform origin between ticks, as it samples a translate (0034's `integrates`) | never; the header says why | written on 66caf4e5, after `0056` |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
 #591 since 586428b2, so the pin needs no backport. The two places the
@@ -133,10 +136,11 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Twenty-two patches are class `upstream` and fifteen `motion`. Of the
-twenty-two, nineteen are unsubmitted declaration- or build-layer changes,
+Twenty-three patches are class `upstream` and seventeen `motion`. Of the
+twenty-three, twenty are unsubmitted declaration- or build-layer changes,
 `0040`, the build-time SVG baker every target's pak goes through, `0041`,
-the class-literal refusal, and `0050`, the wide segment count, among them;
+the class-literal refusal, `0050`, the wide segment count, and `0056`, the
+transform origin, among them;
 `0008` is #301, and `0021` and `0030` are rasteriser changes with no
 target-side cost.
 
