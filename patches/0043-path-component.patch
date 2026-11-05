@@ -64,7 +64,7 @@ repository red:
 - a quarter turn's -0 kept -> tests/vector-paths.test.ts -t degrees are exact
 - path tokens not parsed -> tests/catalog.test.ts -t G6 —
 - trimEnd is not a keyframe name -> tests/catalog.test.ts -t G6 —
-- build lets a PathDataError escape unlocated -> tests/vector-paths.test.ts -t morph keys that part
+- build lets a PathDataError escape unlocated -> tests/vector-paths.test.ts -t a morph the table cannot hold (named `morph keys that part` until 0046 equalised the keys it refused)
 - mount counts an unbaked outline instead of refusing it -> tests/vector-paths.test.ts -t a d computed at run time
 - the component never hands the key to the host -> tests/vector-paths.test.ts -t the same d written as a literal
 - the op is not in this repository's range list -> tests/patches.test.ts -t reserved draw-list op range
