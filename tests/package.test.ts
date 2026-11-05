@@ -323,5 +323,36 @@ describe("installed from the tarball", () => {
       'const m = await import("pocket-motion"); console.log(Object.keys(m).sort().join(","))',
     ]);
     expect(imported.stdout.trim()).toBe("argvOf,assert,build,doctor,layout,render,trace,verify");
+
+    // The MCP server from the installed bin. `initialize` carries the version
+    // `mcp` reads from the package.json beside the source it ships in, so a
+    // package that moved that file relative to `src/` fails here, not in a client.
+    const served = Bun.spawn(["bunx", "pocket-motion", "mcp"], {
+      cwd: project,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    served.stdin.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "package", version: "0" } },
+      })}\n`,
+    );
+    served.stdin.end();
+    const [servedOut, servedErr, servedCode] = await Promise.all([
+      new Response(served.stdout).text(),
+      new Response(served.stderr).text(),
+      served.exited,
+    ]);
+    expect(servedCode, servedErr).toBe(0);
+    const { version } = (await Bun.file(join(ROOT, "package.json")).json()) as { version: string };
+    expect(JSON.parse(servedOut).result.serverInfo).toEqual({
+      name: "pocket-motion",
+      title: "Pocket Motion",
+      version,
+    });
   }, 600_000);
 });

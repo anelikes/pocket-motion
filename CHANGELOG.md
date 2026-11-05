@@ -16,6 +16,11 @@ to declare; every digest recorded before this reproduces unchanged.
   `tests/api.test.ts` holds each equal to the CLI run as a process.
   `render` and `trace` also take an `AbortSignal` and a per-frame progress
   callback; a cancelled call resolves with `cancelled: true`.
+- **`pocket-motion mcp`**: `verify`, `assert`, `layout`, `render`, `trace`
+  and `doctor` as Model Context Protocol tools on stdio, each returning its
+  API function's object. `render` and `trace` report progress per frame and
+  stop at the next one when cancelled; tools that rasterise take turns.
+  `tests/mcp.test.ts` drives it as a client does.
 - **An npm package**, `pocket-motion`, Bun-only, staged by
   `scripts/pack.ts` and not yet published: the CLI as the `pocket-motion`
   bin, the API as the package's export, and the patched compiler,

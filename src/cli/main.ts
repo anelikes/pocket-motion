@@ -28,6 +28,7 @@ import * as verifyCmd from "./commands/verify.ts";
 import * as visibilityCmd from "./commands/visibility.ts";
 import * as doctorCmd from "./commands/doctor.ts";
 import * as initCmd from "./commands/init.ts";
+import * as mcpCmd from "./commands/mcp.ts";
 import {
   EXIT_FAIL,
   EXIT_OK,
@@ -119,6 +120,11 @@ const COMMANDS: Record<
     summary:
       "PNGs at sampled frames (--out dir), optionally with layout's boxes and finding codes drawn over them (--annotate)",
     run: (argv) => snapshotCmd.runFromArgv(argv),
+  },
+  mcp: {
+    summary:
+      "serve render, verify, assert, layout, trace and doctor as MCP tools on stdin/stdout",
+    run: (argv) => mcpCmd.runFromArgv(argv),
   },
 };
 
