@@ -214,6 +214,14 @@ const ENTRIES = [
   // change to the inventory, the order it bakes in or the monotone curve
   // moves this digest; the same chart written as literals bakes the same pak.
   "compositions/data-chart",
+  // hero-type. patches/0063: a 480 px CJK hero past the atlas's ceiling, a
+  // turning `text-vector` character and a turning colour glyph — outlines
+  // filled as PATH ops under moving transforms — and a title whose emoji come
+  // from the atlas slot's colour supplement, one of them under a nine-stop
+  // radial gradient. A change to the vector bake, the glyph placement, the
+  // COLR flattening or the gradient mapping moves this digest; it is also the
+  // one composition that bakes Noto Color Emoji.
+  "compositions/hero-type",
 ] as const;
 
 /**
