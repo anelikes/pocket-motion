@@ -40,7 +40,6 @@ import { WasmFrameSource } from "../src/runtime/frame-source.ts";
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
 const DIR = join(ROOT, "compositions", "path-primitives");
-process.env.POCKETJS_ROOT = VENDOR;
 
 interface Entry {
   verbs: number[];

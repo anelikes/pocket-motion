@@ -29,7 +29,6 @@ import { CODE_SVG_MISSING, CODE_SVG_UNSUPPORTED, lintSvgTrees } from "../src/lin
 
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
-process.env.POCKETJS_ROOT = VENDOR;
 
 interface SvgPart {
   kind: "group" | "path";

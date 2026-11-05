@@ -25,13 +25,11 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
   statSync,
   symlinkSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { runBuild } from "../src/cli/build.ts";
 import { runFromArgv as renderFromArgv } from "../src/cli/commands/render.ts";
@@ -41,6 +39,7 @@ import type { GlobalFlags } from "../src/cli/types.ts";
 import { EXIT_OK } from "../src/cli/types.ts";
 import { buildRecordPath } from "../src/render/build-record.ts";
 import type { InputIdentity } from "../src/render/identity.ts";
+import { SCRATCH_ROOT, scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 
@@ -114,7 +113,7 @@ describe("where a build runs is not an input", () => {
     // module over by its realpath. `vendor` is linked in for the config
     // module's relative import, as an installed package's consumer would
     // reach the framework from its own tree.
-    const outside = realpathSync(mkdtempSync(join(tmpdir(), "pocket-motion-location-")));
+    const outside = scratchDir("location");
     scratch.push(outside);
     const real = join(outside, "real");
     copyFiles(FIXTURE, join(real, "compositions", "vector-paths"));
@@ -146,7 +145,7 @@ describe("where a build runs is not an input", () => {
     }
     expect(differences.join("\n") || "none").toBe("none");
     // The bundle names no directory of this machine's.
-    for (const path of [ROOT, outside, staged, realpathSync(tmpdir())]) {
+    for (const path of [ROOT, outside, staged, dirname(SCRATCH_ROOT)]) {
       expect(checkout.bundle.toString("utf8")).not.toContain(path);
       expect(places.symlinked.bundle.toString("utf8")).not.toContain(path);
     }
@@ -159,7 +158,7 @@ describe("a render --spec job has an identity", () => {
     // the two renders of `spec.default.json` built from two directories.
     // Before, `render --spec` reported no identity at all, because the staged
     // directory's name reached the bundle and `build.json`.
-    const work = mkdtempSync(join(tmpdir(), "pocket-motion-location-spec-"));
+    const work = scratchDir("location-spec");
     scratch.push(work);
     const copy = join(ROOT, "compositions/copy");
     const spec = join(copy, "spec.default.json");

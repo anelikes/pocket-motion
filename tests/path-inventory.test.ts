@@ -23,7 +23,6 @@ import { hardenedBootWorld } from "../src/runtime/boot.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
-process.env.POCKETJS_ROOT = VENDOR;
 
 interface JsxPluginModule {
   transformFile(path: string, src: string, framework: "solid"): Promise<{ unreadPaths: Array<{ line: number; column: number }>; pathDecls: unknown[] }>;
@@ -113,7 +112,8 @@ describe("runBuild bakes what the mount computes", () => {
     const record = await runBuild(c);
     const inventoryPath = join(outDir, "main.paths.json");
     expect(JSON.parse(readFileSync(inventoryPath, "utf8"))).toEqual({ outlines: [{ d: ["M0 0 L100 0 L100 100 Z"] }] });
-    expect(record.argv.at(-1)).toBe(`--path-inventory=${join("dist", "c", "main.paths.json")}`);
+    // Relative to the record's own directory, as `--outdir=.` is (build-record.ts).
+    expect(record.argv.at(-1)).toBe("--path-inventory=main.paths.json");
     const world = await hardenedBootWorld({ bundlePath: c.bundlePath, pakPath: c.pakPath, width: 320, height: 180, hz: 30, shutter: null });
     world.frame(0);
     world.tick();
@@ -198,7 +198,7 @@ describe("the inventory itself", () => {
   test("compositions/data-chart bakes its four computed outlines and mounts clean", async () => {
     const chart = unwrapResolve(await resolveComposition({ dir: join(ROOT, "compositions/data-chart"), flags: { json: false }, requireBundle: false }));
     const record = await runBuild(chart);
-    expect(record.argv.at(-1)).toBe("--path-inventory=dist/compositions/data-chart/main.paths.json");
+    expect(record.argv.at(-1)).toBe("--path-inventory=main.paths.json");
     const inventory = JSON.parse(readFileSync(join(ROOT, "dist/compositions/data-chart/main.paths.json"), "utf8")) as { outlines: unknown[] };
     expect(inventory.outlines).toHaveLength(4);
     expect(await unbakedOutlines(chart)).toEqual([]);
