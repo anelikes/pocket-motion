@@ -1,0 +1,15 @@
+{"composition":"compositions/bench-title","config":"default (libx264 medium, reuse on)","runs":3,"cpu":24.7,"cpuAll":[24.7,22.15,28.69],"wall":14.39,"reusedFrames":0,"bytes":1472375}
+{"composition":"compositions/bench-title","config":"--no-reuse","runs":3,"cpu":24.16,"cpuAll":[24.16,23.99,27.19],"wall":13.59,"reusedFrames":0,"bytes":1472375}
+{"composition":"compositions/bench-title","config":"--preset faster","runs":3,"cpu":22.43,"cpuAll":[19.64,22.43,24.51],"wall":16.68,"reusedFrames":0,"bytes":1527351}
+{"composition":"compositions/bench-title","config":"--preset veryfast","runs":3,"cpu":18.83,"cpuAll":[15.79,20.01,18.83],"wall":14.14,"reusedFrames":0,"bytes":1265136}
+{"composition":"compositions/bench-title","config":"--encoder h264_videotoolbox","runs":3,"cpu":15.53,"cpuAll":[12.42,15.53,16.6],"wall":19.33,"reusedFrames":0,"bytes":4084175}
+{"composition":"compositions/hajibang-top-reveal/out/sample-full","config":"default (libx264 medium, reuse on)","runs":3,"cpu":84.86,"cpuAll":[84.86,78.79,85.98],"wall":45.8,"reusedFrames":0,"bytes":9042199}
+{"composition":"compositions/hajibang-top-reveal/out/sample-full","config":"--no-reuse","runs":3,"cpu":80.73,"cpuAll":[77.07,80.73,85.99],"wall":41.51,"reusedFrames":0,"bytes":9042199}
+{"composition":"compositions/hajibang-top-reveal/out/sample-full","config":"--preset faster","runs":3,"cpu":75.54,"cpuAll":[70.26,75.54,79.81],"wall":51.54,"reusedFrames":0,"bytes":7956661}
+{"composition":"compositions/hajibang-top-reveal/out/sample-full","config":"--preset veryfast","runs":3,"cpu":59.01,"cpuAll":[58.29,59.01,65.62],"wall":39.99,"reusedFrames":0,"bytes":8031290}
+{"composition":"compositions/hajibang-top-reveal/out/sample-full","config":"--encoder h264_videotoolbox","runs":3,"cpu":40.97,"cpuAll":[42.9,40.56,40.97],"wall":34.07,"reusedFrames":0,"bytes":33394575}
+{"composition":"compositions/transitions","config":"default (libx264 medium, reuse on)","runs":3,"cpu":31.15,"cpuAll":[31.15,35.29,30.26],"wall":15.26,"reusedFrames":403,"bytes":1439472}
+{"composition":"compositions/transitions","config":"--no-reuse","runs":3,"cpu":35.62,"cpuAll":[35.74,35.62,33.83],"wall":21.23,"reusedFrames":0,"bytes":1439472}
+{"composition":"compositions/transitions","config":"--preset faster","runs":3,"cpu":31.3,"cpuAll":[31.51,26.66,31.3],"wall":16.8,"reusedFrames":403,"bytes":1421123}
+{"composition":"compositions/transitions","config":"--preset veryfast","runs":3,"cpu":22.79,"cpuAll":[22.79,20.41,27.42],"wall":10.91,"reusedFrames":403,"bytes":1455076}
+{"composition":"compositions/transitions","config":"--encoder h264_videotoolbox","runs":3,"cpu":15.43,"cpuAll":[15.43,15.22,16.77],"wall":15.71,"reusedFrames":403,"bytes":2534762}

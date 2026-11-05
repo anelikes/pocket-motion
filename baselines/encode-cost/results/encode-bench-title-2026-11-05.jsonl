@@ -1,0 +1,15 @@
+{"composition":"compositions/bench-title","config":"libx264 medium crf16 (default)","rateArg":null,"cpu":13.04,"wall":2.38,"bytes":1472375,"mbps":1.18,"psnr":56.83,"ssim":0.9992,"vsX264":null}
+{"composition":"compositions/bench-title","config":"libx264 faster crf16","rateArg":null,"cpu":9.61,"wall":1.74,"bytes":1527351,"mbps":1.22,"psnr":55.37,"ssim":0.99884,"vsX264":55.19}
+{"composition":"compositions/bench-title","config":"libx264 veryfast crf16","rateArg":null,"cpu":6.41,"wall":1.3,"bytes":1265136,"mbps":1.01,"psnr":53.8,"ssim":0.99853,"vsX264":53.83}
+{"composition":"compositions/bench-title","config":"videotoolbox b:v 15.55M (0.25 bit/px)","rateArg":"-b:v 15552000","cpu":1.96,"wall":1.5,"bytes":5724114,"mbps":4.58,"psnr":58.52,"ssim":0.99939,"vsX264":55.4}
+{"composition":"compositions/bench-title","config":"videotoolbox b:v 1x matched","rateArg":"-b:v 1177900","cpu":1.91,"wall":1.49,"bytes":1533520,"mbps":1.23,"psnr":50.08,"ssim":0.99798,"vsX264":49.86}
+{"composition":"compositions/bench-title","config":"videotoolbox b:v 1.5x matched","rateArg":"-b:v 1766850","cpu":2.01,"wall":1.53,"bytes":2048168,"mbps":1.64,"psnr":51.58,"ssim":0.99838,"vsX264":51.13}
+{"composition":"compositions/bench-title","config":"videotoolbox b:v 2x matched","rateArg":"-b:v 2355800","cpu":1.85,"wall":1.5,"bytes":2371524,"mbps":1.9,"psnr":52.66,"ssim":0.99856,"vsX264":52}
+{"composition":"compositions/bench-title","config":"videotoolbox b:v 3x matched","rateArg":"-b:v 3533700","cpu":2.1,"wall":1.48,"bytes":3094942,"mbps":2.48,"psnr":54.07,"ssim":0.99884,"vsX264":53.03}
+{"composition":"compositions/bench-title","config":"videotoolbox q:v 60","rateArg":"-q:v 60","cpu":1.86,"wall":1.43,"bytes":934733,"mbps":0.75,"psnr":48.99,"ssim":0.99701,"vsX264":48.93}
+{"composition":"compositions/bench-title","config":"videotoolbox q:v 70","rateArg":"-q:v 70","cpu":2.27,"wall":1.44,"bytes":1474752,"mbps":1.18,"psnr":52.51,"ssim":0.9981,"vsX264":52.04}
+{"composition":"compositions/bench-title","config":"videotoolbox q:v 80","rateArg":"-q:v 80","cpu":2.5,"wall":1.44,"bytes":2364263,"mbps":1.89,"psnr":55.92,"ssim":0.99883,"vsX264":54.38}
+{"composition":"compositions/bench-title","config":"videotoolbox q:v 85","rateArg":"-q:v 85","cpu":2.34,"wall":1.5,"bytes":3744455,"mbps":3,"psnr":58.65,"ssim":0.99925,"vsX264":55.62}
+{"composition":"compositions/bench-title","config":"videotoolbox q:v 90","rateArg":"-q:v 90","cpu":2.25,"wall":1.81,"bytes":5411612,"mbps":4.33,"psnr":61.21,"ssim":0.99948,"vsX264":56.31}
+{"composition":"compositions/bench-title","config":"videotoolbox q:v 95","rateArg":"-q:v 95","cpu":2.35,"wall":1.54,"bytes":8779473,"mbps":7.02,"psnr":64.95,"ssim":0.99975,"vsX264":56.7}
+{"composition":"compositions/bench-title","config":"videotoolbox q:v 87","rateArg":"-q:v 87","cpu":2.22,"wall":1.63,"bytes":4084175,"mbps":3.27,"psnr":59.99,"ssim":0.99938,"vsX264":56.05}
