@@ -1051,9 +1051,10 @@ mechanisms with the file or test beside them.
   timestamps exactly `i / fps`, every decoded frame equal to its segment's
   own decode — and that read-back is what found the join's real defect: the
   concat demuxer offsets each file by its container duration, an x264 MP4's
-  duration is quantised through its edit list (26 frames read 13302 ticks of
-  1/15360 for 13312), and 5 of the 42 ledger compositions failed at
-  `--workers 4`, every one split into unequal segments. Durations are now
+  passes through its edit list and can come out short (a 26-frame segment of
+  synthetic frames read 13302 ticks of 1/15360 for 13312), and 5 of the 42
+  ledger compositions failed at `--workers 4`, every one split into unequal
+  segments. Durations are now
   written from frame counts, and WebM's millisecond timestamps are rewritten
   from the packet index. Sound is muxed once over the joined film, through
   the one function the one-shot render uses (`deliverSound`), and the joined
@@ -1061,9 +1062,20 @@ mechanisms with the file or test beside them.
   `tests/segments.test.ts` holds three segments of `sound-roles` — footage
   presented every frame, a declared mix — to `trace` hash for hash, every
   refusal through `planJoin` and through the CLI, and each container's
-  timestamps; its header lists the edit that turns each red.
+  timestamps; its header lists the edit that turns each red. A folded frame
+  keeps its frame boundary for a measured reason: footage tiles hold the
+  last frame presented to them once a track's window has passed, and with
+  the boundaries of folded frames skipped `footage-tracks`' digest moved
+  while `sound-roles`, which never shows a held frame, stayed green — so
+  `footage-tracks --workers 4` is in that file too.
   `baselines/segments/ledger.ts` renders every ledger composition with
-  `--workers` against its recorded digest. What the join does not claim: the
+  `--workers` against its recorded digest: 42 of 42 at `--workers 7`. What
+  splitting buys is measured in `baselines/segments.md`, and on one machine
+  it is little: beside other sessions on an M4, `--workers` saved at most
+  11 % of wall time for 21–69 % more CPU, because a one-process render
+  already keeps libx264 on the cores. Across machines it is the point: the
+  1665-frame hajibang ranking in 16 segments costs 1.8–4.2 s a segment and
+  8.0 s to join, against 51.3 s whole. What the join does not claim: the
   joined bytes are not a one-shot encode's (rate control and keyframes see
   one segment at a time), and `concat` takes the footage identity components
   from the segments rather than ingesting, and lists them.

@@ -41,9 +41,10 @@
  *   `MIN_SEGMENT_FRAMES`.
  * - The concat demuxer offsets each file by the one before's container
  *   duration, and two containers round it. An x264 MP4's passes through its
- *   edit list: a 26-frame segment at 30 fps reads 13302 ticks of 1/15360
- *   where its frames span 13312, and the joined frames after it came out 10
- *   ticks early — found by the read-back below on 5 of the 42 ledger
+ *   edit list and can come out short — a 26-frame segment of synthetic frames
+ *   at 30 fps read 13302 ticks of 1/15360 where its frames span 13312, a
+ *   25-frame one exactly 12800 — and the joined frames after a short one came
+ *   out early. The read-back below found it on 5 of the 42 ledger
  *   compositions at `--workers 4`, every one a split into unequal segments.
  *   So every file's duration is written into the list from its frame count.
  *   That is enough for MP4 and MOV, whose 1/15360 holds a frame of 30 or 60
@@ -593,10 +594,10 @@ export async function joinSegments(
   if (format === "png-seq") return joinPngSequence(ordered, outputPath, filmFrames);
 
   // Each file's duration is stated from its frame count rather than read off
-  // its container: the demuxer offsets the next file by it, and an MP4's is
-  // quantised through its edit list (a 26-frame x264 segment at 30 fps reads
-  // 13302 ticks of 1/15360, not 13312, which put every later frame 10 ticks
-  // early). Microseconds of the cumulative boundary, so rounding never adds up.
+  // its container: the demuxer offsets the next file by it, and an MP4's
+  // passes through its edit list, which can leave it short of the frames (see
+  // the header). Microseconds of the cumulative boundary, so rounding never
+  // adds up.
   const us = (frame: number) => Math.round((frame * 1_000_000) / fps);
   const list = `${outputPath}.concat.txt`;
   await Bun.write(

@@ -7,10 +7,12 @@
  * level this project's determinism claim lives at: the frames before the
  * encoder. Three segments of `compositions/sound-roles` joined are held to
  * `trace`, hash for hash, and to a one-shot render's digest. That
- * composition is chosen because it folds through the most host state a
- * segment has to reproduce: a footage track presented every frame, and a
- * declared mix that must be muxed once over the joined film and never into
- * a segment.
+ * composition is chosen for its host state: a footage track presented every
+ * frame, and a declared mix that must be muxed once over the joined film and
+ * never into a segment. It never shows a footage frame outside its track's
+ * window, though, and `footage-tracks` does — tiles hold the last frame
+ * presented to them — so that is the fixture for the fold's frame
+ * boundaries.
  *
  * Each refusal is held twice: `planJoin` against manifests written here,
  * so every branch is reached without a render, and the CLI against real
