@@ -586,6 +586,37 @@ mechanisms with the file or test beside them.
   watched red by `redcheck-ts.ts` beside it. `compositions/vector-paths` is
   the fixture, in both ledgers, its sidecar asserting that the caption is up
   before the signature is drawn — which a draw-on ignoring its trim fails.
+- **An image drawn below its size reads a mip chain when it says so**
+  (`patches/0058`, class `motion`; the table in `baselines/image-wall.md`).
+  `image-filter-trilinear` makes an image node emit TEX_QUAD_MIP (72) or
+  TEX_TRI_MIP (73), each its plain op plus one word: the footprint, texels
+  of the texture per logical pixel along the screen axis that crosses the
+  most of them, computed by the core from the unrounded transform — for a
+  perspective cell, the larger of its two triangles'. The raster divides it
+  by the raster scale and reads the level its exponent names and the next,
+  each bilinearly, blended by the top eight bits of its mantissa, so no
+  transcendental reaches a pixel. The chain is a pure function of the
+  texture's bytes — each level the last reduced to `max(1, floor(w/2))` by
+  an exact area average of premultiplied texels, in u64, rounded half up —
+  reduced in the draw walk the first time a footprint above one texel needs
+  it, keyed by the texture's revision, so a texture never drawn below its
+  size costs nothing. At or below one texel a pixel the read is the
+  texture's own bilinear read byte for byte, whatever its flag. The core's
+  guards are in `mip.rs` (the reduction against an oracle that replicates
+  every texel into a block and box-averages it, over four pixel formats and
+  odd sides), `raster.rs` (both ops against the plain ones at r <= 1, the
+  quad against a per-pixel trilinear reference, a checkerboard grey at
+  every sub-texel shift) and `tests.rs` (the footprint under six rotations,
+  a squeeze, a sub-rect and a perspective turn; the chain reduced only when
+  needed and again when the bytes change); the patch header lists the edit
+  that turns each red. `compositions/image-wall` is the fixture, in both
+  ledgers, and `tests/image-wall.test.ts` holds its first 30 frames to
+  moving less than the same wall nearest or bilinear — red with the class
+  taken out of the generator. **It is not the default, by
+  measurement**: built as two throwaway cores, a default for every texture
+  drawn below its size moves `images` and `probe` in the ledger and both
+  showcase films on most sampled frames, and one for textures flagged
+  linear moves `images` and both films (`baselines/image-wall.md`).
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -1119,6 +1150,20 @@ mechanisms with the file or test beside them.
   a seam between two shapes of one colour lets `(1 - h_a/16)(1 - h_b/16)` of
   the ground through; stage 1's fan of 24 wedges shows faint radial lines. A
   coverage-merging op would close it and is not built.
+- **A trilinear image is filtered isotropically and placed on whole
+  pixels.** The footprint is the longer of the Jacobian's two columns, so an
+  image squeezed on one axis, or tilted steeply in perspective, is filtered
+  for its most compressed axis and soft along the other; nothing anisotropic
+  is built. And TEX_QUAD and TEX_TRI place on whole logical pixels at any
+  raster scale, so a cover's edges step a pixel at a time under a push —
+  `image-wall`'s supersampled reference steps too, which is why it cancels
+  out of crawl and why no filter here takes it out. The levels are RGBA8888
+  whatever the texture's format, so a 16-bit texture pays two thirds of its
+  bytes, not a third, and nothing reduces a chain at bake time: every boot
+  reduces again on the first frame that needs it (`frame`, a `preview`
+  reload, each ledger trace). A footage tile cannot carry the class —
+  `tileNodes` writes the tiles — and if one did, a texture uploaded every
+  frame would be reduced every frame.
 - **The collector reads a module's own literals.** A `d` imported from
   another module, or computed at run time, is refused at mount rather than
   baked; generators write literals, which is what every composition here

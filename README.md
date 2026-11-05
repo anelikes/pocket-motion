@@ -142,7 +142,9 @@ Each of these was decided against for a reason, not left undone.
   literal and travels in the draw list, where `check`, `trace` and
   `visibility` read it: text stroke, a node's blur, drop shadow and glow,
   blend modes, and multi-stop, radial and text gradients (`patches/0017`–`0019`; costs in
-  [`paint-effects.md`](./baselines/paint-effects.md)). A backdrop blur — one
+  [`paint-effects.md`](./baselines/paint-effects.md)), and trilinear
+  sampling of an image drawn below its size (`patches/0058`;
+  [`image-wall.md`](./baselines/image-wall.md)). A backdrop blur — one
   that reads what is beneath a node — is not among them.
 
 ## Relationship to upstream

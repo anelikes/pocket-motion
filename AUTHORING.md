@@ -756,6 +756,54 @@ the pak: a 2048×2048 picture is 16 MiB there and 16 MiB again in the core.
 SVG is rasterised at the composition's density. `compositions/images` draws a
 900×506 picture and a 3×5 one.
 
+**An image drawn well below its size takes `image-filter-trilinear`**
+(`patches/0058`). Without it an Image reads its texture the way the texture
+says — nearest, or bilinear under `"linear": true` — and either reads a
+handful of the dozens of texels under a pixel once the image is drawn below
+half its size: a wall of covers at 15% lands on whichever texels the pixel
+grid crosses, and a push redraws it differently at every frame. With it, the
+core reduces a mip chain from the texture's bytes the first time a draw needs
+one — each level the last halved by an exact area average, in integers — and
+reads the two levels the drawn footprint falls between, each bilinearly,
+blended:
+
+```tsx
+<Image class="w-[45px] h-[63px] image-filter-trilinear" src="cover-07.png" />
+```
+
+The footprint is the image's texels per pixel along the screen axis that
+crosses the most of them, taken from its transform before any rounding, so a
+`scale` on an ancestor, a rotation and a perspective turn all count — in
+perspective each cell of the image's mesh carries its own. At or above the
+image's own size the read is the texture's bilinear read and nothing is
+reduced. `compositions/image-wall` is sixty 300×420 covers drawn at 45×63
+and pushed in to 26% over ten seconds. The part of each frame's change that
+is not steady — the second difference over three frames — falls from 17.9
+levels nearest and 17.0 bilinear to 8.7, under the 12.0 of the same wall
+supersampled ×4, and the frame-to-frame difference halves; the price is
+softness, a cover's 2 px title bars blurrier than at ×4
+(`baselines/image-wall.md`). The cost is the levels — a third of an RGBA
+texture's bytes again, two thirds of an RGB565 one's, for each texture
+drawn below its size — reduced on the first frame that needs them (51 ms
+for the wall's sixty covers), and two bilinear reads a pixel instead of
+one: the wall's frame costs 1.9× bilinear's.
+
+**It is a class, not the default.** As the default for every image drawn
+below its size it moves two of the ledger's recorded digests, `images` and
+`probe`, and both showcase films on most of their frames; as the default for
+textures already flagged `linear`, `images` and both films
+(`baselines/image-wall.md` has the probe). A picture here moves when its
+composition says so, so a template that draws images small writes the
+class.
+
+Two things it does not do. It is isotropic: an image squeezed on one axis, or
+tilted steeply in perspective, is filtered for its most compressed axis and
+goes soft along the other. And it does not move an image off whole pixels: a
+textured quad is placed on whole logical pixels at any supersample, so under
+a push a cover's edges still step a pixel at a time. A footage tile does not
+carry it — `tileNodes` writes the tiles, and a track is ingested at its drawn
+size.
+
 **An SVG is drawn by the build's own baker, and it draws a subset of SVG**
 (`framework/compiler/bake-svg.ts`, `patches/0040`). Its `width` and `height`
 are the picture's size in pixels before density, and the `viewBox` is
