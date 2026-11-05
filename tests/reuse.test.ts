@@ -18,6 +18,8 @@
  *   core no longer draws.
  * - "a detached view": red with the `byteLength > 0` check removed — the
  *   reuse handed back a view of zero bytes.
+ * - "a segment's first frame": red with `render()` reading the frame before
+ *   a range through the reuse — the segment's first frame came back reused.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
@@ -179,6 +181,25 @@ describe("the reuse delivers the frames a full raster would", () => {
       expect(on.frameHashes).toEqual(off.frameHashes);
       // Holds either side of the free were reused; the free itself was not.
       expect(on.reusedFrames).toBe(8 - 2);
+    },
+    600_000,
+  );
+
+  test(
+    "a segment's first frame is rasterised even where the film holds",
+    async () => {
+      // `render --workers` renders each segment in its own process, and
+      // `range` folds the frames before a segment's first without drawing
+      // them, so nothing can be reused across the boundary. Pinned on a hold:
+      // a segment that starts on a frame equal to the one before it draws
+      // that frame, and reuses from its second.
+      const c = built[HOLDS]!;
+      const whole = await render({ ...optionsOf(c), reuse: false });
+      const k = whole.frameHashes.findIndex((h, i) => i > 0 && h === whole.frameHashes[i - 1] && h === whole.frameHashes[i + 1]);
+      expect(k).toBeGreaterThan(0);
+      const segment = await render({ ...optionsOf(c), range: [k, k + 2] });
+      expect(segment.frameHashes).toEqual(whole.frameHashes.slice(k, k + 2));
+      expect(segment.reusedFrames).toBe(1);
     },
     600_000,
   );

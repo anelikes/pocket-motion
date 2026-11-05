@@ -1919,7 +1919,9 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
 - **A `--workers` render does not say how many frames it reused.** Each
   segment is a `render --range` process that reuses as any render does —
   its first frame is always rasterised, since the frames it folds are never
-  drawn — but the segment manifest carries no count, so `--json` omits
+  drawn (`tests/reuse.test.ts` starts a segment on a held frame, red when the
+  frame before the range is read through the reuse) — but the segment
+  manifest carries no count, so `--json` omits
   `reusedFrames` there. `--encoder`, `--preset` and `--no-reuse` are handed
   to every worker; three VideoToolbox segments of `smoke` joined by stream
   copy, passed the read-back and gave `trace`'s digest, checked by hand and
