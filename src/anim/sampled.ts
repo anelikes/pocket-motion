@@ -278,6 +278,37 @@ export class El {
     return this;
   }
 
+  /**
+   * Along a path over [t0, t1], keyed as `path` keys: the element's centre on
+   * the outline (a `PathFollower` in `path-motion.ts`, placed in the same
+   * containing block as `home`) from fraction `from` to `to` of its arc
+   * length, eased by `ease`; with `rotate`, the element turned to the
+   * direction of travel plus `rotate` degrees (true is 0), unwrapped so it
+   * never spins the long way between two keys.
+   */
+  along(
+    t0: number,
+    t1: number,
+    path: { at(u: number): { x: number; y: number; angle: number } },
+    o: { ease?: (u: number) => number; from?: number; to?: number; rotate?: boolean | number } = {},
+  ) {
+    const ease = o.ease ?? inOut;
+    const from = o.from ?? 0;
+    const to = o.to ?? 1;
+    const turn = o.rotate === undefined || o.rotate === false ? null : o.rotate === true ? 0 : o.rotate;
+    const back = to < from ? 180 : 0;
+    let prev = this.s.rot;
+    return this.path(t0, t1, (t) => {
+      const p = path.at(from + (to - from) * ease((t - t0) / Math.max(1, t1 - t0)));
+      if (turn === null) return { cx: p.x, cy: p.y };
+      let r = p.angle + back + turn;
+      while (r - prev > 180) r -= 360;
+      while (r - prev <= -180) r += 360;
+      prev = r;
+      return { cx: p.x, cy: p.y, rot: r };
+    });
+  }
+
   /** A turn of `deg` about the pivot (px, py) over [t0, t1]: position on the arc, and the element's own angle with it. */
   orbit(t0: number, t1: number, px: number, py: number, deg: number, ease = inOut) {
     const a = { ...this.s };
