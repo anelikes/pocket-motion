@@ -17,26 +17,29 @@
  * comparison.
  *
  * RED, measured: `call` returning `jsonPayload(result)` without `envelope()` —
- * the shape a hand-written API would most plausibly have — fails six of the
- * eight cases (build, trace, render, verify, doctor, the usage error), because
- * the CLI's object has `$REPO` where the API's has the checkout path, and a
- * `runId` the API's lacks. `render` deriving its identity from
+ * the shape a hand-written API would most plausibly have — fails eight of the
+ * nine parity cases (build, trace, render, verify, assert, layout, doctor, the
+ * usage error) and both cancellation cases, because the CLI's object has
+ * `$REPO` where the API's has the checkout path, and a `runId` the API's
+ * lacks. `render` deriving its identity from
  * `{ ...c, supersample: 2 }` instead of `c` fails "render reports trace's
  * digest and trace's identity" and nothing else: CLI and API agree with each
  * other, so only the cross-command case can see it.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { argvOf, build, doctor, render, trace, verify } from "../src/api.ts";
+import { argvOf, assert, build, doctor, layout, render, trace, verify } from "../src/api.ts";
 import { RUN_ID_ENV } from "../src/cli/emit.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const CLI = join(ROOT, "src/cli/main.ts");
 const SMOKE = "compositions/smoke";
+/** A composition whose sidecar declares assertions. */
+const CODES = "compositions/layout-codes";
 const RUN = "api-parity";
 
 const scratch = mkdtempSync(join(tmpdir(), "motion-api-"));
@@ -118,6 +121,19 @@ describe("api — each function returns the object its --json command prints", (
     expect(await verify(SMOKE, { samples: 2, strict: true })).toEqual(fromCli.json as never);
   }, 300_000);
 
+  test("assert", async () => {
+    expect((await build(CODES)).ok).toBe(true);
+    const fromCli = await cli(["assert", CODES, "--samples", "6", "--json"]);
+    expect((fromCli.json.assertions as unknown[]).length).toBeGreaterThan(0);
+    expect(await assert(CODES, { samples: 6 })).toEqual(fromCli.json as never);
+  }, 120_000);
+
+  test("layout", async () => {
+    const fromCli = await cli(["layout", SMOKE, "--at", "12", "--json"]);
+    expect(fromCli.code).toBe(0);
+    expect(await layout(SMOKE, { at: 12 })).toEqual(fromCli.json as never);
+  }, 120_000);
+
   test("doctor, with only the free-space figure normalised", async () => {
     const free = (o: unknown) =>
       JSON.parse(JSON.stringify(o).replace(/\d+(?:\.\d+)? GiB free/g, "N GiB free"));
@@ -135,6 +151,41 @@ describe("api — each function returns the object its --json command prints", (
   }, 60_000);
 });
 
+describe("api — a run that is stopped", () => {
+  test("a cancelled render resolves with cancelled: true and leaves no file it wrote", async () => {
+    const controller = new AbortController();
+    const seen: unknown[] = [];
+    const out = join(scratch, "cancelled.mp4");
+    const result = (await render(
+      SMOKE,
+      { out },
+      {
+        signal: controller.signal,
+        onProgress: (p) => {
+          seen.push(p);
+          if (p.done === 3) controller.abort(new Error("enough"));
+        },
+      },
+    )) as Record<string, unknown>;
+    expect(result).toEqual({ ok: false, cancelled: true, error: "render cancelled — enough", runId: RUN });
+    expect(seen).toEqual([1, 2, 3].map((done) => ({ done, frames: 450 })));
+    expect(existsSync(out)).toBe(false);
+    expect(readdirSync(scratch).filter((n) => n.includes(".partial-"))).toEqual([]);
+  }, 120_000);
+
+  test("a cancelled trace resolves in trace's failure shape, with cancelled: true", async () => {
+    const controller = new AbortController();
+    controller.abort("before it started");
+    expect(await trace(SMOKE, {}, { signal: controller.signal })).toEqual({
+      frames: [],
+      digest: "",
+      error: "trace cancelled — before it started",
+      cancelled: true,
+      runId: RUN,
+    } as never);
+  }, 60_000);
+});
+
 describe("api — the argv a call stands for", () => {
   test("options become --name=value, camelCase becomes kebab-case, false is left out", () => {
     expect(argvOf("render", "c", { out: "o.mov", format: "mov", alpha: true, outDir: undefined })).toEqual([
@@ -149,6 +200,14 @@ describe("api — the argv a call stands for", () => {
       "verify",
       "c",
       "--at=0,5,9",
+      "--json",
+    ]);
+    expect(argvOf("layout", "c", { at: 3, all: true, read: "tick" })).toEqual([
+      "layout",
+      "c",
+      "--at=3",
+      "--all",
+      "--read=tick",
       "--json",
     ]);
     expect(argvOf("render", "c", { outDir: "jobs", spec: "specs" })).toEqual([

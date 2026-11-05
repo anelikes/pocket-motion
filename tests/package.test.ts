@@ -322,6 +322,6 @@ describe("installed from the tarball", () => {
       "-e",
       'const m = await import("pocket-motion"); console.log(Object.keys(m).sort().join(","))',
     ]);
-    expect(imported.stdout.trim()).toBe("argvOf,build,doctor,render,trace,verify");
+    expect(imported.stdout.trim()).toBe("argvOf,assert,build,doctor,layout,render,trace,verify");
   }, 600_000);
 });
