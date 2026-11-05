@@ -61,6 +61,13 @@ async function spawnBuild(argv: readonly string[], cwd: string, env: Record<stri
  */
 export async function runBuild(
   c: Pick<ResolvedComposition, "buildArgs" | "dir" | "bundlePath" | "pakPath" | "width" | "height" | "fps">,
+  options: {
+    /** Receives the build's font lines that say something an author acts
+     *  on (patches/0063): a slot baked as outlines and why, a slot's colour
+     *  glyphs, and the codepoints a face maps that were left out of a slot —
+     *  each of those misses at render and is reported as tofu. */
+    readonly fontNotes?: string[];
+  } = {},
 ): Promise<BuildRecord> {
   const { argv, cwd, env } = buildSpawn(c);
   const outDir = outDirOf(argv);
@@ -74,6 +81,9 @@ export async function runBuild(
   // One a previous build left would describe a bundle this one replaces.
   rmSync(inventoryPath, { force: true });
   const stdout = await spawnBuild(argv, cwd, env);
+  for (const line of stdout.split("\n")) {
+    if (/^ {2}font: slot \d+ .*(?:\) vector \(|colour glyph|left out)/.test(line)) options.fontNotes?.push(line.trim());
+  }
 
   let recorded: readonly string[] = argv;
   const unread = PATHS_AT_MOUNT.exec(stdout);

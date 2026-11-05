@@ -19,6 +19,7 @@ import {
   type InputIdentity,
 } from "../../render/identity.ts";
 import { render as renderComposition } from "../../render/render.ts";
+import { codepointLabel } from "../../text/missing.ts";
 import { describeShutter } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage, scratchTree, type FootageHandle } from "../footage.ts";
@@ -73,6 +74,7 @@ export async function compositionIdentity(
       ? [c.fontPaths.regular, c.fontPaths.bold]
       : undefined,
     faceFontPaths: c.fontPaths?.faces,
+    fallbackFontPaths: c.fontPaths?.fallback,
     footageHashes,
     width: c.width,
     height: c.height,
@@ -150,6 +152,8 @@ export async function run(
       identity,
       ...(c.shutter ? { shutter: c.shutter } : {}),
       reusedFrames: result.reusedFrames,
+      // Only when there were some, so a trace with none is the object it was.
+      ...(result.missingGlyphs.length > 0 ? { missingGlyphs: result.missingGlyphs.map(codepointLabel) } : {}),
     };
 
     return {
@@ -163,6 +167,14 @@ export async function run(
         // declared every frame hashed above is an exposure.
         ...(c.shutter ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure`] : []),
         describeReuse(result.frames, result.reusedFrames, options.reuse !== false),
+        // A digest of text drawn as tofu reproduces like any other, so it is
+        // said here rather than left for someone to look at a frame.
+        ...(result.missingGlyphs.length > 0
+          ? [
+              `glyphs: ${result.missingGlyphs.length} codepoint(s) drawn as the tofu box — ` +
+                `${result.missingGlyphs.map(codepointLabel).join(" ")} (\`check\` names the nodes)`,
+            ]
+          : []),
         ...result.frameHashes.map((h, i) => `  [${i}] ${h}`),
       ],
     };

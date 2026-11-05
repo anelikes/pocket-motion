@@ -83,7 +83,18 @@ and text wider than its box draws past it or is clipped by an
 worked example. Every font size is baked, so only sizes that appear in class
 literals get an atlas. An axis-aligned `scale` resizes glyphs by resampling
 the baked size, softer when magnified, so bake the size text is shown at; a
-rotated run, or one with a text stroke, moves without resizing.
+rotated run, or one with a text stroke, moves without resizing. A size past
+the face's atlas ceiling (176 px for Noto Sans SC) bakes as outlines, up to
+4096 px, and `text-vector` beside a smaller size asks for the same: those
+glyphs scale and turn with their node (`patches/0063`).
+
+**Emoji come from a declared face**: `"fonts": { …, "fallback":
+["assets/fonts/Noto-COLRv1.ttf"] }` draws colour emoji as layered outlines —
+in a sidecar, and in a `render --spec` job's own `fonts`.
+A codepoint no declared face maps is drawn as the tofu box and reported —
+`check` fails naming it and the node, `render --spec` refuses the job — and so
+is one the core cannot draw (a flag, a ZWJ sequence, a skin tone: text is not
+shaped).
 
 **Paint beyond boxes and text**: `overflow-mask` (a window shaped by its
 outline), named font faces (`font-[name]` over the sidecar's `fonts.faces`),

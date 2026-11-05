@@ -663,6 +663,8 @@ describe("supersample", () => {
     bold: false,
     metricsOnly: false,
     codepoints: new Set<number>([0x41]),
+    advances: new Map<number, number>([[0x41, 20]]),
+    kern: new Map<string, number>(),
   });
 
   test("a pak baked at another density is a mismatch; a pak with no atlas is not", () => {

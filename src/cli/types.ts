@@ -99,6 +99,9 @@ export interface TraceJson {
   /** Frames delivered as the frame before's pixels without a raster
    *  (`src/render/reuse.ts`); 0 under `--no-reuse`. Older traces omit it. */
   readonly reusedFrames?: number;
+  /** Codepoints drawn as the tofu box, `U+XXXX`; present only when there
+   *  were some (`src/text/missing.ts`). */
+  readonly missingGlyphs?: readonly string[];
 }
 
 export function isTraceJson(value: unknown): value is TraceJson {
