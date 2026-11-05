@@ -46,6 +46,11 @@ size, inset, gap, padding, `bg-*`, four-direction linear gradients, `rounded`,
 Arbitrary values use brackets: `w-[880px]`, `text-[38px]`. The authoritative
 list is the compiler, `vendor/pocketjs/framework/compiler/tailwind.ts`; check
 there before assuming a familiar name is a typo.
+An `Image` drawn below about half its size — a wall of covers, a thumbnail
+strip, a poster pushed in on — takes `image-filter-trilinear`, or it shimmers
+as it moves: without it the texture is read nearest, or bilinear under
+`images.json`'s `linear`, and both alias past 2×
+(`compositions/image-wall`, `baselines/image-wall.md`).
 
 **Motion is baked timelines, not code.** Declare keyframes and named animations
 in `pocket.config.ts`, then reference them as `animate-<name>` in a class

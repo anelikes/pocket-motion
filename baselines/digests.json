@@ -74,6 +74,10 @@
       "frames": 30,
       "digest": "bcc4f390bca5bceb7e0d032c4326f4f9c53a1f6c611edc249a897960b12dbdec"
     },
+    "compositions/image-wall": {
+      "frames": 300,
+      "digest": "59b2c13b7d8fa7edba837841f2f5b604155432207793d28654378128364fde58"
+    },
     "compositions/images": {
       "frames": 1,
       "digest": "6f5675ebe617f9c04e355786917f485f5e954bfed8a7157bce89c684580a24f7"

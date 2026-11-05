@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-image-wall",
+  "name": "pocketjs-motion-image-wall",
+  "title": "PocketJS Motion: an image wall pushed in",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/image-wall/main.tsx",
+    "output": "motion-image-wall",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [1280, 720], "presentation": "native" } }
+  }
+}

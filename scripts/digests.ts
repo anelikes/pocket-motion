@@ -195,6 +195,12 @@ const ENTRIES = [
   // 320×180. A count read short, a segment found wrong by the core's search,
   // or a kit that splits or thins a long move moves this digest and no other.
   "compositions/long-track",
+  // image-wall. patches/0058: sixty 300x420 covers drawn at 15% under
+  // `image-filter-trilinear` and pushed in to 26% over 300 frames, so every
+  // frame reads two levels of sixty mip chains and the push crosses a level.
+  // A change to the reduction, the footprint, the level pick or the blend
+  // moves this digest and no other.
+  "compositions/image-wall",
 ] as const;
 
 /**
