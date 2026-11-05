@@ -6,12 +6,16 @@
 import { WasmFrameSource, type WasmFrameSourceOptions } from "../runtime/frame-source.ts";
 import { FrameHashSequence, type FrameHash, type HashAlgorithm } from "./hash.ts";
 import {
+  assertEncoderAvailable,
   createEncodeSink,
+  encoderSettings,
   pngSequenceSink,
   type EncodeOptions,
   type EncodeSink,
+  type EncoderSettings,
   type OutputFormat,
 } from "./encode.ts";
+import { RasterReuse } from "./reuse.ts";
 
 export interface RenderOptions extends Omit<WasmFrameSourceOptions, "compositionId"> {
   readonly compositionId: string;
@@ -97,6 +101,13 @@ export interface RenderOptions extends Omit<WasmFrameSourceOptions, "composition
    * frame hash for frame hash.
    */
   readonly range?: readonly [start: number, end: number];
+  /**
+   * Skip the raster of a frame whose draw list and raster revision equal the
+   * previous frame's, and deliver the previous frame's pixels
+   * (`src/render/reuse.ts`). Default on. The frame hash is taken either way,
+   * so this cannot move a digest without the digest saying so.
+   */
+  readonly reuse?: boolean;
 }
 
 export interface RenderResult {
@@ -127,6 +138,14 @@ export interface RenderResult {
    * bitstreams one encoder configuration wrote.
    */
   readonly encode?: Omit<EncodeOptions, "outputPath">;
+  /**
+   * Frames delivered as the previous frame's pixels because the core would
+   * have drawn them the same (`src/render/reuse.ts`); 0 with `reuse: false`.
+   * `frames - reusedFrames` frames were rasterised.
+   */
+  readonly reusedFrames: number;
+  /** What the encode leg was told; absent with no output and for `png-seq`. */
+  readonly encoder?: EncoderSettings;
 }
 
 export async function render(options: RenderOptions): Promise<RenderResult> {
@@ -138,6 +157,28 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
         `got [${start}, ${end})`,
     );
   }
+  const format = options.format ?? "mp4";
+  const physicalW = options.width * (options.renderScale ?? 1);
+  const physicalH = options.height * (options.renderScale ?? 1);
+  const encode: Omit<EncodeOptions, "outputPath"> | undefined =
+    options.outputPath && format !== "png-seq"
+      ? {
+          width: physicalW,
+          height: physicalH,
+          fps: options.hz,
+          crf: options.crf,
+          preset: options.preset,
+          encoder: options.encoder,
+          scaleTo: options.scaleTo,
+          format,
+          alpha: options.alpha,
+        }
+      : undefined;
+  const encoder = encode ? encoderSettings({ ...encode, outputPath: options.outputPath! }) : undefined;
+  // Before the boot: an ffmpeg without the encoder would otherwise surface
+  // as a broken pipe at the first frame written.
+  if (encoder) await assertEncoderAvailable(encoder.codec);
+
   options.signal?.throwIfAborted();
   const source = await WasmFrameSource.create(options);
 
@@ -146,47 +187,34 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
   await options.setup?.(source);
 
   const hashes = new FrameHashSequence(options.hashAlgorithm);
-  const format = options.format ?? "mp4";
-  const physicalW = options.width * (options.renderScale ?? 1);
-  const physicalH = options.height * (options.renderScale ?? 1);
   let sink: EncodeSink | null = null;
-  let encode: Omit<EncodeOptions, "outputPath"> | undefined;
-  if (options.outputPath) {
-    if (format === "png-seq") {
-      if (!options.encodePNG) {
-        throw new Error(
-          "PocketJS Motion: png-seq needs an encodePNG; the caller supplies it " +
-            "(src/cli/commands/render.ts reaches upstream's the way `frame` does).",
-        );
-      }
-      sink = pngSequenceSink({
-        width: physicalW,
-        height: physicalH,
-        outDir: options.outputPath,
-        encodePNG: options.encodePNG,
-        scaleTo: options.scaleTo,
-        firstFrame: start,
-      });
-    } else {
-      encode = {
-        width: physicalW,
-        height: physicalH,
-        fps: options.hz,
-        crf: options.crf,
-        preset: options.preset,
-        encoder: options.encoder,
-        scaleTo: options.scaleTo,
-        format,
-        alpha: options.alpha,
-      };
-      sink = createEncodeSink({ ...encode, outputPath: options.outputPath });
+  if (options.outputPath && format === "png-seq") {
+    if (!options.encodePNG) {
+      throw new Error(
+        "PocketJS Motion: png-seq needs an encodePNG; the caller supplies it " +
+          "(src/cli/commands/render.ts reaches upstream's the way `frame` does).",
+      );
     }
+    sink = pngSequenceSink({
+      width: physicalW,
+      height: physicalH,
+      outDir: options.outputPath,
+      encodePNG: options.encodePNG,
+      scaleTo: options.scaleTo,
+      firstFrame: start,
+    });
+  } else if (encode) {
+    sink = createEncodeSink({ ...encode, outputPath: options.outputPath! });
   }
   // Only when someone asked about alpha: this is a pass over every byte of
   // every frame, and paying for it on the ordinary mp4 path would slow the
   // ledger down to answer a question nobody put.
   const wantAlphaFloor = options.alpha === true || format === "png-seq";
   let alphaFloor = 255;
+  // Sound only because this loop is the source's one reader: nothing else
+  // renders from the world between two reads (see reuse.ts). A segment's
+  // folded frames are never read, so its first frame is always rasterised.
+  const reuse = options.reuse === false ? null : new RasterReuse(source.world, () => source.read());
 
   let finished = false;
   try {
@@ -200,7 +228,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
       await source.seekFrame(f);
       // Before the range: folded, never drawn (see `range`).
       if (f < start) continue;
-      const rgba = source.read();
+      const rgba = reuse ? reuse.read() : source.read();
       hashes.push(rgba);
       if (wantAlphaFloor) {
         for (let i = 3; i < rgba.length; i += 4) {
@@ -233,5 +261,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
     ...(wantAlphaFloor ? { alphaFloor } : {}),
     range: [start, end],
     ...(encode ? { encode } : {}),
+    reusedFrames: reuse?.reused ?? 0,
+    ...(encoder ? { encoder } : {}),
   };
 }

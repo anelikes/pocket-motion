@@ -26,10 +26,15 @@ import { basename, dirname, extname, join, resolve } from "node:path";
 import { render as renderComposition } from "../../render/render.ts";
 import {
   OUTPUT_FORMATS,
+  assertEncoderSupported,
+  encoderSettings,
   formatCarriesAlpha,
   formatExtension,
   isOutputFormat,
+  type EncoderSettings,
+  type Mp4Encoder,
   type OutputFormat,
+  type X264Preset,
 } from "../../render/encode.ts";
 import type { SidecarShutter, SidecarSound } from "../../manifest/sidecar.ts";
 import type { InputIdentity } from "../../render/identity.ts";
@@ -79,7 +84,7 @@ import {
   type RunContext,
 } from "../types.ts";
 import { assertComposition } from "./assert.ts";
-import { compositionIdentity } from "./trace.ts";
+import { compositionIdentity, describeReuse } from "./trace.ts";
 
 /** What `render --json` prints for one finished render. */
 export interface RenderJson {
@@ -100,6 +105,11 @@ export interface RenderJson {
   assertions?: unknown;
   elapsedMs: number;
   msPerFrame: number;
+  /** What the encode leg was told. Absent for png-seq, which runs no encoder. */
+  encoder?: EncoderSettings;
+  /** Frames delivered as the frame before's pixels, without a raster.
+   *  Absent for `--workers`, whose segments rendered in other processes. */
+  reusedFrames?: number;
   shutter?: SidecarShutter;
   soundSkipped?: string;
   sound?: SoundJson;
@@ -157,6 +167,12 @@ export interface RenderOptions {
   readonly format?: OutputFormat;
   /** Ask the codec for an alpha channel. Refused for `mp4`. */
   readonly alpha?: boolean;
+  /** `--encoder`: the mp4's H.264 encoder. Default libx264. */
+  readonly encoder?: Mp4Encoder;
+  /** `--preset`: libx264's preset. Default medium. */
+  readonly preset?: X264Preset;
+  /** `--no-reuse` sets this false (`src/render/reuse.ts`). */
+  readonly reuse?: boolean;
   /** With `spec`: evaluate the job's own `assertions[]` on its staged tree
    *  after the build and before the render, and refuse the job when one
    *  fails. Absent means true; `--no-assert` is false. */
@@ -242,6 +258,26 @@ export function assertAlphaSupported(format: OutputFormat, alpha: boolean): void
       "alpha plane, and accepting the flag would drop the channel without saying so. " +
       "Use --format mov (ProRes 4444), --format webm (VP9 yuva420p), or --format png-seq.",
   );
+}
+
+/**
+ * One line for the encode leg, from the settings it ran with. The hardware
+ * encoder's line says what it costs: its bytes are the machine's.
+ */
+export function describeEncoder(e: EncoderSettings): string {
+  switch (e.codec) {
+    case "libx264":
+      return `encoder libx264, preset ${e.preset}, crf ${e.crf}`;
+    case "h264_videotoolbox":
+      return (
+        `encoder h264_videotoolbox, constant quality ${e.quality} — hardware: the mp4's bytes ` +
+        "differ between machines; the frame digest above does not"
+      );
+    case "libvpx-vp9":
+      return `encoder libvpx-vp9, crf ${e.crf}`;
+    case "prores_ks":
+      return `encoder prores_ks, profile ${e.profile === "4" ? "4444" : "3 (422 HQ)"}`;
+  }
 }
 
 /**
@@ -479,6 +515,9 @@ export async function run(
         outputPath: wrote.partial ?? outputPath,
         format,
         alpha: options.alpha === true,
+        encoder: options.encoder,
+        preset: options.preset,
+        reuse: options.reuse,
         encodePNG,
         ...(options.range ? { range: [options.range[0], options.range[1] + 1] as const } : {}),
         setup: declared
@@ -521,6 +560,24 @@ export async function run(
       return segment.result;
     }
 
+    // A --workers render's encoder ran in its segment processes, each with the
+    // flags forwarded to it; the settings are a function of those flags, so
+    // they are derived here the way each worker derived them.
+    const encoder: EncoderSettings | undefined = rendered
+      ? rendered.encoder
+      : format === "png-seq"
+        ? undefined
+        : encoderSettings({
+            width: c.width * c.supersample,
+            height: c.height * c.supersample,
+            fps: c.fps,
+            outputPath,
+            encoder: options.encoder,
+            preset: options.preset,
+            scaleTo: encodeScaleTo(c),
+            format,
+            alpha: options.alpha === true,
+          });
     const payload: RenderJson = {
       ok: true,
       outputPath,
@@ -533,6 +590,8 @@ export async function run(
       ...(assertions ? { assertions: assertions.json } : {}),
       elapsedMs: result.elapsedMs,
       msPerFrame: result.msPerFrame,
+      ...(encoder ? { encoder } : {}),
+      ...(rendered ? { reusedFrames: rendered.reusedFrames } : {}),
       ...(c.shutter ? { shutter: c.shutter } : {}),
       ...split,
     };
@@ -543,6 +602,8 @@ export async function run(
       `identity ${identity.digest}`,
       ...(assertions?.stdoutLines?.[0] ? [assertions.stdoutLines[0]] : []),
       `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
+      ...(rendered ? [describeReuse(rendered.frames, rendered.reusedFrames, options.reuse !== false)] : []),
+      ...(encoder ? [describeEncoder(encoder)] : []),
       ...(split.workers
         ? [
             `workers ${split.workers.count} — ${split.workers.segments
@@ -863,9 +924,19 @@ async function ingestFootageOnce(
 }
 
 /** The flags every worker is given besides `--range` and `--out`. */
-function forwardedFlags(flags: GlobalFlags, format: OutputFormat, alpha: boolean): string[] {
+function forwardedFlags(
+  flags: GlobalFlags,
+  format: OutputFormat,
+  alpha: boolean,
+  delivery: Pick<RenderOptions, "encoder" | "preset" | "reuse">,
+): string[] {
   const out = [`--format=${format}`];
   if (alpha) out.push("--alpha");
+  // Every segment's encoder argv must be one argv for the join to stream-copy
+  // them, so every worker is given the same encoder and preset.
+  if (delivery.encoder !== undefined) out.push(`--encoder=${delivery.encoder}`);
+  if (delivery.preset !== undefined) out.push(`--preset=${delivery.preset}`);
+  if (delivery.reuse === false) out.push("--no-reuse");
   for (const name of ["width", "height", "fps", "frames", "supersample", "hash", "bundle", "pak"] as const) {
     const value = flags[name];
     if (value !== undefined) out.push(`--${name}=${value}`);
@@ -929,7 +1000,7 @@ async function renderWithWorkers(
       workers: options.workers!,
       scratchDir: scratch,
       extension: formatExtension(format) ?? "",
-      forward: forwardedFlags(options.flags, format, options.alpha === true),
+      forward: forwardedFlags(options.flags, format, options.alpha === true, options),
       signal: context.signal,
       onSegment: (r) => {
         done += r.last - r.first + 1;
@@ -971,6 +1042,9 @@ async function runBatch(
     readonly flags: GlobalFlags;
     readonly format: OutputFormat;
     readonly alpha: boolean;
+    readonly encoder?: Mp4Encoder;
+    readonly preset?: X264Preset;
+    readonly reuse?: boolean;
     readonly assert: boolean;
     readonly workers?: number;
   },
@@ -1065,6 +1139,9 @@ async function runBatch(
         spec: specPath,
         format: options.format,
         alpha: options.alpha,
+        encoder: options.encoder,
+        preset: options.preset,
+        reuse: options.reuse,
         assert: options.assert,
         ...(options.workers !== undefined ? { workers: options.workers } : {}),
       },
@@ -1127,6 +1204,25 @@ export async function runFromArgv(
   const outDir = optionalString(parsed.flags, "out-dir");
   const requestedFormat = optionalString(parsed.flags, "format");
   const alpha = parsed.flags.alpha === true;
+  const encoderFlag = optionalString(parsed.flags, "encoder");
+  const presetFlag = optionalString(parsed.flags, "preset");
+  const reuse = parsed.flags["no-reuse"] !== true;
+  // Checked once per format below; the casts hold after that check.
+  const delivery = (format: OutputFormat) => {
+    assertAlphaSupported(format, alpha);
+    try {
+      assertEncoderSupported(format, alpha, encoderFlag, presetFlag);
+    } catch (e) {
+      throw new UsageError(errMsg(e));
+    }
+    return {
+      format,
+      alpha,
+      encoder: encoderFlag as Mp4Encoder | undefined,
+      preset: presetFlag as X264Preset | undefined,
+      reuse,
+    };
+  };
   const assert = parsed.flags["no-assert"] !== true;
   const rawRange = optionalString(parsed.flags, "range");
   const range = rawRange === undefined ? undefined : parseRange(rawRange);
@@ -1179,16 +1275,13 @@ export async function runFromArgv(
       }
       // A directory of jobs names no output file, so there is no extension to
       // check the format against — `--format` alone decides, defaulting to mp4.
-      const batchFormat = resolveFormat(requestedFormat, "");
-      assertAlphaSupported(batchFormat, alpha);
       return runBatch(
         {
           dir,
           specDir: specPath,
           outDir: resolve(outDir),
           flags: parsed.global,
-          format: batchFormat,
-          alpha,
+          ...delivery(resolveFormat(requestedFormat, "")),
           assert,
           ...split,
         },
@@ -1210,9 +1303,10 @@ export async function runFromArgv(
     if (Array.isArray(raw)) {
       throw new UsageError("a job is one JSON object; for many jobs pass a directory of .json files");
     }
-    const format = resolveFormat(requestedFormat, out);
-    assertAlphaSupported(format, alpha);
-    return run({ dir, out, flags: parsed.global, spec: specPath, format, alpha, assert, ...split }, context);
+    return run(
+      { dir, out, flags: parsed.global, spec: specPath, ...delivery(resolveFormat(requestedFormat, out)), assert, ...split },
+      context,
+    );
   }
 
   if (outDir !== undefined) {
@@ -1221,7 +1315,5 @@ export async function runFromArgv(
   if (out === undefined) {
     throw new UsageError("flag --out is required");
   }
-  const format = resolveFormat(requestedFormat, out);
-  assertAlphaSupported(format, alpha);
-  return run({ dir, out, flags: parsed.global, format, alpha, ...split }, context);
+  return run({ dir, out, flags: parsed.global, ...delivery(resolveFormat(requestedFormat, out)), ...split }, context);
 }

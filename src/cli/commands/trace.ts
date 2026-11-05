@@ -2,10 +2,13 @@
  * `trace <composition-dir>`
  * Question: what is the frame-hash sequence + digest?
  *
- * `--json` is `{ frames, digest, identity }`, plus `shutter` when the sidecar
- * declares one. `digest` is the frame sequence — the field the ledger and
- * `diff` compare. `identity` is the input hash (`src/render/identity.ts`),
- * and the shutter is part of it.
+ * `--json` is `{ frames, digest, identity, reusedFrames }`, plus `shutter`
+ * when the sidecar declares one. `digest` is the frame sequence — the field
+ * the ledger and `diff` compare. `identity` is the input hash
+ * (`src/render/identity.ts`), and the shutter is part of it. `reusedFrames`
+ * is how many frames skipped their raster (`src/render/reuse.ts`); every one
+ * is hashed all the same, so `trace --no-reuse`, which rasterises them all,
+ * reports the same digest or the reuse is wrong.
  */
 
 import { existsSync } from "node:fs";
@@ -32,6 +35,21 @@ import {
 export interface TraceOptions {
   readonly dir: string;
   readonly flags: GlobalFlags;
+  /** `--no-reuse` sets this false: every frame rasterised (`src/render/reuse.ts`). */
+  readonly reuse?: boolean;
+}
+
+/**
+ * One line for how many frames were rasterised, printed by `trace` and
+ * `render`. Every frame is hashed either way; a reused frame is hashed from
+ * the pixels it was delivered with.
+ */
+export function describeReuse(frames: number, reused: number, enabled: boolean): string {
+  if (!enabled) return `raster ${frames} of ${frames} frames — --no-reuse`;
+  return (
+    `raster ${frames - reused} of ${frames} frames — ${reused} reused the frame before, ` +
+    "whose draw list and raster revision they share"
+  );
 }
 
 /**
@@ -107,6 +125,7 @@ export async function run(
       shutter: c.shutter,
       buildCommand: c.buildCommand,
       hashAlgorithm: options.flags.hash,
+      reuse: options.reuse,
       // no outputPath — hash-only path
       setup: declared
         ? async (source) => {
@@ -130,6 +149,7 @@ export async function run(
       digest: result.digest,
       identity,
       ...(c.shutter ? { shutter: c.shutter } : {}),
+      reusedFrames: result.reusedFrames,
     };
 
     return {
@@ -142,6 +162,7 @@ export async function run(
         // A digest says which picture it is a digest of: with a shutter
         // declared every frame hashed above is an exposure.
         ...(c.shutter ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure`] : []),
+        describeReuse(result.frames, result.reusedFrames, options.reuse !== false),
         ...result.frameHashes.map((h, i) => `  [${i}] ${h}`),
       ],
     };
@@ -171,5 +192,5 @@ export async function runFromArgv(
 ): Promise<CommandResult> {
   const parsed = parseArgs(["trace", ...argv]);
   const dir = requirePositional(parsed.positionals, 0, "composition-dir");
-  return run({ dir, flags: parsed.global }, context);
+  return run({ dir, flags: parsed.global, reuse: parsed.flags["no-reuse"] !== true }, context);
 }

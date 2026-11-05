@@ -1424,6 +1424,56 @@ mechanisms with the file or test beside them.
   Neither is now ("Where a build runs is not an input"), and
   `tests/build-location.test.ts` renders one spec twice to one identity and
   a spec differing in one line of copy to another.
+- **A frame the core would draw the same is not drawn again, and every
+  frame is still hashed** (`src/render/reuse.ts`). `render()` — so `render`,
+  `trace` and both ledgers — skips the raster of a frame whose draw-list hash
+  (`ui_draw_hash`; under a shutter `ui_draw_hash_exposure`, every sample
+  folded in order) and raster revision both equal the previous frame's, and
+  delivers the previous frame's pixels. The pair is the core's own condition
+  for nothing to repaint (`DamageTracker::prepare`, with the target, which a
+  render never changes). The revision is the core's counter of texture, font
+  atlas and style changes, exported by `patches/0055` (class `upstream`):
+  a TEX_QUAD carries a texture handle the walk never resolves, so a freed
+  bound texture leaves the words equal while the image leaves the frame. The
+  frame hash is taken of every delivered frame, reused or not, so the digest
+  examines every frame and the ledger — recorded with no reuse — is the check:
+  all 45 compositions match with it on, and `trace --no-reuse` rasterises
+  every frame for anyone who wants the comparison again. Over the 42 the
+  ledger held when it was measured, the key held on 3,052 of 9,664 frames,
+  never on a frame whose pixels moved, and saw 3,052 of the 3,131 whose
+  pixels held. Under a shutter the key has to be
+  the exposure's: an animation ending on a frame's tick leaves the next
+  tick's draw list equal while the exposure before it was blurred.
+  `tests/reuse.test.ts` holds that on a fixture it stages, the freed texture
+  on `compositions/images`, and the plain case on `captions/highlight`, each
+  red under the edit its header names. What it saves depends on how heavy a
+  held frame's raster was: `transitions`, 403 of 756 frames held at 21 ms
+  each, traces in 38% less CPU and renders in 13% less; a caption template's
+  raster is about a millisecond, so its holds save little while every frame
+  is still hashed. The key costs 0.07–13% of the raster on a frame that
+  changes (`baselines/raster-reuse.md`).
+- **The mp4's encode leg is chosen, and refused where it would not be what
+  it says** (`src/render/encode.ts`). `render --preset` is libx264's;
+  `--encoder h264_videotoolbox` is macOS's hardware encoder at constant
+  quality `-q:v 87` with its software fallback off. One function,
+  `encoderSettings`, builds the argv and is what `render --json` reports as
+  `encoder`. Refused, with exit 2 before anything boots: either flag with
+  webm, mov or png-seq, the hardware encoder with `--alpha`, a preset with
+  the hardware encoder, and any encoder name not measured here; and with
+  exit 1 before the boot, an encoder `ffmpeg -encoders` does not list, which
+  is every Linux host. Measured in `baselines/encode-cost.md`: at libx264's
+  own bitrate VideoToolbox lost 6.7 dB PSNR on a 10 s 1080p title and 15.1 dB
+  on the hajibang ranking film, its `-b:v` saturates near 5 Mb/s whatever it
+  is asked for, and `-q:v 87` is the lowest setting that matched libx264's
+  default (`medium`, CRF 16) in PSNR and SSIM on both, at 2.8× and 3.9× the
+  bytes, for about a fifth of the encode's CPU. **The hardware encoder's mp4
+  is not the same bytes on another machine**; the digest does not depend on
+  it, and MP4 bytes were never the determinism claim. On Linux the lever is
+  the preset: `veryfast` took 41–51% off the encode's CPU for about 3 dB
+  PSNR, `faster` 19–26% for about 1.5.
+  `tests/reuse.test.ts` reads a VideoToolbox file back where ffmpeg has the
+  encoder and asserts the refusal where it does not; the second branch was
+  run here through a `PATH` shim whose `ffmpeg -encoders` omits it.
 - **A film split into segments joins to the film `trace` reports, and the
   join reads its own output back.** `render --range <first>..<last>`
   renders a segment: every earlier frame runs its boundary, guest turn and
@@ -1846,6 +1896,40 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   refusal that names the command. `src/api.ts` has `build`; serving it is a
   tool definition away, and the reason it is not one yet is that this server
   was scoped to the six.
+- **The reuse sees a hold only where nothing in the draw list moved.** On
+  the hajibang ranking film 980 of 1,665 frames are byte-identical to the
+  frame before and none is reused: a full-frame dot grid drifts 256 px over
+  the film, 0.15 px a frame, so one TEX_QUAD's clipped UV moves every frame
+  while nearest sampling moves the dots about every sixth. Seeing those needs
+  the raster's own quantisation in the key, or a generator that moves the
+  grid in whole pixels, which changes its picture; neither is done, and the
+  59% is the most either could take.
+- **A reused frame is hashed again, and on light frames the hash is the
+  cost.** SHA-256 of a 1080p frame is 2.71 ms in `src/render/hash.ts` and was
+  5.6–9.3 ms under the load these measurements ran at, against 0.3–0.8 ms to
+  rasterise a caption template's frame. So on those templates most of a held
+  frame's cost is still paid. Carrying the previous hash across would remove
+  it and make the digest a claim about frames nothing examined; `--hash fast`
+  is the existing lever.
+- **A frame that changes pays one more draw walk.** The key walks the tree
+  and the raster walks it again; `ui_render_scaled` has no form that
+  rasterises the list the last walk built. Measured per composition in
+  `baselines/raster-reuse.md`; a core export that rasterises the current
+  list would remove it.
+- **A `--workers` render does not say how many frames it reused.** Each
+  segment is a `render --range` process that reuses as any render does —
+  its first frame is always rasterised, since the frames it folds are never
+  drawn (`tests/reuse.test.ts` starts a segment on a held frame, red when the
+  frame before the range is read through the reuse) — but the segment
+  manifest carries no count, so `--json` omits
+  `reusedFrames` there. `--encoder`, `--preset` and `--no-reuse` are handed
+  to every worker; three VideoToolbox segments of `smoke` joined by stream
+  copy, passed the read-back and gave `trace`'s digest, checked by hand and
+  not held by a test.
+- **The hardware encoder was measured on one Mac.** Three encodes on the M4
+  decoded to the same frames; no second machine was tried, and VideoToolbox
+  on an Intel Mac has no `-q:v` mode, so `--encoder h264_videotoolbox` there
+  is untried.
 
 ## Working rules
 

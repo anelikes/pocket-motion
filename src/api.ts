@@ -83,6 +83,12 @@ export interface RenderOptions extends CompositionFlags {
   readonly format?: "mp4" | "webm" | "mov" | "png-seq";
   /** Ask the codec for an alpha channel. Refused for mp4. */
   readonly alpha?: boolean;
+  /** The mp4's H.264 encoder. Default `libx264`; `h264_videotoolbox` is macOS's hardware one. */
+  readonly encoder?: "libx264" | "h264_videotoolbox";
+  /** libx264's preset. Default `medium`. Refused with any other encoder. */
+  readonly preset?: "ultrafast" | "superfast" | "veryfast" | "faster" | "fast" | "medium" | "slow" | "slower" | "veryslow";
+  /** Rasterise every frame, held or not (`--no-reuse`). */
+  readonly noReuse?: boolean;
   /** With `spec`: skip each job's own `assertions[]`, which are otherwise
    *  checked on its staged tree before it renders — a job is refused when one
    *  fails, and `assert`'s object comes back as `assertions`. Refused without
@@ -101,6 +107,11 @@ export interface RenderOptions extends CompositionFlags {
 export interface ConcatOptions extends CompositionFlags {
   /** The joined film: a file, or a directory for `png-seq` segments. */
   readonly out: string;
+}
+
+export interface TraceOptions extends CompositionFlags {
+  /** Rasterise every frame, held or not (`--no-reuse`). The digest is the same. */
+  readonly noReuse?: boolean;
 }
 
 /**
@@ -283,7 +294,7 @@ export function build(dir: string, options: CompositionFlags = {}): Promise<Buil
 /** `trace <dir> --json`: the per-frame hashes, their digest, and input identity. */
 export function trace(
   dir: string,
-  options: CompositionFlags = {},
+  options: TraceOptions = {},
   control: RunContext = {},
 ): Promise<TraceResult> {
   return call(argvOf("trace", dir, { ...options }), control);

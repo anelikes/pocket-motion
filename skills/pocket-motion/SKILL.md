@@ -212,7 +212,10 @@ both keys, and a test proves it.
 5. **`snapshot`** — PNGs at sampled frames, `--annotate` for the boxes and
    finding codes drawn over them. This is how you look, when looking helps.
 6. **`render`** — the video: `--format mp4|webm|mov|png-seq`, and `--alpha`
-   for the three that can carry a channel.
+   for the three that can carry a channel. For mp4, `--preset` is libx264's
+   (default `medium`) and `--encoder h264_videotoolbox` is macOS's hardware
+   encoder, whose file is not the same bytes on another machine; the digest
+   is the same either way.
 
 ```bash
 bun src/cli/main.ts doctor
@@ -286,7 +289,7 @@ browser.
 | `frame --at N` | one frame as a PNG |
 | `trace` | the per-frame hash sequence, the digest, and input identity |
 | `diff` | the first divergent frame between two traces |
-| `render` | the video — `--format mp4\|webm\|mov\|png-seq`, `--alpha` for a channel mov/webm/png-seq can carry; `--workers N` splits it over N processes, `--range A..B` renders one segment |
+| `render` | the video — `--format mp4\|webm\|mov\|png-seq`, `--alpha` for a channel mov/webm/png-seq can carry, `--preset` / `--encoder` for the mp4's encode; `--workers N` splits it over N processes, `--range A..B` renders one segment |
 | `concat` | join `render --range` segments from anywhere into the film `trace` reports, refused on mixed identity, a gap or an overlap; sound muxed once |
 | `sound` | what sound is declared, whether each file resolves, and `--verify` that each element reached a mix |
 | `preview` | a player at `/watch` and a frame debugger at `/`, serving the same bytes `frame` writes |

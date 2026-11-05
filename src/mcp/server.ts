@@ -117,6 +117,12 @@ const HASH: Property = {
   description: "The per-frame hash. sha256 (the default) is the one the digest ledger records.",
 };
 
+const NO_REUSE: Property = {
+  type: "boolean",
+  description:
+    "Rasterise every frame. By default a frame whose draw list and raster revision equal the frame before's reuses its pixels; every frame is hashed either way, so the digest is the same.",
+};
+
 const READ: Property = {
   type: "string",
   enum: ["exposure", "tick"],
@@ -238,6 +244,18 @@ export const TOOLS: readonly Tool[] = [
         description: "The container. Default: out's extension, else mp4.",
       },
       alpha: { type: "boolean", description: "Ask the codec for an alpha channel; refused for mp4." },
+      encoder: {
+        type: "string",
+        enum: ["libx264", "h264_videotoolbox"],
+        description:
+          "The mp4's H.264 encoder. Default libx264. h264_videotoolbox is macOS's hardware encoder: about a fifth of the encode's CPU at 3-4x the bytes, and a file that is not the same bytes on another machine; refused where ffmpeg lacks it.",
+      },
+      preset: {
+        type: "string",
+        enum: ["ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"],
+        description: "libx264's preset, mp4 only. Default medium; veryfast takes 41-51% off the encode's CPU for about 3 dB PSNR.",
+      },
+      noReuse: NO_REUSE,
       hash: HASH,
       workers: {
         type: "integer",
@@ -289,12 +307,12 @@ export const TOOLS: readonly Tool[] = [
       "The per-frame hash sequence, its digest, and input identity — bundle, pak, sidecar, fonts, footage, render parameters and the toolchain that built them. " +
       "Two machines that agree on identity and disagree on digest have found an input nobody declared. " +
       "With a progressToken it reports every frame; cancelled, it stops at the next one. Needs a built composition.",
-    inputSchema: composition({ hash: HASH }),
+    inputSchema: composition({ hash: HASH, noReuse: NO_REUSE }),
     annotations: READS,
     rasterises: true,
     call: (args, control) => {
       const [dir, options] = split(args);
-      return api.trace(dir, options as api.CompositionFlags, control);
+      return api.trace(dir, options as api.TraceOptions, control);
     },
   },
   {
