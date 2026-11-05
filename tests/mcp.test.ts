@@ -236,16 +236,17 @@ describe("mcp — the protocol", () => {
     expect(typeof result.instructions).toBe("string");
   });
 
-  test("tools/list: the six tools, the picture-reading ones first, each with a closed schema", async () => {
+  test("tools/list: the seven tools, the picture-reading ones first, each with a closed schema", async () => {
     const result = (await client.response(client.request("tools/list"))).result as Json;
     const tools = result.tools as Array<{ name: string; inputSchema: Json; annotations: Json }>;
-    expect(tools.map((t) => t.name)).toEqual(["verify", "assert", "layout", "render", "trace", "doctor"]);
+    expect(tools.map((t) => t.name)).toEqual(["verify", "assert", "layout", "render", "concat", "trace", "doctor"]);
     for (const tool of tools) {
       expect(tool.inputSchema.type).toBe("object");
       expect(tool.inputSchema.additionalProperties).toBe(false);
       if (tool.name !== "doctor") expect(tool.inputSchema.required).toContain("dir");
     }
     expect((tools.find((t) => t.name === "layout")!.inputSchema.required as string[])).toEqual(["dir", "at"]);
+    expect((tools.find((t) => t.name === "concat")!.inputSchema.required as string[])).toEqual(["dir", "segments", "out"]);
     expect(tools.find((t) => t.name === "render")!.annotations.readOnlyHint).toBe(false);
   });
 
@@ -313,6 +314,17 @@ describe("mcp — the protocol", () => {
     expect(refusal).toEqual((await api.trace("compositions/no-such-composition")) as never);
   }, 60_000);
 
+  test("concat: a segment that is not there is the API's usage error", async () => {
+    const args = { segments: ["no-such-segment.mp4"], out: "joined.mp4" };
+    const result = await client.call("concat", { dir: SMOKE, ...args });
+    expect(result.isError).toBe(true);
+    const refusal = structured(result);
+    expect(refusal.exitCode).toBe(2);
+    expect(refusal.error).toContain("no segment manifest");
+    expect(refusal).toEqual((await api.concat(SMOKE, args.segments, { out: args.out })) as never);
+    expect(existsSync(join(ROOT, "joined.mp4"))).toBe(false);
+  }, 60_000);
+
   test("arguments the schema does not allow are refused before any command runs", async () => {
     const unknown = structured(await client.call("render", { dir: SMOKE, out: "x.mp4", fsp: 30 }));
     expect(unknown).toMatchObject({ ok: false, exitCode: 2 });
@@ -324,6 +336,9 @@ describe("mcp — the protocol", () => {
 
     const missing = structured(await client.call("layout", { dir: SMOKE }));
     expect(missing.error).toContain("at is required");
+
+    const segments = structured(await client.call("concat", { dir: SMOKE, segments: [3], out: "x.mp4" }));
+    expect(segments.error).toContain("segments must be a non-empty array of non-empty strings");
     expect(existsSync(join(ROOT, "x.mp4"))).toBe(false);
   });
 

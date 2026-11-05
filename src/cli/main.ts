@@ -14,6 +14,7 @@ import { applyEmit } from "./emit.ts";
 import * as assertCmd from "./commands/assert.ts";
 import * as buildCmd from "./commands/build.ts";
 import * as checkCmd from "./commands/check.ts";
+import * as concatCmd from "./commands/concat.ts";
 import * as diffCmd from "./commands/diff.ts";
 import * as frameCmd from "./commands/frame.ts";
 import * as keyframesCmd from "./commands/keyframes.ts";
@@ -59,8 +60,14 @@ const COMMANDS: Record<
     run: (argv) => buildCmd.runFromArgv(argv),
   },
   render: {
-    summary: "produce the video (--out file.mp4)",
+    summary:
+      "produce the video (--out file.mp4); --workers N splits it over N processes, --range A..B renders one segment",
     run: (argv, context) => renderCmd.runFromArgv(argv, context),
+  },
+  concat: {
+    summary:
+      "join `render --range` segments into one film (--out file.mp4): refuses mixed identity, gaps and overlaps; muxes sound once",
+    run: (argv, context) => concatCmd.runFromArgv(argv, context),
   },
   trace: {
     summary: "the frame-hash sequence + digest",
@@ -166,6 +173,8 @@ export function helpText(): string {
     "  --alpha             render: ask the codec for an alpha channel (not mp4)",
     "  --no-assert         render --spec: skip the job's own assertions[], which are",
     "                      otherwise checked on its staged tree before it renders",
+    "  --workers N         render: N `render --range` processes, joined and read back",
+    "  --range A..B        render: frames A to B (both included) as a segment for concat",
     "  --samples N         visibility/snapshot: how many frames to look at (default 24)",
     "  --read exposure|tick layout/visibility/assert/verify, under a shutter: classify",
     "                      the delivered exposure (default) or the frame's own tick",

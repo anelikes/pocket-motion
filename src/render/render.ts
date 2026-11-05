@@ -5,7 +5,13 @@
 
 import { WasmFrameSource, type WasmFrameSourceOptions } from "../runtime/frame-source.ts";
 import { FrameHashSequence, type FrameHash, type HashAlgorithm } from "./hash.ts";
-import { createEncodeSink, pngSequenceSink, type EncodeSink, type OutputFormat } from "./encode.ts";
+import {
+  createEncodeSink,
+  pngSequenceSink,
+  type EncodeOptions,
+  type EncodeSink,
+  type OutputFormat,
+} from "./encode.ts";
 
 export interface RenderOptions extends Omit<WasmFrameSourceOptions, "compositionId"> {
   readonly compositionId: string;
@@ -71,6 +77,26 @@ export interface RenderOptions extends Omit<WasmFrameSourceOptions, "composition
    * tree is.
    */
   readonly encodePNG?: (rgba: Uint8Array, width: number, height: number) => Uint8Array;
+  /**
+   * Render only frames `[start, end)` of the film — a SEGMENT.
+   *
+   * Every frame before `start` still runs: its frame boundary, its guest turn
+   * and its ticks, exactly as a whole render runs them, and nothing else — no
+   * raster, no hash, no encode. So the world a segment rasterises frame
+   * `start` from is the world a whole render reaches there, by the same
+   * sequence of calls rather than by a shortcut that is supposed to be
+   * equivalent. Folding is the cheap half: `seekFrame` never rasterises, and
+   * `read()` is where the picture is drawn. The frame boundary is not a
+   * formality: footage is presented there, and a track's tiles hold the last
+   * frame presented to them once its window has passed, so skipping the
+   * boundaries of folded frames moved `footage-tracks`' digest.
+   *
+   * `durationFrames` stays the film's, because it is part of input identity
+   * and because the clock a segment folds through is the film's clock.
+   * `tests/segments.test.ts` holds three segments joined to a whole render,
+   * frame hash for frame hash.
+   */
+  readonly range?: readonly [start: number, end: number];
 }
 
 export interface RenderResult {
@@ -92,10 +118,26 @@ export interface RenderResult {
    * says otherwise now.
    */
   readonly alphaFloor?: number;
+  /** The frames rendered, `[start, end)` — the whole film unless `range` was given. */
+  readonly range: readonly [start: number, end: number];
+  /**
+   * What the encode leg was asked for, output path aside — `ffmpegArgs` of
+   * this is the command that wrote the file. Absent for `png-seq` and for a
+   * hash-only run. A segment records it, because a stream copy can join only
+   * bitstreams one encoder configuration wrote.
+   */
+  readonly encode?: Omit<EncodeOptions, "outputPath">;
 }
 
 export async function render(options: RenderOptions): Promise<RenderResult> {
   const started = performance.now();
+  const [start, end] = options.range ?? [0, options.durationFrames];
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > options.durationFrames || start >= end) {
+    throw new RangeError(
+      `PocketJS Motion: a range must be integers with 0 <= start < end <= ${options.durationFrames}; ` +
+        `got [${start}, ${end})`,
+    );
+  }
   options.signal?.throwIfAborted();
   const source = await WasmFrameSource.create(options);
 
@@ -108,6 +150,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
   const physicalW = options.width * (options.renderScale ?? 1);
   const physicalH = options.height * (options.renderScale ?? 1);
   let sink: EncodeSink | null = null;
+  let encode: Omit<EncodeOptions, "outputPath"> | undefined;
   if (options.outputPath) {
     if (format === "png-seq") {
       if (!options.encodePNG) {
@@ -122,20 +165,21 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
         outDir: options.outputPath,
         encodePNG: options.encodePNG,
         scaleTo: options.scaleTo,
+        firstFrame: start,
       });
     } else {
-      sink = createEncodeSink({
+      encode = {
         width: physicalW,
         height: physicalH,
         fps: options.hz,
-        outputPath: options.outputPath,
         crf: options.crf,
         preset: options.preset,
         encoder: options.encoder,
         scaleTo: options.scaleTo,
         format,
         alpha: options.alpha,
-      });
+      };
+      sink = createEncodeSink({ ...encode, outputPath: options.outputPath });
     }
   }
   // Only when someone asked about alpha: this is a pass over every byte of
@@ -146,7 +190,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
 
   let finished = false;
   try {
-    for (let f = 0; f < options.durationFrames; f++) {
+    for (let f = 0; f < end; f++) {
       if (options.signal) {
         await new Promise<void>((next) => setImmediate(next));
         options.signal.throwIfAborted();
@@ -154,6 +198,8 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
       // Closes mount on the first call, then delimits each frame.
       options.onFrameBoundary?.(f);
       await source.seekFrame(f);
+      // Before the range: folded, never drawn (see `range`).
+      if (f < start) continue;
       const rgba = source.read();
       hashes.push(rgba);
       if (wantAlphaFloor) {
@@ -162,7 +208,9 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
         }
       }
       if (sink) await sink.write(rgba);
-      options.onProgress?.(f, options.durationFrames);
+      // Counted in the frames this call renders, so a segment's progress
+      // runs from 0 like a whole render's.
+      options.onProgress?.(f - start, end - start);
     }
     if (sink) await sink.finish();
     finished = true;
@@ -176,12 +224,14 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
 
   const elapsedMs = performance.now() - started;
   return {
-    frames: options.durationFrames,
+    frames: end - start,
     frameHashes: hashes.frames,
     digest: hashes.digest(),
     outputPath: options.outputPath,
     elapsedMs,
-    msPerFrame: elapsedMs / options.durationFrames,
+    msPerFrame: elapsedMs / (end - start),
     ...(wantAlphaFloor ? { alphaFloor } : {}),
+    range: [start, end],
+    ...(encode ? { encode } : {}),
   };
 }

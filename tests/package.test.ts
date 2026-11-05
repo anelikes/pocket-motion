@@ -345,7 +345,7 @@ describe("installed from the tarball", () => {
       "-e",
       'const m = await import("pocket-motion"); console.log(Object.keys(m).sort().join(","))',
     ]);
-    expect(imported.stdout.trim()).toBe("argvOf,assert,build,doctor,layout,render,trace,verify");
+    expect(imported.stdout.trim()).toBe("argvOf,assert,build,concat,doctor,layout,render,trace,verify");
 
     // The MCP server from the installed bin. `initialize` carries the version
     // `mcp` reads from the package.json beside the source it ships in, so a

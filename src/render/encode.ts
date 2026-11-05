@@ -328,6 +328,12 @@ export function pngSequenceSink(options: {
   /** Encodes one RGBA buffer. Injected so this module needs no upstream import. */
   readonly encodePNG: (rgba: Uint8Array, width: number, height: number) => Uint8Array;
   readonly scaleTo?: readonly [width: number, height: number];
+  /**
+   * The film frame the first write is. A segment (`render --range`) names
+   * its PNGs by the film's frame numbers, so joining segments is copying
+   * files into one directory and a file's name says which frame it is.
+   */
+  readonly firstFrame?: number;
 }): EncodeSink {
   if (options.scaleTo) {
     throw new Error(
@@ -337,7 +343,7 @@ export function pngSequenceSink(options: {
     );
   }
   const expected = options.width * options.height * 4;
-  let frame = 0;
+  let frame = options.firstFrame ?? 0;
   return {
     async write(rgba: Uint8Array): Promise<void> {
       if (rgba.length !== expected) {

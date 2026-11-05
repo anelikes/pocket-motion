@@ -1367,7 +1367,7 @@ mechanisms with the file or test beside them.
   wrong — the hit is unreachable, and `build.ts` iterates the field, so an
   `undefined` would throw rather than go quiet.
 - **The API is the CLI's `--json`, returned.** `src/api.ts` exports `build`,
-  `trace`, `render`, `verify`, `assert`, `layout` and `doctor`. Each turns
+  `trace`, `render`, `concat`, `verify`, `assert`, `layout` and `doctor`. Each turns
   its options into the argv the command would be typed with, runs it through
   `dispatch` (`src/cli/main.ts` — the parser, the command, and the
   conversion of a thrown error into `{ ok: false, error, exitCode }` that
@@ -1380,7 +1380,7 @@ mechanisms with the file or test beside them.
   with `envelope()` skipped: eight of the nine parity cases.
 - **The MCP server is the API, served.** `pocket-motion mcp`
   (`src/mcp/server.ts`) offers `verify`, `assert`, `layout`, `render`,
-  `trace` and `doctor` as tools over newline-delimited JSON-RPC on stdio. A
+  `concat`, `trace` and `doctor` as tools over newline-delimited JSON-RPC on stdio. A
   tool's arguments are its API function's options with the composition as
   `dir`, and its result is that function's object, as `structuredContent`
   and as text; nothing in the server reads a verdict except to set
@@ -1424,6 +1424,58 @@ mechanisms with the file or test beside them.
   Neither is now ("Where a build runs is not an input"), and
   `tests/build-location.test.ts` renders one spec twice to one identity and
   a spec differing in one line of copy to another.
+- **A film split into segments joins to the film `trace` reports, and the
+  join reads its own output back.** `render --range <first>..<last>`
+  renders a segment: every earlier frame runs its boundary, guest turn and
+  ticks exactly as a whole render runs them and is not drawn
+  (`render()`'s `range`, `src/render/render.ts`), and the segment is written
+  with `<out>.segment.json` — its frame hashes, the film's identity, the hash
+  algorithm and the encoder argv. `concat` joins segments from anywhere;
+  `render --workers N` is N `render --range` children and the same join
+  (`src/render/parallel.ts`, `src/render/segment.ts`), so the local path and
+  the distributed one are one path. `planJoin` refuses mixed identity, gaps,
+  overlaps and mixed encoding before a byte is joined; the media is checked
+  against its manifest; and a measured bitstream mismatch is refused: libx264
+  writes no reorder delay for a segment of one or two frames, and a stream
+  copy across two delays had the demuxer rewriting decode timestamps. After
+  the stream copy the file is read back — one packet per frame, increasing
+  decode timestamps, a keyframe at every segment start, presentation
+  timestamps exactly `i / fps`, every decoded frame equal to its segment's
+  own decode — and that read-back is what found the join's real defect: the
+  concat demuxer offsets each file by its container duration, an x264 MP4's
+  passes through its edit list and can come out short (a 26-frame segment of
+  synthetic frames read 13302 ticks of 1/15360 for 13312), and 5 of the 42
+  ledger compositions failed at `--workers 4`, every one split into unequal
+  segments. Durations are now written from frame counts, and WebM's
+  millisecond timestamps are rewritten from the packet index. Sound is muxed once over the joined film, through
+  the one function the one-shot render uses (`deliverSound`), and the joined
+  film's decoded audio hashes equal to a one-shot render's.
+  `tests/segments.test.ts` holds three segments of `sound-roles` — footage
+  presented every frame, a declared mix — to `trace` hash for hash, every
+  refusal through `planJoin` and through the CLI, and each container's
+  timestamps; its header lists the edit that turns each red. A folded frame
+  keeps its frame boundary for a measured reason: footage tiles hold the
+  last frame presented to them once a track's window has passed, and with
+  the boundaries of folded frames skipped `footage-tracks`' digest moved
+  while `sound-roles`, which never shows a held frame, stayed green — so
+  `footage-tracks --workers 4` is in that file too.
+  `baselines/segments/ledger.ts` renders every ledger composition with
+  `--workers` against its recorded digest: 42 of 42 at `--workers 7`. What
+  splitting buys is measured in `baselines/segments.md`, and on one machine
+  it is little: beside other sessions on an M4, `--workers` saved at most
+  11 % of wall time for 21–69 % more CPU, because a one-process render
+  already keeps libx264 on the cores. Across machines it is the point: the
+  1665-frame hajibang ranking in 16 segments costs 1.8–4.2 s a segment and
+  8.0 s to join, against 51.3 s whole. What the join does not claim: the
+  joined bytes are not a one-shot encode's (rate control and keyframes see
+  one segment at a time), and `concat` takes the footage identity components
+  from the segments rather than ingesting, and lists them. Both commands go
+  through the MCP mechanisms above: the join is written to a hidden partial
+  and renamed over `--out` once read back, a cancel kills `--workers`'
+  children and takes back what was written, and `render --spec --workers`
+  stages, builds and asserts the job once before any worker starts.
+  `--range` refuses `--spec`, because `concat` joins against a composition
+  directory and a job's exists only inside its staging.
 - **The npm package is staged, never packed from the checkout.**
   `scripts/pack.ts` assembles `dist/pack/pocket-motion` from an explicit
   list, because npm honours `vendor/pocketjs`'s own `.gitignore`, which

@@ -70,7 +70,9 @@ interface Property {
   readonly description: string;
   readonly enum?: readonly (string | number)[];
   readonly minimum?: number;
-  readonly items?: { readonly type: "integer"; readonly minimum: number };
+  readonly items?:
+    | { readonly type: "integer"; readonly minimum: number }
+    | { readonly type: "string" };
 }
 
 export interface Tool {
@@ -237,12 +239,47 @@ export const TOOLS: readonly Tool[] = [
       },
       alpha: { type: "boolean", description: "Ask the codec for an alpha channel; refused for mp4." },
       hash: HASH,
+      workers: {
+        type: "integer",
+        minimum: 1,
+        description:
+          "Render as this many segments in as many processes and join them; the digest is trace's either way. On one machine libx264 already uses the cores, so this buys little there.",
+      },
+      range: {
+        type: "array",
+        items: { type: "integer", minimum: 0 },
+        description:
+          "[first, last]: render only these frames, both included, as a segment for the concat tool — out plus out.segment.json, no digest and no sound. Refused with spec and with workers.",
+      },
     }),
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     rasterises: true,
     call: (args, control) => {
       const [dir, options] = split(args);
       return api.render(dir, options as api.RenderOptions, control);
+    },
+  },
+  {
+    name: "concat",
+    title: "Join segments into the film",
+    description:
+      "Joins segments render wrote with range — rendered here or on other machines, in any order — into one film at out, and muxes the composition's sound once over it. " +
+      "Refused, with a code per reason, when they are not one film: different identity, a gap, an overlap, different encoding, a file changed since it was rendered, or bitstreams a stream copy cannot join. " +
+      "The joined file is read back before it replaces out. Returns the digest trace reports for that identity. Needs the built composition the segments came from.",
+    inputSchema: composition({
+      segments: {
+        type: "array",
+        items: { type: "string" },
+        description: "Each segment's out, or its .segment.json.",
+      },
+      out: { type: "string", description: "The joined film: a file, or a directory for png-seq segments." },
+      hash: HASH,
+    }, ["segments", "out"]),
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    rasterises: true,
+    call: (args, control) => {
+      const { dir, segments, ...options } = args;
+      return api.concat(dir as string, segments as string[], options as unknown as api.ConcatOptions, control);
     },
   },
   {
@@ -279,7 +316,7 @@ export const INSTRUCTIONS = [
   "- Each tool returns the object the same CLI command prints with --json. isError means the command could not produce its reading; ok: false without an error field is the reading.",
   "- Every tool but doctor needs the composition built first with the CLI's build command, and a missing build is refused with that command. render with spec builds its staged job itself.",
   "- Paths in results are redacted: $REPO is the checkout and $HOME the home directory. Relative paths in arguments resolve against the server's working directory.",
-  "- Tools other than doctor run one at a time, in arrival order. render and trace report frame progress to a call with a progressToken and stop at the next frame when cancelled; a cancelled render leaves no file it wrote. Other tools run to the end.",
+  "- Tools other than doctor run one at a time, in arrival order. render and trace report frame progress to a call with a progressToken and stop at the next frame when cancelled; concat stops between its steps; a cancelled render or concat leaves no file it wrote. Other tools run to the end.",
   "- When something fails for a reason outside the composition, call doctor: each failing check names the command that fixes it.",
 ].join("\n");
 
@@ -333,6 +370,12 @@ function typeProblem(property: Property, value: unknown): string | null {
       break;
     case "array": {
       const items = property.items!;
+      if (items.type === "string") {
+        if (!Array.isArray(value) || value.length === 0 || !value.every((v) => typeof v === "string" && v.length > 0)) {
+          return "must be a non-empty array of non-empty strings";
+        }
+        break;
+      }
       if (
         !Array.isArray(value) ||
         value.length === 0 ||

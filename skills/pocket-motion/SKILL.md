@@ -286,7 +286,8 @@ browser.
 | `frame --at N` | one frame as a PNG |
 | `trace` | the per-frame hash sequence, the digest, and input identity |
 | `diff` | the first divergent frame between two traces |
-| `render` | the video — `--format mp4\|webm\|mov\|png-seq`, `--alpha` for a channel mov/webm/png-seq can carry |
+| `render` | the video — `--format mp4\|webm\|mov\|png-seq`, `--alpha` for a channel mov/webm/png-seq can carry; `--workers N` splits it over N processes, `--range A..B` renders one segment |
+| `concat` | join `render --range` segments from anywhere into the film `trace` reports, refused on mixed identity, a gap or an overlap; sound muxed once |
 | `sound` | what sound is declared, whether each file resolves, and `--verify` that each element reached a mix |
 | `preview` | a player at `/watch` and a frame debugger at `/`, serving the same bytes `frame` writes |
 
@@ -306,10 +307,10 @@ browser.
 - `MOTION_RUN_ID` in the environment is echoed back as `runId` on every
   envelope, so one agent turn's `lint`, `check`, `trace` and `verify` join up.
 - The same objects come back from code: `import { build, trace, render,
-  verify, assert, layout, doctor } from "pocket-motion"` (`src/api.ts`) runs
-  the command through the CLI's own dispatch and returns what `--json` would
-  have printed, redaction and `runId` included. `tests/api.test.ts` holds
-  each function equal to the CLI. `render`'s object carries `trace`'s
+  concat, verify, assert, layout, doctor } from "pocket-motion"` (`src/api.ts`)
+  runs the command through the CLI's own dispatch and returns what `--json`
+  would have printed, redaction and `runId` included. `tests/api.test.ts`
+  holds each function equal to the CLI. `render`'s object carries `trace`'s
   `digest` and `identity`; a `--spec` job's identity does not depend on the
   directory it was staged in, so one spec rendered twice reports one.
 - A command states what it EXAMINED. `check` names the frame window it used;
@@ -319,7 +320,7 @@ browser.
 
 ## As MCP tools
 
-`mcp` serves `verify`, `assert`, `layout`, `render`, `trace` and `doctor` as
+`mcp` serves `verify`, `assert`, `layout`, `render`, `concat`, `trace` and `doctor` as
 Model Context Protocol tools on stdin and stdout, for a client that would
 rather call a tool than parse a shell. A tool's arguments are the `src/api.ts`
 function's options with the composition directory as `dir`, and its result
