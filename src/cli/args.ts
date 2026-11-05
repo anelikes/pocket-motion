@@ -59,6 +59,8 @@ const KNOWN_FLAGS = new Set([
   "encoder",
   "preset",
   "zoom",
+  "range",
+  "workers",
   // keep room for future command flags without expanding GLOBAL_*
 ]);
 
@@ -75,7 +77,7 @@ const FLAG_COMMAND: Record<string, readonly string[]> = {
   bind: ["preview"],
   "no-open": ["preview"],
   "no-watch": ["preview"],
-  out: ["frame", "render", "snapshot"],
+  out: ["frame", "render", "snapshot", "concat"],
   at: ["frame", "layout", "snapshot", "verify"],
   samples: ["visibility", "snapshot", "assert", "verify"],
   read: ["layout", "visibility", "assert", "verify"],
@@ -83,6 +85,8 @@ const FLAG_COMMAND: Record<string, readonly string[]> = {
   example: ["init"],
   format: ["render"],
   alpha: ["render"],
+  range: ["render"],
+  workers: ["render"],
   "no-assert": ["render"],
   encoder: ["render"],
   preset: ["render"],

@@ -12,12 +12,12 @@
  * `MOTION_RUN_ID` is set. `tests/api.test.ts` holds each function equal to
  * the CLI run as a separate process on the same input.
  *
- * `render` and `trace` take what an argv cannot carry: a `RunContext` of an
+ * `render`, `concat` and `trace` take what an argv cannot carry: a `RunContext` of an
  * `AbortSignal` and a per-frame progress callback, which reach the frame loop
  * through `dispatch` and nothing else. Neither moves a
  * field of the result; a signal that fires replaces the result with a refusal
- * carrying `cancelled: true`, and a cancelled `render` leaves no file it
- * wrote. `src/mcp/server.ts` is the caller they exist for.
+ * carrying `cancelled: true`, and a cancelled `render` or `concat` leaves
+ * no file it wrote. `src/mcp/server.ts` is the caller they exist for.
  *
  * Nothing here re-derives a verdict, reshapes a section or adds a field.
  * A function that did would be a second implementation of the command, and
@@ -42,7 +42,8 @@
 import { envelope, jsonPayload } from "./cli/emit.ts";
 import { dispatch } from "./cli/main.ts";
 import type { DoctorReport } from "./cli/commands/doctor.ts";
-import type { RenderJson } from "./cli/commands/render.ts";
+import type { ConcatJson } from "./cli/commands/concat.ts";
+import type { RenderJson, SegmentJson } from "./cli/commands/render.ts";
 import type { FrameProgress, RunContext, TraceJson } from "./cli/types.ts";
 import type { BuildRecord } from "./render/build-record.ts";
 
@@ -93,6 +94,19 @@ export interface RenderOptions extends CompositionFlags {
    *  fails, and `assert`'s object comes back as `assertions`. Refused without
    *  `spec`. */
   readonly noAssert?: boolean;
+  /**
+   * Render frames `first` to `last` (both included) as a segment for
+   * `concat`: `--range first..last`. The result is a `SegmentJson`.
+   */
+  readonly range?: readonly [first: number, last: number];
+  /** Split the film over this many `render --range` processes and join them. */
+  readonly workers?: number;
+}
+
+/** Flags `concat` takes: the composition's, which must match the segments'. */
+export interface ConcatOptions extends CompositionFlags {
+  /** The joined film: a file, or a directory for `png-seq` segments. */
+  readonly out: string;
 }
 
 export interface TraceOptions extends CompositionFlags {
@@ -170,9 +184,10 @@ export type TraceResult =
   | (Run & { readonly frames: readonly string[]; readonly digest: ""; readonly error: string })
   | Refusal;
 
-/** One render, or — for a directory of specs — one entry per job. */
+/** One render, one segment (`range`), or — for a directory of specs — one entry per job. */
 export type RenderResult =
   | (Run & RenderJson)
+  | (Run & SegmentJson)
   | (Run & {
       readonly ok: true;
       readonly jobs: readonly {
@@ -185,6 +200,9 @@ export type RenderResult =
       }[];
     })
   | Refusal;
+
+/** A joined film, or the refusal — `refusals` names each reason the segments are not one film. */
+export type ConcatResult = (Run & ConcatJson) | Refusal;
 
 /** Each section is that command's own `--json` object, verbatim. */
 export type VerifyResult =
@@ -294,7 +312,29 @@ export function render(
   options: RenderOptions,
   control: RunContext = {},
 ): Promise<RenderResult> {
-  return call(argvOf("render", dir, { ...options }), control);
+  const { range, ...rest } = options;
+  return call(
+    argvOf("render", dir, { ...rest, ...(range ? { range: `${range[0]}..${range[1]}` } : {}) }),
+    control,
+  );
+}
+
+/**
+ * `concat <dir> <segment>... --out <file> --json`: join segments `render`
+ * wrote with `range`, each named by its `out` or its `.segment.json`, into
+ * one film — refused when they are not one film — and mux the sound once.
+ * `digest` is the value `trace` reports for the same identity. A signal in
+ * `control` cancels it, and a cancelled join leaves `--out` as it was.
+ */
+export function concat(
+  dir: string,
+  segments: readonly string[],
+  options: ConcatOptions,
+  control: RunContext = {},
+): Promise<ConcatResult> {
+  const argv = argvOf("concat", dir, { ...options });
+  argv.splice(2, 0, ...segments);
+  return call(argv, control);
 }
 
 /** `verify <dir> --json`: lint, check, keyframes, visibility, layout and assert in one envelope. */

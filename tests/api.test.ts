@@ -32,7 +32,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { argvOf, assert, build, doctor, layout, render, trace, verify } from "../src/api.ts";
+import { argvOf, assert, build, concat, doctor, layout, render, trace, verify } from "../src/api.ts";
 import { RUN_ID_ENV } from "../src/cli/emit.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -114,6 +114,27 @@ describe("api — each function returns the object its --json command prints", (
     expect(rendered.digest).toBe(traced.digest as string);
     expect(rendered.identity).toEqual(traced.identity);
   }, 120_000);
+
+  test("render with range, then concat: every field but the wall-clock readings", async () => {
+    const timing = ["elapsedMs", "msPerFrame"];
+    const without = (o: Record<string, unknown>) =>
+      Object.fromEntries(Object.entries(o).filter(([k]) => !timing.includes(k)));
+    const parts: string[] = [];
+    for (const [first, last] of [[0, 14], [15, 29]] as const) {
+      const out = join(scratch, `part-${first}.mp4`);
+      parts.push(out);
+      const fromCli = await cli(["render", SMOKE, "--frames", "30", "--range", `${first}..${last}`, "--out", out, "--json"]);
+      expect(fromCli.code).toBe(0);
+      const fromApi = (await render(SMOKE, { frames: 30, range: [first, last], out })) as Record<string, unknown>;
+      expect(without(fromApi)).toEqual(without(fromCli.json));
+    }
+    const out = join(scratch, "joined.mp4");
+    const fromCli = await cli(["concat", SMOKE, ...parts, "--frames", "30", "--out", out, "--json"]);
+    expect(fromCli.code).toBe(0);
+    const fromApi = (await concat(SMOKE, parts, { frames: 30, out })) as Record<string, unknown>;
+    expect(without(fromApi)).toEqual(without(fromCli.json));
+    expect(fromApi.digest).toBe(((await trace(SMOKE, { frames: 30 })) as Record<string, unknown>).digest as string);
+  }, 300_000);
 
   test("verify", async () => {
     const fromCli = await cli(["verify", SMOKE, "--samples", "2", "--strict", "--json"]);

@@ -20,13 +20,14 @@
  * `{ ok: false, cancelled: true, error }` and leaves no file it wrote.
  */
 
-import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { render as renderComposition } from "../../render/render.ts";
 import {
   OUTPUT_FORMATS,
   assertEncoderSupported,
+  encoderSettings,
   formatCarriesAlpha,
   formatExtension,
   isOutputFormat,
@@ -37,6 +38,22 @@ import {
 } from "../../render/encode.ts";
 import type { SidecarShutter, SidecarSound } from "../../manifest/sidecar.ts";
 import type { InputIdentity } from "../../render/identity.ts";
+import { renderSegments } from "../../render/parallel.ts";
+import {
+  SEGMENT_KIND,
+  SEGMENT_VERSION,
+  checkAndJoin,
+  ffmpegVersionLine,
+  mediaDigest,
+  readSegment,
+  recordedEncoderArgv,
+  segmentManifestPath,
+  type JoinRefusal,
+  type JoinReport,
+  type Segment,
+  type SegmentManifest,
+} from "../../render/segment.ts";
+import { WasmFrameSource } from "../../runtime/frame-source.ts";
 import { describeShutter, pocketjsRoot } from "../../runtime/boot.ts";
 import { framesToMs, mixGraph, soundDeclared, tailOverruns } from "../../sound/mix.ts";
 import { muxSound, type ManifestElement } from "../../sound/mux.ts";
@@ -44,6 +61,7 @@ import { probeSoundDurations, resolveSound } from "../../sound/resolve.ts";
 import { describeTail, type TailMeasurement } from "../../sound/tail.ts";
 import {
   UsageError,
+  optionalInt,
   optionalString,
   parseArgs,
   refuseJobPatches,
@@ -56,6 +74,7 @@ import {
   errMsg,
   repoRootOf,
   resolveComposition,
+  type ResolvedComposition,
 } from "../resolve.ts";
 import {
   EXIT_FAIL,
@@ -88,18 +107,54 @@ export interface RenderJson {
   msPerFrame: number;
   /** What the encode leg was told. Absent for png-seq, which runs no encoder. */
   encoder?: EncoderSettings;
-  /** Frames delivered as the frame before's pixels, without a raster. */
-  reusedFrames: number;
+  /** Frames delivered as the frame before's pixels, without a raster.
+   *  Absent for `--workers`, whose segments rendered in other processes. */
+  reusedFrames?: number;
   shutter?: SidecarShutter;
   soundSkipped?: string;
-  sound?: {
-    sha256: string;
-    bytes: number;
-    ffmpeg: string;
-    manifestPath: string;
-    elements: readonly ManifestElement[];
-    tail?: TailMeasurement;
+  sound?: SoundJson;
+  /** `--workers`: how the film was split, and each worker's wall time. */
+  workers?: {
+    count: number;
+    segments: ReadonlyArray<{ first: number; last: number; elapsedMs: number }>;
   };
+  /** `--workers`: how the segments were joined and what reading the result back found. */
+  join?: JoinReport;
+}
+
+/** The mix `render` and `concat` mux into a delivery, and its manifest. */
+export interface SoundJson {
+  sha256: string;
+  bytes: number;
+  ffmpeg: string;
+  manifestPath: string;
+  elements: readonly ManifestElement[];
+  tail?: TailMeasurement;
+}
+
+/**
+ * What `render --range` prints: one segment of a film, not a film. It
+ * carries no `digest` on purpose — the digest of some frames is not the
+ * value `trace` reports, and a field of that name holding it would be
+ * compared with one. `concat` computes the film's from the manifest.
+ */
+export interface SegmentJson {
+  ok: true;
+  segment: { first: number; last: number };
+  outputPath: string;
+  /** `<outputPath>.segment.json`: the frame hashes, identity and encoder argv `concat` reads. */
+  manifestPath: string;
+  format: OutputFormat;
+  alpha: boolean;
+  alphaFloor?: number;
+  frames: number;
+  filmFrames: number;
+  identity: InputIdentity;
+  elapsedMs: number;
+  msPerFrame: number;
+  shutter?: SidecarShutter;
+  /** Present when the composition declares sound: why this segment carries none. */
+  soundDeferred?: string;
 }
 
 export interface RenderOptions {
@@ -122,6 +177,30 @@ export interface RenderOptions {
    *  after the build and before the render, and refuse the job when one
    *  fails. Absent means true; `--no-assert` is false. */
   readonly assert?: boolean;
+  /** `--range first..last`: render frames `first` to `last` of the film as a segment. */
+  readonly range?: readonly [first: number, last: number];
+  /** `--workers N`: render as N segments in N processes, then join them. */
+  readonly workers?: number;
+}
+
+/**
+ * `--range <first>..<last>`, both frames inclusive — the numbers `trace`
+ * prints beside the hashes, so the range a reader writes is the frames they
+ * read. Checked against the film's length once it is resolved.
+ */
+export function parseRange(raw: string): [first: number, last: number] {
+  const m = /^(\d+)\.\.(\d+)$/.exec(raw);
+  if (!m) {
+    throw new UsageError(
+      `--range takes <first>..<last>, two frame numbers, both included; got ${JSON.stringify(raw)}`,
+    );
+  }
+  const first = Number(m[1]);
+  const last = Number(m[2]);
+  if (last < first) {
+    throw new UsageError(`--range ${raw} ends before it starts`);
+  }
+  return [first, last];
 }
 
 /**
@@ -233,9 +312,9 @@ export function partialPathOf(outputPath: string): string {
   return join(dirname(outputPath), `.${basename(outputPath, ext)}.partial-${tag}${ext}`);
 }
 
-/** The frame names `png-seq` writes, 0 to `count - 1` (`pngSequenceSink`). */
-function pngFrameNames(count: number): string[] {
-  return Array.from({ length: count }, (_, i) => `${String(i).padStart(6, "0")}.png`);
+/** The frame names `png-seq` writes, `first` to `first + count - 1` (`pngSequenceSink`). */
+function pngFrameNames(count: number, first = 0): string[] {
+  return Array.from({ length: count }, (_, i) => `${String(first + i).padStart(6, "0")}.png`);
 }
 
 function cancelledResult(signal: AbortSignal | undefined, extra: Record<string, unknown> = {}): CommandResult {
@@ -290,14 +369,15 @@ export async function run(
     partial: string | null;
     delivered: string[];
     frames: number;
+    firstFrame: number;
     frameDir: string | null;
     madeFrameDir: boolean;
-  } = { partial: null, delivered: [], frames: 0, frameDir: null, madeFrameDir: false };
+  } = { partial: null, delivered: [], frames: 0, firstFrame: 0, frameDir: null, madeFrameDir: false };
   const takeBack = async (): Promise<void> => {
     for (const path of wrote.delivered) await rm(path, { force: true });
     if (wrote.frameDir !== null) {
       if (wrote.madeFrameDir) await rm(wrote.frameDir, { recursive: true, force: true });
-      else for (const name of pngFrameNames(wrote.frames)) await rm(join(wrote.frameDir, name), { force: true });
+      else for (const name of pngFrameNames(wrote.frames, wrote.firstFrame)) await rm(join(wrote.frameDir, name), { force: true });
     }
   };
 
@@ -332,6 +412,11 @@ export async function run(
     const c = resolved.value;
     const outputPath = resolve(options.out);
     const format = options.format ?? "mp4";
+    if (options.range && options.range[1] >= c.durationFrames) {
+      throw new UsageError(
+        `--range ${options.range[0]}..${options.range[1]} runs past the film: its frames are 0..${c.durationFrames - 1}`,
+      );
+    }
     // A job's assertions are evaluated on the tree it was staged into, which
     // is removed when this returns, so this is the last place they can be
     // read. Before the render rather than after: a job that fails them is
@@ -386,41 +471,76 @@ export async function run(
             }
           ).encodePNG
         : undefined;
-    const declared = c.sidecar.footage.length > 0;
-    const tree = declared ? await scratchTree(c) : null;
-    const result = await renderComposition({
-      compositionId: c.compositionId,
-      bundlePath: c.bundlePath,
-      pakPath: existsSync(c.pakPath) ? c.pakPath : undefined,
-      width: c.width,
-      height: c.height,
-      hz: c.fps,
-      durationFrames: c.durationFrames,
-      renderScale: c.supersample,
-      shutter: c.shutter,
-      buildCommand: c.buildCommand,
-      scaleTo: encodeScaleTo(c),
-      hashAlgorithm: options.flags.hash,
-      outputPath: wrote.partial ?? outputPath,
-      format,
-      alpha: options.alpha === true,
-      encoder: options.encoder,
-      preset: options.preset,
-      reuse: options.reuse,
-      encodePNG,
-      setup: declared
-        ? async (source) => {
-            await source.seekFrame(0);
-            bound.footage = await openFootage(c, source.world, tree);
-          }
-        : undefined,
-      onFrameBoundary: (frame) => bound.footage?.present(frame),
-      signal,
-      onProgress: (frame, frames) => {
-        wrote.frames = frame + 1;
-        context.onProgress?.({ done: frame + 1, frames });
-      },
-    });
+    let result: {
+      readonly frames: number;
+      readonly digest: string;
+      readonly elapsedMs: number;
+      readonly msPerFrame: number;
+      readonly alphaFloor?: number;
+    };
+    let identity: InputIdentity;
+    let rendered: Awaited<ReturnType<typeof renderComposition>> | undefined;
+    let split: Pick<RenderJson, "workers" | "join"> = {};
+    if (options.workers !== undefined) {
+      // `flags`, not `options.flags`: a job's workers render its staged build.
+      const w = await renderWithWorkers(
+        c,
+        { ...options, flags },
+        { out: outputPath, join: wrote.partial ?? outputPath },
+        format,
+        context,
+      );
+      if (!w.ok) return w.result;
+      if (format === "png-seq") wrote.frames = w.frames;
+      result = w;
+      identity = w.identity;
+      split = { workers: w.workers, join: w.join };
+    } else {
+      const declared = c.sidecar.footage.length > 0;
+      const tree = declared ? await scratchTree(c) : null;
+      if (options.range) wrote.firstFrame = options.range[0];
+      rendered = await renderComposition({
+        compositionId: c.compositionId,
+        bundlePath: c.bundlePath,
+        pakPath: existsSync(c.pakPath) ? c.pakPath : undefined,
+        width: c.width,
+        height: c.height,
+        hz: c.fps,
+        durationFrames: c.durationFrames,
+        renderScale: c.supersample,
+        shutter: c.shutter,
+        buildCommand: c.buildCommand,
+        scaleTo: encodeScaleTo(c),
+        hashAlgorithm: options.flags.hash,
+        outputPath: wrote.partial ?? outputPath,
+        format,
+        alpha: options.alpha === true,
+        encoder: options.encoder,
+        preset: options.preset,
+        reuse: options.reuse,
+        encodePNG,
+        ...(options.range ? { range: [options.range[0], options.range[1] + 1] as const } : {}),
+        setup: declared
+          ? async (source) => {
+              await source.seekFrame(0);
+              bound.footage = await openFootage(c, source.world, tree);
+            }
+          : undefined,
+        onFrameBoundary: (frame) => bound.footage?.present(frame),
+        signal,
+        onProgress: (frame, frames) => {
+          wrote.frames = frame + 1;
+          context.onProgress?.({ done: frame + 1, frames });
+        },
+      });
+      result = rendered;
+      // The identity `trace` would report, from the same function, so a delivery
+      // carries the pair a reader on another machine compares against. A job's
+      // too: its staged directory's random name reaches neither the bundle
+      // (`patches/0051`) nor `build.json` (`src/render/build-record.ts`), so one
+      // spec staged twice reports one identity (`tests/build-location.test.ts`).
+      identity = await compositionIdentity(c, bound.footage?.hashes);
+    }
     if (wrote.partial !== null) {
       await rename(wrote.partial, outputPath);
       wrote.partial = null;
@@ -430,14 +550,34 @@ export async function run(
       await takeBack();
       return cancelledResult(signal);
     }
+    if (options.range && rendered) {
+      const segment = await segmentResult(c, options, rendered, identity, outputPath, format);
+      wrote.delivered.push(segment.manifestPath);
+      if (cancelled()) {
+        await takeBack();
+        return cancelledResult(signal);
+      }
+      return segment.result;
+    }
 
-    // The identity `trace` would report, from the same function, so a delivery
-    // carries the pair a reader on another machine compares against. A job's
-    // too: its staged directory's random name reaches neither the bundle
-    // (`patches/0051`) nor `build.json` (`src/render/build-record.ts`), so one
-    // spec staged twice reports one identity (`tests/build-location.test.ts`).
-    const identity = await compositionIdentity(c, bound.footage?.hashes);
-
+    // A --workers render's encoder ran in its segment processes, each with the
+    // flags forwarded to it; the settings are a function of those flags, so
+    // they are derived here the way each worker derived them.
+    const encoder: EncoderSettings | undefined = rendered
+      ? rendered.encoder
+      : format === "png-seq"
+        ? undefined
+        : encoderSettings({
+            width: c.width * c.supersample,
+            height: c.height * c.supersample,
+            fps: c.fps,
+            outputPath,
+            encoder: options.encoder,
+            preset: options.preset,
+            scaleTo: encodeScaleTo(c),
+            format,
+            alpha: options.alpha === true,
+          });
     const payload: RenderJson = {
       ok: true,
       outputPath,
@@ -450,9 +590,10 @@ export async function run(
       ...(assertions ? { assertions: assertions.json } : {}),
       elapsedMs: result.elapsedMs,
       msPerFrame: result.msPerFrame,
-      ...(result.encoder ? { encoder: result.encoder } : {}),
-      reusedFrames: result.reusedFrames,
+      ...(encoder ? { encoder } : {}),
+      ...(rendered ? { reusedFrames: rendered.reusedFrames } : {}),
       ...(c.shutter ? { shutter: c.shutter } : {}),
+      ...split,
     };
 
     const stdoutLines = [
@@ -461,8 +602,16 @@ export async function run(
       `identity ${identity.digest}`,
       ...(assertions?.stdoutLines?.[0] ? [assertions.stdoutLines[0]] : []),
       `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
-      describeReuse(result.frames, result.reusedFrames, options.reuse !== false),
-      ...(result.encoder ? [describeEncoder(result.encoder)] : []),
+      ...(rendered ? [describeReuse(rendered.frames, rendered.reusedFrames, options.reuse !== false)] : []),
+      ...(encoder ? [describeEncoder(encoder)] : []),
+      ...(split.workers
+        ? [
+            `workers ${split.workers.count} — ${split.workers.segments
+              .map((s) => `${s.first}..${s.last} ${(s.elapsedMs / 1000).toFixed(1)} s`)
+              .join(", ")}`,
+            ...(split.join ? describeJoin(split.join) : []),
+          ]
+        : []),
       ...(c.shutter
         ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure of ${c.shutter.samples} renders`]
         : []),
@@ -479,126 +628,15 @@ export async function run(
       );
     }
 
-    // Mux after the frames are encoded and hashed. This command is the
-    // only caller: `trace` hashes without an outputPath and never reaches
-    // this block, so a sound declaration cannot move a frame digest.
-    //
-    // png-seq is the exception, and it is stated rather than skipped in
-    // silence: a directory of stills is not a container and has nowhere to
-    // put an audio stream, so a composition that declares sound would
-    // otherwise lose it here without a word.
-    if (soundDeclared(c.sidecar.sound) && format === "png-seq") {
-      payload.soundSkipped =
-        "png-seq is a directory of stills, not a container: the declared sound has nowhere " +
-        "to go. Render this composition to mp4, webm or mov for the mix.";
-      stdoutLines.push(`sound not muxed — ${payload.soundSkipped}`);
-    } else if (soundDeclared(c.sidecar.sound) && format !== "png-seq") {
-      const resolved = resolveSound(c.sidecar, c.dir);
-      if (!resolved.ok) {
-        return {
-          exitCode: EXIT_FAIL,
-          json: {
-            ok: false,
-            error: "declared sound file missing",
-            diagnostics: resolved.diagnostics,
-            digest: result.digest,
-          },
-          stderrLines: resolved.diagnostics.map(
-            (d) => `sidecar ${d.path || "/"}: ${d.code}: ${d.message}`,
-          ),
-          stdoutLines: [`render failed — declared sound file missing`],
-        };
-      }
-      const probed = await probeSoundDurations(resolved.elements);
-      // The declared tail is the last N ms of the FILM. A `--frames` render
-      // of another length does not end where the film does, so it carries no
-      // tail, and says so rather than gating some other instant.
-      const partial = c.durationFrames !== c.sidecar.durationFrames;
-      const sound =
-        partial && c.sidecar.sound.silentTailMs !== undefined
-          ? withoutTail(c.sidecar.sound)
-          : c.sidecar.sound;
-      if (sound !== c.sidecar.sound) {
-        stdoutLines.push(
-          `sound silent tail not applied — --frames renders ${c.durationFrames} of ` +
-            `${c.sidecar.durationFrames} frames, and the declared ${c.sidecar.sound.silentTailMs} ms ` +
-            "tail is the end of the film",
-        );
-      }
-      // An element still sounding when the declared silent tail begins would
-      // be cut by the gate. The parser refuses one that STARTS in the tail;
-      // how long a file runs is known only once it is probed, so this is the
-      // first place that can refuse the rest.
-      const overruns = tailOverruns(sound, probed, c.fps, c.durationFrames);
-      if (overruns.length > 0) {
-        return {
-          exitCode: EXIT_FAIL,
-          json: {
-            ok: false,
-            error: "declared sound runs into the silent tail",
-            diagnostics: overruns,
-            digest: result.digest,
-          },
-          stderrLines: overruns.map((d) => `sidecar ${d.path}: ${d.code}: ${d.message}`),
-          stdoutLines: [`render failed — declared sound runs into the silent tail`],
-        };
-      }
-      const graph = mixGraph(sound, probed, c.fps, c.durationFrames);
-      const mixed = await muxSound({
-        videoPath: payload.outputPath,
-        outputPath: payload.outputPath,
-        graph,
-        durationSec: framesToMs(c.durationFrames, c.fps) / 1000,
-        format,
-        ...(sound.silentTailMs !== undefined ? { silentTailMs: sound.silentTailMs } : {}),
-      });
-      // The mix is not interruptible; a cancel that arrived during it is
-      // honoured here, and takes back the manifest beside the video too.
-      wrote.delivered.push(mixed.manifestPath);
-      if (cancelled()) {
+    const failed = await deliverSound(c, format, payload, stdoutLines, {
+      wrote: (path) => wrote.delivered.push(path),
+      interrupted: async () => {
+        if (!cancelled()) return null;
         await takeBack();
         return cancelledResult(signal);
-      }
-      payload.sound = {
-        sha256: mixed.sha256,
-        bytes: mixed.bytes,
-        ffmpeg: mixed.ffmpeg,
-        manifestPath: mixed.manifestPath,
-        elements: mixed.elements,
-        ...(mixed.tail !== undefined ? { tail: mixed.tail } : {}),
-      };
-      stdoutLines.push(
-        `sound ${mixed.sha256}  ${mixed.ffmpeg}`,
-        `sound manifest ${mixed.manifestPath}`,
-      );
-      // An optional element is reported whichever way it went: one that was
-      // skipped is a delivery without it, and saying so is the difference
-      // between this and the probed-guessed-path mix the schema replaced.
-      for (const e of graph.elements) {
-        if (!e.optional) continue;
-        const who = `${e.role} ${e.id === null ? "" : JSON.stringify(e.id) + " "}`;
-        stdoutLines.push(
-          e.mixed
-            ? `sound optional ${who}mixed — ${e.path}`
-            : `sound optional ${who}skipped — not on disk: ${resolved.elements.find((r) => r.pointer === e.pointer)?.src ?? e.pointer}`,
-        );
-      }
-      if (mixed.tail !== undefined) {
-        stdoutLines.push(`sound ${describeTail(mixed.tail)}`);
-        if (!mixed.tail.ok) {
-          // The file is written and stays where it is, as a video whose
-          // declared sound is missing does: the exit code is the verdict.
-          return {
-            exitCode: EXIT_FAIL,
-            json: { ...payload, ok: false, error: "declared silent tail not met" },
-            stdoutLines: [
-              ...stdoutLines,
-              `render failed — the declared silent tail is not digital silence in ${payload.outputPath}`,
-            ],
-          };
-        }
-      }
-    }
+      },
+    });
+    if (failed) return failed;
 
     // The last await is behind us, so a cancel read after this line can only
     // find the result already returned.
@@ -637,6 +675,365 @@ function withoutTail(sound: SidecarSound): SidecarSound {
   return rest;
 }
 
+/**
+ * Mux the declared sound into a delivery whose frames are already encoded and
+ * hashed — once, over the whole film. `render`, `render --workers` and
+ * `concat` all end here, so a segment is never given a mix of its own and a
+ * joined film is mixed exactly as a one-shot render is. Returns the failure
+ * to report, or null when the delivery is complete; `payload` and
+ * `stdoutLines` gain what was muxed. `hooks.wrote` is told each file the mix
+ * adds, and `hooks.interrupted` is asked once the mix is done, because the
+ * mix itself is not interruptible.
+ */
+export async function deliverSound(
+  c: ResolvedComposition,
+  format: OutputFormat,
+  payload: { ok: boolean; outputPath: string; digest: string; soundSkipped?: string; sound?: SoundJson },
+  stdoutLines: string[],
+  hooks: {
+    readonly wrote: (path: string) => void;
+    readonly interrupted: () => Promise<CommandResult | null>;
+  },
+): Promise<CommandResult | null> {
+  // Mux after the frames are encoded and hashed. `trace` hashes without an
+  // outputPath and never reaches this function, so a sound declaration
+  // cannot move a frame digest.
+  //
+  // png-seq is the exception, and it is stated rather than skipped in
+  // silence: a directory of stills is not a container and has nowhere to
+  // put an audio stream, so a composition that declares sound would
+  // otherwise lose it here without a word.
+  if (soundDeclared(c.sidecar.sound) && format === "png-seq") {
+    payload.soundSkipped =
+      "png-seq is a directory of stills, not a container: the declared sound has nowhere " +
+      "to go. Render this composition to mp4, webm or mov for the mix.";
+    stdoutLines.push(`sound not muxed — ${payload.soundSkipped}`);
+  } else if (soundDeclared(c.sidecar.sound) && format !== "png-seq") {
+    const resolved = resolveSound(c.sidecar, c.dir);
+    if (!resolved.ok) {
+      return {
+        exitCode: EXIT_FAIL,
+        json: {
+          ok: false,
+          error: "declared sound file missing",
+          diagnostics: resolved.diagnostics,
+          digest: payload.digest,
+        },
+        stderrLines: resolved.diagnostics.map(
+          (d) => `sidecar ${d.path || "/"}: ${d.code}: ${d.message}`,
+        ),
+        stdoutLines: [`render failed — declared sound file missing`],
+      };
+    }
+    const probed = await probeSoundDurations(resolved.elements);
+    // The declared tail is the last N ms of the FILM. A `--frames` render
+    // of another length does not end where the film does, so it carries no
+    // tail, and says so rather than gating some other instant.
+    const partial = c.durationFrames !== c.sidecar.durationFrames;
+    const sound =
+      partial && c.sidecar.sound.silentTailMs !== undefined
+        ? withoutTail(c.sidecar.sound)
+        : c.sidecar.sound;
+    if (sound !== c.sidecar.sound) {
+      stdoutLines.push(
+        `sound silent tail not applied — --frames renders ${c.durationFrames} of ` +
+          `${c.sidecar.durationFrames} frames, and the declared ${c.sidecar.sound.silentTailMs} ms ` +
+          "tail is the end of the film",
+      );
+    }
+    // An element still sounding when the declared silent tail begins would
+    // be cut by the gate. The parser refuses one that STARTS in the tail;
+    // how long a file runs is known only once it is probed, so this is the
+    // first place that can refuse the rest.
+    const overruns = tailOverruns(sound, probed, c.fps, c.durationFrames);
+    if (overruns.length > 0) {
+      return {
+        exitCode: EXIT_FAIL,
+        json: {
+          ok: false,
+          error: "declared sound runs into the silent tail",
+          diagnostics: overruns,
+          digest: payload.digest,
+        },
+        stderrLines: overruns.map((d) => `sidecar ${d.path}: ${d.code}: ${d.message}`),
+        stdoutLines: [`render failed — declared sound runs into the silent tail`],
+      };
+    }
+    const graph = mixGraph(sound, probed, c.fps, c.durationFrames);
+    const mixed = await muxSound({
+      videoPath: payload.outputPath,
+      outputPath: payload.outputPath,
+      graph,
+      durationSec: framesToMs(c.durationFrames, c.fps) / 1000,
+      format,
+      ...(sound.silentTailMs !== undefined ? { silentTailMs: sound.silentTailMs } : {}),
+    });
+    // The mix is not interruptible; a cancel that arrived during it is
+    // honoured here, and takes back the manifest beside the video too.
+    hooks.wrote(mixed.manifestPath);
+    const stop = await hooks.interrupted();
+    if (stop) return stop;
+    payload.sound = {
+      sha256: mixed.sha256,
+      bytes: mixed.bytes,
+      ffmpeg: mixed.ffmpeg,
+      manifestPath: mixed.manifestPath,
+      elements: mixed.elements,
+      ...(mixed.tail !== undefined ? { tail: mixed.tail } : {}),
+    };
+    stdoutLines.push(
+      `sound ${mixed.sha256}  ${mixed.ffmpeg}`,
+      `sound manifest ${mixed.manifestPath}`,
+    );
+    // An optional element is reported whichever way it went: one that was
+    // skipped is a delivery without it, and saying so is the difference
+    // between this and the probed-guessed-path mix the schema replaced.
+    for (const e of graph.elements) {
+      if (!e.optional) continue;
+      const who = `${e.role} ${e.id === null ? "" : JSON.stringify(e.id) + " "}`;
+      stdoutLines.push(
+        e.mixed
+          ? `sound optional ${who}mixed — ${e.path}`
+          : `sound optional ${who}skipped — not on disk: ${resolved.elements.find((r) => r.pointer === e.pointer)?.src ?? e.pointer}`,
+      );
+    }
+    if (mixed.tail !== undefined) {
+      stdoutLines.push(`sound ${describeTail(mixed.tail)}`);
+      if (!mixed.tail.ok) {
+        // The file is written and stays where it is, as a video whose
+        // declared sound is missing does: the exit code is the verdict.
+        return {
+          exitCode: EXIT_FAIL,
+          json: { ...payload, ok: false, error: "declared silent tail not met" },
+          stdoutLines: [
+            ...stdoutLines,
+            `render failed — the declared silent tail is not digital silence in ${payload.outputPath}`,
+          ],
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * `render --range`: write the segment's manifest beside it and report it.
+ *
+ * The identity is the FILM's — `durationFrames` included — computed exactly
+ * as `trace` computes it, so segments of one film rendered on different
+ * machines carry one value and `concat` can refuse any that does not.
+ */
+async function segmentResult(
+  c: ResolvedComposition,
+  options: RenderOptions,
+  result: Awaited<ReturnType<typeof renderComposition>>,
+  identity: InputIdentity,
+  outputPath: string,
+  format: OutputFormat,
+): Promise<{ result: CommandResult; manifestPath: string }> {
+  const [first, last] = options.range!;
+  const manifest: SegmentManifest = {
+    kind: SEGMENT_KIND,
+    version: SEGMENT_VERSION,
+    compositionId: c.compositionId,
+    first,
+    last,
+    filmFrames: c.durationFrames,
+    fps: c.fps,
+    format,
+    alpha: options.alpha === true,
+    hash: options.flags.hash ?? "sha256",
+    identity,
+    frameHashes: result.frameHashes,
+    ...(result.alphaFloor !== undefined ? { alphaFloor: result.alphaFloor } : {}),
+    encoder: result.encode
+      ? { argv: recordedEncoderArgv(result.encode), ffmpeg: await ffmpegVersionLine() }
+      : { argv: null, ffmpeg: null },
+    media: { name: basename(outputPath), ...(await mediaDigest(outputPath)) },
+  };
+  const manifestPath = segmentManifestPath(outputPath);
+  await Bun.write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+  const soundDeferred = soundDeclared(c.sidecar.sound)
+    ? "a segment carries no sound: `concat` muxes the declared mix once, over the joined film"
+    : undefined;
+  const payload: SegmentJson = {
+    ok: true,
+    segment: { first, last },
+    outputPath,
+    manifestPath,
+    format,
+    alpha: options.alpha === true,
+    ...(result.alphaFloor !== undefined ? { alphaFloor: result.alphaFloor } : {}),
+    frames: result.frames,
+    filmFrames: c.durationFrames,
+    identity,
+    elapsedMs: result.elapsedMs,
+    msPerFrame: result.msPerFrame,
+    ...(c.shutter ? { shutter: c.shutter } : {}),
+    ...(soundDeferred ? { soundDeferred } : {}),
+  };
+  return {
+    manifestPath,
+    result: {
+      exitCode: EXIT_OK,
+      json: payload,
+      stdoutLines: [
+        `render ok — segment ${first}..${last} of a ${c.durationFrames}-frame film → ${outputPath} (${format})`,
+        `manifest ${manifestPath}`,
+        `identity ${identity.digest}`,
+        `${result.msPerFrame.toFixed(2)} ms/frame (${result.elapsedMs.toFixed(0)} ms total)`,
+        ...(soundDeferred ? [`sound deferred — ${soundDeferred}`] : []),
+      ],
+    },
+  };
+}
+
+/**
+ * Bind the declared footage once in this process and let it go: the ingest
+ * writes a cache under the bundle's directory, and N workers finding it cold
+ * would each write it at once. Returns the frozen artifacts' hashes — the
+ * footage half of the identity every segment is checked against.
+ */
+async function ingestFootageOnce(
+  c: ResolvedComposition,
+): Promise<Readonly<Record<string, string>> | undefined> {
+  if (c.sidecar.footage.length === 0) return undefined;
+  const tree = await scratchTree(c);
+  const source = await WasmFrameSource.create({
+    compositionId: c.compositionId,
+    bundlePath: c.bundlePath,
+    pakPath: existsSync(c.pakPath) ? c.pakPath : undefined,
+    width: c.width,
+    height: c.height,
+    hz: c.fps,
+    durationFrames: c.durationFrames,
+    renderScale: c.supersample,
+    // This world mounts so the footage can bind, and renders nothing.
+    shutter: null,
+    buildCommand: c.buildCommand,
+  });
+  try {
+    await source.seekFrame(0);
+    const handle = await openFootage(c, source.world, tree);
+    await handle?.close();
+    return handle?.hashes;
+  } finally {
+    await source.dispose();
+  }
+}
+
+/** The flags every worker is given besides `--range` and `--out`. */
+function forwardedFlags(
+  flags: GlobalFlags,
+  format: OutputFormat,
+  alpha: boolean,
+  delivery: Pick<RenderOptions, "encoder" | "preset" | "reuse">,
+): string[] {
+  const out = [`--format=${format}`];
+  if (alpha) out.push("--alpha");
+  // Every segment's encoder argv must be one argv for the join to stream-copy
+  // them, so every worker is given the same encoder and preset.
+  if (delivery.encoder !== undefined) out.push(`--encoder=${delivery.encoder}`);
+  if (delivery.preset !== undefined) out.push(`--preset=${delivery.preset}`);
+  if (delivery.reuse === false) out.push("--no-reuse");
+  for (const name of ["width", "height", "fps", "frames", "supersample", "hash", "bundle", "pak"] as const) {
+    const value = flags[name];
+    if (value !== undefined) out.push(`--${name}=${value}`);
+  }
+  return out;
+}
+
+/** A refused join as a command result — `render --workers` and `concat` print the same. */
+export function joinRefused(refusals: readonly JoinRefusal[], command: string): CommandResult {
+  return {
+    exitCode: EXIT_FAIL,
+    json: { ok: false, error: "segments refused", refusals },
+    stderrLines: refusals.map((r) => `${r.code}: ${r.message}`),
+    stdoutLines: [`${command} failed — ${refusals.length} reason(s) the segments are not one film`],
+  };
+}
+
+export function describeJoin(join: JoinReport): string[] {
+  return [
+    `joined ${join.segments} segment(s) by ${join.method}`,
+    ...join.verified.map((v) => `  read back: ${v}`),
+  ];
+}
+
+/**
+ * `render --workers N`: N `render --range` processes into a scratch
+ * directory beside the output, then the join `concat` runs, into
+ * `paths.join` — `run`'s partial file, renamed over `--out` by the caller as
+ * a one-process render's is. The scratch is removed whether or not the join
+ * succeeds. A fired signal kills the workers and rejects with its reason.
+ */
+async function renderWithWorkers(
+  c: ResolvedComposition,
+  options: RenderOptions,
+  paths: { readonly out: string; readonly join: string },
+  format: OutputFormat,
+  context: RunContext,
+): Promise<
+  | {
+      ok: true;
+      frames: number;
+      digest: string;
+      identity: InputIdentity;
+      alphaFloor?: number;
+      elapsedMs: number;
+      msPerFrame: number;
+      workers: NonNullable<RenderJson["workers"]>;
+      join: JoinReport;
+    }
+  | { ok: false; result: CommandResult }
+> {
+  const started = performance.now();
+  const identity = await compositionIdentity(c, await ingestFootageOnce(c));
+  context.signal?.throwIfAborted();
+  const scratch = mkdtempSync(join(dirname(paths.out), `.${basename(paths.out)}.segments-`));
+  try {
+    let done = 0;
+    const reports = await renderSegments({
+      dir: c.dir,
+      filmFrames: c.durationFrames,
+      workers: options.workers!,
+      scratchDir: scratch,
+      extension: formatExtension(format) ?? "",
+      forward: forwardedFlags(options.flags, format, options.alpha === true, options),
+      signal: context.signal,
+      onSegment: (r) => {
+        done += r.last - r.first + 1;
+        context.onProgress?.({ done, frames: c.durationFrames });
+      },
+    });
+    const segments: Segment[] = await Promise.all(reports.map((r) => readSegment(r.manifestPath)));
+    const joined = await checkAndJoin(
+      segments,
+      { identity, filmFrames: c.durationFrames, hash: options.flags.hash },
+      paths.join,
+    );
+    if (!joined.ok) return { ok: false, result: joinRefused(joined.refusals, "render") };
+    const elapsedMs = performance.now() - started;
+    return {
+      ok: true,
+      frames: joined.frames.length,
+      digest: joined.digest,
+      identity,
+      ...(joined.alphaFloor !== undefined ? { alphaFloor: joined.alphaFloor } : {}),
+      elapsedMs,
+      msPerFrame: elapsedMs / joined.frames.length,
+      workers: {
+        count: reports.length,
+        segments: reports.map((r) => ({ first: r.first, last: r.last, elapsedMs: r.elapsedMs })),
+      },
+      join: joined.report,
+    };
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 async function runBatch(
   options: {
     readonly dir: string;
@@ -649,6 +1046,7 @@ async function runBatch(
     readonly preset?: X264Preset;
     readonly reuse?: boolean;
     readonly assert: boolean;
+    readonly workers?: number;
   },
   context: RunContext,
 ): Promise<CommandResult> {
@@ -745,6 +1143,7 @@ async function runBatch(
         preset: options.preset,
         reuse: options.reuse,
         assert: options.assert,
+        ...(options.workers !== undefined ? { workers: options.workers } : {}),
       },
       {
         signal: context.signal,
@@ -825,6 +1224,21 @@ export async function runFromArgv(
     };
   };
   const assert = parsed.flags["no-assert"] !== true;
+  const rawRange = optionalString(parsed.flags, "range");
+  const range = rawRange === undefined ? undefined : parseRange(rawRange);
+  const workers = optionalInt(parsed.flags, "workers");
+  if (workers !== undefined && workers < 1) {
+    throw new UsageError(`--workers must be at least 1; got ${workers}`);
+  }
+  if (range !== undefined && workers !== undefined) {
+    throw new UsageError(
+      "--range renders one segment in this process; --workers splits the film itself. Pass one.",
+    );
+  }
+  const split = {
+    ...(range !== undefined ? { range } : {}),
+    ...(workers !== undefined ? { workers } : {}),
+  };
   if (!assert && spec === undefined) {
     // A composition's render never reads its assertions — they are
     // `assert <dir>`'s — so there is nothing here for the flag to turn off,
@@ -835,6 +1249,18 @@ export async function runFromArgv(
   }
 
   if (spec !== undefined) {
+    // `concat` joins against a composition directory — the identity every
+    // segment must carry and the sound it muxes come from there — and a
+    // job's composition exists only inside its own staging, removed when the
+    // render returns. A job's `--workers` share one staging, which is why
+    // that is accepted.
+    if (range !== undefined) {
+      throw new UsageError(
+        "--range cannot be used with --spec: concat joins segments against a composition directory, " +
+          "and a job's exists only inside its staging. Render the job with --workers N, or generate " +
+          "it into a directory and render that.",
+      );
+    }
     const specPath = resolve(spec);
     if (!existsSync(specPath)) {
       throw new UsageError(`spec not found: ${specPath}`);
@@ -857,6 +1283,7 @@ export async function runFromArgv(
           flags: parsed.global,
           ...delivery(resolveFormat(requestedFormat, "")),
           assert,
+          ...split,
         },
         context,
       );
@@ -877,7 +1304,7 @@ export async function runFromArgv(
       throw new UsageError("a job is one JSON object; for many jobs pass a directory of .json files");
     }
     return run(
-      { dir, out, flags: parsed.global, spec: specPath, ...delivery(resolveFormat(requestedFormat, out)), assert },
+      { dir, out, flags: parsed.global, spec: specPath, ...delivery(resolveFormat(requestedFormat, out)), assert, ...split },
       context,
     );
   }
@@ -888,5 +1315,5 @@ export async function runFromArgv(
   if (out === undefined) {
     throw new UsageError("flag --out is required");
   }
-  return run({ dir, out, flags: parsed.global, ...delivery(resolveFormat(requestedFormat, out)) }, context);
+  return run({ dir, out, flags: parsed.global, ...delivery(resolveFormat(requestedFormat, out)), ...split }, context);
 }
