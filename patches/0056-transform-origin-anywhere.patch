@@ -1,0 +1,575 @@
+0056 — a transform origin anywhere, and moving.
+
+The compiler read nine keywords (`origin-top-left`, ...) into
+PROP.originX/originY, fractions of the box from its centre, and the props
+were documented NOT animatable. A pivot 12 px in from an edge, or 20 px in
+from the right whatever width layout gives the box, had no spelling, and a
+zoom whose focal point travels had none either.
+
+What it adds:
+
+- `contracts/spec/spec.ts`, regenerated `spec.rs`, the microts spec and
+  component types: props `originXPx` (219) and `originYPx` (220), f32 px
+  added to the origin the fraction places — CSS's `calc(<percentage> +
+  <length>)` per axis, which is what a `<length-percentage>` origin is. The
+  origin animates: originX, originY, originXPx, originYPx take anim bits
+  72-75 (timeline and `animate()`; no transition bit, as every bit past 31).
+- `engine/core/src/style.rs`: the two fields. `draw.rs`: `origin_px`, used
+  by the 2D `local_affine` (so hit testing too) and the 3D path alike.
+- `framework/compiler/animation.ts`: `parseTransformOrigin`, CSS's 2D
+  grammar — one value is x unless it is `top`/`bottom`, two keywords in
+  either order, a length or percentage pinned to its position (x first),
+  `calc()` adding and subtracting percentages and px; a third value (z) is
+  null. `transformOrigin` is a keyframe property that pins all four props in
+  every keyframe that writes it, as CSS's computed value is the whole origin;
+  `originX`/`originY`/`originXPx`/`originYPx` are keyframe properties by name.
+- `framework/compiler/tailwind.ts`: `origin-[x_y]` (`_` for a space) writes
+  all four props. A keyword origin writes the fraction alone, as it did, so
+  every record that names one is the bytes it was; where another variant of
+  the same literal sets a length, the keyword's variant writes it as 0.
+
+Why the origin animates: with rotation and scale held, moving the origin is
+a translate by (I - RS) * the move, which a translate track already carries;
+with scale moving too it is the PRODUCT of two eased curves, which no eased
+translate track carries without being sampled per frame. CSS animates
+`transform-origin`; After Effects keys its anchor point. Under a declared
+shutter it is sampled between ticks like a translate (0057).
+
+Class `upstream`: a declaration the core turns into the affine every backend
+already receives; no target-side change. 0056 sits after `0055` only because
+the anim bits are positional.
+
+Guards (`engine/core/src/tests.rs`): `an_origin_length_is_the_fraction_it_equals`
+— a 100 px box turned about 25 px in, written three ways (fraction, left
+edge plus a length, centre minus a length), is the same words on the 2D and
+the 3D path; red with the length left out of `local_affine`, and separately
+red with it left out of the 3D path. `an_origin_animates_its_fraction_and_its_length`
+— `animate()` on each passes through the quarter-box pivot and lands; red
+with the two props not animatable. Vendored `tests/tailwind.test.ts` pins
+the compiler: the grammar, what CSS refuses, the variant rule, keyframes.
+
+Ledgers, against what main recorded without this patch: no existing digest
+or `visibility` row moves — a keyword origin's record is the bytes it was.
+`compositions/origin` is new in both: 30 frames; 4 nodes, 4 named, every
+one shown.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 6a48917e..1ec6ad9f 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -401,7 +401,8 @@ export const PROP = {
+   scaleY: 133, //       f32 (1 = identity, about the transform origin)
+   originX: 134, //      f32 fraction of node width offsetting the transform
+   //                    origin from the node center (-0.5 = left edge, 0 =
+-  //                    center, +0.5 = right edge). NOT animatable.
++  //                    center, +0.5 = right edge); originXPx is added to it.
++  //                    Animatable (bit 72).
+   originY: 135, //      f32 fraction of node height (-0.5 top .. +0.5 bottom)
+   rotateX: 136, //      f32 degrees about the X axis (3D; needs a perspective root)
+   rotateY: 137, //      f32 degrees about the Y axis (3D)
+@@ -522,6 +523,11 @@ export const PROP = {
+   invert: 216, //          f32 0..1 (0 = identity)
+   saturate: 217, //        f32 (1 = identity; >= 0, at most COLOR_FILTER_MAX)
+   sepia: 218, //           f32 0..1 (0 = identity)
++  // Transform origin as a length beside the fraction: CSS's
++  // `transform-origin: calc(30% + 12px) 0` is originX -0.2, originXPx 12.
++  // 0 by default, so an origin named by keyword is the fraction alone.
++  originXPx: 219, //       f32 px added to the origin's x
++  originYPx: 220, //       f32 px added to the origin's y
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -614,6 +620,10 @@ export const ANIMATABLE: readonly PropName[] = [
+   "invert", //        69
+   "saturate", //      70
+   "sepia", //         71
++  "originX", //       72
++  "originY", //       73
++  "originXPx", //     74
++  "originYPx", //     75
+ ];
+ 
+ /** Anim bit index for a prop, or -1 if not animatable. */
+@@ -715,6 +725,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   brightness: VALUE_KIND.f32, contrast: VALUE_KIND.f32,
+   grayscale: VALUE_KIND.f32, hueRotate: VALUE_KIND.f32,
+   invert: VALUE_KIND.f32, saturate: VALUE_KIND.f32, sepia: VALUE_KIND.f32,
++  originXPx: VALUE_KIND.f32, originYPx: VALUE_KIND.f32,
+ };
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 268fc27c..c13f9a1a 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -740,6 +740,14 @@ fn pow2_at_least(n: u32) -> u32 {
+     p
+ }
+ 
++/// The transform origin in the node's own px, from its top-left: a fraction
++/// of the box from the center and a length beside it, CSS's
++/// `calc(<percentage> + <length>)` per axis.
++#[inline]
++fn origin_px(l: &crate::tree::LayoutRect, r: &style::Resolved) -> (f32, f32) {
++    (l.w * (0.5 + r.origin_x) + r.origin_x_px, l.h * (0.5 + r.origin_y) + r.origin_y_px)
++}
++
+ /// A node's local frame: layout position + translate, then rotate/scale
+ /// about its transform origin. Shared by paint and hit_test so pointer
+ /// geometry can never drift from painted geometry.
+@@ -747,8 +755,9 @@ fn local_affine(l: &crate::tree::LayoutRect, r: &style::Resolved) -> Affine {
+     let mut local = Affine::translate(l.x + r.translate_x, l.y + r.translate_y);
+     if r.rotate != 0.0 || r.skew_x != 0.0 || r.scale != 1.0 || r.scale_x != 1.0 || r.scale_y != 1.0 {
+         // Transform origin: node center offset by the origin fractions
+-        // (`origin-*` utilities; e.g. origin-bottom = (0, +0.5)).
+-        let (cx, cy) = (l.w * (0.5 + r.origin_x), l.h * (0.5 + r.origin_y));
++        // (`origin-*` utilities; e.g. origin-bottom = (0, +0.5)) and by the
++        // origin's length (`origin-[12px_30%]`).
++        let (cx, cy) = origin_px(l, r);
+         let rad = r.rotate * (PI / 180.0);
+         // rotate == 0 keeps EXACT axis alignment (the trig polyfill is a
+         // few ulp off at multiples of pi/2, which would silently demote
+@@ -1771,7 +1780,7 @@ impl<'a> Walker<'a> {
+         // lists this models: translate/translateZ leftmost, then rotate,
+         // rotateX, rotateY, skewX, with 2D scale innermost), conjugated
+         // around the transform origin.
+-        let (ox, oy) = (l.w * (0.5 + r.origin_x), l.h * (0.5 + r.origin_y));
++        let (ox, oy) = origin_px(&l, &r);
+         let mut local = Mat34::translate(l.x + r.translate_x, l.y + r.translate_y, r.translate_z)
+             .then(&Mat34::translate(ox, oy, 0.0));
+         if r.rotate != 0.0 {
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index b34d9695..fef7355f 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -234,6 +234,8 @@ pub mod prop {
+     pub const INVERT: u8 = 216;
+     pub const SATURATE: u8 = 217;
+     pub const SEPIA: u8 = 218;
++    pub const ORIGIN_X_PX: u8 = 219;
++    pub const ORIGIN_Y_PX: u8 = 220;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -258,7 +260,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
+-    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ ];
+@@ -274,18 +276,18 @@ pub const ANIM_BIT: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x17, 0xff, 0xff, 0x18, 0x19, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0xff, 0xff, 0x20, 0x21, 0x22, 0xff, 0x23, 0x24, 0x25, 0x26,
++    0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x48, 0x49, 0x20, 0x21, 0x22, 0xff, 0x23, 0x24, 0x25, 0x26,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0x2f, 0x30, 0x31, 0x32, 0x33,
+     0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3a, 0xff, 0x3b, 0x3c, 0xff, 0xff, 0xff, 0x3d,
+-    0x3e, 0x3f, 0xff, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x3e, 0x3f, 0xff, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x4a, 0x4b, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ ];
+ 
+ /// Bitset over prop ids: animatable props (tween/spring/transition targets).
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x0000000007fb8d00];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f7ff, 0x000000001ffb8d00];
+ /// Bitset over prop ids: props whose change invalidates layout.
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ 
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index a1105e99..1219f30a 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -316,9 +316,12 @@ pub struct Resolved {
+     pub scale_x: f32,
+     pub scale_y: f32,
+     /// Transform origin as fractions of node size from the center
+-    /// (-0.5 = left/top edge, 0 = center, +0.5 = right/bottom edge).
++    /// (-0.5 = left/top edge, 0 = center, +0.5 = right/bottom edge), plus
++    /// a length in px (spec.ts PROP.originXPx): CSS's `calc(% + px)`.
+     pub origin_x: f32,
+     pub origin_y: f32,
++    pub origin_x_px: f32,
++    pub origin_y_px: f32,
+     /// 3D transform (degrees / px; meaningful under a perspective root).
+     pub rotate_x: f32,
+     pub rotate_y: f32,
+@@ -449,6 +452,8 @@ impl Default for Resolved {
+             scale_y: 1.0,
+             origin_x: 0.0,
+             origin_y: 0.0,
++            origin_x_px: 0.0,
++            origin_y_px: 0.0,
+             rotate_x: 0.0,
+             rotate_y: 0.0,
+             translate_z: 0.0,
+@@ -584,6 +589,8 @@ impl Resolved {
+             p::SCALE_Y => self.scale_y = f,
+             p::ORIGIN_X => self.origin_x = f,
+             p::ORIGIN_Y => self.origin_y = f,
++            p::ORIGIN_X_PX => self.origin_x_px = f,
++            p::ORIGIN_Y_PX => self.origin_y_px = f,
+             p::ROTATE_X => self.rotate_x = f,
+             p::ROTATE_Y => self.rotate_y = f,
+             p::TRANSLATE_Z => self.translate_z = f,
+@@ -709,6 +716,8 @@ impl Resolved {
+             p::SCALE_Y => self.scale_y.to_bits(),
+             p::ORIGIN_X => self.origin_x.to_bits(),
+             p::ORIGIN_Y => self.origin_y.to_bits(),
++            p::ORIGIN_X_PX => self.origin_x_px.to_bits(),
++            p::ORIGIN_Y_PX => self.origin_y_px.to_bits(),
+             p::ROTATE_X => self.rotate_x.to_bits(),
+             p::ROTATE_Y => self.rotate_y.to_bits(),
+             p::TRANSLATE_Z => self.translate_z.to_bits(),
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 4467fdc6..6870d401 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -6847,6 +6847,75 @@ fn a_moving_stroke_redraws_incrementally_to_the_full_render() {
+     assert!(fb == full, "incremental redraw of a moved stroke differs from the full render");
+ }
+ 
++// ---- transform origin as a length (patch 0056) ----------------------------------------
++
++/// The words of a 100x40 box at (60, 60) turned about an origin of
++/// fraction `fx` and length `px` on x (the y origin is the box's top), in 2D
++/// or under a perspective root.
++fn turned_about(fx: f64, px: f64, three_d: bool) -> Vec<u32> {
++    turned_box(fx, px, three_d).2
++}
++
++/// `turned_about`'s scene: the Ui, the box and its words.
++fn turned_box(fx: f64, px: f64, three_d: bool) -> (Ui, i32, Vec<u32>) {
++    let mut ui = Ui::new();
++    let g = ui.create_node(0);
++    ui.set_prop(g, spec::prop::WIDTH, 300.0);
++    ui.set_prop(g, spec::prop::HEIGHT, 200.0);
++    ui.set_prop(g, spec::prop::BG_COLOR, abgr(0, 0, 0, 255) as f64);
++    if three_d {
++        ui.set_prop(g, spec::prop::PERSPECTIVE, 600.0);
++    }
++    ui.insert_before(spec::ROOT_ID, g, 0);
++    let b = ui.create_node(0);
++    ui.set_prop(b, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(b, spec::prop::INSET_L, 60.0);
++    ui.set_prop(b, spec::prop::INSET_T, 60.0);
++    ui.set_prop(b, spec::prop::WIDTH, 100.0);
++    ui.set_prop(b, spec::prop::HEIGHT, 40.0);
++    ui.set_prop(b, spec::prop::BG_COLOR, abgr(255, 255, 255, 255) as f64);
++    ui.set_prop(b, if three_d { spec::prop::ROTATE_Y } else { spec::prop::ROTATE }, 30.0);
++    ui.set_prop(b, spec::prop::ORIGIN_X, fx);
++    ui.set_prop(b, spec::prop::ORIGIN_X_PX, px);
++    ui.set_prop(b, spec::prop::ORIGIN_Y, -0.5);
++    ui.insert_before(g, b, 0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    validate_drawlist(&words);
++    (ui, b, words)
++}
++
++#[test]
++fn an_origin_animates_its_fraction_and_its_length() {
++    // Both halves of the origin take a tween; linear over 200 ms they pass
++    // through the quarter-box pivot on their way, and land on their targets.
++    for (prop, to, end) in [(spec::prop::ORIGIN_X_PX, 50.0, (-0.5, 50.0)), (spec::prop::ORIGIN_X, 0.0, (0.0, 0.0))] {
++        let (mut ui, b, _) = turned_box(-0.5, 0.0, false);
++        assert!(ui.animate(b, prop, to, 200, spec::Easing::Linear as u8, 0) >= 0, "prop {prop} is animatable");
++        let quarter = turned_about(-0.25, 0.0, false);
++        let mut passed = false;
++        for _ in 0..30 {
++            ui.tick();
++            passed |= ui.draw().words == quarter;
++        }
++        assert!(passed, "prop {prop} passes the quarter pivot");
++        assert_eq!(ui.draw().words, turned_about(end.0, end.1, false), "prop {prop} lands");
++    }
++}
++
++#[test]
++fn an_origin_length_is_the_fraction_it_equals() {
++    // 25 px into a 100 px box is a quarter of it: the fraction -0.25 from
++    // the centre, the left edge plus 25 px, or the centre less 25 px — every
++    // value here exact in binary, so the words agree to the bit.
++    for three_d in [false, true] {
++        let quarter = turned_about(-0.25, 0.0, three_d);
++        assert_eq!(turned_about(-0.5, 25.0, three_d), quarter, "3D: {three_d}");
++        assert_eq!(turned_about(0.0, -25.0, three_d), quarter, "3D: {three_d}");
++        assert_ne!(turned_about(-0.5, 0.0, three_d), quarter, "the length moves the pivot, 3D: {three_d}");
++    }
++}
++
+ // ---- LAYER_PUSH / LAYER_POP: filter layers (pocket-motion) -------------------------
+ 
+ /// A 200x200 ground of `ground` with one absolute 40x40 box of `color` at
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index d7f9c0e9..61f68cc5 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -126,6 +126,8 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("invert", 216, "f32"),
+     ("saturate", 217, "f32"),
+     ("sepia", 218, "f32"),
++    ("originXPx", 219, "f32"),
++    ("originYPx", 220, "f32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
+index e95d25ee..19848467 100644
+--- a/framework/compiler/animation.ts
++++ b/framework/compiler/animation.ts
+@@ -274,6 +274,75 @@ export function filterAngle(text: string): number | null {
+   }
+ }
+ 
++/** One axis of a transform origin: a fraction of the box from its centre
++ *  (PROP.originX's unit) and a length in px beside it. */
++export interface OriginAxis {
++  fraction: number;
++  px: number;
++}
++
++/** A CSS `<length-percentage>` an origin can take: `30%`, `12px`, `0`, or
++ *  `calc()` of those added and subtracted. As a fraction of the box from its
++ *  centre, which a percentage is offset by one half to become. */
++function originLength(t: string): OriginAxis | null {
++  const term = (u: string): OriginAxis | null => {
++    if (/^[+-]?0*\.?0+$/.test(u)) return { fraction: 0, px: 0 };
++    const m = /^([+-]?\d*\.?\d+)(%|px)$/.exec(u);
++    if (!m) return null;
++    const v = parseFloat(m[1]!);
++    return m[2] === "%" ? { fraction: v / 100, px: 0 } : { fraction: 0, px: v };
++  };
++  const calc = /^calc\((.*)\)$/.exec(t);
++  let sum: OriginAxis | null;
++  if (calc) {
++    // CSS requires whitespace round a binary + and -.
++    const parts = calc[1]!.trim().split(/\s+([+-])\s+/);
++    sum = term(parts[0]!);
++    for (let i = 1; sum !== null && i < parts.length; i += 2) {
++      const next = term(parts[i + 1] ?? "");
++      if (next === null) return null;
++      const k = parts[i] === "-" ? -1 : 1;
++      sum = { fraction: sum.fraction + k * next.fraction, px: sum.px + k * next.px };
++    }
++  } else {
++    sum = term(t);
++  }
++  return sum === null ? null : { fraction: sum.fraction - 0.5, px: sum.px };
++}
++
++const ORIGIN_X_WORDS: Record<string, number> = { left: -0.5, center: 0, right: 0.5 };
++const ORIGIN_Y_WORDS: Record<string, number> = { top: -0.5, center: 0, bottom: 0.5 };
++
++/**
++ * CSS `transform-origin` in two dimensions (pocket-motion patch 0056): one
++ * or two of `left|center|right|top|bottom` and `<length-percentage>`, with
++ * CSS's rules — one value is x unless it is `top` or `bottom`, the other
++ * axis then centred; two keywords in either order; a length or percentage
++ * pins its value to the position it is written in, x first. A third value
++ * (z) is not drawn by a 2D origin and is null, as anything else unparsed.
++ */
++export function parseTransformOrigin(text: string): { x: OriginAxis; y: OriginAxis } | null {
++  const tokens = text.trim().match(/calc\([^()]*\)|[^\s]+/g) ?? [];
++  const word = (t: string, words: Record<string, number>): OriginAxis | null =>
++    t in words ? { fraction: words[t]!, px: 0 } : null;
++  const centre: OriginAxis = { fraction: 0, px: 0 };
++  if (tokens.length === 1) {
++    const t = tokens[0]!;
++    if (t === "top" || t === "bottom") return { x: centre, y: word(t, ORIGIN_Y_WORDS)! };
++    const x = word(t, ORIGIN_X_WORDS) ?? originLength(t);
++    return x === null ? null : { x, y: centre };
++  }
++  if (tokens.length !== 2) return null;
++  const [a, b] = tokens as [string, string];
++  // Two keywords may come in either order (`top left`).
++  if ((a === "top" || a === "bottom") && (b in ORIGIN_X_WORDS)) {
++    return { x: word(b, ORIGIN_X_WORDS)!, y: word(a, ORIGIN_Y_WORDS)! };
++  }
++  const x = word(a, ORIGIN_X_WORDS) ?? originLength(a);
++  const y = word(b, ORIGIN_Y_WORDS) ?? originLength(b);
++  return x === null || y === null ? null : { x, y };
++}
++
+ /** Keyframe encoder for one colour filter property: a number, or a string
+  *  CSS would accept inside the function (hue-rotate: a number is degrees). */
+ function colorFilterBits(f: (typeof COLOR_FILTERS)[number]): Encode {
+@@ -341,6 +410,12 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   dropShadowBlur: [[PROP.dropShadowBlur], pxBits],
+   dropShadowColor: [[PROP.dropShadowColor], colorBits],
+   dropShadowGain: [[PROP.dropShadowGain], scalarBits],
++  // The origin's fraction and length by prop name; `transformOrigin` (CSS's
++  // shorthand) is decomposed in `decomposeKeyframes`.
++  originX: [[PROP.originX], scalarBits],
++  originY: [[PROP.originY], scalarBits],
++  originXPx: [[PROP.originXPx], pxBits],
++  originYPx: [[PROP.originYPx], pxBits],
+   // Colour filters (pocket-motion patch 0055), by CSS function name
+   // camel-cased: `hueRotate` takes degrees or a CSS angle.
+   ...Object.fromEntries(
+@@ -689,6 +764,19 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+           transformPcts.push([pct, decomposed]);
+           continue;
+         }
++        if (key === "transformOrigin") {
++          // The whole origin, as CSS's computed value is: every keyframe
++          // that writes it pins both axes' fraction and length.
++          const o = typeof value === "string" ? parseTransformOrigin(value) : null;
++          if (o === null) {
++            err(`${where} ${rawKey}: \`${value}\` is not a 2D transform-origin (one or two of left, center, right, top, bottom, a length, a percentage or calc() of those).`);
++          }
++          put(PROP.originX, pct, f32Bits(o.x.fraction));
++          put(PROP.originXPx, pct, f32Bits(o.x.px));
++          put(PROP.originY, pct, f32Bits(o.y.fraction));
++          put(PROP.originYPx, pct, f32Bits(o.y.px));
++          continue;
++        }
+         if (key === "filter") {
+           const list = parseFilter(value, where);
+           for (const fn of list.fns) filterUnion.add(fn);
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index a1ea9720..0e51ac95 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -47,6 +47,7 @@ import {
+   filterAmount,
+   filterAngle,
+   loopToFrames,
++  parseTransformOrigin,
+   resolveAnimation,
+ } from "./animation.ts";
+ 
+@@ -310,6 +311,9 @@ interface VariantAcc {
+   bold?: boolean;
+   trackingWide?: boolean;
+   roundedFull?: boolean;
++  /** The last origin this variant names was a keyword (`origin-top`), which
++   *  writes no length: zeroed below when another variant wrote one. */
++  namedOrigin?: boolean;
+   pinnedW?: number;
+   pinnedH?: number;
+   sawBevel?: boolean;
+@@ -652,9 +656,25 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+       return true;
+     }
+     case "origin": {
++      // `origin-[30%_70%]`, `origin-[12px_0]`, `origin-[calc(100%_-_20px)_bottom]`
++      // (patch 0056): CSS's transform-origin with `_` for spaces, the length
++      // beside the fraction. A named origin writes the fraction alone, so a
++      // record that names one is the bytes it was.
++      const arb = /^\[([^\]]+)\]$/.exec(rest);
++      if (arb) {
++        const o = parseTransformOrigin(arb[1]!.replace(/_/g, " "));
++        if (o === null) return false;
++        D.push(
++          [PROP.originX, px(o.x.fraction)], [PROP.originXPx, px(o.x.px)],
++          [PROP.originY, px(o.y.fraction)], [PROP.originYPx, px(o.y.px)],
++        );
++        acc.namedOrigin = false;
++        return true;
++      }
+       if (!(rest in ORIGINS)) return false;
+       const [ox, oy] = ORIGINS[rest];
+       D.push([PROP.originX, px(ox)], [PROP.originY, px(oy)]);
++      acc.namedOrigin = true;
+       return true;
+     }
+     case "perspective": {
+@@ -1564,6 +1584,16 @@ export function parseClassLiteral(
+     }
+   }
+ 
++  // A named origin is the fraction alone (patch 0056). Where another variant
++  // of this literal sets an origin's length, the named one would inherit it
++  // at runtime, so it is written out as zero.
++  const origins = [acc.base, acc.focus, acc.active];
++  if (origins.some((v) => v.decls.some((d) => d[0] === PROP.originXPx))) {
++    for (const v of origins) {
++      if (v.namedOrigin) v.decls.push([PROP.originXPx, px(0)], [PROP.originYPx, px(0)]);
++    }
++  }
++
+   const rec: StyleRecord = {};
+   const baseProps = dedupe(acc.base.decls);
+   if (baseProps.length > 0) rec.base = baseProps;
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index 2a18c69d..b7aeb520 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -121,6 +121,8 @@ export interface MicroTsStyleProps {
+   invert?: MicroTsFloatInput;
+   saturate?: MicroTsFloatInput;
+   sepia?: MicroTsFloatInput;
++  originXPx?: MicroTsFloatInput;
++  originYPx?: MicroTsFloatInput;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index 62ccb15f..c98c6d48 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -816,6 +816,55 @@ describe("filter layers (pocket-motion)", () => {
+   });
+ });
+ 
++describe("transform origin anywhere", () => {
++  const origin = (lit: string, variant: "base" | "focus" | "active" = "base") => {
++    const m = props(parseClassLiteral(lit), variant);
++    return [PROP.originX, PROP.originXPx, PROP.originY, PROP.originYPx].map((p) => (m.has(p) ? bitsF32(m.get(p)!) : undefined));
++  };
++  test("a named origin is the fraction alone, as it always was", () => {
++    expect(origin("origin-top-left")).toEqual([-0.5, undefined, -0.5, undefined]);
++  });
++  test("origin-[..] is CSS's 2D transform-origin, the length beside the fraction", () => {
++    expect(origin("origin-[25%_75%]")).toEqual([-0.25, 0, 0.25, 0]);
++    expect(origin("origin-[12px_0]")).toEqual([-0.5, 12, -0.5, 0]);
++    expect(origin("origin-[left_20px]")).toEqual([-0.5, 0, -0.5, 20]);
++    expect(origin("origin-[top_right]")).toEqual([0.5, 0, -0.5, 0]);
++    expect(origin("origin-[bottom]")).toEqual([0, 0, 0.5, 0]);
++    expect(origin("origin-[25%]")).toEqual([-0.25, 0, 0, 0]);
++    expect(origin("origin-[calc(100%_-_20px)_center]")).toEqual([0.5, -20, 0, 0]);
++  });
++  test("what CSS refuses, and a z this origin cannot draw, do not parse", () => {
++    for (const bad of ["origin-[left_right]", "origin-[30%_left]", "origin-[top_30%]", "origin-[20_40]", "origin-[0_0_10px]", "origin-[calc(50%+2px)]"]) {
++      expect(parseClassLiteral(bad), bad).toBeNull();
++    }
++  });
++  test("a named origin in a variant zeroes a length another variant set", () => {
++    expect(origin("origin-[12px_0] focus:origin-center", "focus")).toEqual([0, 0, 0, 0]);
++  });
++  test("transformOrigin keyframes pin the fraction and the length of both axes", () => {
++    resetAnimationBake();
++    setAnimationTickRate(60);
++    registerAnimationTheme({
++      keyframes: { pan: { from: { transformOrigin: "20% 30%" }, to: { transformOrigin: "calc(80% + 10px) bottom" } } },
++      animation: { pan: { value: "pan 1s linear both" } },
++    });
++    const rec = parseClassLiteral("animate-pan scale-150");
++    const tl = bakedTimelines()[rec!.animation!.anims[0]!]!;
++    const seg = new Map(tl.tracks.map((t) => [t.prop, [bitsF32(t.segments[0]!.from), bitsF32(t.segments[0]!.to)]]));
++    expect(seg.get(PROP.originX)![0]).toBeCloseTo(-0.3, 6);
++    expect(seg.get(PROP.originX)![1]).toBeCloseTo(0.3, 6);
++    expect(seg.get(PROP.originXPx)).toEqual([0, 10]);
++    expect(seg.get(PROP.originY)![1]).toBe(0.5);
++    expect(seg.get(PROP.originYPx)).toEqual([0, 0]);
++    registerAnimationTheme({
++      keyframes: { bad: { from: { transformOrigin: "left right" }, to: { transformOrigin: "center" } } },
++      animation: { bad: { value: "bad 1s linear both" } },
++    });
++    expect(() => parseClassLiteral("animate-bad w-[1px]")).toThrow(/not a 2D transform-origin/);
++    resetAnimationBake();
++  });
++});
++
+ describe("colour filters (pocket-motion)", () => {
+   const bake = (keyframes: Record<string, Record<string, Record<string, string | number>>>) => {
+     resetAnimationBake();

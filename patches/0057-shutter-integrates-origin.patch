@@ -1,0 +1,82 @@
+pocket-motion-only: the shutter (0034) is this repository's; no upstream target renders an exposure.
+
+0057 — a declared shutter samples the transform origin between ticks.
+
+0056 made the origin animatable. The shutter evaluates only the props
+`integrates` names off the tick, and every other prop keeps the frame's
+tick in every sample. Left out, a zoom whose focal point travels — scale
+2 held, the origin moving — would render sharp under a shutter while the
+same pan written as a translate blurs. The origin is part of the transform,
+so its four props join the translate, scale, rotation and skew in
+`integrates`; jumps, fills and the hold rule are unchanged.
+
+Guard: `shutter_holds_everything_but_transforms` gains an origin fraction
+and an origin length, each read at a half-tick offset (0 -> 0.03125, 8 ->
+8.5), and a hue-rotate track that must stay the frame's; red with the origin
+left out of `integrates`, and red with HUE_ROTATE put in it. Pocket-motion
+`src/anim/timelines.ts`'s `SHUTTER_INTEGRATED` mirrors the list, held to it
+by `tests/shutter.test.ts`.
+
+Ledgers: no digest moves — no composition declares both a shutter and an
+animated origin, and `shutter-blur`'s 90 frames are what they were.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/engine/core/src/shutter.rs b/engine/core/src/shutter.rs
+index 2d4499cd..323da994 100644
+--- a/engine/core/src/shutter.rs
++++ b/engine/core/src/shutter.rs
+@@ -5,10 +5,12 @@
+ //! the average of several samples spread over an exposure, and a sample needs
+ //! the value between two ticks. This module defines it, narrowly:
+ //!
+-//! - Only TRANSFORM props are ever evaluated off the tick (`integrates`).
+-//!   Opacity, colours, layout and paint props keep the value of the frame's
+-//!   own tick in every sample, so a gate stays a gate and a fade reads as it
+-//!   does unblurred.
++//! - Only TRANSFORM props are ever evaluated off the tick (`integrates`), the
++//!   transform origin among them (pocket-motion patch 0057): a zoom whose
++//!   pivot travels moves its pixels through both. Opacity, colours, colour
++//!   filters, layout and paint props keep the value of the frame's own tick
++//!   in every sample, so a gate stays a gate and a fade reads as it does
++//!   unblurred.
+ //! - Between ticks `n` and `n + 1` the value is the segment's own eased curve
+ //!   at the fraction, and ONLY when both ticks sit on one segment that has at
+ //!   least one interior tick and whose curve the realm's value at `n + 1`
+@@ -44,6 +46,10 @@ pub fn integrates(prop: u8) -> bool {
+             | p::ROTATE_X
+             | p::ROTATE_Y
+             | p::SKEW_X
++            | p::ORIGIN_X
++            | p::ORIGIN_Y
++            | p::ORIGIN_X_PX
++            | p::ORIGIN_Y_PX
+     )
+ }
+ 
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 6870d401..2368f820 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -8063,6 +8063,9 @@ fn shutter_holds_everything_but_transforms() {
+             (spec::prop::OPACITY, alloc::vec![lin(0, 16, 0.0, 1.0)]),
+             (spec::prop::TRANSLATE_X, alloc::vec![lin(0, 16, 0.0, 160.0)]),
+             (spec::prop::WIDTH, alloc::vec![lin(0, 16, 10.0, 26.0)]),
++            (spec::prop::HUE_ROTATE, alloc::vec![lin(0, 16, 0.0, 160.0)]),
++            (spec::prop::ORIGIN_X, alloc::vec![lin(0, 16, -0.5, 0.5)]),
++            (spec::prop::ORIGIN_Y_PX, alloc::vec![lin(0, 16, 0.0, 16.0)]),
+         ],
+     };
+     let (mut ui, n) = shutter_world(alloc::vec![both], 0, alloc::vec![]);
+@@ -8075,6 +8078,11 @@ fn shutter_holds_everything_but_transforms() {
+     assert_eq!(after.translate_x, 85.0);
+     assert_eq!(after.opacity.to_bits(), before.opacity.to_bits(), "opacity is the frame's");
+     assert_eq!(after.width.to_bits(), before.width.to_bits(), "layout is the frame's");
++    assert_eq!(after.hue_rotate.to_bits(), before.hue_rotate.to_bits(), "a colour filter is the frame's");
++    // The origin is part of the transform (patch 0057): its fraction and its
++    // length are sampled between ticks like a translate.
++    assert_eq!((before.origin_x, after.origin_x), (0.0, 0.03125));
++    assert_eq!((before.origin_y_px, after.origin_y_px), (8.0, 8.5));
+ }
+ 
+ #[test]

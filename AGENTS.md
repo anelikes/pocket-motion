@@ -586,6 +586,37 @@ mechanisms with the file or test beside them.
   watched red by `redcheck-ts.ts` beside it. `compositions/vector-paths` is
   the fixture, in both ledgers, its sidecar asserting that the caption is up
   before the signature is drawn — which a draw-on ignoring its trim fails.
+- **A colour filter is a matrix on the filter layer, and always a layer**
+  (`patches/0055`, class `motion`; the measurement in
+  `baselines/colour-filters.md`). brightness, contrast, grayscale,
+  hue-rotate, invert, saturate and sepia are Filter Effects 1's matrices in
+  1/16384ths on the layer's straight colour, after its blur and before its
+  shadow, in Tailwind's order, each step clamped — so the order is in the
+  picture, and a keyframe `filter` list written in another order is refused
+  rather than reordered, as is a pair of lists CSS interpolates discretely.
+  Alpha is untouched, so a shadow keeps its colour. LAYER_PUSH carries them
+  in its blend word's bits 24-30 and one f32 each after its eighth word: a
+  layer with none is the words it was, and every draw-list walker reads the
+  length from `layer_push_len`. Applying a filter at draw time instead was
+  measured and refused: it would save about 0.05 ms a word-sized node
+  native, and it is exact only for a subtree of one op that cannot overlap
+  itself — a text run's glyphs meet in a pixel, and there two blends round
+  differently from one. What made small layers cost was 0018's scan and
+  clear of whole 1920-pixel rows; a layer now bounds both by the columns it
+  touched, 0.20 to 0.05 ms a word-sized layer, byte-identical. The core's
+  guards are in `tests.rs` against an f64 transcription of the spec, each
+  red under an edit the 0055 header lists; `tests/colour-filters.test.ts`
+  reads `compositions/colour-filters` against a second, TypeScript one.
+- **A transform origin is a fraction and a length, and it animates**
+  (`patches/0056`, class `upstream`; `0057` puts it under the shutter).
+  `origin-[x_y]` is CSS's 2D `transform-origin`, stored as the fraction
+  of the box the keywords always wrote plus a px length beside it, so
+  `calc(100% - 20px)` holds whatever width layout gives the box; a keyword
+  origin still writes the fraction alone and every record naming one is the
+  bytes it was. The origin animates because a zoom whose focal point
+  travels is the product of two motions, which no eased translate track
+  carries. `tests/origin.test.ts` reads `compositions/origin`'s bars and
+  zoom out of their pixels against the geometry.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -1107,6 +1138,16 @@ mechanisms with the file or test beside them.
   39,864 rasters over the default grid, about 4½ hours at its raster cost,
   against 3,322 and 20 minutes with `--read tick` — the reading that misses
   `peek`. `reel` declares no shutter.
+- **A full-frame colour grade is the dearest filter, and nothing caches it.**
+  Grading a 1080p frame (`hue-rotate-90 saturate-150` over a gradient
+  ground) costs 21-28 ms a frame in the wasm core over the ungraded
+  frame, 4-14 ms of it the colour pass — per pixel, every step, with only
+  the last colour remembered — and the rest 0018's layer composite
+  (`baselines/colour-filters.md`, measured at a load of 15-55, hence the
+  ranges). Footage
+  is where a grade is wanted and where a colour cache would help least;
+  neither a cache nor a fused pass is built. A colour filter inside a
+  perspective (3D) subtree is ignored, as a blur is.
 - **A path's trim and morph do not blur, and nothing caches its geometry.**
   The shutter integrates transform tracks only, so a moving `<Path>` blurs
   and a draw-on's tip does not. The geometry is rebuilt every frame — and
