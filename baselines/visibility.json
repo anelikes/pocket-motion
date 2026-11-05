@@ -85,6 +85,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/data-chart": {
+      "failures": [],
+      "nodes": 18,
+      "named": 6,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/faces": {
       "failures": [],
       "nodes": 5,
@@ -308,6 +315,13 @@
       "failures": [],
       "nodes": 5,
       "named": 5,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/svg-import": {
+      "failures": [],
+      "nodes": 16,
+      "named": 16,
       "neverShown": 0,
       "buriedAfterShown": 0
     },

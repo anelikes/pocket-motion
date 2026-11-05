@@ -202,6 +202,18 @@ const ENTRIES = [
   // where a dash falls, to the equalisation rule or to the kit's keys moves
   // this digest; a stroke without a pattern moves none.
   "compositions/path-primitives",
+  // svg-import. patches/0053: lighthouse.svg expanded into a View per named
+  // group and a <Path> per shape, its transforms, viewBox and
+  // preserveAspectRatio folded into the outlines, eleven parts drawn on one
+  // after another, a lamp scaled about its own box and a beam turned about the
+  // lamp. A change to the document reader, the folding, the paint mapping or
+  // the parts join moves this digest and no other.
+  "compositions/svg-import",
+  // data-chart. patches/0054: a chart whose four outlines are computed at
+  // mount from rows in another module and baked from the mounted tree. A
+  // change to the inventory, the order it bakes in or the monotone curve
+  // moves this digest; the same chart written as literals bakes the same pak.
+  "compositions/data-chart",
 ] as const;
 
 /**

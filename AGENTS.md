@@ -797,6 +797,58 @@ mechanisms with the file or test beside them.
   `tests/svg-bake.test.ts` holds it here; the vendored suite of the same
   name, which this repository's `bun test ./tests/` does not run, holds
   the rest.
+- **An SVG file can be imported as parts, and what it cannot carry is
+  refused by name** (`patches/0053`, class `motion`). `<Svg src parts>` is
+  expanded by the build ahead of the collector (`framework/compiler/svg-tree.ts`
+  and the expander in `jsx-plugin.ts`) into a View per `<g>` with an id and a
+  `<Path>` per shape, every id a `debugName`, so `assertions[]` and
+  `visibility` reach a part by the name the file gave it. Two choices carry
+  it. The file's transforms, viewBox and preserveAspectRatio are FOLDED into
+  the outlines — rotations and skews through `cosSinDeg`, so the pak does not
+  depend on the host's `Math.cos`, the hole `bake-svg.ts` still has — and each
+  part's node is its own bounds on whole px, so it turns and scales about its
+  own centre and its View's transform props hold the author's animation
+  rather than the file's. And a `parts` entry is joined to its part's paint
+  tokens at BUILD time as one literal carrying the entry's location: a node
+  takes one class string, a string joined at mount is one the build never
+  compiled, and the provenance record (`0012`) would not reach it — with the
+  join written as a `+`, a token that does not parse compiles to nothing and
+  the build exits 0. A cached transform holds the files its expansions read
+  by sha256, because the cache key is the module's own text and an edit to
+  the `.svg` alone would rebuild the old picture. `lint` and `check` read the
+  same elements (`src/lint/svg-trees.ts`, `svg.missingFile` and
+  `svg.unsupported`), and the image lint no longer reads an `<Svg>`'s `src`
+  as a picture name, since the build never sees that literal. The canvas is
+  named `svg:<src>`, and `content_overlap` does not pair two nodes inside one:
+  `compositions/svg-import` produced 14 findings at its last frame, every one
+  two lighthouse parts the file draws over each other. Fixture
+  `compositions/svg-import`, in both ledgers, its sidecar asserting the order
+  the parts are drawn in; `tests/svg-import.test.ts` and catalogue gate G10
+  hold the rest, every guard watched red by `baselines/svg-import/redcheck.ts`
+  (`runs/redcheck.txt`).
+- **A `d` computed at mount is baked from the mounted tree** (`patches/0054`,
+  class `motion`; `src/cli/build.ts`, `src/render/path-inventory.ts`). The
+  collector reports every `d` it cannot read and the build prints them on one
+  `paths at mount:` line; only then does `runBuild` mount the bundle with
+  `ui.__unbakedPath` installed, collect every key the tree asked for and did
+  not find, write them to `<output>.paths.json` beside the pak, build again
+  with `--path-inventory=` — the argv `build.json` records, so identity's
+  `toolchain` component carries it — and mount the rebuilt bundle, which must
+  ask for nothing. That second mount is not a formality: the bundle's
+  `PATH_IDS` differ between the two builds, and a composition whose outlines
+  depend on them is refused (`tests/path-inventory.test.ts` constructs one by
+  reading its own table). The inventory adds no input: it is a function of
+  the bundle, computed in the render's realm, which refuses the clock,
+  randomness and locale formatting. A composition whose every `d` is a literal
+  prints no line, is never mounted at build and builds once: over the 42
+  compositions of the digest ledger, built through `runBuild` with and without
+  both patches, every pak is byte-identical and none took the mount path;
+  every bundle moved, by `setPath`'s hook, which every bundle carries
+  (`baselines/svg-import.md`). `compositions/data-chart` computes four
+  outlines from rows in another module, and the same chart with them written
+  as literals bakes the same pak byte for byte; the mount path costs it one
+  build and two boots, 0.90-1.24 s a build against 0.45-0.53 s. Fixture
+  `compositions/data-chart`, in both ledgers.
 - **A job is a spec, and the sample is not the job.** `render --spec job.json`
   stages a throwaway copy of the composition (`src/cli/stage-sources.ts`), runs
   the generator into it, builds, encodes and removes the tree, so a batch never
@@ -1475,11 +1527,26 @@ mechanisms with the file or test beside them.
   a seam between two shapes of one colour lets `(1 - h_a/16)(1 - h_b/16)` of
   the ground through; stage 1's fan of 24 wedges shows faint radial lines. A
   coverage-merging op would close it and is not built.
-- **The collector reads a module's own literals.** A `d` imported from
-  another module, or computed at run time, is refused at mount rather than
-  baked; generators write literals, which is what every composition here
-  does, but a hand-written film that keeps its outlines in a shared module
-  meets the refusal.
+- **An outline computed at mount is as deterministic as the arithmetic that
+  computed it.** The realm pins the clock, randomness and locale formatting,
+  not `Math.sin`, `cos`, `tan`, `pow`, `exp`, `log` or `atan2`, which
+  JavaScriptCore may hand to the host's libm. A chart's `line()` with a linear
+  or monotone curve is `+ - * /` and holds across hosts; d3's arc and pie
+  generators, `curveCatmullRom` (`Math.pow`) and d3-scale's `nice()` and
+  `ticks()` (`Math.log10`, `Math.pow`) do not, and nothing reports a `d` that
+  went through one — the determinism workflow would see it only as a
+  fixture's digest moving on Linux, and `compositions/data-chart` is written
+  to avoid all of them. A build run with upstream's `tools/build.ts` directly
+  takes no inventory, and the render's mount refuses what it did not bake.
+- **What an `<Svg>` import does not carry.** Gradients, patterns, clip paths,
+  masks, filters, `<use>`, `<symbol>`, `<style>` sheets and text are refused,
+  not converted. `opacity` on a `<g>` multiplies each part's alpha, so the
+  overlapping parts of a translucent group blend one over another where a
+  browser composites the group first; nothing refuses or reports it. A stroke
+  under a skew or a non-uniform scale is refused rather than outlined. A
+  `parts` class that trims or paints is inert on a group's View — only a
+  `<Path>` draws an outline — and nothing reports that either. Outlines are
+  written in thousandths of a px. The import is Solid's, like `<Path>`.
 
 Stated rather than smoothed. Each is a known hole, not an oversight.
 

@@ -140,14 +140,20 @@ export interface PathProbe {
   readonly source?: string;
   readonly d?: readonly string[];
   readonly viewBox?: string;
+  /** An SVG document written beside the module as `./pic.svg`, for an `<Svg src>` (patches/0053). */
+  readonly svg?: string;
   readonly outcome:
     /** The collector records exactly these outlines (order-free); empty is a refusal. */
     | { readonly records: readonly { readonly d: readonly string[]; readonly viewBox?: string }[] }
     /** The baker's verb list (0 move, 1 line, 2 cubic, 3 close). */
     | { readonly verbs: readonly number[] }
-    /** The baker throws, with this substring in the message. */
+    /** The baker — or, for a module, the transform — throws, with this substring in the message. */
     | { readonly refuses: string };
 }
+
+/** The module an `<Svg>` path probe transforms, beside its `svg` written as `./pic.svg`. */
+const SVG_PROBE_MODULE =
+  'import { Svg } from "@pocketjs/framework/components";\nexport const A = () => <Svg src="./pic.svg" parts={{ a: "opacity-50" }} />;\n';
 
 /**
  * A frame's geometry, given directly, and the codes it must produce.
@@ -1710,6 +1716,92 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
   {
+    id: "assets.svg-tree",
+    group: "assets",
+    declaredIn: "<Svg src=… width height parts>",
+    key: "<Svg src> | parts={{ id: \"classes\" }}",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "an SVG file imported as a tree of nodes, from `@pocketjs/framework/components`. The build expands the element before it collects a literal: a View with the author's class and debugName, a canvas View named `svg:<src>` at the picture's size (`width`/`height`, else the file's, else its viewBox's; clipped unless the root says overflow=\"visible\"), a View per `<g>` with an id, and a `<Path>` per path, rect, circle, ellipse, line, polyline and polygon, each id its debugName. Every transform, the viewBox and preserveAspectRatio (all nine alignments, meet and slice, none) are folded into the outlines, rotations and skews through the arc conversion's exact-at-quarter-turns `cosSinDeg`; each part's box is its own bounds on whole px, so its transform origin is its centre. Paint (fill, stroke, their opacities, width scaled with the map, join, cap, miter limit, fill rule, opacity) becomes class tokens from attributes, `style=\"\"` and the cascade; a `parts` entry is joined to its part's tokens as one literal, so 0012's and 0041's refusals reach it at the entry. Refused, naming the element: gradients, patterns, clip paths, masks, filters, `<use>`, `<symbol>`, `<style>`, text, images, nested `<svg>`, markers, SMIL; a `url()` paint, a dash array, a stroke under a non-uniform map; a parts key naming no id. A cached transform is dropped when the file it read changes. Class motion, patches/0053; fixture compositions/svg-import",
+    source: "vendor/pocketjs/framework/compiler/svg-tree.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    pathProbes: [
+      {
+        what: "every shape is an outline the collector bakes, transforms folded in, each in its own box",
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="a" width="10" height="10" fill="#fff"/><g transform="rotate(90 30 5)"><line id="b" x1="25" y1="5" x2="35" y2="5" stroke="#fff" stroke-width="2"/></g></svg>',
+        outcome: { records: [{ d: ["M0 0L10 0L10 10L0 10Z"] }, { d: ["M1 1L1 11"] }] },
+      },
+      {
+        what: 'a gradient is refused by name, even in <defs>',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><defs><linearGradient id="g"/></defs><rect id="a" width="1" height="1"/></svg>',
+        outcome: { refuses: '<linearGradient id="g"> (line 1): gradients are not imported' },
+      },
+      {
+        what: 'a clip path is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><clipPath id="c"/><rect id="a" width="1" height="1"/></svg>',
+        outcome: { refuses: '<clipPath id="c"> (line 1): clip paths are not imported' },
+      },
+      {
+        what: '<use> is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="a" width="1" height="1"/><use href="#a"/></svg>',
+        outcome: { refuses: '<use> (line 1): <use> is not imported' },
+      },
+      {
+        what: 'a <style> sheet is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><style>rect{fill:red}</style><rect id="a" width="1" height="1"/></svg>',
+        outcome: { refuses: '<style> (line 1): style sheets are not imported' },
+      },
+      {
+        what: 'text is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="a" width="1" height="1"/><text>hi</text></svg>',
+        outcome: { refuses: '<text> (line 1): text is not imported' },
+      },
+      {
+        what: 'a filter is refused by name',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><filter id="f"/><rect id="a" width="1" height="1"/></svg>',
+        outcome: { refuses: '<filter id="f"> (line 1): filters are not imported' },
+      },
+      {
+        what: 'a stroke under a non-uniform scale is refused',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="a" width="1" height="1" transform="scale(2 1)" stroke="#fff"/></svg>',
+        outcome: { refuses: 'it is stroked under a transform that is not a uniform scale and rotation' },
+      },
+      {
+        what: 'a parts key naming no id is refused at the key',
+        source: SVG_PROBE_MODULE,
+        svg: '<svg width="40" height="10"><rect id="b" width="1" height="1"/></svg>',
+        outcome: { refuses: 'parts names "a", which no element of ./pic.svg carries as its id (its ids: b)' },
+      },
+    ],
+  },
+  {
+    id: "assets.svg-tree.lint",
+    group: "assets",
+    declaredIn: "<Svg src=…>",
+    key: "<Svg src> missing or refused (lint)",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "`lint` and `check` fail with `svg.missingFile` when an `<Svg src>` names no file, and `svg.unsupported` when the import refuses the file, naming the module, line and column of the src. The build refuses both too, located; this answers without building, and `check` before booting a bundle that predates the loss. Discovery is the build's (`svgSites`: a JSX element named by a binding imported as `Svg` from the framework's components), over the entry and the relative imports reachable from it, and `images.missingFile` does not read an `<Svg>`'s src as a picture name",
+    source: "src/lint/svg-trees.ts:30",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: ['export const CODE_SVG_MISSING = "svg.missingFile";', 'export const CODE_SVG_UNSUPPORTED = "svg.unsupported";', "tree.svgSites(source, file)"],
+  },
+  {
     id: "assets.images-json",
     group: "assets",
     declaredIn: "<compositionDir>/images.json",
@@ -2831,7 +2923,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: null,
     constraint:
-      "a View that also draws a baked vector outline, imported from `@pocketjs/framework/components`. `d` is the whole SVG path grammar (implicit repeats, exponents, arc flags without separators), normalised at build time to move, line, cubic and close — Q and T by exact degree elevation, an arc to cubics of at most 45 degrees by unit-vector bisection and square roots only, so a pak's bytes do not depend on the host's `Math.sin`. An array is the morph keys (at most 8): a line against a cubic is promoted exactly, any other difference is refused naming the first differing command, and point counts are never equalised. `viewBox` maps the coordinates onto the box, xMidYMid meet; without it `d` is in the node's own px. The build bakes a `d` written as literals — a string, a `+` of two, an array of them, a `const` of any of those, an element of a `const` array by literal index, the parameter of a `.map` callback over one, or the arms of a ternary — on any element, paired with the viewBox written beside it, so a component that forwards `d` to a `<Path>` is baked from its call site; any other `d` (an import, a computed string) is looked up at mount, which refuses an outline the build did not bake. Fill and stroke are the `fill-*`/`stroke-*` rows; geometry is rebuilt every frame in the core, so the world transform, a mask, a paint and a filter layer all apply. Drawn by this repository's rasteriser only (patches/0042 op 71 and 0043, class motion)",
+      "a View that also draws a baked vector outline, imported from `@pocketjs/framework/components`. `d` is the whole SVG path grammar (implicit repeats, exponents, arc flags without separators), normalised at build time to move, line, cubic and close — Q and T by exact degree elevation, an arc to cubics of at most 45 degrees by unit-vector bisection and square roots only, so a pak's bytes do not depend on the host's `Math.sin`. An array is the morph keys (at most 8): a line against a cubic is promoted exactly, any other difference is refused naming the first differing command, and point counts are never equalised. `viewBox` maps the coordinates onto the box, xMidYMid meet; without it `d` is in the node's own px. The build bakes a `d` written as literals — a string, a `+` of two, an array of them, a `const` of any of those, an element of a `const` array by literal index, the parameter of a `.map` callback over one, or the arms of a ternary — on any element, paired with the viewBox written beside it, so a component that forwards `d` to a `<Path>` is baked from its call site; any other `d` (an import, a computed string) is baked from a mount of the bundle (paint.path.mount), and a render's mount refuses an outline its build did not bake. Fill and stroke are the `fill-*`/`stroke-*` rows; geometry is rebuilt every frame in the core, so the world transform, a mask, a paint and a filter layer all apply. Drawn by this repository's rasteriser only (patches/0042 op 71 and 0043, class motion)",
     source: "vendor/pocketjs/framework/compiler/path-data.ts",
     verification: "probed",
     diagnostics: [],
@@ -2897,6 +2989,21 @@ export const SURFACE: readonly CapabilityRow[] = [
         outcome: { refuses: "unknown command \"5\"" },
       },
     ],
+  },
+  {
+    id: "paint.path.mount",
+    group: "paint",
+    declaredIn: "<Path d={computed}>",
+    key: "<Path d> computed at mount",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "a `d` the build cannot read where it is written — imported from another module, or computed from data at mount, as d3-shape's `line()(rows)` is — is baked from the tree. The collector reports each such attribute and the build prints them on a `paths at mount:` line; only then does `runBuild` mount the bundle with `ui.__unbakedPath` installed, take every outline the tree asked for and did not find, write them to `<output>.paths.json` beside the pak, build again with `--path-inventory=` (the argv `build.json` records), and mount the result, which must ask for none: a composition whose outlines change once its own are baked is refused. A composition whose every `d` is a literal never mounts at build and its artifacts are the bytes they were. The mount is the render's realm (no `Date`, `Math.random` or locale formatting); a `d` computed through the host's `Math.sin`/`cos`/`pow`/`log`/`atan2` is that host's. patches/0054, class motion; tests/path-inventory.test.ts; fixture compositions/data-chart",
+    source: "src/cli/build.ts:38",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: ["const PATHS_AT_MOUNT = /^\\s*paths at mount: (\\d+) /m;", "`--path-inventory=${inventoryPath}`", "mounts ${again.length} more"],
   },
   {
     id: "paint.fill",

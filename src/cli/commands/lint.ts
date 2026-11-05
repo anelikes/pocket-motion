@@ -5,6 +5,7 @@
 
 import { basename, resolve } from "node:path";
 import { lintImages } from "../../lint/images.ts";
+import { lintSvgTrees } from "../../lint/svg-trees.ts";
 import { lintSource, type LintFinding } from "../../lint/mount-only.ts";
 import { lintShutterHolds, type ShutterWarning } from "../../lint/shutter.ts";
 import { lintTileNames, type TileWarning } from "../../lint/tiles.ts";
@@ -87,6 +88,9 @@ export async function run(options: LintOptions): Promise<CommandResult> {
         entryPath: resolved.value.entryPath,
         compositionDir: resolved.value.dir,
       })),
+      // An `<Svg src>` with no file, or one the import refuses: the build
+      // refuses both, and this answers without building.
+      ...(await lintSvgTrees({ entryPath: resolved.value.entryPath })),
     );
   }
 

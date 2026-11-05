@@ -190,6 +190,13 @@ Worked examples, roughly in reading order:
   star, ring into square), and a dart flying a drawn route turned to its
   direction of travel, its keyframes made by `motionPath` in
   `pocket.config.ts`. Its sidecar asserts what each is for.
+- `compositions/svg-import` — `lighthouse.svg` imported with `<Svg>`: eleven
+  parts drawn on one after another by `trimEnd`, a lamp scaled up about its
+  own centre and a beam turning about the lamp, its sidecar asserting the
+  order the parts are drawn in by their ids.
+- `compositions/data-chart` — a line chart whose rules, area, series and dots
+  are `<Path>`s computed at mount from rows in another module, baked from the
+  mounted tree.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
@@ -431,10 +438,22 @@ stroke, by fractions of its length. A draw-on is one keyframe, `trimEnd` from
 `"0"` to `"1"`. `d={[A, B]}` gives morph keys, and `morph-[f]` (keyframe
 `morph`) moves between them; `bg-clip-path` paints the node's ground, a
 gradient included, into the fill. Colours, width, trim and morph all
-animate. The outline is baked at build time, so write `d` where the build can
-read it — a string, a `+` of two, an array of them, a `const` of any of
-those, or a `.map` over a `const` array — and a `d` it cannot read, an import
-or a string computed at run time, is refused at mount, naming the outline.
+animate. The outline is baked at build time. A `d` written where the build can read it — a string, a
+`+` of two, an array of them, a `const` of any of those, or a `.map` over a
+`const` array — is baked from the source. One it cannot read, imported from
+another module or computed from data, is baked from the tree: the build
+prints `paths at mount: N d attribute(s) not read by the build (file:line:col,
+…)`, mounts the bundle, takes every outline the tree asked for, writes them to
+`<output>.paths.json` beside the pak, builds again with them and mounts that
+bundle, which must ask for nothing more (`patches/0054`,
+`compositions/data-chart`). A chart is therefore one `<Path
+d={line(rows)}>`. The mount runs in the render's realm, so no clock or random
+number reaches it; what does is the host's `Math.sin`, `cos`, `pow`, `exp`,
+`log` and `atan2`, whose last bit is the machine's — compute an outline with
+`+ - * /` and `Math.sqrt`, and keep a scale's domain fixed rather than `nice()`d
+(`nice()` and `ticks()` go through `Math.log10` and `Math.pow`). A build run
+by hand with upstream's `tools/build.ts` takes no inventory, and the render's
+mount refuses an outline that build did not bake, naming it.
 Keys whose commands line up once normalised (a line against a curve counts)
 morph point for point as drawn. Keys drawn separately — a play icon and a
 pause icon, a heart and a star — are equalised at build time by a stated
@@ -900,6 +919,74 @@ the fixture, and it traces green on purpose.
 `<compositionDir>/images.json` sets a per-image pixel format (`psm`) where
 8888 is not wanted, and a sprite manifest in the same directory bakes an image
 as an animated sprite atlas instead of a still.
+
+### SVG files as parts
+
+An SVG baked as a picture is one image. To animate its parts, import it as a
+tree:
+
+```tsx
+import { Svg } from "@pocketjs/framework/components";
+
+<Svg
+  src="./lighthouse.svg"
+  debugName="lighthouse"
+  width={960}
+  height={720}
+  class="absolute left-[480px] top-[150px]"
+  parts={{ tower: "animate-draw-3", lamp: "animate-pop", beam: "animate-sweep" }}
+/>
+```
+
+**The build expands the element** (`patches/0053`), before it reads a single
+literal, into a View carrying `class` and `debugName`, a canvas View named
+`svg:<src>` at the picture's size — `width` and `height`, else the file's,
+else its viewBox's — clipped to it unless the root `<svg>` says
+`overflow="visible"`, and under it a View for every `<g>` with an `id` and a
+`<Path>` for every `path`, `rect`, `circle`, `ellipse`, `line`, `polyline` and
+`polygon`. Each element's `id` is its node's `debugName`, so `assertions[]`,
+`visibility` and `layoutAllow` name parts the way they name anything else.
+`src` is relative to the module that writes the element, as an import is.
+
+- **Geometry is folded in.** Every `transform`, the `viewBox` and
+  `preserveAspectRatio` — the nine alignments, `meet`, `slice`, `none` — are
+  applied to the outline at build time, in SVG's order, rotations and skews
+  exact at quarter turns. Each part's node is its own bounds on whole px, so a
+  rotate or scale on a part turns about the part's centre (CSS's
+  `transform-box: fill-box`), and a group's about the group's. A group with
+  neither `id` nor `opacity` adds no node.
+- **Paint becomes classes.** `fill`, `stroke` and their opacities,
+  `stroke-width` (scaled with the map), `stroke-linejoin`, `stroke-linecap`,
+  `stroke-miterlimit`, `fill-rule` and `opacity`, from attributes, `style=""`
+  and what a `<g>` passes down, as hex, `rgb()`, CSS names or `currentColor`.
+  A circle's or a rect's outline starts where SVG 2 starts it — a circle at
+  its rightmost point, clockwise — so a draw-on begins where a browser's does.
+  `opacity` on a `<g>` multiplies each part's alpha; parts of a group that
+  overlap blend one over the other where a browser would composite the group
+  first.
+- **`parts` adds classes to a part.** An entry is joined to the classes the
+  part's paint became, at build time, as one literal: the build refuses a
+  token in it that does not parse, or an `animate-*` naming nothing, as it
+  would on a `class=` attribute, and locates the first at the entry. A value
+  is a string literal or a ternary of them; a key naming no id is refused at
+  the key, listing the file's ids. Trim and the paint utilities draw only on a
+  `<Path>`: on a group's View they do nothing, so draw a group's shapes on by
+  their own ids.
+- **What is refused, by name**: gradients, patterns, clip paths, masks,
+  filters, `<use>`, `<symbol>`, `<style>` sheets, text, `<image>`, a nested
+  `<svg>`, markers, `<switch>`, `<a>`, scripts and SMIL animation — in
+  `<defs>` as well — and a `url()` paint, `stroke-dasharray`, `clip-path`,
+  `mask`, `filter`, `vector-effect`, `paint-order`, a stroke under a
+  transform that is not a uniform scale and rotation, and a duplicate `id`.
+  Each names the element and its line in the file. Flatten what an editor
+  can flatten; give a part a gradient (`bg-clip-path`), a blur or a shadow
+  through its class.
+- **`lint` and `check` read the same elements** and fail with
+  `svg.missingFile` or `svg.unsupported` at the `src`, without building.
+- **`layout` reads one picture as one picture**: two parts inside one
+  `svg:<src>` canvas overlap where the file draws them over each other, and
+  that is not a `content_overlap`. A part and a node outside the picture
+  still are.
 
 ### Pictures and motion a generator computes
 
