@@ -181,7 +181,8 @@ bun baselines/encode-cost/end-to-end.ts <composition-dir> --work <scratch dir> -
 - One machine, one ffmpeg (8.0), one x264 build. The x264 presets'
   ratios should carry to the Linux hosts; their absolute seconds will not.
 - The delivery-encode change in anelikes/pocket-motion#13 (BT.709 named in
-  the conversion and tagged) was not on main when this was measured. It moves
-  the conversion every row pays, not the comparison between encoders.
+  the conversion and tagged) was not in the tree when this was measured, and
+  is now. It moves the conversion every row pays, not the comparison between
+  encoders; the rows were not re-run after it.
 - PSNR and SSIM are averages over the film. A codec that spends its bits
   unevenly can match an average and still show a worse frame.

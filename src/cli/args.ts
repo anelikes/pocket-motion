@@ -40,7 +40,7 @@ const GLOBAL_VALUE = new Set([
 ]);
 
 /** Command-specific booleans. Must be listed here so `--no-open` is not parsed as a value flag. */
-const COMMAND_BOOL = new Set(["no-open", "no-watch", "alpha", "annotate", "strict", "no-reuse"]);
+const COMMAND_BOOL = new Set(["no-open", "no-watch", "alpha", "annotate", "strict", "no-assert", "no-reuse"]);
 
 /** All known flag names (global + command-specific) so unknown flags exit 2. */
 const KNOWN_FLAGS = new Set([
@@ -83,6 +83,7 @@ const FLAG_COMMAND: Record<string, readonly string[]> = {
   example: ["init"],
   format: ["render"],
   alpha: ["render"],
+  "no-assert": ["render"],
   encoder: ["render"],
   preset: ["render"],
   "no-reuse": ["render", "trace"],

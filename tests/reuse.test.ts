@@ -21,8 +21,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { runBuild } from "../src/cli/build.ts";
@@ -39,11 +38,12 @@ import {
 import { render, type RenderOptions } from "../src/render/render.ts";
 import { RasterReuse } from "../src/render/reuse.ts";
 import { WasmFrameSource } from "../src/runtime/frame-source.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const HOLDS = "compositions/captions/highlight";
 const IMAGES = "compositions/images";
-const TMP = mkdtempSync(join(tmpdir(), "pocketjs-motion-reuse-"));
+const TMP = scratchDir("reuse");
 
 const LEDGER = (
   JSON.parse(readFileSync(join(ROOT, "baselines/digests.json"), "utf8")) as {

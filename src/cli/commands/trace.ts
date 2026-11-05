@@ -28,6 +28,7 @@ import {
   EXIT_OK,
   type CommandResult,
   type GlobalFlags,
+  type RunContext,
   type TraceJson,
 } from "../types.ts";
 
@@ -86,7 +87,10 @@ export async function compositionIdentity(
   });
 }
 
-export async function run(options: TraceOptions): Promise<CommandResult> {
+export async function run(
+  options: TraceOptions,
+  context: RunContext = {},
+): Promise<CommandResult> {
   const resolved = await resolveComposition({
     dir: options.dir,
     flags: options.flags,
@@ -132,6 +136,10 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
           }
         : undefined,
       onFrameBoundary: (frame) => bound.footage?.present(frame),
+      signal: context.signal,
+      onProgress: context.onProgress
+        ? (frame, frames) => context.onProgress?.({ done: frame + 1, frames })
+        : undefined,
     });
 
     const identity = await compositionIdentity(c, bound.footage?.hashes);
@@ -159,10 +167,17 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
       ],
     };
   } catch (e) {
-    const message = errMsg(e);
+    // Whatever the loop threw on the way out, a fired signal is why it stopped.
+    const cancelled = context.signal?.aborted === true;
+    const message = cancelled ? `trace cancelled — ${errMsg(context.signal?.reason)}` : errMsg(e);
     return {
       exitCode: EXIT_FAIL,
-      json: { frames: [] as string[], digest: "", error: message },
+      json: {
+        frames: [] as string[],
+        digest: "",
+        error: message,
+        ...(cancelled ? { cancelled: true } : {}),
+      },
       stderrLines: [message],
       stdoutLines: [`trace failed — ${message}`],
     };
@@ -173,8 +188,9 @@ export async function run(options: TraceOptions): Promise<CommandResult> {
 
 export async function runFromArgv(
   argv: readonly string[],
+  context: RunContext = {},
 ): Promise<CommandResult> {
   const parsed = parseArgs(["trace", ...argv]);
   const dir = requirePositional(parsed.positionals, 0, "composition-dir");
-  return run({ dir, flags: parsed.global, reuse: parsed.flags["no-reuse"] !== true });
+  return run({ dir, flags: parsed.global, reuse: parsed.flags["no-reuse"] !== true }, context);
 }

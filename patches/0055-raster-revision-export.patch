@@ -1,4 +1,4 @@
-0051 — export the raster revision, the half of "nothing to repaint" that
+0055 — export the raster revision, the half of "nothing to repaint" that
 `ui_draw_hash` does not carry.
 
 `ui_draw_hash` hashes the DrawList's words, and its doc comment offers it to

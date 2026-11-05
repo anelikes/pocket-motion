@@ -28,19 +28,21 @@ import * as verifyCmd from "./commands/verify.ts";
 import * as visibilityCmd from "./commands/visibility.ts";
 import * as doctorCmd from "./commands/doctor.ts";
 import * as initCmd from "./commands/init.ts";
+import * as mcpCmd from "./commands/mcp.ts";
 import {
   EXIT_FAIL,
   EXIT_OK,
   EXIT_USAGE,
   type CommandResult,
   type ExitCode,
+  type RunContext,
 } from "./types.ts";
 
 const COMMANDS: Record<
   string,
   {
     readonly summary: string;
-    readonly run: (argv: readonly string[]) => Promise<CommandResult>;
+    readonly run: (argv: readonly string[], context: RunContext) => Promise<CommandResult>;
   }
 > = {
   lint: {
@@ -58,11 +60,11 @@ const COMMANDS: Record<
   },
   render: {
     summary: "produce the video (--out file.mp4)",
-    run: (argv) => renderCmd.runFromArgv(argv),
+    run: (argv, context) => renderCmd.runFromArgv(argv, context),
   },
   trace: {
     summary: "the frame-hash sequence + digest",
-    run: (argv) => traceCmd.runFromArgv(argv),
+    run: (argv, context) => traceCmd.runFromArgv(argv, context),
   },
   frame: {
     summary: "one frame as a PNG (--at N --out file.png)",
@@ -119,6 +121,11 @@ const COMMANDS: Record<
       "PNGs at sampled frames (--out dir), optionally with layout's boxes and finding codes drawn over them (--annotate)",
     run: (argv) => snapshotCmd.runFromArgv(argv),
   },
+  mcp: {
+    summary:
+      "serve render, verify, assert, layout, trace and doctor as MCP tools on stdin/stdout",
+    run: (argv) => mcpCmd.runFromArgv(argv),
+  },
 };
 
 export function helpText(): string {
@@ -157,6 +164,8 @@ export function helpText(): string {
     "  --example <name>    init: which fixture to start from",
     "  --format <name>     render: mp4 | webm | mov | png-seq (default mp4)",
     "  --alpha             render: ask the codec for an alpha channel (not mp4)",
+    "  --no-assert         render --spec: skip the job's own assertions[], which are",
+    "                      otherwise checked on its staged tree before it renders",
     "  --samples N         visibility/snapshot: how many frames to look at (default 24)",
     "  --read exposure|tick layout/visibility/assert/verify, under a shutter: classify",
     "                      the delivered exposure (default) or the frame's own tick",
@@ -183,8 +192,14 @@ export function helpText(): string {
  * CLI invocation with the same argv run the same code up to the point where
  * one writes the object and the other returns it. `"help"` is returned rather
  * than a result because help is the one output that is not an envelope.
+ *
+ * `context` is what an embedding caller adds and an argv cannot carry — a
+ * cancel signal and a progress callback (`RunContext`). The CLI passes none.
  */
-export async function dispatch(argv: readonly string[]): Promise<CommandResult | "help"> {
+export async function dispatch(
+  argv: readonly string[],
+  context: RunContext = {},
+): Promise<CommandResult | "help"> {
   try {
     const parsed = parseArgs(argv);
     if (parsed.flags.help === true) return "help";
@@ -203,7 +218,7 @@ export async function dispatch(argv: readonly string[]): Promise<CommandResult |
     // Re-pass original argv without the command token so each command's
     // parseArgs sees its own positionals + flags.
     const rest = argv.slice(argv.indexOf(name) + 1);
-    return await cmd.run(rest);
+    return await cmd.run(rest, context);
   } catch (e) {
     if (e instanceof UsageError) {
       return {

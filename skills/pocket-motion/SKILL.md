@@ -68,9 +68,10 @@ repository's op, not upstream's: keep to `overflow-hidden` where a composition
 must stay portable.
 
 **Timing is quantised twice.** A duration in ms bakes to whole frames at 60 Hz,
-and the render then samples every `60 / fps`-th tick. At 30 fps only even ticks
-are observed, so 45/90/135/180 ms land on frames 4/6/8/12 — gaps of 2, 2, 4
-where four equal ones were written. Write times that are whole rendered frames
+and the render then samples every `60 / fps`-th tick, the last of each frame's
+window: frame `f` shows tick `2f + 1` at 30 fps. So 45/90/135/180 ms bake to
+ticks 3/5/8/11 and are first shown by frames 1/2/4/5 — gaps of 1, 2, 1 where
+three equal ones were written. Write times that are whole rendered frames apart
 when the spacing carries meaning, and run `keyframes` to see which declared
 instants the render never samples.
 
@@ -92,9 +93,40 @@ subtree as one unit, and gradients of up to six stops at any angle, radial, or
 clipped to text (`via-*`, `bg-linear-*`, `bg-radial`, `bg-clip-text`). All
 paint-only, all drawn by this repository's rasteriser alone (`patches/0013`,
 `0016`–`0019`). Any outline is a `<Path d="…">` — filled (`fill-*`), stroked
-(`stroke-*`), drawn on by a `trimEnd` keyframe, morphed between `d={[A, B]}`
-by `morph` — with `d` written as literals the build can read
-(`patches/0042`–`0043`, `compositions/vector-paths`).
+(`stroke-*`), dashed (`stroke-dash-[12_8]`, marching by a `dashOffset`
+keyframe, dotted with `stroke-dash-[0_14] stroke-cap-round`), drawn on by a
+`trimEnd` keyframe, morphed between `d={[A, B]}` by `morph`, keys drawn
+separately included (`patches/0042`–`0046`, `compositions/vector-paths`,
+`compositions/path-primitives`). A `d` written as literals is baked from the source; one imported or computed at mount — a
+chart's `line()(rows)` — is baked from the mounted tree: the build prints
+`paths at mount:`, mounts, bakes what the tree asked for and mounts again
+(`patches/0054`, `compositions/data-chart`). Compute it with `+ - * /`:
+`Math.sin`, `cos`, `pow` and `log` are the host's last bit.
+A node follows an outline, turned to its direction of travel, through `motionPath` in `src/anim/path-motion.ts`,
+called in `pocket.config.ts`; `chordError` says how far a shutter or a 60 fps
+film sees it cut corners.
+
+**An SVG file is a tree of parts**: `<Svg src="./x.svg" parts={{ id: "…" }} />`
+(`patches/0053`, `compositions/svg-import`). The build expands it into Views
+and `<Path>`s — every element's `id` its `debugName`, every transform and the
+viewBox folded into the outlines, each part's box its own bounds so it turns
+and scales about its own centre — and joins each `parts` entry to that part's
+classes. Gradients, clip paths, masks, filters, `<use>`, `<style>` and text
+are refused by name: flatten them in the editor, or give the part the effect
+through its class.
+
+| GSAP / SVG idiom | here |
+|---|---|
+| `drawSVG: 0` → `"100%"`, a `stroke-dashoffset` draw-on | a `trimEnd` keyframe `0` → `1` on the `<Path>`; `drawSVG: "40% 60%"` is `trim-start-[0.4] trim-end-[0.6]` |
+| `morphSVG` | `<Path d={[A, B]}>` and a `morph` keyframe `0` → `1`; keys drawn separately are equalised at build time by a stated rule (`patches/0046`) |
+| `strokeDasharray` / `strokeDashoffset` | `stroke-dash-[12_8]` and a `dashOffset` keyframe |
+| `motionPath: { path, autoRotate: true }` | `motionPath` from `src/anim/path-motion.ts`, called in `pocket.config.ts` |
+| `stagger: 0.33` | one animation name per part, the same keyframes, the delay stepped by 333 ms |
+| `transformOrigin: "50% 50%"` on a part | the default for an `<Svg>` part: its box is its own bounds |
+| an inline `<svg>` animated by selector | `<Svg src parts={{ id: "animate-…" }}>`, the ids also what `assertions[]` name |
+| d3 `line()(data)` | `<Path d={line(rows)}>`, baked from the mount |
+| `repeat: -1, yoyo: true` | `infinite` with the mirrored keyframes written out: `alternate` is not baked |
+| `autoAlpha` | an `opacity` keyframe |
 
 **Motion blur is the sidecar's `shutter`** (`{ "angle": 180, "samples": 8 }`):
 each frame is the integer average of that many renders across the open
@@ -227,10 +259,13 @@ bun src/cli/main.ts render compositions/captions/alpha-en --spec compositions/ca
 ```
 
 `compositions/captions/alpha-en` and `compositions/captions/burn-zh` are the
-two samples; either takes any captions job. `assert --samples <durationFrames>`
-checks every word at every frame — the default 24 samples can miss a short
-word's window, and an assertion with no sample in its window fails rather
-than passing. `AUTHORING.md`, "Captions from a transcript", has the rules, and
+two samples; either takes any captions job. `assert` reads each word at both
+ends of its window besides its 24 evenly spaced frames, so a word shorter than
+the stride is still read; `assert --samples <durationFrames>` checks every
+word at every frame. A job's render runs that same check on the job's own
+staged tree before it encodes and refuses the job when a word is not in the
+picture over its window, with `assert`'s JSON as `assertions` in `--json`;
+`--no-assert` skips it. `AUTHORING.md`, "Captions from a transcript", has the rules, and
 `CAPABILITIES.md`, "Captions job", every key with its default and refusal.
 
 ## The commands
@@ -274,15 +309,55 @@ browser.
 - `MOTION_RUN_ID` in the environment is echoed back as `runId` on every
   envelope, so one agent turn's `lint`, `check`, `trace` and `verify` join up.
 - The same objects come back from code: `import { build, trace, render,
-  verify, doctor } from "pocket-motion"` (`src/api.ts`) runs the command
-  through the CLI's own dispatch and returns what `--json` would have
-  printed, redaction and `runId` included. `tests/api.test.ts` holds each
-  function equal to the CLI. `render`'s object carries `trace`'s `digest`
-  and `identity`, except for a `--spec` job, which has no identity.
+  verify, assert, layout, doctor } from "pocket-motion"` (`src/api.ts`) runs
+  the command through the CLI's own dispatch and returns what `--json` would
+  have printed, redaction and `runId` included. `tests/api.test.ts` holds
+  each function equal to the CLI. `render`'s object carries `trace`'s
+  `digest` and `identity`; a `--spec` job's identity does not depend on the
+  directory it was staged in, so one spec rendered twice reports one.
 - A command states what it EXAMINED. `check` names the frame window it used;
   `visibility` and `assert` name the sampled frames; `layout` is one frame.
   None of them claims anything about the frames it did not look at, and
   `--samples <durationFrames>` is the exact case when you need it.
+
+## As MCP tools
+
+`mcp` serves `verify`, `assert`, `layout`, `render`, `trace` and `doctor` as
+Model Context Protocol tools on stdin and stdout, for a client that would
+rather call a tool than parse a shell. A tool's arguments are the `src/api.ts`
+function's options with the composition directory as `dir`, and its result
+is the object the command prints with `--json`, as `structuredContent` and
+again as the text content. `tests/mcp.test.ts` drives it over stdio and holds
+each result equal to the API's.
+
+```bash
+bun src/cli/main.ts mcp    # serves until stdin closes; run with no stdin, as here, it exits 0 at once
+claude mcp add pocket-motion -- bun src/cli/main.ts mcp
+```
+
+- `isError` means the command could not produce its reading: the object has
+  an `error` field. `verify` with `ok: false` and `errors`, a failing
+  `assert` and a red `doctor` are readings, and are not errors.
+- `build` is not a tool. Build in a shell first; a tool given a composition
+  with no build is refused with the command that builds it. `render` with
+  `spec` builds its staged job itself.
+- Every tool but `doctor` boots a composition, and they take turns in
+  arrival order: the rasteriser is wasm on the server's one thread, so two
+  at once would interleave rather than run side by side. A call that has to
+  wait is told so in a progress notification.
+- `render` and `trace` send `notifications/progress` for each finished frame
+  to a call carrying a `progressToken`, at most one every 250 ms plus the
+  last. Cancelled, they stop at the next frame. A cancelled `render` leaves
+  no file it wrote: a container is encoded to a hidden sibling and renamed
+  over `out` only once complete, so `out` keeps what it held before, and a
+  png-seq render removes its frames. Other tools run to the end. No cancelled
+  call is answered.
+- Arguments are checked against each tool's schema before anything runs. An
+  unknown key or a wrong type comes back as `{ ok: false, exitCode: 2 }`;
+  every value the CLI checks (fps dividing 60, a frame in range) is refused
+  by the CLI, in its own words.
+- Paths in arguments resolve against the server's working directory; paths in
+  results are redacted to `$REPO` and `$HOME` as every envelope is.
 
 ## Reading a picture without looking at it
 
@@ -330,4 +405,5 @@ Each of these is a decision with a reason, not a gap to fill.
   ellipses, rounded rects, lines, polylines and polygons, fills and strokes
   with joins and caps, and `<g transform>` are drawn; `<text>`, `<use>`,
   `<image>`, `clip-path`, `stroke-dasharray` and the rest are refused by
-  name. The table is in AUTHORING.md under "Still pictures".
+  name. The table is in AUTHORING.md under "Still pictures". The same holds
+  for an `<Svg>` import, whose refusals are in "SVG files as parts".

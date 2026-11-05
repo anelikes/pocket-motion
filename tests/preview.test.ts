@@ -48,12 +48,13 @@ import {
   PreviewSession,
   type PreviewSessionOptions,
 } from "../src/preview/session.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SMOKE_DIR = join(ROOT, "compositions", "smoke");
 const OCCLUDED_DIR = join(ROOT, "compositions", "occluded");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
-const TMP = "/tmp/pocketjs-motion-preview-test";
+const TMP = scratchDir("preview");
 
 async function post(base: string, body: unknown): Promise<Response> {
   return fetch(`${base}/select`, {
@@ -129,8 +130,6 @@ function repoArtefactStamp(): string {
   }).join("\n");
 }
 
-process.env.POCKETJS_ROOT = VENDOR;
-
 function flags(
   bundle: string,
   pak: string,
@@ -152,7 +151,7 @@ async function buildComposition(entryDir: string, outdir: string, bundle: string
     cwd: VENDOR,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -831,8 +830,10 @@ describe("a dropped viewing copy stops", () => {
       requireBundle: true,
     });
     if (!resolved.ok) throw new Error(resolved.message);
+    // This process's children only: a suite running in another checkout
+    // encodes viewing copies of its own under the same prefix.
     const encoders = () =>
-      Bun.spawnSync(["pgrep", "-f", "pocketjs-motion-watch-"])
+      Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", "pocketjs-motion-watch-"])
         .stdout.toString()
         .split("\n")
         .filter(Boolean).length;
@@ -1145,7 +1146,14 @@ describe("hot reload — an edit reaches the page", () => {
       const decoder = new TextDecoder();
 
       await Bun.sleep(300); // FSEvents takes a moment to arm
-      await Bun.write(entry, `${original}\n// an edit that reaches the pixels\n`);
+      // A class, so the style table and the pak move. This used to append a
+      // comment, which reaches no pixel and passed only because the fixture
+      // and the reload built from two working directories and Bun named the
+      // bundle's modules relative to each; since 0051 the two bundles are one,
+      // and a comment is correctly `unchanged`.
+      const edited = original.replace("bg-blue-600", "bg-red-600");
+      expect(edited).not.toBe(original);
+      await Bun.write(entry, edited);
 
       let seen = "";
       const deadline = Date.now() + 90_000;
@@ -1396,8 +1404,10 @@ describe("one switch at a time, and a stop that always finishes", () => {
   });
 
   test("concurrent selects leave one session, and stop() closes it once", async () => {
+    // This process's children only: a suite running in another checkout
+    // encodes viewing copies of its own under the same prefix.
     const encoders = () =>
-      Bun.spawnSync(["pgrep", "-f", "pocketjs-motion-watch-"])
+      Bun.spawnSync(["pgrep", "-P", String(process.pid), "-f", "pocketjs-motion-watch-"])
         .stdout.toString()
         .split("\n")
         .filter(Boolean).length;
@@ -1555,7 +1565,7 @@ describe("one discovery rule", () => {
         cwd: TMP,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       });
       const [out, err, code] = await Promise.all([
         new Response(proc.stdout).text(),
@@ -1799,7 +1809,7 @@ describe("listenPreview — HTTP is the display", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       },
     );
     try {

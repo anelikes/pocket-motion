@@ -1,7 +1,7 @@
 # Raster reuse: which frames hold, and what skipping them saves
 
 Measured 2026-11-05 for `src/render/reuse.ts`: `render()` skips the raster of
-a frame whose draw-list hash and raster revision (`patches/0051`) both equal
+a frame whose draw-list hash and raster revision (`patches/0055`) both equal
 the previous frame's, delivers the previous frame's pixels, and hashes them
 again. Apple M4, 32 GB, Bun 1.3.11, the core at `66caf4e5` + 38 patches.
 Load average 10–60 from other sessions while the sweep ran; the counts are
@@ -16,8 +16,9 @@ before the probe left frame 0 out of them, and the timings to read are
 ## It is right
 
 The ledger is the check, because its digests were recorded with no reuse and
-every frame is still hashed. **All 42 compositions in `digests.json` match
-with the reuse on** (`bun scripts/digests.ts`, after `patches/0051`, 4 min 23 s).
+every frame is still hashed. **All 42 compositions in `digests.json` matched
+with the reuse on** (`bun scripts/digests.ts`, after the raster-revision patch,
+4 min 23 s), and all 45 after the branch took the merge train in.
 The probe asks the same thing frame by frame: over every composition below,
 **no frame had its key hold while its pixels moved**, and the digest with the
 reuse on equals the digest with it off for every one.

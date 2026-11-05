@@ -1,0 +1,37 @@
+{
+  "motion": 1,
+  "durationFrames": 150,
+  "fps": 30,
+  "supersample": 1,
+  "layoutAllow": [
+    {"node": "sea", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "rock", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "tower", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "stripe-low", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "stripe-high", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "gallery", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "roof", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "moon", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "gull", "allow": "occlusion", "reason": "trimmed to nothing until its turn in the draw order: no geometry is the declaration, not a burial"},
+    {"node": "stripes", "allow": "occlusion", "reason": "a group View with no paint of its own; dark until the two stripes in it are drawn"},
+    {"node": "lamp", "allow": "occlusion", "reason": "scaled from nothing when the parts are drawn: no geometry before the pop starts"},
+    {"node": "beam", "allow": "occlusion", "reason": "faded from nothing after the lamp: no geometry before the fade starts"}
+  ],
+  "assertions": [
+    {"node": "horizon", "entersBy": 3},
+    {"node": "horizon", "before": "sea"},
+    {"node": "sea", "before": "rock"},
+    {"node": "rock", "before": "tower"},
+    {"node": "tower", "before": "stripe-low"},
+    {"node": "stripe-low", "before": "stripe-high"},
+    {"node": "stripe-high", "before": "gallery"},
+    {"node": "gallery", "before": "roof"},
+    {"node": "roof", "before": "moon"},
+    {"node": "moon", "before": "lamp"},
+    {"node": "lamp", "before": "beam"},
+    {"node": "tower", "dwellFrames": 100},
+    {"node": "lamp", "inPicture": [105, 149]},
+    {"node": "beam", "inPicture": [110, 149]},
+    {"node": "beam", "insideBox": true}
+  ]
+}

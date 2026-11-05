@@ -58,10 +58,11 @@ import {
   envelopeFromAstatsLog,
   voicedFromEnvelope,
 } from "../src/sound/verify.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SMOKE = join(ROOT, "compositions", "smoke");
-const TMP = "/tmp/pocketjs-motion-sound-test";
+const TMP = scratchDir("sound");
 const COMP = join(TMP, "compositions", "probe");
 
 const MIN = { motion: 1 as const, durationFrames: 90, fps: 30 };
@@ -330,7 +331,7 @@ describe("mixGraph", () => {
     expect(graph.filter).toContain("volume=0.3");
     expect(graph.filter).toContain("afade=t=in:st=0:d=0.6");
     expect(graph.filter).toContain("afade=t=out:st=4.2:d=1.8");
-    expect(graph.filter).toContain("amix=inputs=1:normalize=0:dropout_transition=0[a]");
+    expect(graph.filter).toContain("amix=inputs=1:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]");
     expect(graph.filter).not.toContain("eval=frame");
   });
 
@@ -444,7 +445,7 @@ describe("mixGraph", () => {
     expect(graph.filter).toContain("0.25");
     expect(graph.filter).toContain("between(t\\,1\\,2.5)");
     expect(graph.filter).toContain("adelay=1000:all=1");
-    expect(graph.filter).toContain("amix=inputs=2:normalize=0:dropout_transition=0[a]");
+    expect(graph.filter).toContain("amix=inputs=2:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]");
   });
 
   test("a cue is adelay'd by framesToMs at the composition rate", () => {
@@ -574,8 +575,8 @@ describe("mixGraph", () => {
       90,
       "/sound/narration/0/src",
     );
-    expect(full.filter).toContain("amix=inputs=2:normalize=0:dropout_transition=0[a]");
-    expect(omitted.filter).toContain("amix=inputs=1:normalize=0:dropout_transition=0[a]");
+    expect(full.filter).toContain("amix=inputs=2:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]");
+    expect(omitted.filter).toContain("amix=inputs=1:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]");
     expect(full.inputArgs).toContain("/abs/vo.wav");
     expect(omitted.inputArgs).not.toContain("/abs/vo.wav");
     expect(omitted.inputArgs).toContain("/abs/bed.mp3");
@@ -606,7 +607,7 @@ describe("reel sidecar is identity-neutral", () => {
 // verify — ffmpeg, short fixtures
 // ---------------------------------------------------------------------------
 
-const MIX_TMP = "/tmp/pocketjs-motion-sound-mix-test";
+const MIX_TMP = scratchDir("sound-mix");
 
 async function runFfmpeg(args: string[]): Promise<void> {
   const p = Bun.spawn(["ffmpeg", "-y", "-v", "error", ...args], {
@@ -764,6 +765,7 @@ describe("verifyMix", () => {
       outputPath: out,
       graph: mixGraph(parsed.value.sound, elements, 15, 30),
       durationSec: 2,
+      format: "mp4",
     });
     const result = await verifyMix({
       sidecar: parsed.value,
@@ -817,6 +819,7 @@ describe("verifyMix", () => {
       outputPath: out,
       graph: mixGraph(onlyFirst.value.sound, declared.slice(0, 1), 15, 30),
       durationSec: 2,
+      format: "mp4",
     });
     const result = await verifyMix({
       sidecar: full.value,
@@ -857,6 +860,7 @@ describe("verifyMix", () => {
       outputPath: out,
       graph: mixGraph(parsed.value.sound, elements, 15, 30),
       durationSec: 2,
+      format: "mp4",
     });
     const result = await verifyMix({
       sidecar: parsed.value,
@@ -1059,6 +1063,7 @@ describe("verifyMix", () => {
         30,
       ),
       durationSec: 2,
+      format: "mp4",
     });
     const result = await runSound({
       dir: COMP,
@@ -1226,7 +1231,7 @@ describe("verify does not read a pause inside a line as an absence", () => {
   // Measured on a 6 s line silent from 2 s to 4 s, mixed in full:
   // windows at 0 s and 5.9 s read −24.08 dB residual, the window at 2.95 s
   // read −inf against a −50 dB floor, and the line reported `truncated`.
-  const TMP = "/tmp/pocketjs-motion-sound-pause-test";
+  const TMP = scratchDir("sound-pause");
   const p = (name: string) => join(TMP, name);
 
   beforeAll(async () => {
@@ -1286,6 +1291,7 @@ describe("verify does not read a pause inside a line as an absence", () => {
       outputPath: out,
       graph: mixGraph(mixed.sidecar.sound, mixed.elements, 15, 30),
       durationSec: 2,
+      format: "mp4",
     });
     const declared = withBed(declaredSrc, fadeInMs);
     return await verifyMix({
@@ -1420,6 +1426,7 @@ describe("verify does not read a pause inside a line as an absence", () => {
       outputPath: out,
       graph: mixGraph(parsed.value.sound, elements, 15, 42),
       durationSec: 2.8,
+      format: "mp4",
     });
     const result = await verifyMix({
       sidecar: parsed.value, elements, producedPath: out, fps: 15,
@@ -1549,7 +1556,7 @@ describe("mixGraph: the four shapes, as strings", () => {
       "[1:a]adelay=1000:all=1," +
         `asetnsamples=n=${VOLUME_STEP_SAMPLES}:p=0,` +
         "volume=volume='(lt(t\\,1)*0.5+gte(t\\,1)*lt(t\\,2)*(0.5+(0-0.5)*(t-1)/(2-1))+gte(t\\,2)*0)':eval=frame[c0];" +
-        "[c0]amix=inputs=1:normalize=0:dropout_transition=0[a]",
+        "[c0]amix=inputs=1:normalize=0:dropout_transition=0[mix];[mix]apad=whole_dur=6[a]",
     );
     // A constant level writes no expression and no asetnsamples.
     expect(mixGraph(cue().sound, [cueEl()], 15, 90).filter).toContain("adelay=1000:all=1,volume=1[c0]");
@@ -1717,6 +1724,7 @@ async function muxAndVerify(
     outputPath: out,
     graph: mixGraph(mixed.sound, await probeSoundDurations(r.elements), fps, mixed.durationFrames),
     durationSec,
+    format: "mp4",
     ...(mixed.sound.silentTailMs !== undefined ? { silentTailMs: mixed.sound.silentTailMs } : {}),
   });
   const verify = await verifyMix({
@@ -1749,7 +1757,7 @@ function rmsDb(pcmBytes: Uint8Array, rate: number, channels: number, from: numbe
 }
 
 describe("the four shapes, measured", () => {
-  const T = "/tmp/pocketjs-motion-sound-shapes-test";
+  const T = scratchDir("sound-shapes");
 
   beforeAll(async () => {
     rmSync(T, { recursive: true, force: true });
@@ -1853,7 +1861,7 @@ describe("the four shapes, measured", () => {
     const graph = mixGraph(sc.sound, await probeSoundDurations(r.elements), 30, 180);
     const measure = async (name: string, filter: string) => {
       const out = join(T, `gate-${name}.mp4`);
-      const p = Bun.spawn(muxArgs(join(T, "picture-30.mp4"), out, { ...graph, filter }, 6), { stderr: "pipe" });
+      const p = Bun.spawn(muxArgs(join(T, "picture-30.mp4"), out, { ...graph, filter }, 6, "mp4"), { stderr: "pipe" });
       expect(await p.exited).toBe(0);
       return await measureSilentTail(out, 6, 500);
     };
@@ -1925,7 +1933,7 @@ describe("the four shapes, measured", () => {
 
 describe("an optional element, end to end", () => {
   const OPT = join(TMP, "assets", "audio", "opt.wav");
-  const MT = "/tmp/pocketjs-motion-sound-optional-test";
+  const MT = scratchDir("sound-optional");
   const declare = () => ({
     narration: [{ id: "vo-1", src: "assets/audio/line.wav", startFrame: 0 }],
     cues: [{ id: "sting", src: "assets/audio/opt.wav", atFrame: 9, optional: true }],
@@ -1972,15 +1980,14 @@ describe("an optional element, end to end", () => {
 });
 
 describe("compositions/sound-roles, rendered", () => {
-  const VENDOR = join(ROOT, "vendor", "pocketjs");
-  const OUT = "/tmp/pocketjs-motion-sound-roles-render";
+  const OUT = scratchDir("sound-roles-render");
 
   async function cli(argv: readonly string[]): Promise<{ out: string; code: number }> {
     const proc = Bun.spawn(["bun", "src/cli/main.ts", ...argv], {
       cwd: ROOT,
       stdout: "pipe",
       stderr: "pipe",
-      env: { ...process.env, POCKETJS_ROOT: VENDOR },
+      env: { ...process.env },
     });
     const [stdout, stderr, code] = await Promise.all([
       new Response(proc.stdout).text(),

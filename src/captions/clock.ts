@@ -6,10 +6,13 @@
  * tick. Which tick a frame shows was MEASURED rather than assumed, with
  * one-tick gates at known delays read back through `layout --at N`: frame `f`
  * shows every timeline sampled at clock `(f + 1) * tpf - 1`. At 30 fps that is
- * clock 1, 3, 5…; at 60 fps 0, 1, 2…; at 15 fps 3, 7, 11…. A timeline with
- * delay `D` ticks is at its first keyframe while `clock - D` is 0, so a
- * one-tick `gin` gate shows the node from the first frame whose clock is past
- * `D`, and a fade starting at `D` has moved off zero by the frame after `D`.
+ * clock 1, 3, 5…; at 60 fps 0, 1, 2…; at 15 fps 3, 7, 11…. The rule is
+ * `clockOfFrame` (`src/runtime/clock.ts`), which `keyframes` and the motion
+ * kit read too, and `clockAt` is that function at this film's rate. A
+ * timeline with delay `D` ticks is at its first keyframe while `clock - D` is
+ * 0, so a one-tick `gin` gate shows the node from the first frame whose clock
+ * is past `D`, and a fade starting at `D` has moved off zero by the frame
+ * after `D`.
  *
  * Delays are written in ms and baked back to ticks by the compiler as
  * `round(ms * 60 / 1000)` (`msToFrames` in the vendored `animation.ts`), so a
@@ -18,11 +21,10 @@
  */
 
 import { TICKS_PER_SECOND } from "../runtime/boot.ts";
-
-export const ticksPerFrame = (fps: number): number => TICKS_PER_SECOND / fps;
+import { clockOfFrame, ticksPerFrame } from "../runtime/clock.ts";
 
 /** The clock a rendered frame samples. */
-export const clockAt = (frame: number, fps: number): number => (frame + 1) * ticksPerFrame(fps) - 1;
+export const clockAt = (frame: number, fps: number): number => clockOfFrame(frame, ticksPerFrame(fps));
 
 /** A word's first frame. */
 export const frameOf = (seconds: number, fps: number): number => Math.round(seconds * fps);

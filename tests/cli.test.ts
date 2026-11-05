@@ -43,11 +43,12 @@ import {
   isTraceJson,
   type TraceJson,
 } from "../src/cli/types.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SMOKE_DIR = join(ROOT, "compositions", "smoke");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
-const TMP = "/tmp/pocketjs-motion-cli-test";
+const TMP = scratchDir("cli");
 const DIST = join(TMP, "dist");
 const BUNDLE = join(DIST, "main.js");
 const PAK = join(DIST, "main.pak");
@@ -69,9 +70,6 @@ const LAYOUT_CODES_DIR = join(ROOT, "compositions", "layout-codes");
 const LAYOUT_CODES_DIST = join(TMP, "dist-layout-codes");
 const LAYOUT_CODES_BUNDLE = join(LAYOUT_CODES_DIST, "main.js");
 const LAYOUT_CODES_PAK = join(LAYOUT_CODES_DIST, "main.pak");
-
-// Point boot at the vendored tree (patched) rather than a sibling checkout.
-process.env.POCKETJS_ROOT = VENDOR;
 
 function smokeFlags(extra: Record<string, string | number | boolean> = {}) {
   return {
@@ -105,7 +103,7 @@ async function buildComposition(
     cwd: VENDOR,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -545,7 +543,7 @@ describe("invocation contract", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       },
     );
     const [stdout, stderr, code] = await Promise.all([
@@ -633,13 +631,15 @@ describe("supersample", () => {
       scaleTo: encodeScaleTo({ width: 1920, height: 1080, supersample: 2 }),
     });
     expect(args).toContain("-vf");
-    expect(args).toContain("scale=1920:1080:flags=area");
+    expect(args[args.indexOf("-vf") + 1]).toContain("scale=1920:1080:flags=area:");
     expect(args.join(" ")).not.toContain("lanczos");
     // The input is still the supersampled buffer — the hash covers that.
     expect(args.join(" ")).toContain("-s 3840x2160");
   });
 
-  test("no filter at all when the render is not supersampled", () => {
+  test("no downscale when the render is not supersampled", () => {
+    // The `-vf` chain is always there now — it names the BT.709 conversion
+    // (`tests/format.test.ts`) — but it carries no size and no `area`.
     const args = ffmpegArgs({
       width: 1920,
       height: 1080,
@@ -647,7 +647,10 @@ describe("supersample", () => {
       outputPath: "/dev/null",
       scaleTo: encodeScaleTo({ width: 1920, height: 1080, supersample: 1 }),
     });
-    expect(args).not.toContain("-vf");
+    const vf = args[args.indexOf("-vf") + 1]!;
+    expect(vf).toContain("scale=out_color_matrix=bt709");
+    expect(vf).not.toContain("flags=area");
+    expect(vf).not.toMatch(/scale=\d/);
   });
 
   const header = (density: number, slot = 14) => ({
@@ -1199,7 +1202,7 @@ describe("e2e spawn", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       },
     );
     const code = await proc.exited;
@@ -1222,7 +1225,7 @@ describe("e2e spawn", () => {
         cwd: ROOT,
         stdout: "pipe",
         stderr: "pipe",
-        env: { ...process.env, POCKETJS_ROOT: VENDOR },
+        env: { ...process.env },
       },
     );
     const [stdout, stderr, code] = await Promise.all([

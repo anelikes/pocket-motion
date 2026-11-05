@@ -33,9 +33,11 @@
  *
  * THE GRIDS ARE NOT THE SAME AND THAT IS DELIBERATE. `--samples N` and
  * `--at a,b,c` decide the LAYOUT frames, because that is the section where a
- * frame costs a boot; `visibility` and `assert` sweep their own default grid,
- * so their sections are comparable to those commands run alone. The layout
- * default is small for the same reason — five frames, named in the output.
+ * frame costs a boot; `visibility` and `assert` sweep their own default grid —
+ * `assert`'s with the frames its assertions name added, and its JSON's `grid`
+ * says which — so their sections are comparable to those commands run alone.
+ * The layout default is small for the same reason — five frames, named in the
+ * output.
  *
  * WHAT IT COSTS. Every section that boots, boots: `check`, `visibility`,
  * `assert`, and one per sampled layout frame. On a fixture that is seconds. On
@@ -224,8 +226,9 @@ export async function run(options: VerifyOptions): Promise<CommandResult> {
       ),
       "",
       `Layout sampled at ${layoutFrames.join(", ")} of ${durationFrames} frame(s).`,
-      "`visibility` and `assert` sweep their own default grid, so those sections",
-      "are the same objects those commands print on their own.",
+      "`visibility` and `assert` sweep their own default grid (`assert` adding the",
+      "frames its assertions name), so those sections are the same objects those",
+      "commands print on their own.",
       "A warning is an active layout finding; --strict counts them.",
       ...(shutter
         ? [

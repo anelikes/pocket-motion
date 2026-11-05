@@ -97,7 +97,7 @@ export interface BootedWorld {
    * to equal pixels at one scale; `src/render/reuse.ts` has why the pair and
    * not the hash alone. Walks the tree (each sample's, under a shutter) and
    * rasterises nothing. Throws on a core without `ui_raster_revision`
-   * (`patches/0051`).
+   * (`patches/0055`).
    */
   readonly rasterKey: () => string;
   /** The declared shutter as the core takes it, or null. */
@@ -432,7 +432,7 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
       const revision = ex.ui_raster_revision;
       if (typeof revision !== "function") {
         throw new Error(
-          `PocketJS Motion: ${wasmPath} has no ui_raster_revision (patches/0051-raster-revision-export.patch), ` +
+          `PocketJS Motion: ${wasmPath} has no ui_raster_revision (patches/0055-raster-revision-export.patch), ` +
             "so whether a frame needs a raster cannot be asked of it. Rebuild the core:\n  bun scripts/vendor.ts",
         );
       }

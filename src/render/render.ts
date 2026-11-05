@@ -42,6 +42,23 @@ export interface RenderOptions extends Omit<WasmFrameSourceOptions, "composition
    */
   readonly scaleTo?: readonly [width: number, height: number];
   readonly onProgress?: (frame: number, total: number) => void;
+  /**
+   * Stop at the next frame boundary: the loop throws the signal's reason, the
+   * encode leg is aborted on the way out as for any other failure, and no
+   * result is returned. What the caller then does with the frames already
+   * written is the caller's decision — `render` removes them.
+   *
+   * With a signal, every frame boundary also yields one macrotask turn. A
+   * signal is fired from outside — an MCP client's cancel arrives on stdin —
+   * and the loop below otherwise does not reliably let the event loop read
+   * it. Measured on `compositions/smoke`: a 20 ms interval timer fired once
+   * in 120 frames of a hash-only loop (`trace`) and 73 times with an mp4 leg,
+   * whose pipe flush is I/O; and without the turn a cancel sent to a png-seq
+   * render was not read within two minutes, its frames written by
+   * `Bun.write`. `tests/mcp.test.ts` is red on both. Without a signal nothing
+   * changes, so neither the ledger nor the CLI pays for the turn.
+   */
+  readonly signal?: AbortSignal;
   /** Per-frame hash. Defaults to `"sha256"` — the verified one; see src/render/hash.ts. */
   readonly hashAlgorithm?: HashAlgorithm;
   /**
@@ -127,6 +144,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
   // as a broken pipe at the first frame written.
   if (encoder) await assertEncoderAvailable(encoder.codec);
 
+  options.signal?.throwIfAborted();
   const source = await WasmFrameSource.create(options);
 
   // The realm must be clean before a single frame is trusted.
@@ -164,6 +182,10 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
   let finished = false;
   try {
     for (let f = 0; f < options.durationFrames; f++) {
+      if (options.signal) {
+        await new Promise<void>((next) => setImmediate(next));
+        options.signal.throwIfAborted();
+      }
       // Closes mount on the first call, then delimits each frame.
       options.onFrameBoundary?.(f);
       await source.seekFrame(f);

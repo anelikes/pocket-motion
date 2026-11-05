@@ -37,25 +37,29 @@ const ROOT = resolve(import.meta.dir, "../..");
  * Decoded RGBA a full `bun scripts/digests.ts` leaves under `dist/`.
  *
  * Measured on the date below by clearing `dist/**\/*.rgba`, running the whole
- * ledger serially (38 compositions, all matching; re-read 2026-10-23 at 40,
- * after the rebase onto pin 66caf4e5, to the byte), and totalling what was
- * left: six files — four `footage-tracks` windows, one `sound-roles` clip,
- * and the clip `captions/burn-zh` burns its captions into — at 1,381,017,600
- * bytes exactly. That last one is 659,865,600 of it on its own: ingest
- * decodes the whole 179-frame source at the drawn 720×1280 although the
- * sample's window is 101 frames, because the decode is keyed on the source
- * and not on the window (`src/cli/footage.ts`).
+ * ledger serially (42 compositions, all matching), and totalling what was
+ * left: five files at 827,366,400 bytes exactly — three `footage-tracks`
+ * artifacts, one of them serving both of the windows it cuts from one clip,
+ * one `sound-roles` clip, and the clip `captions/burn-zh` burns its captions
+ * into. Each holds the source frames its tracks can show and nothing else
+ * (`reachableSpan`, `src/cli/footage.ts`). The largest is burn-zh's: 101
+ * frames at 720×1280, 372,326,400 bytes.
+ *
+ * Before spans it was six files at 1,381,017,600 bytes (2026-10-22): every
+ * track decoded its whole clip, so burn-zh's 101-frame window kept all 179
+ * frames — 659,865,600 bytes — and `footage-tracks` decoded one clip whole
+ * twice for its two windows on it.
  *
  * Bytes rather than GiB because that is what was read; the GiB the callers
  * print is derived, so the two can never drift apart by a rounding.
  */
-export const FULL_RUN_RGBA_BYTES = 1_381_017_600;
+export const FULL_RUN_RGBA_BYTES = 827_366_400;
 
 /** How many files that was, for the sentence that prints it. */
-export const FULL_RUN_RGBA_FILES = 6;
+export const FULL_RUN_RGBA_FILES = 5;
 
 /** The day the figure above was measured. */
-export const FULL_RUN_RGBA_MEASURED = "2026-10-22";
+export const FULL_RUN_RGBA_MEASURED = "2026-10-26";
 
 /** `FULL_RUN_RGBA_BYTES` in the unit `freeGiB` reports. */
 export const FULL_RUN_NEED_GIB = FULL_RUN_RGBA_BYTES / 1073741824;

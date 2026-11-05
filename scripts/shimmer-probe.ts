@@ -329,7 +329,7 @@ const controlDir = join(WORK, "ingest-control");
 {
   console.log(`  control — ingest ${controlRect.w}x${controlRect.h}, draw 1:1`);
   const m = await ingestFootage({
-    src: srcPath, outDir: controlDir, width: controlRect.w, height: controlRect.h, fps: FPS, frames: FRAMES,
+    src: srcPath, outDir: controlDir, width: controlRect.w, height: controlRect.h, fps: FPS, spans: [[0, FRAMES]],
   });
   minify.push(await probe(
     CONTROL, "control",
@@ -342,7 +342,7 @@ const controlDir = join(WORK, "ingest-control");
 {
   console.log(`  minify — ingest ${SRC.w}x${SRC.h} once, draw smaller`);
   const dir = join(WORK, "ingest-sweep");
-  const m = await ingestFootage({ src: srcPath, outDir: dir, width: SRC.w, height: SRC.h, fps: FPS, frames: FRAMES });
+  const m = await ingestFootage({ src: srcPath, outDir: dir, width: SRC.w, height: SRC.h, fps: FPS, spans: [[0, FRAMES]] });
   for (const l of SWEEP) {
     const label = `x${ratio(l).toFixed(2)}`;
     console.log(`    ${label}`);
@@ -360,7 +360,7 @@ const controlDir = join(WORK, "ingest-control");
   console.log(`  magnify — ingest ${controlRect.w}x${controlRect.h}, draw bigger`);
   const raw = join(controlDir, "frames.rgba");
   const m = await ingestFootage({
-    src: srcPath, outDir: controlDir, width: controlRect.w, height: controlRect.h, fps: FPS, frames: FRAMES,
+    src: srcPath, outDir: controlDir, width: controlRect.w, height: controlRect.h, fps: FPS, spans: [[0, FRAMES]],
   });
   for (const l of MAGNIFY) {
     const label = `m${(1 / ratio(l)).toFixed(2)}`;

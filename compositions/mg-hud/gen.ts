@@ -227,7 +227,8 @@ function rolling(x: number, y: number, size: number, cellW: number, color: strin
       const prev = k > 0 ? timeline[k - 1]![1][c] : undefined;
       const ch = v[c]!;
       const frames = sc ?? scramble;
-      // frames are two ticks: every change sits on an even tick so no frame lands between two digits
+      // frames are two ticks, so each scramble glyph holds exactly one sampled tick (frame f shows 2f + 1,
+      // `clockOfFrame`); a change is a one-tick step no frame lands inside whichever parity `te` has
       const te = t + (t % 2);
       if (k > 0 && frames > 0 && !fixed.includes(c) && /\d/.test(ch) && ch !== prev) {
         for (let s = 0; s < frames; s++) seq.push([te + s * 2, String(Math.floor(r() * 10))]);

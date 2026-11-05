@@ -8,7 +8,7 @@
  * words, the core's raster revision and the target are all unchanged. Within
  * one render the target never changes, so the key here is the other two
  * (`BootedWorld.rasterKey`): `ui_draw_hash` over the words, and
- * `ui_raster_revision` (`patches/0051`). When frame f's key equals frame
+ * `ui_raster_revision` (`patches/0055`). When frame f's key equals frame
  * f-1's, the raster is skipped and frame f-1's pixels are delivered again.
  *
  * WHY THE PAIR AND NOT THE HASH

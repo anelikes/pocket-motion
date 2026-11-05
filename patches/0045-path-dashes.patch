@@ -1,0 +1,1094 @@
+pocket-motion-only: a dash pattern cuts the stroke 0042's PATH op draws, and only this rasteriser draws PATH; on an upstream target the props would select geometry no backend renders, so the pattern ships with the op or not at all.
+
+0045 — dashes on a `<Path>` stroke: SVG's stroke-dasharray and
+stroke-dashoffset, as a periodic trim over the cut-point code 0042's trim
+already has. The design is `patches/0045-path-primitives.design.md` in this
+repository, the numbers `baselines/path-primitives.md`.
+
+What the patch adds, by file:
+
+- `contracts/spec/spec.ts` and the generated `spec.rs`, microts `spec.rs`
+  and `component-types-microts.ts`: props `dashCount` (187, int 0..4),
+  `dash0`..`dash3` (188-191, f32 lengths in the path's units) and
+  `dashOffset` (192, f32) — six of the eleven ids 187-197 that the path
+  block left free; anim bit 65 for `dashOffset`; `PATH_DASH_MAX = 4`. No new
+  op, no table, no header field: a pattern is style, not geometry.
+- `engine/core/src/style.rs`: the six fields on `Resolved`, set and read.
+- `engine/core/src/path.rs`: `Dash` and `dash()`, which `emit_stroke` now
+  calls in place of `trim()`. A solid pattern — no lengths, a negative or
+  non-finite one, more than four, a period not above 0 — is `trim()` itself,
+  so every stroke without a pattern is the bytes it was. Otherwise, per
+  subpath: the trim window as arc-length spans (each/whole, wrapping, as
+  0042 places them), the dashes the pattern places (an odd count repeated
+  once, as SVG; the offset the distance into the pattern at the subpath's
+  start; period k's dashes start at `k * period + c - phase`, computed from k
+  rather than accumulated, so a long outline's dashes do not drift; a dash
+  after a zero-length gap continues the one before it), and their
+  intersection. So the pattern restarts on every subpath, as SVG's does, and
+  a trim reveals or hides dashes without moving them. On a closed subpath a
+  dash on at both its end and its start is one piece through the start (a
+  join, not two caps), as trim's wrapped window is, and a dash over the
+  whole of a subpath keeps it as it was (a closed one keeps its joins all
+  the way round). A zero-length dash is a dot: its two caps facing along the
+  outline, wound as an open polyline's outline is so it joins the stroke's
+  nonzero union — a disc under a round cap, a square under a square cap,
+  nothing under a butt cap (SVG's rule for a zero-length subpath). At most
+  `DASH_MAX_PIECES` (65,536) dashes a stroke a frame, counting every dash
+  the pattern places: a pattern far finer than its outline stops there
+  rather than costing the frame without bound. + - * / and comparisons
+  only, like the rest of the file.
+- `engine/core/src/draw.rs`: the walk passes the node's pattern.
+- `engine/core/src/path_scenes.rs`: `PathPaint` carries `dash: Dash::NONE`
+  in the three scene constructors, so every pinned scene digest is
+  unchanged.
+- `framework/compiler/tailwind.ts`: `stroke-dash-[a_b...]` (1 to 4 lengths,
+  `_` or `,` between them, each >= 0 and not all 0), `stroke-dash-none` and
+  `stroke-dash-offset-[N]` (any sign). A pattern the core would draw solid
+  does not parse, which a class= attribute refuses (0041).
+- `framework/compiler/animation.ts`: keyframe names `dashOffset`,
+  `strokeDashoffset` and `stroke-dashoffset`, as px values. 0043's comment
+  that `stroke-dashoffset` is not a spelling is replaced: it is now SVG's
+  offset, a length, and trim stays the fraction.
+
+Tests, in `engine/core/src/path_tests.rs`, each red under the edit named
+(`baselines/path-primitives/redcheck.py` makes the edit, runs the test,
+restores it; `baselines/path-primitives/runs/redcheck-0045.txt`):
+
+- `a_solid_pattern_is_the_trim_byte_for_byte`: every solid pattern under
+  three trims equals the trimmed stroke's words, and a pattern with no gap
+  is the solid stroke. Red with a zero gap not joining its dashes, with a
+  zero period taken as a pattern, and with a negative length taken as one.
+- `dashes_lie_where_the_pattern_puts_them`: on a line along x, every piece
+  and dot against an f64 reference that walks the pattern entry by entry,
+  over eleven patterns (odd counts, offsets of both signs and past a period,
+  dots, zero gaps). Red with the phase run backward, an odd count not
+  repeated, a zero-length dash dropped, a zero gap not joining.
+- `a_dash_over_a_closed_subpaths_start_is_one_piece`: red with the wrap not
+  merged.
+- `dashes_restart_on_every_subpath`: red with the pattern carried from one
+  subpath into the next.
+- `trim_start_only_removes_samples_from_a_dashed_stroke`: an erase from the
+  start never covers a sample the window before it did not. Red with the
+  pattern measured from the trim window's start, which slides every dash.
+- `a_zero_length_dash_is_a_dot_of_its_caps`: ten discs of the width's area,
+  ten squares, nothing for butt, and every contour wound alike. Red with a
+  dot dropped, wound the other way, or sized by the width as its radius.
+- `a_dash_offset_of_one_period_draws_the_same_dashes`: red with the phase
+  not reduced by the period.
+- `a_pattern_finer_than_its_outline_stops_at_the_budget`: red with no
+  budget.
+- `dash_offset_animates_through_the_anim_machinery`: through `animate`,
+  every frame a new stroke and the fill unchanged. Red with the walk passing
+  no pattern and with `dashOffset` not resolved.
+
+All 17 red, each against its test green first. The core suite is 304/304
+(295 before); `bun tests/contract.ts` is green.
+
+In the motion repository, `tests/path-primitives.test.ts` holds the tokens,
+the keyframe names and the pixels of `compositions/path-primitives`, the
+fixture in both ledgers, and `baselines/path-primitives/redcheck-ts.ts`
+edits one `+` line of this patch for each of these, against its test run
+green first (`runs/redcheck-ts.txt`):
+
+- dash tokens not parsed -> -t sets the count and the lengths, and
+  tests/catalog.test.ts -t G6
+- a pattern of zeros parses -> -t a pattern the core would draw solid does
+  not parse
+- strokeDashoffset is not a keyframe name -> -t are keyframe names for the
+  offset
+
+All 4 red.
+
+`git apply` skips everything above the first `diff --git`.
+
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index 38e53662..2ede75c7 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -486,6 +486,17 @@ export const PROP = {
+   glowThreshold: 186, //  f32 0..1, Luma only: the brightest-channel level at
+   //                    which a pixel starts to emit, ramping to full at 1
+   //                    (default 0.5).
++  // Vector path dashes (pocket-motion): SVG's stroke-dasharray and
++  // stroke-dashoffset on a `<Path>` stroke, lengths in the path's own units
++  // like strokeWidth. 187-192 fill part of the gap the path block left.
++  dashCount: 187, //       int 0..4: how many of dash0..dash3 the pattern
++  //                    has (0 = solid). An odd count repeats, as SVG's.
++  dash0: 188, //           f32 >= 0: dash, gap, dash, gap ... in path units
++  dash1: 189,
++  dash2: 190,
++  dash3: 191,
++  dashOffset: 192, //      f32: the distance into the pattern at each
++  //                    subpath's start (SVG stroke-dashoffset)
+   // Shutter (pocket-motion): a host may render one frame as an exposure,
+   // the average of the frame re-drawn with every playing baked timeline's
+   // transform tracks evaluated between ticks. 1 holds THIS node's own
+@@ -594,6 +605,7 @@ export const ANIMATABLE: readonly PropName[] = [
+   "trimEnd", //       62
+   "trimOffset", //    63
+   "morph", //         64
++  "dashOffset", //    65
+ ];
+ 
+ /** Anim bit index for a prop, or -1 if not animatable. */
+@@ -692,6 +704,8 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   strokeJoin: VALUE_KIND.int, strokeCap: VALUE_KIND.int, strokeMiter: VALUE_KIND.f32,
+   trimStart: VALUE_KIND.f32, trimEnd: VALUE_KIND.f32, trimOffset: VALUE_KIND.f32,
+   trimMode: VALUE_KIND.int, morph: VALUE_KIND.f32,
++  dashCount: VALUE_KIND.int, dash0: VALUE_KIND.f32, dash1: VALUE_KIND.f32,
++  dash2: VALUE_KIND.f32, dash3: VALUE_KIND.f32, dashOffset: VALUE_KIND.f32,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -1251,6 +1265,8 @@ export const ANIM_MAX_SEGMENTS = 0xffff;
+ export const PATH_VERB = { move: 0, line: 1, cubic: 2, close: 3 } as const;
+ /** Most morph keys one PATH TABLE entry carries. */
+ export const PATH_MAX_SHAPES = 8;
++/** Most lengths a dash pattern carries (`dash0`..`dash3`, pocket-motion). */
++export const PATH_DASH_MAX = 4;
+ export const PATH_FLAG_VIEW_BOX = 1 << 0;
+ export const PATH_ENTRY_HEADER_SIZE = 4;
+ 
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 4713d470..67cafad9 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -3544,7 +3544,8 @@ impl<'a> Walker<'a> {
+                     offset: r.trim_offset,
+                     mode: if r.trim_mode == spec::TrimMode::Whole as u8 { path::TrimMode::Whole } else { path::TrimMode::Each },
+                 };
+-                path::emit_stroke(&mut dl.words, &xf, tol, stroke, &style, &trim, self.screen, &mut sc);
++                let dash = path::Dash { count: r.dash_count, lens: r.dashes, offset: r.dash_offset };
++                path::emit_stroke(&mut dl.words, &xf, tol, stroke, &style, &trim, &dash, self.screen, &mut sc);
+             }
+         }
+         self.path_scratch = sc;
+diff --git a/engine/core/src/path.rs b/engine/core/src/path.rs
+index 6de74581..b3117165 100644
+--- a/engine/core/src/path.rs
++++ b/engine/core/src/path.rs
+@@ -304,12 +304,17 @@ pub struct Sub {
+ pub struct Flat {
+     pub pts: Vec<Pt>,
+     pub subs: Vec<Sub>,
++    /// Zero-length dashes: a point and the unit direction of the outline
++    /// there. Stroked as their caps alone (SVG's dots); only `dash` writes
++    /// them.
++    pub dots: Vec<(Pt, Pt)>,
+ }
+ 
+ impl Flat {
+     pub fn clear(&mut self) {
+         self.pts.clear();
+         self.subs.clear();
++        self.dots.clear();
+     }
+ 
+     fn begin(&mut self, p: Pt) {
+@@ -616,6 +621,262 @@ pub fn trim(flat: &Flat, t: &Trim, out: &mut Flat, cum: &mut Vec<f32>) {
+     }
+ }
+ 
++
++// ---- dashes ------------------------------------------------------------------------
++
++/// Most lengths a dash pattern carries (spec `PATH_DASH_MAX`).
++pub const DASH_MAX: usize = 4;
++
++/// Most dashes one stroke draws in a frame, counting every dash the
++/// pattern places whether or not the trim keeps it. A pattern far finer
++/// than its outline is long stops there rather than costing the frame
++/// without bound; the rest of the stroke is not drawn.
++pub const DASH_MAX_PIECES: usize = 1 << 16;
++
++/// A dash pattern, SVG's `stroke-dasharray` and `stroke-dashoffset`, in
++/// the path's own units (arc length on the flattened local outline).
++#[derive(Clone, Copy, Debug)]
++pub struct Dash {
++    /// How many of `lens` the pattern has; 0 is a solid stroke.
++    pub count: u8,
++    /// Dash, gap, dash, gap ...
++    pub lens: [f32; DASH_MAX],
++    /// The distance into the pattern at each subpath's start.
++    pub offset: f32,
++}
++
++impl Dash {
++    pub const NONE: Dash = Dash { count: 0, lens: [0.0; DASH_MAX], offset: 0.0 };
++
++    /// The pattern as SVG reads it — an odd count repeated once, so dashes
++    /// and gaps alternate — with its entry count and period. None for a
++    /// solid stroke: no lengths, a negative or non-finite one, or a period
++    /// that is not above zero.
++    fn pattern(&self) -> Option<([f32; 2 * DASH_MAX], usize, f32)> {
++        let n = self.count as usize;
++        if n == 0 || n > DASH_MAX {
++            return None;
++        }
++        let m = if n % 2 == 1 { 2 * n } else { n };
++        let mut e = [0.0f32; 2 * DASH_MAX];
++        let mut period = 0.0f32;
++        for (i, slot) in e.iter_mut().enumerate().take(m) {
++            let v = self.lens[i % n];
++            if !(v >= 0.0) || !v.is_finite() {
++                return None;
++            }
++            *slot = v;
++            period += v;
++        }
++        if !(period > 0.0) || !period.is_finite() {
++            return None;
++        }
++        Some((e, m, period))
++    }
++}
++
++/// The dashes of a subpath of length `total`, in order: positive ones as
++/// (a, b) with a < b, zero-length ones as (a, a), from the last to start
++/// before 0 to the last to start at or before `total` (before it on a
++/// closed subpath, whose end is its start). They are not clipped: `dash`
++/// keeps only what lies in the trim spans, which lie in [0, total]. The
++/// dashes of period k start at `k * period + c - phase`, computed from k
++/// rather than accumulated, so a long outline's dashes do not drift. A dash
++/// after a zero-length gap continues the one before it, so a pattern with
++/// no gap is one dash the length of the subpath.
++#[allow(clippy::too_many_arguments)]
++fn dash_spans(pat: &[f32; 2 * DASH_MAX], m: usize, period: f32, offset: f32, total: f32, closed: bool, budget: &mut usize, out: &mut Vec<(f32, f32)>) {
++    out.clear();
++    let phase = if offset.is_finite() { offset - crate::layout::floorf(offset / period) * period } else { 0.0 };
++    let phase = if phase >= 0.0 && phase < period { phase } else { 0.0 };
++    // The gap before this dash is zero.
++    let mut joins = false;
++    let mut k = 0u32;
++    loop {
++        let base = k as f32 * period - phase;
++        if base > total {
++            return;
++        }
++        // `m` is even: entry i is a dash and i + 1 the gap after it.
++        let mut c = 0.0f32;
++        let mut i = 0usize;
++        while i < m {
++            let (len, gap, a) = (pat[i], pat[i + 1], base + c);
++            c += len;
++            c += gap;
++            i += 2;
++            if *budget == 0 {
++                return;
++            }
++            *budget -= 1;
++            if a > total || (closed && a >= total) {
++                return;
++            }
++            let b = a + len;
++            if joins {
++                if let Some(last) = out.last_mut() {
++                    if b > last.1 {
++                        last.1 = b;
++                    }
++                    joins = gap == 0.0;
++                    continue;
++                }
++            }
++            out.push((a, b));
++            joins = gap == 0.0;
++        }
++        k += 1;
++    }
++}
++
++/// The unit direction of the sub's outline at segment `j` (from vertex j
++/// to j + 1), or the nearest segment with a length; +x if none has one.
++fn direction_at(pts: &[Pt], sub: Sub, cum: &[f32], j: usize) -> Pt {
++    let segs = cum.len() - 1;
++    let pick = |j: usize| {
++        let (a, b) = (ring(pts, sub, j), ring(pts, sub, j + 1));
++        let l = dist(a, b);
++        if l > 0.0 {
++            Some(pt((b.x - a.x) / l, (b.y - a.y) / l))
++        } else {
++            None
++        }
++    };
++    for k in j..segs {
++        if let Some(d) = pick(k) {
++            return d;
++        }
++    }
++    for k in (0..j.min(segs)).rev() {
++        if let Some(d) = pick(k) {
++            return d;
++        }
++    }
++    pt(1.0, 0.0)
++}
++
++/// Scratch for `dash`.
++#[derive(Default)]
++pub struct DashScratch {
++    spans: Vec<(f32, f32)>,
++    dashes: Vec<(f32, f32)>,
++    kept: Vec<(f32, f32)>,
++    totals: Vec<f32>,
++}
++
++/// Trim and dash every subpath of `flat` into `out`: the stroke's pieces
++/// are the dashes the pattern places, each clipped to the trim window. The
++/// pattern is measured on each subpath's own arc length from its start
++/// (it restarts on every subpath, as SVG's does), so a trim reveals or
++/// hides dashes without moving them. On a closed subpath a dash that is on
++/// at both its end and its start is one piece through the start point, as
++/// trim's wrapped window is, and a pattern with no gap on it leaves it
++/// closed. A solid pattern is `trim` itself, byte for byte.
++pub fn dash(flat: &Flat, t: &Trim, d: &Dash, out: &mut Flat, cum: &mut Vec<f32>, sc: &mut DashScratch) {
++    let Some((pat, m, period)) = d.pattern() else {
++        trim(flat, t, out, cum);
++        return;
++    };
++    out.clear();
++    let iv = match t.intervals() {
++        None => return,
++        Some(iv) => iv,
++    };
++    let each = t.mode == TrimMode::Each || flat.subs.len() == 1;
++    sc.totals.clear();
++    let mut grand = 0.0f32;
++    for &sub in &flat.subs {
++        let l = sub_lengths(&flat.pts, sub, cum);
++        sc.totals.push(l);
++        grand += l;
++    }
++    let mut budget = DASH_MAX_PIECES;
++    let mut base = 0.0f32;
++    for (k, &sub) in flat.subs.iter().enumerate() {
++        let total = sc.totals[k];
++        let sub_base = base;
++        base += total;
++        if !(total > 0.0) {
++            continue;
++        }
++        // The trim window on this subpath, as arc-length spans in order.
++        sc.spans.clear();
++        match iv {
++            None => sc.spans.push((0.0, total)),
++            Some(iv) if each => {
++                if iv[1].1 > 0.0 {
++                    sc.spans.push((0.0, iv[1].1 * total));
++                    sc.spans.push((iv[0].0 * total, total));
++                } else {
++                    sc.spans.push((iv[0].0 * total, iv[0].1 * total));
++                }
++            }
++            Some(iv) => {
++                for &(s, e) in iv.iter().take(if iv[1].1 > 0.0 { 2 } else { 1 }) {
++                    let (a, b) = (s * grand - sub_base, e * grand - sub_base);
++                    if b > 0.0 && a < total {
++                        sc.spans.push((if a > 0.0 { a } else { 0.0 }, if b < total { b } else { total }));
++                    }
++                }
++                if sc.spans.len() == 2 && sc.spans[1].0 < sc.spans[0].0 {
++                    sc.spans.swap(0, 1);
++                }
++            }
++        }
++        if sc.spans.is_empty() {
++            continue;
++        }
++        dash_spans(&pat, m, period, d.offset, total, sub.closed, &mut budget, &mut sc.dashes);
++        sub_lengths(&flat.pts, sub, cum);
++        sc.kept.clear();
++        for &(a, b) in &sc.dashes {
++            for &(sa, sb) in &sc.spans {
++                if a == b {
++                    if a >= sa && a <= sb {
++                        let (p, j) = point_at(&flat.pts, sub, cum, a);
++                        out.dots.push((p, direction_at(&flat.pts, sub, cum, j)));
++                    }
++                    continue;
++                }
++                let (x, y) = (if a > sa { a } else { sa }, if b < sb { b } else { sb });
++                if y > x {
++                    sc.kept.push((x, y));
++                }
++            }
++        }
++        let n = sc.kept.len();
++        if n == 0 {
++            continue;
++        }
++        if n == 1 && sc.kept[0] == (0.0, total) {
++            // On from end to end: the subpath as it is (a closed one keeps
++            // its joins all the way round).
++            let st = out.pts.len();
++            out.pts.extend_from_slice(&flat.pts[sub.start..sub.end]);
++            out.subs.push(Sub { start: st, end: out.pts.len(), closed: sub.closed });
++            continue;
++        }
++        let wraps = sub.closed && n >= 2 && sc.kept[0].0 == 0.0 && sc.kept[n - 1].1 == total;
++        let (first, last) = if wraps { (1, n - 1) } else { (0, n) };
++        for &(a, b) in &sc.kept[first..last] {
++            piece(&flat.pts, sub, cum, a, b, out, false);
++        }
++        if wraps {
++            // One piece across the closing vertex: [a, total] then [0, b].
++            piece(&flat.pts, sub, cum, sc.kept[n - 1].0, total, out, false);
++            let at = out.pts.len();
++            piece(&flat.pts, sub, cum, 0.0, sc.kept[0].1, out, true);
++            // `continue_last` re-pushed the start vertex the first half ended on.
++            if out.pts.len() > at {
++                out.pts.remove(at);
++                if let Some(s) = out.subs.last_mut() {
++                    s.end = out.pts.len();
++                }
++            }
++        }
++    }
++}
++
+ // ---- stroke ------------------------------------------------------------------------
+ 
+ #[derive(Clone, Copy, Debug, PartialEq)]
+@@ -950,11 +1211,32 @@ pub struct StrokeScratch {
+     b: Vec<Pt>,
+ }
+ 
+-/// Stroke every subpath of `flat`.
++/// Stroke every subpath of `flat`, then its dots.
+ pub fn stroke(flat: &Flat, s: &StrokeStyle, tol: f32, out: &mut Contours, scratch: &mut StrokeScratch) {
+     for sub in &flat.subs {
+         stroke_polyline(&flat.pts[sub.start..sub.end], sub.closed, s, tol, out, scratch);
+     }
++    for &(o, d) in &flat.dots {
++        stroke_dot(o, d, s, tol, out);
++    }
++}
++
++/// A zero-length dash: its two caps facing along `d`, wound as an open
++/// polyline's outline is (side A, end cap, side B, start cap), so it joins
++/// the stroke's nonzero union. A round cap makes a disc of the stroke's
++/// width, a square one a square of its width turned to `d`, a butt cap
++/// nothing (SVG's rule for a zero-length subpath).
++fn stroke_dot(o: Pt, d: Pt, s: &StrokeStyle, tol: f32, out: &mut Contours) {
++    let hw = s.width * 0.5;
++    if !(hw > 0.0) || s.cap == Cap::Butt {
++        return;
++    }
++    let n = pt(-d.y, d.x);
++    out.pts.push(pt(o.x + n.x * hw, o.y + n.y * hw));
++    cap(&mut out.pts, o, n, d, hw, s.cap, tol);
++    out.pts.push(pt(o.x - n.x * hw, o.y - n.y * hw));
++    cap(&mut out.pts, o, pt(-n.x, -n.y), pt(-d.x, -d.y), hw, s.cap, tol);
++    out.close();
+ }
+ 
+ // ---- emission ----------------------------------------------------------------------
+@@ -1090,6 +1372,7 @@ pub struct PathPaint {
+     pub stroke: u32,
+     pub stroke_style: StrokeStyle,
+     pub trim: Trim,
++    pub dash: Dash,
+ }
+ 
+ #[derive(Default)]
+@@ -1100,6 +1383,7 @@ pub struct PathScratch {
+     pub contours: Contours,
+     pub cum: Vec<f32>,
+     pub stroke: StrokeScratch,
++    pub dash: DashScratch,
+     pub emit: EmitScratch,
+     /// Running counts, for the cost measurements; nothing reads them to draw.
+     pub stats: PathStats,
+@@ -1168,7 +1452,8 @@ pub fn emit_fill(words: &mut Vec<u32>, xf: &Affine, color: u32, evenodd: bool, s
+     emit_op(words, &sc.contours, xf, color, evenodd, screen, &mut sc.emit)
+ }
+ 
+-/// The stroke op of a prepared path: trimmed, outlined, filled nonzero.
++/// The stroke op of a prepared path: trimmed, dashed, outlined, filled
++/// nonzero.
+ #[allow(clippy::too_many_arguments)]
+ pub fn emit_stroke(
+     words: &mut Vec<u32>,
+@@ -1177,13 +1462,14 @@ pub fn emit_stroke(
+     color: u32,
+     style: &StrokeStyle,
+     t: &Trim,
++    d: &Dash,
+     screen: (f32, f32),
+     sc: &mut PathScratch,
+ ) -> bool {
+     if !(style.width > 0.0) {
+         return false;
+     }
+-    trim(&sc.flat, t, &mut sc.trimmed, &mut sc.cum);
++    dash(&sc.flat, t, d, &mut sc.trimmed, &mut sc.cum, &mut sc.dash);
+     sc.contours.clear();
+     stroke(&sc.trimmed, style, tol, &mut sc.contours, &mut sc.stroke);
+     sc.stats.vertices += sc.contours.pts.len();
+@@ -1209,7 +1495,7 @@ pub fn emit_path(
+         emit_fill(words, &xf, paint.fill, paint.evenodd, screen, sc);
+     }
+     if paint.stroke >> 24 != 0 {
+-        emit_stroke(words, &xf, tol, paint.stroke, &paint.stroke_style, &paint.trim, screen, sc);
++        emit_stroke(words, &xf, tol, paint.stroke, &paint.stroke_style, &paint.trim, &paint.dash, screen, sc);
+     }
+ }
+ 
+diff --git a/engine/core/src/path_scenes.rs b/engine/core/src/path_scenes.rs
+index 9022e7b3..cd4e5caa 100644
+--- a/engine/core/src/path_scenes.rs
++++ b/engine/core/src/path_scenes.rs
+@@ -227,6 +227,7 @@ pub fn paint_fill(color: u32, evenodd: bool) -> PathPaint {
+         stroke: 0,
+         stroke_style: StrokeStyle { width: 0.0, join: Join::Miter, cap: Cap::Butt, miter_limit: 4.0 },
+         trim: Trim::NONE,
++        dash: Dash::NONE,
+     }
+ }
+ 
+@@ -238,6 +239,7 @@ pub fn paint_stroke(color: u32, width: f32, join: Join, cap: Cap) -> PathPaint {
+         stroke: color,
+         stroke_style: StrokeStyle { width, join, cap, miter_limit: 4.0 },
+         trim: Trim::NONE,
++        dash: Dash::NONE,
+     }
+ }
+ 
+@@ -639,6 +641,7 @@ pub fn dense_words(entries: &[(PathEntry, Affine, u32, u32, f32)], frame: u32) -
+             stroke: *stroke,
+             stroke_style: StrokeStyle { width: *width, join: Join::Round, cap: Cap::Round, miter_limit: 4.0 },
+             trim: Trim::NONE,
++            dash: Dash::NONE,
+         };
+         let mut xf = *xf;
+         if frame > 0 {
+diff --git a/engine/core/src/path_tests.rs b/engine/core/src/path_tests.rs
+index 2f1300da..30ccd5f2 100644
+--- a/engine/core/src/path_tests.rs
++++ b/engine/core/src/path_tests.rs
+@@ -675,6 +675,277 @@ fn trim_end_only_adds_samples_as_it_grows() {
+     assert!(violations <= 4, "{violations} pixels lost coverage as the window grew");
+ }
+ 
++// ---- 4b. dashes (patch 0045) ------------------------------------------------------------
++
++fn dash_of(lens: &[f32], offset: f32) -> Dash {
++    let mut d = Dash { count: lens.len() as u8, lens: [0.0; DASH_MAX], offset };
++    d.lens[..lens.len()].copy_from_slice(lens);
++    d
++}
++
++fn dash_words(e: &PathEntry, trim: Trim, dash: Dash, cap: Cap) -> Vec<u32> {
++    let mut p = paint_stroke(!0, 4.0, Join::Round, cap);
++    p.trim = trim;
++    p.dash = dash;
++    let mut w = Vec::new();
++    emit(&mut w, e, &Affine::IDENTITY, &p, (100.0, 100.0), &mut PathStats::default());
++    w
++}
++
++/// `e` flattened at the scenes' tolerance, trimmed and dashed.
++fn dashed(e: &PathEntry, t: Trim, d: Dash) -> Flat {
++    let mut pts = Vec::new();
++    e.points_at(0.0, &mut pts);
++    let mut flat = Flat::default();
++    flatten(&e.verbs, &pts, FLATTEN_TOL, &mut flat);
++    let mut out = Flat::default();
++    dash(&flat, &t, &d, &mut out, &mut Vec::new(), &mut DashScratch::default());
++    out
++}
++
++/// SVG's dashes on [0, len] of an open line, walked entry by entry in f64
++/// from the pattern position the offset names: a different computation
++/// from the core's (which takes each period's start from its index).
++fn reference_dashes(lens: &[f64], offset: f64, len: f64) -> Vec<(f64, f64)> {
++    let mut pat: Vec<f64> = lens.to_vec();
++    if pat.len() % 2 == 1 {
++        pat.extend_from_slice(lens);
++    }
++    let period: f64 = pat.iter().sum();
++    let mut s = -offset.rem_euclid(period);
++    let mut out: Vec<(f64, f64)> = Vec::new();
++    let mut i = 0;
++    let mut joins = false;
++    while s <= len {
++        let (l, gap) = (pat[i % pat.len()], pat[(i + 1) % pat.len()]);
++        let (a, b) = (s.max(0.0), (s + l).min(len));
++        if joins {
++            let last = out.last_mut().unwrap();
++            last.1 = last.1.max(b);
++            joins = gap == 0.0;
++        } else {
++            let pushed = if l == 0.0 { s >= 0.0 } else { b > a };
++            if pushed {
++                out.push(if l == 0.0 { (s, s) } else { (a, b) });
++            }
++            joins = pushed && gap == 0.0;
++        }
++        s += l + gap;
++        i += 2;
++    }
++    out
++}
++
++fn line_entry(len: f32) -> PathEntry {
++    let mut s = Shape::default();
++    s.m(0.0, 50.0).l(len, 50.0);
++    s.entry()
++}
++
++#[test]
++fn a_solid_pattern_is_the_trim_byte_for_byte() {
++    // No lengths, a zero period, a negative or non-finite length, more than
++    // DASH_MAX: a solid stroke, through trim's own code. And a pattern with
++    // no gap is one dash the length of each subpath: the solid stroke again.
++    // Red if any of them takes the dash path, or a zero gap leaves a seam.
++    let e = spiral_entry();
++    let trims = [
++        Trim::NONE,
++        Trim { start: 0.1, end: 0.7, offset: 0.3, mode: TrimMode::Each },
++        Trim { start: 0.2, end: 0.9, offset: 0.6, mode: TrimMode::Whole },
++    ];
++    for t in trims {
++        let solid = stroke_words(&e, t, Cap::Round);
++        let invalid = [
++            Dash::NONE,
++            dash_of(&[0.0, 0.0], 3.0),
++            dash_of(&[3.0, -1.0], 0.0),
++            dash_of(&[f32::NAN, 2.0], 0.0),
++            dash_of(&[f32::INFINITY, 2.0], 0.0),
++            Dash { count: 5, lens: [2.0; DASH_MAX], offset: 0.0 },
++        ];
++        for d in invalid {
++            assert_eq!(dash_words(&e, t, d, Cap::Round), solid, "{d:?} under {t:?} is solid");
++        }
++    }
++    let solid = stroke_words(&e, Trim::NONE, Cap::Round);
++    for d in [dash_of(&[7.0, 0.0], 0.0), dash_of(&[7.0, 0.0], 3.5), dash_of(&[2.0, 0.0, 3.0, 0.0], 1.0)] {
++        assert_eq!(dash_words(&e, Trim::NONE, d, Cap::Round), solid, "{d:?}: no gap is the solid stroke");
++    }
++}
++
++#[test]
++fn dashes_lie_where_the_pattern_puts_them() {
++    // An open line along x, so arc length is x: every piece and every dot
++    // is a dash of SVG's pattern, against `reference_dashes`. Odd counts
++    // repeat, offsets of either sign and past a period, dots, a zero gap.
++    // Red if the phase runs the wrong way, an odd count is not repeated,
++    // the first or last dash is not clipped, or a zero-length dash is lost.
++    let len = 97.0f32;
++    let e = line_entry(len);
++    let cases: &[(&[f32], f32)] = &[
++        (&[10.0, 5.0], 0.0),
++        (&[10.0, 5.0], 3.0),
++        (&[10.0, 5.0], -4.0),
++        (&[10.0, 5.0], 47.0),
++        (&[6.0], 0.0),
++        (&[6.0], 2.5),
++        (&[3.0, 1.0, 2.0], 1.5),
++        (&[0.0, 8.0], 0.0),
++        (&[0.0, 8.0], 2.0),
++        (&[4.0, 0.0, 2.0, 3.0], 5.0),
++        (&[1.5, 2.25, 0.0, 2.25], -7.0),
++    ];
++    for &(lens, off) in cases {
++        let out = dashed(&e, Trim::NONE, dash_of(lens, off));
++        let mut got: Vec<(f64, f64)> = out.subs.iter().map(|s| (out.pts[s.start].x as f64, out.pts[s.end - 1].x as f64)).collect();
++        got.extend(out.dots.iter().map(|(p, _)| (p.x as f64, p.x as f64)));
++        got.sort_by(|a, b| a.partial_cmp(b).unwrap());
++        let want = reference_dashes(&lens.iter().map(|&v| v as f64).collect::<Vec<_>>(), off as f64, len as f64);
++        assert_eq!(got.len(), want.len(), "{lens:?} + {off}: {got:?} against {want:?}");
++        for (g, w) in got.iter().zip(&want) {
++            assert!((g.0 - w.0).abs() < 1e-3 && (g.1 - w.1).abs() < 1e-3, "{lens:?} + {off}: {g:?} against {w:?}");
++        }
++        for (p, d) in &out.dots {
++            assert!(p.y == 50.0 && (d.x - 1.0).abs() < 1e-6 && d.y == 0.0, "a dot sits on the line, facing along it: {p:?} {d:?}");
++        }
++    }
++}
++
++#[test]
++fn a_dash_over_a_closed_subpaths_start_is_one_piece() {
++    // A closed square, 40 round, from its top-left corner. A dash on at both
++    // its end and its start is one piece through the corner, joined, not two
++    // with caps; every other dash is its own piece. Red if the wrap is not
++    // merged, or merged when only one side is on.
++    let mut s = Shape::default();
++    s.m(10.0, 10.0).l(20.0, 10.0).l(20.0, 20.0).l(10.0, 20.0).z();
++    let e = s.entry();
++    // [6, 4] from offset 3: dashes at -3..3, 7..13, 17..23, 27..33, 37..43.
++    let out = dashed(&e, Trim::NONE, dash_of(&[6.0, 4.0], 3.0));
++    assert_eq!(out.subs.len(), 4, "the dash over the start is one piece");
++    let last = out.subs[3];
++    let (a, b) = (out.pts[last.start], out.pts[last.end - 1]);
++    // From 37 (on the closing edge, at (10, 13)) round the corner to 3.
++    assert!((a.x - 10.0).abs() < 1e-4 && (a.y - 13.0).abs() < 1e-4 && (b.x - 13.0).abs() < 1e-4 && (b.y - 10.0).abs() < 1e-4, "{a:?} .. {b:?}");
++    assert!(out.subs.iter().all(|s| !s.closed));
++    // Offset 0: the first dash starts on the corner and the last gap ends there.
++    let out = dashed(&e, Trim::NONE, dash_of(&[6.0, 4.0], 0.0));
++    assert_eq!(out.subs.len(), 4, "no dash is on across the start");
++}
++
++#[test]
++fn dashes_restart_on_every_subpath() {
++    // The spiral's three subpaths each start a dash at their start point.
++    // Red if the pattern runs on from one subpath into the next.
++    let e = spiral_entry();
++    let mut pts = Vec::new();
++    e.points_at(0.0, &mut pts);
++    let mut flat = Flat::default();
++    flatten(&e.verbs, &pts, FLATTEN_TOL, &mut flat);
++    let out = dashed(&e, Trim::NONE, dash_of(&[5.0, 3.0], 0.0));
++    for sub in &flat.subs {
++        let p = flat.pts[sub.start];
++        assert!(out.subs.iter().any(|s| out.pts[s.start] == p), "a dash starts at {p:?}");
++    }
++}
++
++#[test]
++fn trim_start_only_removes_samples_from_a_dashed_stroke() {
++    // An erase from the start (trimStart 0 -> 1) over a dashed stroke: the
++    // dashes stay where the pattern puts them on the outline, so a later
++    // window never covers a sample an earlier one did not. Red if the
++    // pattern is measured from the window's start instead, which slides
++    // every dash as the window moves.
++    let e = spiral_entry();
++    let d = dash_of(&[6.0, 4.0], 0.0);
++    let mut prev: Option<BTreeMap<(i32, i32), u8>> = None;
++    let mut violations = 0usize;
++    for k in 0..40 {
++        let t = Trim { start: k as f32 / 40.0, end: 1.0, offset: 0.0, mode: TrimMode::Whole };
++        let w = dash_words(&e, t, d, Cap::Butt);
++        let h = if w.is_empty() { BTreeMap::new() } else { opt_hits(&w, 1, clip(0, 0, 100, 100)) };
++        if let Some(p) = &prev {
++            for (px, &v) in &h {
++                if p.get(px).copied().unwrap_or(0) < v {
++                    violations += 1;
++                }
++            }
++        }
++        prev = Some(h);
++    }
++    std::println!("dashed erase: {violations} pixel increases over 40 steps");
++    assert!(violations <= 4, "{violations} pixels gained coverage as the window shrank");
++}
++
++fn signed_area(c: &[Pt]) -> f64 {
++    let mut a = 0.0f64;
++    for i in 0..c.len() {
++        let (p, q) = (c[i], c[(i + 1) % c.len()]);
++        a += p.x as f64 * q.y as f64 - q.x as f64 * p.y as f64;
++    }
++    a / 2.0
++}
++
++#[test]
++fn a_zero_length_dash_is_a_dot_of_its_caps() {
++    // [0, 10] with round caps: a disc of the stroke's width every 10 units,
++    // wound as the dashes are, so dots and dashes fill as one union. Square
++    // caps: a square of the width. Butt caps: nothing. Red if a dot is
++    // dropped, sized by the radius twice, or wound the other way.
++    let mut s = Shape::default();
++    s.m(5.0, 50.0).l(97.0, 50.0);
++    let e = s.entry();
++    let area = |w: &[u32]| -> f64 { opt_hits(w, 1, clip(0, 0, 100, 100)).values().map(|&v| v as f64 / 16.0).sum() };
++    let round = dash_words(&e, Trim::NONE, dash_of(&[0.0, 10.0], 0.0), Cap::Round);
++    let disc = core::f64::consts::PI * 4.0;
++    let a = area(&round);
++    assert!((a - 10.0 * disc).abs() < 0.05 * 10.0 * disc, "ten discs of radius 2: {a}");
++    let square = dash_words(&e, Trim::NONE, dash_of(&[0.0, 10.0], 0.0), Cap::Square);
++    let a = area(&square);
++    assert!((a - 160.0).abs() < 0.02 * 160.0, "ten 4x4 squares: {a}");
++    assert!(dash_words(&e, Trim::NONE, dash_of(&[0.0, 10.0], 0.0), Cap::Butt).is_empty(), "butt dots draw nothing");
++    // Winding: a dot's contour turns the way a dash's outline does.
++    let out = dashed(&e, Trim::NONE, dash_of(&[0.0, 5.0, 3.0, 5.0], 0.0));
++    let style = StrokeStyle { width: 4.0, join: Join::Round, cap: Cap::Round, miter_limit: 4.0 };
++    let mut c = Contours::default();
++    stroke(&out, &style, FLATTEN_TOL, &mut c, &mut StrokeScratch::default());
++    let signs: Vec<bool> = (0..c.len()).map(|k| signed_area(c.contour(k)) > 0.0).collect();
++    assert!(!out.dots.is_empty() && !out.subs.is_empty());
++    assert!(signs.iter().all(|&s| s == signs[0]), "every contour wound alike: {signs:?}");
++}
++
++#[test]
++fn a_dash_offset_of_one_period_draws_the_same_dashes() {
++    // Marching ants loop on their period: offset o and o + period place the
++    // same dashes (to rounding). Red if the phase is not reduced by the
++    // period, or reduced by the wrong one for an odd count.
++    let e = spiral_entry();
++    for (lens, p) in [(&[5.0f32, 3.0][..], 8.0f32), (&[5.0, 3.0, 2.0][..], 20.0)] {
++        for o in [0.0f32, 1.25, 6.5] {
++            let a = dashed(&e, Trim::NONE, dash_of(lens, o));
++            let b = dashed(&e, Trim::NONE, dash_of(lens, o + p));
++            let c = dashed(&e, Trim::NONE, dash_of(lens, o - 3.0 * p));
++            for other in [&b, &c] {
++                assert_eq!(a.subs.len(), other.subs.len(), "{lens:?} + {o}");
++                for (x, y) in a.pts.iter().zip(&other.pts) {
++                    assert!((x.x - y.x).abs() < 1e-3 && (x.y - y.y).abs() < 1e-3, "{lens:?} + {o}: {x:?} {y:?}");
++                }
++            }
++        }
++    }
++}
++
++#[test]
++fn a_pattern_finer_than_its_outline_stops_at_the_budget() {
++    // A line a million units long at a dash of 0.25: the stroke stops after
++    // DASH_MAX_PIECES dashes instead of costing the frame without bound.
++    // Red with the budget removed (the test then takes minutes).
++    let e = line_entry(1.0e6);
++    let out = dashed(&e, Trim::NONE, dash_of(&[0.25, 0.25], 0.0));
++    assert!(out.subs.len() <= DASH_MAX_PIECES && out.subs.len() > DASH_MAX_PIECES / 2, "{} pieces", out.subs.len());
++}
++
+ // ---- 5. morph ---------------------------------------------------------------------------
+ 
+ #[test]
+@@ -1102,6 +1373,38 @@ fn trim_end_animates_through_the_anim_machinery_and_moves_the_draw_hash() {
+     assert!(seen >= 28, "the stroke appears and grows: {seen} frames");
+ }
+ 
++#[test]
++fn dash_offset_animates_through_the_anim_machinery() {
++    // Marching ants: a [12, 6] pattern whose offset runs 0 -> -36 over 30
++    // frames with `animate`. Every frame's stroke differs from the last and
++    // the fill never changes. Red if the dash props are not resolved,
++    // dashOffset is not animatable, or the walk does not pass the pattern.
++    use crate::spec::{self, prop};
++    let mut ui = crate::Ui::new();
++    assert!(ui.load_styles(&styles_with_paths(&[], &[blob_entry()])));
++    let n = path_node(&mut ui);
++    ui.tick();
++    let solid = ui.draw().words.clone();
++    let len = solid[1] as usize;
++    ui.set_prop(n, prop::DASH_COUNT, 2.0);
++    ui.set_prop(n, prop::DASH0, 12.0);
++    ui.set_prop(n, prop::DASH1, 6.0);
++    ui.tick();
++    let first = ui.draw().words.clone();
++    assert_ne!(first, solid, "the pattern reaches the stroke");
++    assert_eq!(first[..len], solid[..len], "the fill is not dashed");
++    assert!(ui.animate(n, prop::DASH_OFFSET, -36.0, 500, spec::Easing::Linear as u8, 0) >= 0, "dashOffset is animatable");
++    let mut last = first[len..].to_vec();
++    for _ in 0..30 {
++        ui.tick();
++        let w = ui.draw().words.clone();
++        assert_eq!(w[..len], solid[..len], "the fill does not move with the dashes");
++        let s = w[len..].to_vec();
++        assert_ne!(s, last, "every frame moves the dashes");
++        last = s;
++    }
++}
++
+ #[test]
+ fn opacity_and_morph_reach_the_ops() {
+     use crate::spec::prop;
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 7f240725..f14e701b 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -213,6 +213,12 @@ pub mod prop {
+     pub const GRAD_SHAPE: u8 = 184;
+     pub const GLOW_MODE: u8 = 185;
+     pub const GLOW_THRESHOLD: u8 = 186;
++    pub const DASH_COUNT: u8 = 187;
++    pub const DASH0: u8 = 188;
++    pub const DASH1: u8 = 189;
++    pub const DASH2: u8 = 190;
++    pub const DASH3: u8 = 191;
++    pub const DASH_OFFSET: u8 = 192;
+     pub const SHUTTER_HOLD: u8 = 198;
+     pub const PATH: u8 = 199;
+     pub const FILL_COLOR: u8 = 200;
+@@ -249,8 +255,8 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+-    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
++    0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
++    0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
+     0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+@@ -271,14 +277,14 @@ pub const ANIM_BIT: [u8; 256] = [
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0x2f, 0x30, 0x31, 0x32, 0x33,
+     0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3a, 0xff, 0x3b, 0x3c, 0xff, 0xff, 0xff, 0x3d,
++    0x41, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3a, 0xff, 0x3b, 0x3c, 0xff, 0xff, 0xff, 0x3d,
+     0x3e, 0x3f, 0xff, 0x40, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ ];
+ 
+ /// Bitset over prop ids: animatable props (tween/spring/transition targets).
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x00000000000b8d00];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x00000000000b8d01];
+ /// Bitset over prop ids: props whose change invalidates layout.
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ 
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index e4c2bd04..3a3086e9 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -382,6 +382,11 @@ pub struct Resolved {
+     /// spec::TrimMode ordinal.
+     pub trim_mode: u8,
+     pub morph: f32,
++    /// Dash pattern (pocket-motion): how many of `dashes` are used (0 =
++    /// solid), the lengths in path units, and the offset into the pattern.
++    pub dash_count: u8,
++    pub dashes: [f32; 4],
++    pub dash_offset: f32,
+ }
+ 
+ impl Default for Resolved {
+@@ -479,6 +484,9 @@ impl Default for Resolved {
+             trim_end: 1.0,
+             trim_offset: 0.0,
+             trim_mode: spec::TrimMode::Each as u8,
++            dash_count: 0,
++            dashes: [0.0; 4],
++            dash_offset: 0.0,
+             morph: 0.0,
+         }
+     }
+@@ -615,6 +623,12 @@ impl Resolved {
+             p::TRIM_OFFSET => self.trim_offset = f,
+             p::TRIM_MODE => self.trim_mode = bits as u8,
+             p::MORPH => self.morph = f,
++            p::DASH_COUNT => self.dash_count = bits as u8,
++            p::DASH0 => self.dashes[0] = f,
++            p::DASH1 => self.dashes[1] = f,
++            p::DASH2 => self.dashes[2] = f,
++            p::DASH3 => self.dashes[3] = f,
++            p::DASH_OFFSET => self.dash_offset = f,
+             _ => {}
+         }
+     }
+@@ -733,6 +747,12 @@ impl Resolved {
+             p::TRIM_OFFSET => self.trim_offset.to_bits(),
+             p::TRIM_MODE => self.trim_mode as u32,
+             p::MORPH => self.morph.to_bits(),
++            p::DASH_COUNT => self.dash_count as u32,
++            p::DASH0 => self.dashes[0].to_bits(),
++            p::DASH1 => self.dashes[1].to_bits(),
++            p::DASH2 => self.dashes[2].to_bits(),
++            p::DASH3 => self.dashes[3].to_bits(),
++            p::DASH_OFFSET => self.dash_offset.to_bits(),
+             _ => 0,
+         }
+     }
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index a88b1a84..e4d9e41c 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -105,6 +105,12 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("gradShape", 184, "i32"),
+     ("glowMode", 185, "i32"),
+     ("glowThreshold", 186, "f32"),
++    ("dashCount", 187, "i32"),
++    ("dash0", 188, "f32"),
++    ("dash1", 189, "f32"),
++    ("dash2", 190, "f32"),
++    ("dash3", 191, "f32"),
++    ("dashOffset", 192, "f32"),
+     ("shutterHold", 198, "i32"),
+     ("path", 199, "i32"),
+     ("fillColor", 200, "u32"),
+diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
+index 21016d06..5bc6a71d 100644
+--- a/framework/compiler/animation.ts
++++ b/framework/compiler/animation.ts
+@@ -286,9 +286,10 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   gradVia3Pos: [[PROP.gradVia3Pos], scalarBits],
+   gradVia4: [[PROP.gradVia4], colorBits],
+   gradVia4Pos: [[PROP.gradVia4Pos], scalarBits],
+-  // pocket-motion `<Path>`: the prop names, and CSS's `fill`, `stroke` and
+-  // `stroke-width` (camel-cased to strokeWidth). Not `stroke-dashoffset`: a
+-  // length, where trim is a fraction of one nobody wrote.
++  // pocket-motion `<Path>`: the prop names, and CSS's `fill`, `stroke`,
++  // `stroke-width` and `stroke-dashoffset` (camel-cased). The dash offset is
++  // SVG's: a length into the dash pattern, in the path's units; trim is the
++  // fraction, and a draw-on is trimEnd.
+   fillColor: [[PROP.fillColor], colorBits],
+   fill: [[PROP.fillColor], colorBits],
+   strokeColor: [[PROP.strokeColor], colorBits],
+@@ -298,6 +299,8 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   trimEnd: [[PROP.trimEnd], scalarBits],
+   trimOffset: [[PROP.trimOffset], scalarBits],
+   morph: [[PROP.morph], scalarBits],
++  dashOffset: [[PROP.dashOffset], pxBits],
++  strokeDashoffset: [[PROP.dashOffset], pxBits],
+ };
+ 
+ /**
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index f545e06a..519c446e 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -27,6 +27,7 @@ import {
+   STROKE_MAX_WIDTH,
+   BLUR_MAX,
+   PAINT_MAX_STOPS,
++  PATH_DASH_MAX,
+   TRANSITION_MASK_ALL,
+   abgr,
+   animBit,
+@@ -729,6 +730,13 @@ const STROKE_CAPS: Record<string, number> = {
+  *                                             the subpaths as one sequence
+  *   morph-[f]                                 between morph keys k and k + 1
+  *                                             at f = k + t, f >= 0
++ *   stroke-dash-[a_b...], stroke-dash-none    SVG's stroke-dasharray: 1 to
++ *                                             PATH_DASH_MAX lengths in the
++ *                                             path's units (`_` or `,`
++ *                                             between them), each >= 0 and
++ *                                             not all 0; none is solid
++ *   stroke-dash-offset-[N]                    SVG's stroke-dashoffset, any
++ *                                             sign
+  *
+  * Every number is finite or the token does not parse; a negative width and
+  * a miter limit under 1 are refused rather than clamped.
+@@ -758,6 +766,25 @@ function parsePathUtility(tok: string, D: Decl[]): boolean {
+     D.push([PROP.strokeCap, int(c)]);
+     return true;
+   }
++  if (tok === "stroke-dash-none") { D.push([PROP.dashCount, int(0)]); return true; }
++  if (tok.startsWith("stroke-dash-offset-")) {
++    const v = arbNumber(tok.slice("stroke-dash-offset-".length));
++    if (v === null) return false;
++    D.push([PROP.dashOffset, px(v)]);
++    return true;
++  }
++  if (tok.startsWith("stroke-dash-")) {
++    const m = /^\[(.*)\]$/.exec(tok.slice("stroke-dash-".length));
++    if (!m) return false;
++    const parts = m[1]!.split(/[_,]/);
++    const lens = parts.map((p) => (/^\d+(?:\.\d+)?(?:px)?$/.test(p) ? parseFloat(p) : NaN));
++    if (lens.length < 1 || lens.length > PATH_DASH_MAX || !lens.every((v) => Number.isFinite(v) && v >= 0)) return false;
++    if (!lens.some((v) => v > 0)) return false;
++    D.push([PROP.dashCount, int(lens.length)]);
++    const slots = [PROP.dash0, PROP.dash1, PROP.dash2, PROP.dash3];
++    lens.forEach((v, i) => D.push([slots[i]!, px(v)]));
++    return true;
++  }
+   if (tok.startsWith("stroke-miter-")) {
+     const v = arbNumber(tok.slice("stroke-miter-".length));
+     if (v === null || !(v >= 1)) return false;
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index c217cca3..c24edbf2 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -100,6 +100,12 @@ export interface MicroTsStyleProps {
+   gradShape?: i32;
+   glowMode?: i32;
+   glowThreshold?: MicroTsFloatInput;
++  dashCount?: i32;
++  dash0?: MicroTsFloatInput;
++  dash1?: MicroTsFloatInput;
++  dash2?: MicroTsFloatInput;
++  dash3?: MicroTsFloatInput;
++  dashOffset?: MicroTsFloatInput;
+   shutterHold?: i32;
+   path?: i32;
+   fillColor?: Color;
