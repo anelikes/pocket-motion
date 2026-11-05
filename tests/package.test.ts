@@ -22,7 +22,9 @@
  * Then one install: the real tarball, `bun add`ed into an empty project, a
  * copy of `compositions/smoke` built and traced there through the package's
  * own bin, and the digest compared with `baselines/digests.json`. That is the
- * claim a consumer is being sold, measured where a consumer stands. It needs
+ * claim a consumer is being sold, measured where a consumer stands — and the
+ * identity compared with the checkout's build of the same sources, which is
+ * the claim a cache keyed on identity is being sold. It needs
  * the registry for one optional package — the compiler's native binding for
  * this platform — which is why it lives here and not in a unit test. Red,
  * measured: staging with `optionalDependencies` emptied installs no binding,
@@ -35,8 +37,12 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { runBuild } from "../src/cli/build.ts";
+import { compositionIdentity } from "../src/cli/commands/trace.ts";
+import { resolveComposition } from "../src/cli/resolve.ts";
 import { PREBUILT_FILE, prebuiltProblems } from "../src/package/prebuilt.ts";
 import { patchDigests } from "../src/render/build-record.ts";
+import type { InputIdentity } from "../src/render/identity.ts";
 import { UPSTREAM } from "../src/vendor/upstream.ts";
 import {
   THIRD_PARTY_FILE,
@@ -316,6 +322,23 @@ describe("installed from the tarball", () => {
     expect((JSON.parse(traced.stdout) as { digest: string }).digest).toBe(
       ledger.compositions["compositions/smoke"]!.digest,
     );
+    // And the checkout's identity for the same sources, component for
+    // component. The bundle names the framework by its place in the PocketJS
+    // tree (patches/0051) rather than as
+    // `node_modules/pocket-motion/vendor/pocketjs/…`, and `build.json` names
+    // nothing the project's location decides. Red with 0051's rename
+    // disabled in `tools/build.ts`: the `bundle` component differs and
+    // nothing else does.
+    const flags = { json: false };
+    const unbuilt = await resolveComposition({ dir: join(ROOT, "compositions/smoke"), flags, requireBundle: false });
+    if (!unbuilt.ok) throw new Error(unbuilt.message);
+    await runBuild(unbuilt.value);
+    const here = await resolveComposition({ dir: join(ROOT, "compositions/smoke"), flags, requireBundle: true });
+    if (!here.ok) throw new Error(here.message);
+    const checkout = await compositionIdentity(here.value, undefined);
+    const installed = (JSON.parse(traced.stdout) as { identity: InputIdentity }).identity;
+    expect(installed.components).toEqual(checkout.components);
+    expect(installed.digest).toBe(checkout.digest);
 
     const imported = await run([
       "bun",

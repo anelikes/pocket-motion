@@ -113,6 +113,8 @@ patch's own header carries the full note.
 | 0042 | motion | vector paths, the op: PATH (71) fills any set of contours by sample winding on POLY's 4x4 lattice with a top-left rule, so abutting paths partition their seam; a PATH TABLE after the ANIM TABLE in `styles.bin`, counted by the header's reserved u16; and per frame in the core, an entry's morph keys mixed, its cubics flattened in local space, its stroke trimmed by arc length and outlined as positively wound cycles, mapped through the world affine and clipped to a 4 px guard band (`engine/core/src/path.rs`). Props `path` … `morph` are 199-211, bits 58-64; design in `0042-vector-paths.design.md` | never; the header says why | written on 66caf4e5, after `0041`; the stage-1 prototype was on e0b37e2 |
 | 0043 | motion | vector paths, the declaration: `<Path d viewBox>`, the whole SVG path grammar normalised to move, line, cubic and close at build time — arcs by unit-vector bisection and square roots, never `Math.sin` — morph keys aligned or refused, the `d` literals a `class=`-style collector reads, `fill-*`, `stroke-*`, `trim-*`, `morph-[f]` and `bg-clip-path`, and the keyframe names `trimEnd`, `morph`, `fill`, `stroke`, `stroke-width` and the rest | never; the header says why | written on 66caf4e5, after `0042` |
 | 0050 | upstream | a baked track holds up to 65,535 segments: a track header's `segCount` byte of 0 (`ANIM_SEG_COUNT_WIDE`), which every earlier core refuses, is followed by a u16 count, written only above 255, so a table with no long track is the bytes it was. The core finds a tick's segment by binary search where it walked from the first, and `StyleTable::parse` refuses a track whose segments overlap, run backwards or have zero length, the order spec.ts has always required. The ceiling was the encoder's 255 and the core's one-byte read; the baker had none, and the next ceiling is a timeline's u16 period, 18 min 12 s at 60 Hz | unsubmitted | written on 66caf4e5; numbered 0050 so the vector-path patches can take 0042 onward |
+| 0051 | upstream | a bundle names each module by what it is rather than where it is — relative to the PocketJS tree, `./` and relative to the app's directory, `.entries/` under `--outdir`, from the last `node_modules/`, or else relative to the app — where Bun names it relative to the build's cwd, so one app built from two directories, or against a tree installed in two places, was two bundles, and a module outside the cwd was named through the machine's own directories. The name lines are rewritten after pass 2, keyed by the metafile main already asks for, and Bun's transpiler, which drops comments, must print the same program before and after, so a template literal repeating a name line fails the build rather than being rewritten; so does a module with code and no name line. A build from the tree's root writes the bytes it did | unsubmitted | written on 66caf4e5 |
+| 0052 | motion | `engine/wasm` reaches pocketjs-core through `core`, a symlink to `../core`, so cargo hashes the dependency into every symbol's crate disambiguator by its path inside the wasm crate's workspace root rather than by its absolute path; the disambiguators ordered the module's functions, so two checkouts built two wasms. With `scripts/vendor.ts`'s remap of cargo's home, the module carries no absolute path and is byte-identical from any location | never; the header says why | written on 66caf4e5 |
 
 **The `0023` that backported #591 onto the old pin is gone.** Main carries
 #591 since 586428b2, so the pin needs no backport. The two places the
@@ -133,10 +135,11 @@ gives **252 atlases, 2,104,795,468 bytes, 0 differing**.
 `test/poly-span-oracle` (**#333, open**, draft) locks POLY spans against a 4×4
 sample oracle. It is a test branch upstream, not a patch here.
 
-Twenty-two patches are class `upstream` and fifteen `motion`. Of the
-twenty-two, nineteen are unsubmitted declaration- or build-layer changes,
+Twenty-three patches are class `upstream` and sixteen `motion`. Of the
+twenty-three, twenty are unsubmitted declaration- or build-layer changes,
 `0040`, the build-time SVG baker every target's pak goes through, `0041`,
-the class-literal refusal, and `0050`, the wide segment count, among them;
+the class-literal refusal, `0050`, the wide segment count, and `0051`, the
+bundle's module names, among them;
 `0008` is #301, and `0021` and `0030` are rasteriser changes with no
 target-side cost.
 

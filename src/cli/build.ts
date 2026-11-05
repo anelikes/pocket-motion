@@ -52,8 +52,9 @@ export async function runBuild(
     // discovering later.
     throw new Error(`build argv names no --outdir: ${argv.join(" ")}`);
   }
-  // `cwd` is the composition's repository root, which the record's paths
-  // are written relative to — in a project that installed this package, the
-  // project rather than `node_modules/pocket-motion`.
-  return writeBuildRecord(outDir, argv, cwd);
+  // The record names the entry relative to the composition and the outdir
+  // relative to itself, so it says nothing about where either sits; `cwd`,
+  // the composition's repository, is what a face the sidecar names by an
+  // absolute path is written relative to.
+  return writeBuildRecord(outDir, argv, { compositionDir: c.dir, projectRoot: cwd });
 }
