@@ -3187,6 +3187,54 @@ export const SURFACE: readonly CapabilityRow[] = [
     probes: [],
     pinned: ['alpha ? "yuva444p10le" : "yuv422p10le"', 'alpha ? "yuva420p" : "yuv420p"'],
   },
+  {
+    id: "output.encoder",
+    group: "output",
+    declaredIn: "render command",
+    key: "--encoder",
+    required: false,
+    defaultValue: "libx264",
+    constraint:
+      "libx264 | h264_videotoolbox, for mp4 only. h264_videotoolbox is macOS's hardware H.264 encoder: it is given constant quality `-q:v` VIDEOTOOLBOX_QUALITY (87, the lowest measured to match libx264's default in PSNR and SSIM; at libx264's own bitrate it lost 6.7 and 15.1 dB) and `-allow_sw 0`, so it never falls back to Apple's software encoder, and its mp4's bytes differ between machines while the frame digest does not (frames are hashed before the encode leg). Refused with --format webm, mov or png-seq, which name their own codec or none, with --alpha, and before the boot when `ffmpeg -encoders` does not list it. `render --json` reports the settings the leg ran with as `encoder`. Cost and quality against libx264 in baselines/encode-cost.md; read back with ffprobe in tests/reuse.test.ts",
+    source: "src/render/encode.ts:71",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: [
+      'export const MP4_ENCODERS = ["libx264", "h264_videotoolbox"] as const;',
+      'args.push("-q:v", String(settings.quality), "-allow_sw", "0");',
+    ],
+  },
+  {
+    id: "output.preset",
+    group: "output",
+    declaredIn: "render command",
+    key: "--preset",
+    required: false,
+    defaultValue: "medium",
+    constraint:
+      "libx264's preset, ultrafast through veryslow (placebo is left out); CRF stays 16. Refused with --encoder h264_videotoolbox, which has no presets, and with any format but mp4. With no hardware encoder on the host — every Linux CPU host this project deploys to — the preset is what moves the encode's CPU: baselines/encode-cost.md",
+    source: "src/render/encode.ts:79",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: ["export const X264_PRESETS = [", 'args.push("-preset", settings.preset, "-crf", String(settings.crf), "-flags", "+bitexact");'],
+  },
+  {
+    id: "output.reuse",
+    group: "output",
+    declaredIn: "render and trace commands",
+    key: "--no-reuse",
+    required: false,
+    defaultValue: "reuse on",
+    constraint:
+      "by default a frame whose draw-list hash and raster revision (patches/0051) both equal the previous frame's is not rasterised; the previous frame's pixels are delivered and hashed again, so the digest is the same either way and the ledger is the check. `--no-reuse` rasterises every frame. `render --json` and `trace --json` report `reusedFrames`",
+    source: "src/render/reuse.ts:66",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: ["if (held !== null && key === this.#key && held.byteLength > 0) {"],
+  },
 
   // -------------------------------------------------------------------------
   // Layout finding codes (read off a rendered frame, not declared)

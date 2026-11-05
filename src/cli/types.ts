@@ -66,6 +66,9 @@ export interface TraceJson {
   /** Present exactly when the sidecar declares one: the digest is then of
    *  the exposures, and says which. */
   readonly shutter?: SidecarShutter;
+  /** Frames delivered as the frame before's pixels without a raster
+   *  (`src/render/reuse.ts`); 0 under `--no-reuse`. Older traces omit it. */
+  readonly reusedFrames?: number;
 }
 
 export function isTraceJson(value: unknown): value is TraceJson {

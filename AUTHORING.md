@@ -1399,6 +1399,54 @@ because the 4444 bitstream is 12-bit; and VP9 stores alpha out of band, so an
 alpha WebM's stream still reports `pix_fmt=yuv420p` and the evidence is the
 container's `alpha_mode=1`.
 
+### The mp4's encoder: `--encoder` and `--preset`
+
+The H.264 encode is half or more of a render's CPU — 53% on a 10 s 1080p
+title and 60% on a 55 s ranking film (`baselines/encode-cost.md`) — so the
+mp4 leg takes two flags:
+
+| flag | what it does |
+|---|---|
+| `--preset <name>` | libx264's preset, `ultrafast` … `veryslow`; CRF stays 16. Default `medium`. |
+| `--encoder h264_videotoolbox` | macOS's hardware encoder, at constant quality `-q:v 87` (`VIDEOTOOLBOX_QUALITY`) |
+
+Both are mp4 only and refused with any other format; `--preset` is refused
+with the hardware encoder, which has none, and `--encoder` with `--alpha`.
+An encoder the installed ffmpeg does not list is refused before anything is
+rendered. `render --json` reports what the leg ran with as `encoder`.
+
+**The hardware encoder's mp4 is not the same bytes on another Mac.** The
+bitstream is the hardware's. The frame digest is unaffected — frames are
+hashed before the encode leg — so `render --json`'s `digest` still matches
+`trace` and the ledger; it is only the file that stops being comparable byte
+for byte. On Linux, which has no hardware encoder here, `--preset` is the
+lever. What each choice costs in CPU, time, bytes and PSNR/SSIM against the
+default is measured in `baselines/encode-cost.md`.
+
+```bash
+bun src/cli/main.ts render compositions/alpha --preset veryfast --out /tmp/alpha-veryfast.mp4
+bun src/cli/main.ts render compositions/alpha --encoder h264_videotoolbox --out /tmp/alpha-vt.mp4  # not run: macOS only; tests/reuse.test.ts reads one back where ffmpeg has the encoder
+bun src/cli/main.ts render compositions/alpha --encoder h264_videotoolbox --format mov --out /tmp/alpha-vt.mov  # exit 2
+```
+
+### Held frames are not rasterised again
+
+A frame whose draw list and raster revision both equal the frame before's
+would rasterise to the same pixels, so `render` and `trace` deliver the frame
+before's pixels instead (`src/render/reuse.ts`; the revision is exported by
+`patches/0051`). Every delivered frame is still hashed, so the digest is the
+same with or without it, and `--no-reuse` — which rasterises every frame — is
+there to check that. Both commands print how many frames were rasterised and
+report `reusedFrames` in `--json`.
+
+```bash
+bun src/cli/main.ts trace compositions/smoke --no-reuse  # every frame rasterised; the digest `trace` prints without the flag
+```
+
+A hold is a frame where *nothing* in the draw list moved. A slow pan that
+moves an image a fraction of a texel per frame moves its draw list every
+frame while leaving many frames' pixels unchanged; those are rasterised.
+
 ### What `--json` will and will not say about your machine
 
 Every `--json` envelope leaves through one function (`src/cli/emit.ts`), so
