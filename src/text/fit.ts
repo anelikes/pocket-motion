@@ -118,6 +118,35 @@ export function segments(text: string, locale?: string): string[] {
   return [...seg.segment(text)].map((s) => s.segment);
 }
 
+/** U+200B ZERO WIDTH SPACE: a break opportunity written into a run. */
+export const BREAK_MARK = "\u200B";
+
+/**
+ * `text` with U+200B written at every break `wrapLines` would take that is
+ * not whitespace: between two word segments with nothing between them, unless
+ * the 禁則 sets forbid it. This is how a generator hands its break decisions
+ * to the core, which wraps a `text-wrap` run at spaces and U+200B and at
+ * nothing else (`patches/0059`): the segmenter and the sets stay here, where
+ * `scripts/digests.ts` re-derives their output, and the core applies no
+ * language rule. A run with no such break comes back unchanged.
+ */
+export function markBreaks(text: string, locale?: string, kinsoku = true): string {
+  let out = "";
+  let prev: string | undefined;
+  for (const seg of segments(text, locale)) {
+    if (isSpace(seg)) {
+      out += seg;
+      prev = undefined;
+      continue;
+    }
+    const blocked = kinsoku && prev !== undefined && (NO_START.has([...seg][0]!) || NO_END.has([...prev].at(-1)!));
+    if (prev !== undefined && !blocked) out += BREAK_MARK;
+    out += seg;
+    prev = seg;
+  }
+  return out;
+}
+
 function graphemes(text: string, locale?: string): string[] {
   const seg = new Intl.Segmenter(locale, { granularity: "grapheme" });
   return [...seg.segment(text)].map((s) => s.segment);

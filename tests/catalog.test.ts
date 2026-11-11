@@ -667,6 +667,7 @@ describe("catalog gates", () => {
             ...(n.ink === undefined
               ? {}
               : { ink: n.ink === null ? null : { x: n.ink[0], y: n.ink[1], w: n.ink[2], h: n.ink[3] } }),
+            ...(n.fit ? { fit: n.fit } : {}),
             container: null,
           });
         }

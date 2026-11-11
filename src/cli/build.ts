@@ -37,7 +37,33 @@ import { buildSpawn, type ResolvedComposition } from "./resolve.ts";
 /** The line `tools/build.ts` prints when some `d` attribute is known only at mount. */
 const PATHS_AT_MOUNT = /^\s*paths at mount: (\d+) /m;
 
-async function spawnBuild(argv: readonly string[], cwd: string, env: Record<string, string>): Promise<string> {
+/**
+ * What this repository adds to a refusal the upstream build prints, where the
+ * refusal's own advice was written for an app and is wrong for a film.
+ *
+ * `bake-font` (`patches/0002`) refuses a size whose glyph cell passes 255 px
+ * and advises rendering "at a larger logical viewport instead of a larger
+ * font". A film's viewport is its frame, so that advice resizes the delivery;
+ * an agent that read it on a 1920 × 1080 brief had nowhere to go
+ * (docs/agent-adoption-eval.md). The answer here is the face's own ceiling,
+ * which the refusal states, or outlines. The line goes last because the
+ * refusal is printed in the middle of the build's log, and an agent reading
+ * the end of the output reads this.
+ */
+export function buildRefusalHint(output: string): string | null {
+  const font = /bake-font: (\d+)px needs a \d+px cell[\s\S]*?about (\d+)px/.exec(output);
+  if (font) {
+    return (
+      `pocket-motion: text-[${font[1]}px] does not bake in this face, and a larger viewport would ` +
+      `change the film's frame. Set it at ${font[2]}px or less, or draw type larger than that ` +
+      `as the face's glyph outlines in a <Path> (SKILL.md, "Text does not wrap or shrink").`
+    );
+  }
+  return null;
+}
+
+/** Exported for `tests/cli.test.ts`, which holds the hint to the failure it answers. */
+export async function spawnBuild(argv: readonly string[], cwd: string, env: Record<string, string>): Promise<string> {
   const proc = Bun.spawn([...argv], { cwd, env, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -45,8 +71,10 @@ async function spawnBuild(argv: readonly string[], cwd: string, env: Record<stri
     proc.exited,
   ]);
   if (code !== 0) {
+    const hint = buildRefusalHint(`${stderr}\n${stdout}`);
     throw new Error(
-      `build failed (${code})${stderr.trim() ? `\n${stderr.trim()}` : ""}${stdout.trim() ? `\n${stdout.trim()}` : ""}`,
+      `build failed (${code})${stderr.trim() ? `\n${stderr.trim()}` : ""}${stdout.trim() ? `\n${stdout.trim()}` : ""}` +
+        (hint ? `\n${hint}` : ""),
     );
   }
   return stdout;

@@ -241,7 +241,9 @@ which is what supersampling means — lanczos was here and rang on hard edges),
 while `trace` digests and
 `frame` PNGs stay on the supersampled buffer — the hash covers what the
 rasteriser produced, scaling is an encode-side step. Use 2+ when text moves
-slowly (sub-pixel motion is quantized at 1×).
+slowly (sub-pixel motion is quantized at 1×). An upright picture is not
+helped: its place is rounded to a whole logical pixel before the scale is
+applied ("Still pictures").
 
 **`supersample: N` is half a recipe. The other half is `--density=N` on the
 build**, and the two must agree. Glyphs are baked bitmaps, so a supersampled
@@ -458,12 +460,20 @@ Keys whose commands line up once normalised (a line against a curve counts)
 morph point for point as drawn. Keys drawn separately — a play icon and a
 pause icon, a heart and a star — are equalised at build time by a stated
 rule (`patches/0046`): key 0 keeps its subpaths, start points and direction;
-a later key's subpaths pair with the earlier key's by size, a subpath with no
+a later key's subpaths pair with the earlier key's by size — compared exactly,
+so two subpaths drawn alike in two places tie only when their bits do: two
+equal rounded bars whose corners are arcs normalise a few units in the last
+place apart, and the larger by that margin pairs first, whatever the order
+they were written in — a subpath with no
 partner grows out of or shrinks into the centre of its own box, a whole key
 is reversed if it winds the other way, a closed subpath's start moves to
 where the two outlines sit closest, and every key is cut where any key has a
 vertex. Each key keeps the outline it was written as; to choose the
-correspondence yourself, draw keys whose commands line up. More than eight
+correspondence yourself, draw keys whose commands line up after
+normalisation, which is not as written: `H`, `V` and `L` are lines, `Q`,
+`S` and `T` are cubics, and an `A` is 1, 2, 4 or 8 cubics, halved until each
+spans at most an eighth of a turn — a rounded corner written as a quarter
+`A` is two cubics. A corner paired by hand is one `C`. More than eight
 keys is refused. Two paths sharing an edge split its samples instead of
 both drawing them, but each is still blended alone, so a seam between two
 shapes of one colour shows a trace of what is behind it; overlap them by a
@@ -506,8 +516,10 @@ centre is put on the path and it turns about its centre, so keep it
 `node`, the path's coordinates are the node's translation. The `d` is
 followed exactly as a `<Path>` with that `d` draws it, through the same
 `viewBox` mapping when `path: { viewBox, box }` names the `<Path>`'s; a
-transform on the `<Path>` node is not followed. A `d` used by both has to be
-written in both files, because `main.tsx` may not import its outlines.
+transform on the `<Path>` node is not followed. A `d` used by both lives in
+one module both import: `pocket.config.ts` reads it at build time, and the
+`<Path>` in `main.tsx` is baked from it whether the build reads the import or
+the mount does (`patches/0054`).
 `ease` is progress along the path in time; `from`/`to` run part of it, or
 backward; `iterations: "infinite"` loops a closed path. Keys sit on tick 0,
 every odd tick and the last, so every frame of a 30 fps film whose delay is a
@@ -649,11 +661,61 @@ viewport, or just lay out with flex).
 
 Two constraints, both absolute:
 
-1. **The renderer does not wrap or shrink text.** A `Text` run breaks only on
-   explicit `\n`. Text wider than its box draws past it (or is silently
-   clipped by `overflow-hidden`).
-2. **Every font size is baked at build time.** Any `text-[Npx]` works, but
-   only sizes that appear in class literals get an atlas.
+1. **A run wraps, shrinks or is clamped only where its class says so.** A
+   `Text` with none of the three utilities below breaks only on explicit
+   `\n`, and text wider than its box draws past it (or is clipped by
+   `overflow-hidden`, which no ink code can tell from a run that ends there).
+2. **Every font size is baked at build time.** Any `text-[Npx]` up to the
+   face's ceiling works, but only sizes that appear in class literals get an
+   atlas. The ceiling is the face's, not the format's: a glyph cell is at most
+   255 px tall, which is about 176 px for Noto Sans SC, 210 for Inter and 217
+   for HarmonyOS Sans (`patches/0002`'s refusal names the number for the face
+   it was asked of). Its advice to render at a larger logical viewport is
+   upstream's and resizes a film's frame; type larger than the ceiling is
+   drawn as the face's glyph outlines in a `<Path>`, which is filled at the
+   size it is shown at.
+
+**Fit, wrap and clamp are decided by layout, against the box layout gave the
+node** (`patches/0059`). Three utilities, which combine:
+
+- `text-wrap` wraps the run to its content width at the break opportunities
+  it carries: a run of spaces, which the break drops, and U+200B, which is
+  never drawn. `\n` always breaks. No language rule is applied in the core:
+  CJK and Thai break where the text says they may, so a generator writes
+  U+200B where its segmenter allows a break — `markBreaks(text, locale)` in
+  `src/text/fit.ts` writes exactly the breaks `wrapLines` would take.
+- `text-fit-[48..88]` (a ten-percent ladder from the top: 88, 80, 72, 65, 59,
+  54, 49, 48) or `text-fit-[48,64,88]` (the sizes named) draws the run at the
+  largest rung whose block holds the box: every line within the content
+  width, the lines times the rung's line height within the height when the
+  node bounds it (`h-*`, `h-full`, `max-h-*`), and no word cut between its
+  letters. When none holds, the smallest. At most 8 rungs; each is a baked
+  slot carrying every character the build collects, so a ladder of five costs
+  five atlases (`baselines/text-fit.md`: a 1,000-character CJK charset at 88
+  px bold is 12.8 MB of pak for one rung, 37.3 MB for five). It replaces the
+  size class: `text-[Npx]` beside it is refused.
+- `line-clamp-N` keeps the first N lines and ends the last with `…` (or `...`
+  where the face has no U+2026), cutting characters from that line until the
+  ellipsis fits.
+
+```tsx
+<Text class="w-[992px] max-h-[254px] text-fit-[48,56,64,76,88] text-wrap line-clamp-3 font-bold">{name}</Text>
+<Text class="text-fit-[52,64,80] font-bold">{price}</Text>
+<Text class="w-[1680px] text-[24px] text-wrap line-clamp-4">{disclaimer}</Text>
+```
+
+The box can come from flex, which no generator sees: `flex-1` halves of a row
+fit to the width the row gives them. `compositions/text-fit` puts each case
+on a named node.
+
+**What a gate sees.** `layout --json` carries `fit` on every such node: the
+size drawn, the ladder, whether a rung held, lines kept of lines wrapped,
+characters left out, words cut. A run drawn at a smaller rung is the
+declaration working and is not a finding. A clamp that left characters out,
+or a ladder whose smallest rung did not hold, is `text_truncated` — read from
+the core's record, because text that is not drawn has no ink — and
+`untruncated: true` in `assertions[]` is how a node says it must be drawn
+whole (a price, a legal line).
 
 A third edge worth knowing before you animate: **an axis-aligned `scale`
 resizes glyphs by resampling the size that was baked.** The run is drawn as
@@ -670,13 +732,22 @@ A run declared `text-vector` (below) has none of these edges: its glyphs are
 outlines filled at whatever size and under whatever transform the node is
 drawn, so it scales without softening and turns with its node.
 
-So multi-line or fitted text is decided *before* `app.tsx` exists, by
-measuring with the renderer's own advance tables. That is what
-`src/text/fit.ts` + `src/text/measure.ts` do, and `compositions/copy/gen.ts`
-is the worked example: `gen.ts` declares the copy and the boxes, calls
+Text can also be fitted *before* `app.tsx` exists, by measuring with the
+renderer's own advance tables. That is what `src/text/fit.ts` +
+`src/text/measure.ts` do, and `compositions/copy/gen.ts` is the worked
+example: `gen.ts` declares the copy and the boxes, calls
 `openMeasurer(...)` / `wrapLines(...)` / `fitToBox(...)`, and emits `app.tsx`
-with the `\n` already placed. The measurement is exact — a break decided at
-build time *is* layout, not an approximation of it.
+with the `\n` already placed. The measurement is exact, and it reaches only
+boxes the generator knows the size of; a box flex sizes, or a field whose
+neighbour's length moves it, is layout's to fit.
+
+**A job's characters are checked before it is staged.** `render --spec`
+reads every string the template draws against both weights' cmaps and
+refuses the job — exit 1, nothing built — with `missingGlyphs[]`, one
+`{ field, char, codePoint, face, file }` per field, character and weight.
+The read is the font file's `cmap` table and takes milliseconds; a build
+would bake the tofu cell for a missing character and exit 0. The MCP
+`render` tool returns the same object.
 
 A generator that measures the same faces at the same sizes on every run —
 a `render --spec` template, a batch — can pass `cache: { charset }` to
@@ -791,9 +862,10 @@ error, not a plausible-looking wrong width.
 
 Real video enters as a host-owned tile grid: the sidecar declares it, the
 guest declares placeholder `Image` nodes, and the host decodes at build time
-(ingest) and uploads pixels every frame. Scaling footage on screen is filtered
-correctly up to 2× minification (`linear: true`); beyond that it aliases —
-plan shots accordingly.
+(ingest) and uploads pixels every frame. Scaling footage on screen is
+bilinear (`linear: true`): up to 2× minification it has no nearest-sampling
+blocks, beyond that it aliases, and detail finer than a drawn pixel aliases
+at any minification (see "Still pictures") — plan shots accordingly.
 
 **A sidecar that declares `footage` gets it presented by every command that
 produces frames** — `check`, `frame`, `trace` and `render` build one layer per
@@ -894,7 +966,15 @@ the composition's own directory, then `assets/images/` and `assets/` **inside
 the vendored engine tree** — `tools/build.ts` resolves those two against its
 own root, not this repository's, so `"logo.png"` finds the demo logo shipped
 with the engine and this repository's `assets/` is never consulted. In
-practice a composition's pictures live beside it.
+practice a composition's pictures live beside it — and git does not see them:
+`.gitignore` ignores `*.png` everywhere but `docs/`, because frames are PNGs.
+`compositions/images` writes the pictures it draws from its `gen.ts`, which
+the digest ledger and the tests run before they build; a picture no generator writes is tracked
+only if it is added with `git add -f`, and is otherwise on one machine.
+`build` does not run a generator, so a picture a `gen.ts` derives — a
+graded or resized copy of a source — has to be written before the build that
+bakes it. A generator reads and writes PNGs through the vendored tree's
+`tools/png.ts` (`decodePNG`, `encodePNG`).
 
 **Each side is 1 to 2048 px, a power of two or not** (`patches/0020`).
 `encodeImageEntry` (`framework/compiler/pak.ts`) throws past that, naming the
@@ -906,6 +986,26 @@ makes footage a tile grid in the first place. The whole image is baked into
 the pak: a 2048×2048 picture is 16 MiB there and 16 MiB again in the core.
 SVG is rasterised at the composition's density. `compositions/images` draws a
 900×506 picture and a 3×5 one.
+
+**`linear` is two by two texels, with no mip chain.** It removes nearest
+sampling's blocks, and it does not filter detail finer than the drawn pixel:
+a one-pixel pattern — fabric, foliage, a checkerboard — drawn at any size
+under its own aliases into moiré that crawls as the picture moves (measured
+on a 1 px checker at 1.04–1.67× minification: luma spread 30–41 levels where
+a filtered one is under 1). A picture shown smaller than it is, is resampled
+to the largest size it is drawn at in its `gen.ts`, with a filter; the core
+then only magnifies it.
+
+**An upright picture is placed on whole logical pixels.** Its position and
+its size are each rounded (`emit_tex_quad`, `draw.rs`), and `supersample`
+multiplies those integers rather than refining them. The texture coordinates
+come from the unrounded box, so a picture's content is stretched over the
+rounded one, at most half a pixel from where it belongs, and a picture larger
+than the frame zooms without stepping; but two pictures that abut at a
+fractional position — a grid under a push — can open a one-pixel seam or
+overlap by one on some frames. A grid that moves is drawn as one picture, or
+its tiles overlap by a pixel. A turned picture is two triangles whose
+vertices are rounded the same way.
 
 **An SVG is drawn by the build's own baker, and it draws a subset of SVG**
 (`framework/compiler/bake-svg.ts`, `patches/0040`). Its `width` and `height`
@@ -1043,7 +1143,10 @@ else its viewBox's — clipped to it unless the root `<svg>` says
   transform that is not a uniform scale and rotation, and a duplicate `id`.
   Each names the element and its line in the file. Flatten what an editor
   can flatten; give a part a gradient (`bg-clip-path`), a blur or a shadow
-  through its class.
+  through its class. Illustrator's Export As writes every colour into a
+  `<style>` sheet of classes by default (Styling: Internal CSS), which is
+  refused; export with Styling: Presentation Attributes, or write each
+  class's declarations onto its shapes as attributes.
 - **`lint` and `check` read the same elements** and fail with
   `svg.missingFile` or `svg.unsupported` at the `src`, without building.
 - **`layout` reads one picture as one picture**: two parts inside one
@@ -1920,6 +2023,13 @@ anything can read it.** A node declared at `left-[2000px] w-[300px]` on a
 above the bottom comes back 40 px tall. So a PARTIAL overhang leaves no trace
 in the numbers and this code says nothing about one; what it catches is the
 node that went off entirely and collapsed against the edge.
+
+**A box is read after its transforms.** A word that slides in by 24 px
+leaves its parent's box for the frames it is moving, and a parent sized by its
+content (an auto-height row, a zero-width wrapper) has no room for the slide
+at all — those frames read `escaped_container` and fail an `insideBox`
+assertion. Give the parent the room the motion travels through, or allow
+`overflow` on the node with the reason.
 
 **`layout` still exits 0 with every one of them.** A node outside its window is
 not painted, an intended lower third does overlap the shot under it, and a cut

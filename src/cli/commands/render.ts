@@ -70,6 +70,7 @@ import {
 } from "../args.ts";
 import { openFootage, scratchTree, type FootageHandle } from "../footage.ts";
 import { parseSpec } from "../../manifest/spec.ts";
+import { describeMissing, jobCoverage, type MissingGlyph } from "../../text/coverage.ts";
 import { runBuild } from "../build.ts";
 import {
   errMsg,
@@ -346,6 +347,35 @@ export async function stageSpec(dir: string, specPath: string): Promise<{ dir: s
   return mod.stageJob(resolve(specPath));
 }
 
+/**
+ * The characters a job draws that its faces do not map
+ * (`src/text/coverage.ts`), read before anything is staged: a build bakes
+ * the tofu cell for them and exits 0, and every gate after it passes a card
+ * of boxes. Null when the job does not parse — staging says why — or when
+ * every character is mapped.
+ */
+async function glyphRefusal(dir: string, specPath: string): Promise<CommandResult | null> {
+  let raw: unknown;
+  try {
+    raw = await Bun.file(specPath).json();
+  } catch {
+    return null;
+  }
+  const parsed = parseSpec(raw, { root: repoRootOf(resolve(dir)) });
+  if (!parsed.ok) return null;
+  const report = jobCoverage(parsed.value, repoRootOf(resolve(dir)));
+  if (report.missing.length === 0) return null;
+  const error =
+    `the job draws ${new Set(report.missing.map((m) => m.char)).size} character(s) its faces do not map; ` +
+    "nothing was staged or built";
+  return {
+    exitCode: EXIT_FAIL,
+    json: { ok: false, error, missingGlyphs: report.missing },
+    stderrLines: [error, ...describeMissing(report.missing)],
+    stdoutLines: [`render failed — ${error}`],
+  };
+}
+
 export async function run(
   options: RenderOptions,
   context: RunContext = {},
@@ -356,6 +386,8 @@ export async function run(
   /** The job's composition, for naming the nodes behind a refused glyph. */
   let resolvedForGlyphs: ResolvedComposition | undefined;
   if (options.spec) {
+    const refusal = await glyphRefusal(options.dir, options.spec);
+    if (refusal !== null) return refusal;
     try {
       staged = await stageSpec(options.dir, options.spec);
     } catch (e) {
@@ -1100,7 +1132,7 @@ async function runBatch(
       expectedTemplate = undefined;
     }
   }
-  const parseFails: Array<{ spec: string; error: string }> = [];
+  const parseFails: Array<{ spec: string; error: string; missingGlyphs?: readonly MissingGlyph[] }> = [];
   for (const name of files) {
     const specPath = join(options.specDir, name);
     let raw: unknown;
@@ -1130,14 +1162,36 @@ async function runBatch(
         spec: name,
         error: `this generator is ${JSON.stringify(expectedTemplate)}; got ${JSON.stringify(parsed.value.template)}`,
       });
+      continue;
+    }
+    // Every job's characters before any job renders, so a batch learns all of
+    // what its faces cannot draw at once (`glyphRefusal`).
+    const coverage = jobCoverage(parsed.value, root);
+    if (coverage.missing.length > 0) {
+      parseFails.push({
+        spec: name,
+        error: describeMissing(coverage.missing).join("\n"),
+        missingGlyphs: coverage.missing,
+      });
     }
   }
   if (parseFails.length > 0) {
     return {
       exitCode: EXIT_FAIL,
-      json: { ok: false, error: "one or more jobs failed to parse", failed: parseFails, done: [], pending: files },
+      json: {
+        ok: false,
+        error: parseFails.some((f) => f.missingGlyphs !== undefined)
+          ? "one or more jobs failed to parse or draw characters their faces do not map"
+          : "one or more jobs failed to parse",
+        failed: parseFails,
+        done: [],
+        pending: files,
+      },
       stderrLines: parseFails.map((f) => `${f.spec}: ${f.error}`),
-      stdoutLines: [`render failed — ${parseFails.length} job(s) failed to parse`],
+      stdoutLines: [
+        `render failed — ${parseFails.length} job(s) refused before any rendered` +
+          (parseFails.some((f) => f.missingGlyphs !== undefined) ? ", characters their faces do not map among them" : ""),
+      ],
     };
   }
   mkdirSync(options.outDir, { recursive: true });

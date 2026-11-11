@@ -198,6 +198,7 @@ describe("api — a run that is stopped", () => {
     const controller = new AbortController();
     controller.abort("before it started");
     expect(await trace(SMOKE, {}, { signal: controller.signal })).toEqual({
+      ok: false,
       frames: [],
       digest: "",
       error: "trace cancelled — before it started",

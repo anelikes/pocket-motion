@@ -75,12 +75,22 @@ three equal ones were written. Write times that are whole rendered frames apart
 when the spacing carries meaning, and run `keyframes` to see which declared
 instants the render never samples.
 
-**Text does not wrap or shrink.** A `Text` run breaks only on an explicit `\n`,
-and text wider than its box draws past it or is clipped by an
-`overflow-hidden` ancestor. Multi-line and fitted text is decided before
-`app.tsx` exists, by measuring with the renderer's own advance tables
-(`src/text/measure.ts`, `src/text/fit.ts`); `compositions/copy/gen.ts` is the
-worked example. Every font size is baked, so only sizes that appear in class
+**Text wraps, shrinks or is clamped only where its class says so.** Without
+these a `Text` run breaks only on an explicit `\n`, and text wider than its
+box draws past it or is clipped by an `overflow-hidden` ancestor. With them
+layout decides against the box it gives the node: `text-wrap` (breaks at
+spaces and U+200B only — write U+200B where a CJK or Thai line may break,
+`markBreaks` in `src/text/fit.ts`), `text-fit-[48..88]` or
+`text-fit-[48,64,88]` (the largest rung whose block fits; each rung is a
+baked atlas, at most 8), `line-clamp-N` (N lines, the last ending in `…`).
+`layout --json` reports the rung as `fit`; a clamp that dropped text or a
+ladder that bottomed out is `text_truncated`, and `untruncated: true` in
+`assertions[]` says a field must be drawn whole. `compositions/text-fit` has
+every case. A field's lines can also be decided before `app.tsx` exists by
+measuring with the renderer's own advance tables (`src/text/measure.ts`,
+`src/text/fit.ts`; `compositions/copy/gen.ts`). `render --spec` refuses a
+job whose faces lack a character it draws, with `missingGlyphs[]`, before
+anything is built. Every font size is baked, so only sizes that appear in class
 literals get an atlas. An axis-aligned `scale` resizes glyphs by resampling
 the baked size, softer when magnified, so bake the size text is shown at; a
 rotated run, or one with a text stroke, moves without resizing. A size past
@@ -124,7 +134,9 @@ viewBox folded into the outlines, each part's box its own bounds so it turns
 and scales about its own centre — and joins each `parts` entry to that part's
 classes. Gradients, clip paths, masks, filters, `<use>`, `<style>` and text
 are refused by name: flatten them in the editor, or give the part the effect
-through its class.
+through its class. Illustrator's default export is a `<style>` sheet of
+classes: export with Styling: Presentation Attributes, or write each class's
+declarations onto its shapes.
 
 | GSAP / SVG idiom | here |
 |---|---|
@@ -222,6 +234,8 @@ both keys, and a test proves it.
    `assert`, in one `--json` envelope. This is the gate.
 5. **`snapshot`** — PNGs at sampled frames, `--annotate` for the boxes and
    finding codes drawn over them. This is how you look, when looking helps.
+   With `supersample` above 1, `snapshot` and `frame` write the supersampled
+   picture (3840 × 2160 for a 1080p canvas at 2); `render` scales it down.
 6. **`render`** — the video: `--format mp4|webm|mov|png-seq`, and `--alpha`
    for the three that can carry a channel. For mp4, `--preset` is libx264's
    (default `medium`) and `--encoder h264_videotoolbox` is macOS's hardware
@@ -270,7 +284,10 @@ bun src/cli/main.ts render compositions/captions/alpha-en --spec compositions/ca
 ```
 
 `compositions/captions/alpha-en` and `compositions/captions/burn-zh` are the
-two samples; either takes any captions job. `assert` reads each word at both
+two samples; either takes any captions job. A job kept as a composition of
+your own — to edit it, or to deliver the directory — is written by a
+sample's generator: `bun compositions/captions/alpha-en/gen.ts --spec
+<job.json> --out-dir compositions/<name>`. `assert` reads each word at both
 ends of its window besides its 24 evenly spaced frames, so a word shorter than
 the stride is still read; `assert --samples <durationFrames>` checks every
 word at every frame. A job's render runs that same check on the job's own
@@ -381,8 +398,17 @@ claude mcp add pocket-motion -- bun src/cli/main.ts mcp
   painted, and an intended lower third does overlap the shot under it.
   `verify --strict` is what turns one into an exit code, and `layoutAllow` is
   what turns one off.
+- `text_not_painted` on a node at a frame before its entrance or after its
+  exit is that node's timing, read correctly, on a View as on a Text; `verify`
+  passes with it. Quieting it for `--strict` costs a `layoutAllow` with the
+  `occlusion` scope, which has no frame window and also excuses
+  `text_occluded` — a burial — on that node at every frame; `visibility` and
+  `assert` still read burials either way.
 - Rects are captured before the opacity cull, so a rect is not proof anything
   is on screen. `inPicture` is the proof, and `visibility` sweeps it.
+- Rects are read after transforms: a slide-in that leaves its parent's box
+  reads `escaped_container` while it moves and fails `insideBox`, so size the
+  parent for the motion, not for the resting text.
 - `snapshot --annotate` draws those boxes over a copy of the frame, host-side.
   The un-annotated PNG is the same bytes `frame --at N` writes.
 
