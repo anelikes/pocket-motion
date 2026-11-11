@@ -1,0 +1,1768 @@
+pocket-motion-only: TEX_QUAD_MIP and TEX_TRI_MIP are drawn by this software rasteriser alone, and every upstream backend parses the draw list by a closed op set; the PSP GE samples one bound texture with its own mip registers and a no_std EBOOT has no room for a second copy of every texture a third its size, the ESP32 and Symbian RGB565 hosts draw images at their own size, and a GPU backend asks its driver for a mip chain rather than reading one the core reduced.
+
+0064 — `image-filter-trilinear`: an image drawn below its size reads a mip
+chain the core reduced from its bytes, two levels picked by the drawn
+footprint, each bilinear, blended. Nearest reads a few texels of the dozens
+under a pixel and bilinear four, so an image drawn at 15% of its size lands
+on whichever texels the grid happens to cross, and a slow push redraws it
+differently at every frame: shimmer. `baselines/phase4-minification.md`
+measured bilinear adequate to 2x and failing beyond it.
+
+What the patch adds, by file:
+
+- `engine/core/src/mip.rs` (new): `MipChain`, the levels below a texture's
+  own. Level k + 1 is level k reduced to max(1, floor(w/2)) x
+  max(1, floor(h/2)) by an exact area average — each output texel's span cut
+  against each source texel's in units of 1/dst of a texel, so every weight is
+  an integer and an odd side spreads three texels over two — of premultiplied
+  texels, stored straight RGBA8888, in u64 sums rounded half up. Keyed by the
+  texture's revision. `footprint` (texels per logical px along the screen
+  axis that crosses the most: the longer column of the screen-to-texel
+  Jacobian), `triangle_footprint`, and `pick`: r = rho / scale at or below
+  one is the texture alone; above it the level is r's exponent and the
+  blend weight the top eight bits of its mantissa, linear between powers of
+  two and continuous across them, so no transcendental reaches a pixel.
+- `engine/core/src/lib.rs`: `Texture.mips`, `Texture::ensure_mips`,
+  `Ui::texture_mips`; `update_texture_t8` drops the levels of the bytes it
+  overwrites. Every `Texture` literal starts with none.
+- `engine/core/src/resources.rs`, `engine/wasm/src/lib.rs`:
+  `RenderResources::texture_mips`, empty by default; the auxiliary resources
+  pass the Ui's through.
+- `engine/core/src/draw.rs`: an image node whose style carries
+  `image-filter-trilinear` emits TEX_QUAD_MIP (axis-aligned) or TEX_TRI_MIP
+  (turned, skewed, mirrored, or a cell of a perspective mesh) with its
+  footprint, computed from the unrounded world transform — for a 3D cell the
+  larger of its two triangles', from the projected corners before clipping
+  and rounding. The chain is reduced there, when a footprint above one texel
+  first needs it: a texture never drawn below its size costs nothing.
+- `engine/core/src/raster.rs`: the two ops; `MipRead`, the two levels one op
+  reads; TEX_QUAD_MIP tables its taps per column and per row for each level
+  as 0021 does for one. At r <= 1 the read is the texture's own bilinear
+  read, byte for byte, whatever the texture's flag.
+- `engine/core/src/damage.rs`, `compositor.rs`, `lib.rs`: the ops' lengths
+  (10 and 13 words) and bounds, which are TEX_QUAD's and TEX_TRI's.
+- `engine/core/src/style.rs`, `contracts/spec/spec.ts` and the generated
+  `spec.rs`, microts `spec.rs` and `component-types-microts.ts`: PROP
+  `imageFilter` (221, enum ImageFilter { Texture, Trilinear }), DRAW_OP
+  `texQuadMip` 72 and `texTriMip` 73. 221 because #24's colour filters and
+  pixel origins hold 212-220, after the vector-path props' 211; 72 is the
+  next op after 0042's PATH. Numbered 0064, after #27's 0063, in the merge
+  train that carries 0045-0046, 0051-0055, 0059 and 0063; refreshed onto
+  them.
+- `framework/compiler/tailwind.ts`: `image-filter-texture` (the default) and
+  `image-filter-trilinear`; `tests/tailwind.test.ts` holds both and refuses
+  any other filter word.
+- Tests: `mip.rs` holds the reduction against an oracle that replicates
+  every texel into a dst-sized block and box-averages, over nine sizes and
+  four pixel formats; a transparent neighbour lending a level no colour;
+  1000x1500 halving to 1x1 in ten levels at most a third of the base's bytes;
+  a new revision reduced again; `pick`'s table and its continuity across
+  every power of two. `raster.rs` holds TEX_QUAD_MIP and TEX_TRI_MIP at
+  r <= 1 against TEX_QUAD and TEX_TRI of the same bytes uploaded linear;
+  TEX_QUAD_MIP against a per-pixel trilinear reference over four textures,
+  seven footprints, two scales; and a one-texel checkerboard at 6.9 texels a
+  pixel, grey at every sub-texel shift where nearest and bilinear swing.
+  `tests.rs` holds the footprint an image carries under six rotations, a
+  squeeze, a sub-rect and a perspective turn, and the chain reduced only when
+  a draw reads below the texture and again when its bytes change.
+
+Red cases, each an edit to this patch, each turning the named test red and
+no other: the alpha average rounded down, or an odd side reduced as a 2x2
+box (`reduce_is_the_area_average_of_the_replicated_texture`); colour
+averaged straight (`a_transparent_neighbour_lends_a_level_no_colour`);
+halving rounded up (`a_chain_halves_to_one_texel_and_costs_at_most_a_third`);
+a chain kept across revisions (`a_new_revision_is_reduced_again`); the weight
+read from the wrong mantissa bits (`pick_reads_the_exponent_and_the_mantissa`);
+level 0 read nearest, in the triangle's sampler or the quad's taps
+(`a_mip_read_no_wider_than_a_texel_is_the_bilinear_read`); no level below the
+base ever picked (`a_minified_checkerboard_reads_its_average_and_holds_still_as_it_moves`);
+the coarse level dropped, read one level too deep, or its row tap taken from
+the fine level (`tex_quad_mip_is_the_per_pixel_trilinear_read`); a rotation's
+cross terms dropped, or the narrower axis taken
+(`a_trilinear_image_carries_its_footprint_under_any_affine_world`); one
+footprint for every cell of a perspective mesh
+(`a_trilinear_image_in_perspective_carries_each_cells_footprint`); a chain
+reduced for every trilinear draw
+(`a_chain_is_reduced_when_a_draw_reads_below_the_texture_and_again_when_its_bytes_change`).
+
+`git apply` skips everything above the first `diff --git`.
+diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
+index b9845ee8..36246d82 100644
+--- a/contracts/spec/spec.ts
++++ b/contracts/spec/spec.ts
+@@ -532,6 +532,14 @@ export const PROP = {
+   trimOffset: 209, //      f32, wraps (1 = once round)
+   trimMode: 210, //        enum TrimMode
+   morph: 211, //           f32 morph key, 0..keys-1
++  // Image filter (pocket-motion): how an image node samples its texture.
++  // Texture (the default) is the texture's own flag — nearest, or bilinear
++  // under IMG_FLAG_LINEAR. Trilinear reads a mip chain the core builds from
++  // the texture's bytes: two levels picked by the drawn footprint, each
++  // bilinear, blended (DRAW_OP.texQuadMip / texTriMip). Not inherited.
++  // 221 rather than 212: an open branch's colour filters and pixel origins
++  // hold 212-220.
++  imageFilter: 221, //     enum ImageFilter (`image-filter-trilinear`)
+ } as const;
+ 
+ export type PropName = keyof typeof PROP;
+@@ -721,6 +729,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+   trimMode: VALUE_KIND.int, morph: VALUE_KIND.f32,
+   dashCount: VALUE_KIND.int, dash0: VALUE_KIND.f32, dash1: VALUE_KIND.f32,
+   dash2: VALUE_KIND.f32, dash3: VALUE_KIND.f32, dashOffset: VALUE_KIND.f32,
++  imageFilter: VALUE_KIND.int,
+ };
+ 
+ // ---------------------------------------------------------------------------
+@@ -763,6 +772,9 @@ export const ENUMS = {
+   StrokeJoin: { Miter: 0, Round: 1, Bevel: 2 },
+   StrokeCap: { Butt: 0, Round: 1, Square: 2 },
+   TrimMode: { Each: 0, Whole: 1 },
++  /** How an image node samples its texture (`image-filter-texture|trilinear`,
++   *  pocket-motion). */
++  ImageFilter: { Texture: 0, Trilinear: 1 },
+   /**
+    * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
+    * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
+@@ -1996,6 +2008,22 @@ export const FONT_VECTOR_LAYER_GRADIENT = 0x4000_0000;
+ //                           with X >= x), so two paths sharing an edge
+ //                           partition its samples. The pixel blends at
+ //                           `a * hits / 16`. Software rasteriser only.
++//   TEX_QUAD_MIP (10 words): TEX_QUAD's nine, then rho (f32 bits): the
++//                           texture-space footprint of one LOGICAL px, in
++//                           texels of the texture's own size along the screen
++//                           axis that crosses the most of them, computed by
++//                           the core from the unrounded transform. A raster at
++//                           scale s reads r = rho / s: r <= 1 is a bilinear
++//                           read of the texture whatever its flag; above it,
++//                           level floor(log2 r) and the next are each read
++//                           bilinearly and blended by the top eight bits of
++//                           r's mantissa (r / 2^level - 1). Level k + 1 is
++//                           level k reduced to max(1, floor(w/2)) x
++//                           max(1, floor(h/2)) by an exact area average of
++//                           premultiplied texels (engine/core/src/mip.rs).
++//                           Software rasteriser only (pocket-motion).
++//   TEX_TRI_MIP (13 words): TEX_TRI's twelve, then rho as above — for a 3D
++//                           cell, the larger of its two triangles'.
+ //   TEXT_RUN    (8 + ceil(n/4) words):
+ //                           op,
+ //                           word1: bits 0-7 fontSlot,
+@@ -2054,6 +2082,8 @@ export const DRAW_OP = {
+   paintPush: 69,
+   paintPop: 70,
+   path: 71,
++  texQuadMip: 72,
++  texTriMip: 73,
+ } as const;
+ 
+ /** Most colour stops one PAINT_PUSH carries. A class literal's gradient holds
+diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
+index 667dae5d..ce488754 100644
+--- a/engine/core/src/compositor.rs
++++ b/engine/core/src/compositor.rs
+@@ -21,10 +21,12 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+         crate::spec::draw_op::GRAD_RECT => 6,
+         crate::spec::draw_op::GLYPH_RUN => 3 + 2 * ((*words.get(at + 1)? >> 16) as usize),
+         crate::spec::draw_op::TEX_QUAD => 9,
++        crate::spec::draw_op::TEX_QUAD_MIP => 10,
+         crate::spec::draw_op::SCISSOR => 3,
+         crate::spec::draw_op::SCISSOR_POP => 1,
+         crate::spec::draw_op::TRI => 7,
+         crate::spec::draw_op::TEX_TRI => 12,
++        crate::spec::draw_op::TEX_TRI_MIP => 13,
+         crate::spec::draw_op::TEXT_RUN => 8 + (*words.get(at + 7)? as usize).div_ceil(4),
+         crate::spec::draw_op::SURFACE_QUAD => 9,
+         crate::spec::draw_op::POLY => 3 + *words.get(at + 1)? as usize,
+diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
+index 219f0adf..acce93a1 100644
+--- a/engine/core/src/damage.rs
++++ b/engine/core/src/damage.rs
+@@ -431,10 +431,12 @@ impl<'a> DamageDecoder<'a> {
+                     .ok_or(())?
+             }
+             spec::draw_op::TEX_QUAD => 9,
++            spec::draw_op::TEX_QUAD_MIP => 10,
+             spec::draw_op::SCISSOR => 3,
+             spec::draw_op::SCISSOR_POP => 1,
+             spec::draw_op::TRI => 7,
+             spec::draw_op::TEX_TRI => 12,
++            spec::draw_op::TEX_TRI_MIP => 13,
+             spec::draw_op::POLY => {
+                 let n = self.words.get(start + 1).copied().ok_or(())? as usize;
+                 if !(3..=8).contains(&n) {
+@@ -491,7 +493,9 @@ impl<'a> DamageDecoder<'a> {
+                 logical_rect(words[1], words[2]).intersect(self.clip)
+             }
+             spec::draw_op::GLYPH_RUN => glyph_run_bounds(ui, words, self.clip),
+-            spec::draw_op::TEX_QUAD => logical_rect(words[2], words[3]).intersect(self.clip),
++            spec::draw_op::TEX_QUAD | spec::draw_op::TEX_QUAD_MIP => {
++                logical_rect(words[2], words[3]).intersect(self.clip)
++            }
+             spec::draw_op::SCISSOR => {
+                 if self.depth >= self.stack.len() {
+                     return Err(());
+@@ -510,7 +514,9 @@ impl<'a> DamageDecoder<'a> {
+                 DamageRect::empty()
+             }
+             spec::draw_op::TRI => triangle_bounds([words[1], words[2], words[3]], self.clip),
+-            spec::draw_op::TEX_TRI => triangle_bounds([words[2], words[5], words[8]], self.clip),
++            spec::draw_op::TEX_TRI | spec::draw_op::TEX_TRI_MIP => {
++                triangle_bounds([words[2], words[5], words[8]], self.clip)
++            }
+             spec::draw_op::POLY => polygon_bounds(&words[3..], self.clip),
+             // A mask draws nothing itself; its bbox is a sound bound for the
+             // span it shapes, and the ops inside carry their own.
+diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
+index 460dac64..7283ccba 100644
+--- a/engine/core/src/draw.rs
++++ b/engine/core/src/draw.rs
+@@ -212,7 +212,7 @@ enum Item3 {
+     Quad { pts: [(f32, f32); 4], color: u32 },
+     /// One image node's projected cells. The mesh is the painter-sort unit so
+     /// all TEX_TRIs for its texture remain consecutive for host batching.
+-    TexMesh { cell_start: usize, cell_end: usize, tex: u32, modulate: u32 },
++    TexMesh { cell_start: usize, cell_end: usize, tex: u32, modulate: u32, trilinear: bool },
+     /// A text node's glyph run, anchored at its projected origin.
+     Run { slot: u32, origin: (f32, f32), opacity: f32 },
+ }
+@@ -593,7 +593,7 @@ pub(crate) fn glyph_page(
+         for (a, color) in colors.iter_mut().enumerate() { *color = 0x00ff_ffff | ((a as u32) << 24); }
+         let handle = crate::tex_alloc(textures, free, crate::Texture {
+             data, byte_len, w: width, h: height, psm: spec::psm::PSM_T8,
+-            palette: Some(palette), linear: true, revision: 0,
++            palette: Some(palette), linear: true, revision: 0, mips: Default::default(),
+         });
+         if handle < 0 { return None; }
+         cache.glyphs.push(GlyphPage { slot: atlas.slot, revision, page, handle, width, height });
+@@ -692,6 +692,7 @@ fn disc_texture(
+             // byte-identical.
+             linear: true,
+             revision: 0,
++            mips: Default::default(),
+         },
+     );
+     if handle < 0 {
+@@ -1246,6 +1247,7 @@ pub fn build_root(
+             0.0,
+             1.0,
+             1.0,
++            None,
+         );
+     }
+     (target, drawn, provider_stale)
+@@ -1603,7 +1605,22 @@ impl<'a> Walker<'a> {
+             } else {
+                 (node.uv[0], node.uv[1], node.uv[2], node.uv[3])
+             };
+-            self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip, fu0, fv0, fu1, fv1);
++            // `image-filter-trilinear` (pocket-motion): the footprint of one
++            // logical px in texels, from the unrounded world transform —
++            // constant over the image, since the map is affine.
++            let rho = if r.image_filter == spec::ImageFilter::Trilinear as u8 {
++                self.image_footprint(node.tex, |tw, th| {
++                    let det = world.a * world.d - world.b * world.c;
++                    if det == 0.0 || l.w <= 0.0 || l.h <= 0.0 {
++                        return None;
++                    }
++                    let (su, sv) = ((fu1 - fu0) / l.w / det, (fv1 - fv0) / l.h / det);
++                    Some(crate::mip::footprint(tw, th, su * world.d, -su * world.c, -sv * world.b, sv * world.a))
++                })
++            } else {
++                None
++            };
++            self.emit_tex_quad(dl, &world, l.w, l.h, node.tex as u32, op, &clip, fu0, fv0, fu1, fv1, rho);
+         }
+ 
+         // -- installed application surface -----------------------------------
+@@ -1708,13 +1725,38 @@ impl<'a> Walker<'a> {
+                     let poly = pts.map(|(x, y)| ClipVert { x, y, color: unpack(color), u: 0.0, v: 0.0 });
+                     clip_poly(&poly, clip, |verts| emit_poly(dl, verts, color, clip, self.screen));
+                 }
+-                Item3::TexMesh { cell_start, cell_end, tex, modulate } => {
++                Item3::TexMesh { cell_start, cell_end, tex, modulate, trilinear } => {
++                    // A cell's footprint is the larger of its two
++                    // triangles', from the projected corners before clipping
++                    // and rounding; the chain is reduced once per mesh.
++                    let size = crate::tex_resolve(self.textures, tex as i32)
++                        .and_then(|slot| self.textures[slot as usize].tex.as_ref())
++                        .map(|t| (t.w, t.h));
++                    let cell_rho = |cell: &TexCell| -> Option<f32> {
++                        let (tw, th) = size?;
++                        let (p, uv) = (cell.pts, cell.uv);
++                        let a = crate::mip::triangle_footprint(tw, th, [p[0], p[1], p[2]], [uv[0], uv[1], uv[2]]);
++                        let b = crate::mip::triangle_footprint(tw, th, [p[0], p[2], p[3]], [uv[0], uv[2], uv[3]]);
++                        match (a, b) {
++                            (Some(a), Some(b)) => Some(a.max(b)),
++                            (a, b) => a.or(b),
++                        }
++                    };
++                    if trilinear {
++                        let widest = tex_cells[cell_start..cell_end]
++                            .iter()
++                            .filter_map(&cell_rho)
++                            .fold(0.0f32, f32::max);
++                        self.ensure_mips(tex as i32, widest);
++                    }
+                     for cell in &tex_cells[cell_start..cell_end] {
+                         let poly: [ClipVert; 4] = core::array::from_fn(|i| {
+                             let ((x, y), (u, v)) = (cell.pts[i], cell.uv[i]);
+                             ClipVert { x, y, color: [255.0; 4], u, v }
+                         });
+-                        clip_fan(&poly, clip, |a, b, c| emit_tex_tri(dl, tex, modulate, a, b, c, clip, self.screen));
++                        // A cell with no area on either triangle draws nothing.
++                        let rho = if trilinear { Some(cell_rho(cell).unwrap_or(0.0)) } else { None };
++                        clip_fan(&poly, clip, |a, b, c| emit_tex_tri(dl, tex, modulate, a, b, c, clip, self.screen, rho));
+                     }
+                 }
+                 Item3::Run { slot, origin, opacity } => {
+@@ -1916,6 +1958,7 @@ impl<'a> Walker<'a> {
+                     cell_end,
+                     tex: node.tex as u32,
+                     modulate,
++                    trilinear: r.image_filter == spec::ImageFilter::Trilinear as u8,
+                 },
+             ));
+         }
+@@ -2637,7 +2680,7 @@ impl<'a> Walker<'a> {
+         }
+         let handle = crate::tex_alloc(self.textures, self.tex_free, crate::Texture {
+             data, byte_len: (tw * th * 4) as usize, w: tw, h: th,
+-            psm: spec::psm::PSM_8888, palette: None, linear: true, revision: 0,
++            psm: spec::psm::PSM_8888, palette: None, linear: true, revision: 0, mips: Default::default(),
+         });
+         if handle < 0 { return None; }
+         self.paint_cache.borders.push((key, handle));
+@@ -2704,7 +2747,7 @@ impl<'a> Walker<'a> {
+                     self.emit_tex_quad(dl, &world.then(&Affine::translate(x0, y0)), local_w, local_h,
+                         texture, 1.0, clip, 0.0, 0.0,
+                         local_w * self.raster_density as f32 / tw as f32,
+-                        local_h * self.raster_density as f32 / th as f32);
++                        local_h * self.raster_density as f32 / th as f32, None);
+                     if dl.words.len() > before { *dl.words.last_mut().unwrap() = color; }
+                     return;
+                 }
+@@ -3169,6 +3212,7 @@ impl<'a> Walker<'a> {
+         fv0: f32,
+         fu1: f32,
+         fv1: f32,
++        rho: Option<f32>,
+     ) {
+         if !world.is_axis_aligned() {
+             // Rotated image: transform corners with their UVs, clip, fan into
+@@ -3185,7 +3229,7 @@ impl<'a> Walker<'a> {
+                 ClipVert { x: sx, y: sy, color: [255.0; 4], u, v }
+             });
+             let modulate = scale_alpha(0xffff_ffff, op);
+-            clip_fan(&poly, clip, |a, b, c| emit_tex_tri(dl, tex, modulate, a, b, c, clip, self.screen));
++            clip_fan(&poly, clip, |a, b, c| emit_tex_tri(dl, tex, modulate, a, b, c, clip, self.screen, rho));
+             return;
+         }
+         let (sx0, sy0) = world.apply(0.0, 0.0);
+@@ -3210,7 +3254,7 @@ impl<'a> Walker<'a> {
+         let u1 = fu0 + (c.x1 - sx0) / (sx1 - sx0) * du;
+         let v0 = fv0 + (c.y0 - sy0) / (sy1 - sy0) * dv;
+         let v1 = fv0 + (c.y1 - sy0) / (sy1 - sy0) * dv;
+-        dl.words.push(spec::draw_op::TEX_QUAD);
++        dl.words.push(if rho.is_some() { spec::draw_op::TEX_QUAD_MIP } else { spec::draw_op::TEX_QUAD });
+         dl.words.push(tex);
+         dl.words.push(xy_word(c.x0, c.y0));
+         dl.words.push(wh_word(c.x1 - c.x0, c.y1 - c.y0));
+@@ -3219,6 +3263,36 @@ impl<'a> Walker<'a> {
+         dl.words.push(u1.to_bits());
+         dl.words.push(v1.to_bits());
+         dl.words.push(scale_alpha(0xffff_ffff, op));
++        if let Some(rho) = rho {
++            dl.words.push(rho.to_bits());
++        }
++    }
++
++    /// The footprint `rho(w, h)` gives for a texture of that size, with the
++    /// texture's mip chain reduced when the footprint reaches below its own
++    /// level, so the raster that reads the op finds the levels it names.
++    /// None when the handle is stale or `rho` has no answer.
++    fn image_footprint(&mut self, tex: i32, rho: impl FnOnce(u32, u32) -> Option<f32>) -> Option<f32> {
++        let slot = crate::tex_resolve(self.textures, tex)?;
++        let texture = self.textures[slot as usize].tex.as_ref()?;
++        let rho = rho(texture.w, texture.h)?;
++        self.ensure_mips(tex, rho);
++        Some(rho)
++    }
++
++    /// Reduce `tex`'s mip chain if a draw `rho` texels per logical px wide
++    /// reads below its own level at some raster scale (scale 1 is the
++    /// widest footprint a raster takes).
++    fn ensure_mips(&mut self, tex: i32, rho: f32) {
++        if !(rho > 1.0) {
++            return;
++        }
++        let Some(slot) = crate::tex_resolve(self.textures, tex) else {
++            return;
++        };
++        if let Some(texture) = self.textures[slot as usize].tex.as_mut() {
++            texture.ensure_mips();
++        }
+     }
+ 
+     /// Emit a native-compositor surface instruction. Unlike TEX_QUAD, full
+@@ -3452,7 +3526,7 @@ impl<'a> Walker<'a> {
+                 let uv = page.uv(g.gid);
+                 let glyph_world = world.then(&Affine::translate(g.x, g.y));
+                 let before = dl.words.len();
+-                self.emit_tex_quad(dl, &glyph_world, cell_w, cell_h, texture, 1.0, glyph_clip, uv[0], uv[1], uv[2], uv[3]);
++                self.emit_tex_quad(dl, &glyph_world, cell_w, cell_h, texture, 1.0, glyph_clip, uv[0], uv[1], uv[2], uv[3], None);
+                 if dl.words.len() > before { *dl.words.last_mut().unwrap() = color; }
+             }
+             if let Some(face) = colour {
+@@ -4056,6 +4130,7 @@ fn emit_tex_tri(
+     v2: &ClipVert,
+     clip: &Clip,
+     screen: (f32, f32),
++    rho: Option<f32>,
+ ) {
+     let px = |v: &ClipVert| {
+         (
+@@ -4070,7 +4145,7 @@ fn emit_tex_tri(
+     if area2 == 0.0 {
+         return;
+     }
+-    dl.words.push(spec::draw_op::TEX_TRI);
++    dl.words.push(if rho.is_some() { spec::draw_op::TEX_TRI_MIP } else { spec::draw_op::TEX_TRI });
+     dl.words.push(tex);
+     for (xy, vert) in [((x0, y0), v0), ((x1, y1), v1), ((x2, y2), v2)] {
+         dl.words.push(xy_word(xy.0, xy.1));
+@@ -4078,6 +4153,9 @@ fn emit_tex_tri(
+         dl.words.push(vert.v.to_bits());
+     }
+     dl.words.push(modulate);
++    if let Some(rho) = rho {
++        dl.words.push(rho.to_bits());
++    }
+ }
+ 
+ /// Stack capacity for a clipped polygon: a convex quad gains at most one
+diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
+index ef6cb192..5308dce9 100644
+--- a/engine/core/src/lib.rs
++++ b/engine/core/src/lib.rs
+@@ -51,6 +51,7 @@ pub mod damage;
+ pub mod draw;
+ mod fmath;
+ pub mod layout;
++pub mod mip;
+ pub mod package;
+ pub mod pak;
+ pub mod path;
+@@ -113,6 +114,9 @@ pub struct Texture {
+     /// GPU backends refresh one still-live binding without retransferring
+     /// every other texture.
+     revision: u64,
++    /// The levels below this one, reduced from the bytes at `revision` the
++    /// first time a trilinear draw needs one (pocket-motion, `mip.rs`).
++    pub mips: mip::MipChain,
+ }
+ 
+ impl Texture {
+@@ -130,6 +134,24 @@ impl Texture {
+         })
+     }
+ 
++    /// Reduce the mip chain from the current bytes unless it already was
++    /// (pocket-motion, `mip.rs`).
++    pub(crate) fn ensure_mips(&mut self) {
++        // Field by field, so the base view and the chain borrow apart.
++        let base = TexView {
++            // Safe: the Vec<u128> owns at least byte_len initialized bytes.
++            pixels: unsafe { core::slice::from_raw_parts(self.data.as_ptr() as *const u8, self.byte_len) },
++            w: self.w,
++            h: self.h,
++            psm: self.psm,
++            palette: self.palette.as_ref().map(|p| unsafe {
++                core::slice::from_raw_parts(p.as_ptr() as *const u8, TEX_PALETTE_BYTES)
++            }),
++            linear: self.linear,
++        };
++        self.mips.ensure(&base, self.revision);
++    }
++
+     fn view(&self) -> TexView<'_> {
+         TexView {
+             pixels: self.pixels(),
+@@ -1061,6 +1083,7 @@ impl Ui {
+             palette,
+             linear: flags & spec::img::FLAG_LINEAR != 0,
+             revision: 0,
++            mips: Default::default(),
+         };
+         let handle = tex_alloc(&mut self.textures, &mut self.tex_free, tex);
+         if handle >= 0 {
+@@ -1151,6 +1174,9 @@ impl Ui {
+             );
+         }
+         tex.revision = tex.revision.wrapping_add(1);
++        // Levels reduced from the old bytes are never read again; the next
++        // trilinear draw reduces the new ones.
++        tex.mips = Default::default();
+         self.bump_raster_revision();
+         true
+     }
+@@ -1277,10 +1303,12 @@ impl Ui {
+                     3 + 2 * ((*meta >> 16) as usize)
+                 }
+                 x if x == spec::draw_op::TEX_QUAD => 9,
++                x if x == spec::draw_op::TEX_QUAD_MIP => 10,
+                 x if x == spec::draw_op::SCISSOR => 3,
+                 x if x == spec::draw_op::SCISSOR_POP => 1,
+                 x if x == spec::draw_op::TRI => 7,
+                 x if x == spec::draw_op::TEX_TRI => 12,
++                x if x == spec::draw_op::TEX_TRI_MIP => 13,
+                 x if x == spec::draw_op::TEXT_RUN => {
+                     let Some(bytes) = words.get(i + 7) else { break };
+                     8 + (*bytes as usize).div_ceil(4)
+@@ -2462,6 +2490,19 @@ impl Ui {
+         self.textures[slot as usize].tex.as_ref().map(Texture::view)
+     }
+ 
++    /// The mip levels below a live texture's own that its current bytes were
++    /// reduced to; empty when no trilinear draw has needed them since the
++    /// bytes last changed.
++    pub fn texture_mips(&self, handle: i32) -> &[mip::MipLevel] {
++        let Some(slot) = tex_resolve(&self.textures, handle) else {
++            return &[];
++        };
++        match self.textures[slot as usize].tex.as_ref() {
++            Some(tex) => tex.mips.levels(tex.revision),
++            None => &[],
++        }
++    }
++
+     /// Content revision of a live texture. Generation-tagged handles catch
+     /// free/reuse; this value changes when the bytes behind one still-live
+     /// handle are overwritten in place.
+diff --git a/engine/core/src/mip.rs b/engine/core/src/mip.rs
+new file mode 100644
+index 00000000..717d457a
+--- /dev/null
++++ b/engine/core/src/mip.rs
+@@ -0,0 +1,370 @@
++//! Mip chains and texture-space footprints for trilinear image sampling
++//! (`image-filter-trilinear`, pocket-motion).
++//!
++//! A chain is a pure function of a texture's bytes. Level k + 1 is level k
++//! reduced to `max(1, floor(w/2)) x max(1, floor(h/2))` by an exact area
++//! average: each output texel's span is cut against each source texel's in
++//! units of 1/dst of a source texel, so every weight is an integer, a side
++//! that halves evenly is the 2x2 box, and an odd side spreads three texels
++//! over two. Texels are averaged premultiplied and stored straight, so a
++//! transparent neighbour lends a level its coverage and none of its colour.
++//! Integer arithmetic throughout (u64 sums, round half up): the same bytes on
++//! every host.
++//!
++//! The core builds a chain the first time a draw needs a level below the
++//! texture's own (`Walker`, `draw.rs`), keyed by the texture's revision, so a
++//! texture never drawn below its size costs nothing and one whose bytes are
++//! overwritten in place is reduced again from the new bytes.
++
++use alloc::vec::Vec;
++
++use crate::fmath::sqrtf;
++use crate::{spec, TexView};
++
++/// One reduced level: straight-alpha RGBA8888, row-major.
++pub struct MipLevel {
++    pub w: u32,
++    pub h: u32,
++    pub rgba: Vec<u8>,
++}
++
++impl MipLevel {
++    pub fn view(&self) -> TexView<'_> {
++        TexView {
++            pixels: &self.rgba,
++            w: self.w,
++            h: self.h,
++            psm: spec::psm::PSM_8888,
++            palette: None,
++            linear: true,
++        }
++    }
++}
++
++/// The levels below a texture's own, and the texture revision they were
++/// reduced from. Empty until a draw asks for one.
++#[derive(Default)]
++pub struct MipChain {
++    revision: Option<u64>,
++    levels: Vec<MipLevel>,
++}
++
++impl MipChain {
++    /// The levels, when they were reduced from the bytes at `revision`;
++    /// empty otherwise.
++    pub fn levels(&self, revision: u64) -> &[MipLevel] {
++        if self.revision == Some(revision) {
++            &self.levels
++        } else {
++            &[]
++        }
++    }
++
++    /// Reduce `base` down to 1x1 unless the levels for `revision` are here.
++    pub fn ensure(&mut self, base: &TexView, revision: u64) {
++        if self.revision == Some(revision) {
++            return;
++        }
++        self.levels.clear();
++        let (mut w, mut h) = (base.w, base.h);
++        while w > 1 || h > 1 {
++            let (dw, dh) = ((w / 2).max(1), (h / 2).max(1));
++            let rgba = match self.levels.last() {
++                Some(prev) => reduce(&prev.view(), dw, dh),
++                None => reduce(base, dw, dh),
++            };
++            self.levels.push(MipLevel { w: dw, h: dh, rgba });
++            (w, h) = (dw, dh);
++        }
++        self.revision = Some(revision);
++    }
++
++    /// Bytes the levels hold.
++    pub fn bytes(&self) -> usize {
++        self.levels.iter().map(|l| l.rgba.len()).sum()
++    }
++}
++
++/// The source texels output texel `i` covers on one axis of a `src` -> `dst`
++/// reduction, with integer weights summing to `src`: output `i` spans
++/// `[i*src, (i+1)*src)` and source `s` spans `[s*dst, (s+1)*dst)`. With `dst`
++/// at least half of `src` a span touches at most three texels.
++fn axis_taps(src: u32, dst: u32, i: u32) -> ([(u32, u64); 3], usize) {
++    let mut taps = [(0u32, 0u64); 3];
++    let mut n = 0;
++    let (lo, hi) = (i as u64 * src as u64, (i as u64 + 1) * src as u64);
++    let mut s = (lo / dst as u64) as u32;
++    while (s as u64) * (dst as u64) < hi && s < src {
++        let (s0, s1) = (s as u64 * dst as u64, (s as u64 + 1) * dst as u64);
++        let w = s1.min(hi) - s0.max(lo);
++        if w > 0 && n < 3 {
++            taps[n] = (s, w);
++            n += 1;
++        }
++        s += 1;
++    }
++    (taps, n)
++}
++
++/// `src` reduced to `dw` x `dh` by the area average the module comment
++/// describes. `src` may be any psm `texel` reads; the result is RGBA8888.
++pub fn reduce(src: &TexView, dw: u32, dh: u32) -> Vec<u8> {
++    let mut out = alloc::vec![0u8; dw as usize * dh as usize * 4];
++    let denom = src.w as u64 * src.h as u64;
++    let cols: Vec<([(u32, u64); 3], usize)> = (0..dw).map(|i| axis_taps(src.w, dw, i)).collect();
++    for j in 0..dh {
++        let (rows, nr) = axis_taps(src.h, dh, j);
++        for (i, &(taps, nc)) in cols.iter().enumerate() {
++            let (mut sa, mut sr, mut sg, mut sb) = (0u64, 0u64, 0u64, 0u64);
++            for &(y, wy) in &rows[..nr] {
++                for &(x, wx) in &taps[..nc] {
++                    let idx = y as usize * src.w as usize + x as usize;
++                    let Some((r, g, b, a)) = crate::raster::texel(src, idx) else {
++                        return out;
++                    };
++                    let wa = wx * wy * a as u64;
++                    sa += wa;
++                    sr += wa * r as u64;
++                    sg += wa * g as u64;
++                    sb += wa * b as u64;
++                }
++            }
++            let o = (j as usize * dw as usize + i) * 4;
++            if sa > 0 {
++                out[o] = ((sr + sa / 2) / sa) as u8;
++                out[o + 1] = ((sg + sa / 2) / sa) as u8;
++                out[o + 2] = ((sb + sa / 2) / sa) as u8;
++                out[o + 3] = ((sa + denom / 2) / denom) as u8;
++            }
++        }
++    }
++    out
++}
++
++/// Texels per logical px along the screen axis that crosses the most of
++/// them, for a `tw` x `th` texture under a screen-to-UV map whose partial
++/// derivatives (normalised UV per logical px) are `dudx` .. `dvdy`. The
++/// isotropic footprint: the longer of the two image-space columns of the
++/// Jacobian, so a squeeze along one axis is filtered for that axis.
++pub fn footprint(tw: u32, th: u32, dudx: f32, dudy: f32, dvdx: f32, dvdy: f32) -> f32 {
++    let (tw, th) = (tw as f32, th as f32);
++    let (ax, ay) = (dudx * tw, dvdx * th);
++    let (bx, by) = (dudy * tw, dvdy * th);
++    let r2 = (ax * ax + ay * ay).max(bx * bx + by * by);
++    if r2.is_finite() {
++        sqrtf(r2)
++    } else {
++        f32::MAX
++    }
++}
++
++/// [`footprint`] of the affine map a screen-space triangle and its UVs
++/// define, or None when the triangle has no area.
++pub fn triangle_footprint(tw: u32, th: u32, p: [(f32, f32); 3], uv: [(f32, f32); 3]) -> Option<f32> {
++    let (e1x, e1y) = (p[1].0 - p[0].0, p[1].1 - p[0].1);
++    let (e2x, e2y) = (p[2].0 - p[0].0, p[2].1 - p[0].1);
++    let det = e1x * e2y - e2x * e1y;
++    if det == 0.0 || !det.is_finite() {
++        return None;
++    }
++    let (du1, dv1) = (uv[1].0 - uv[0].0, uv[1].1 - uv[0].1);
++    let (du2, dv2) = (uv[2].0 - uv[0].0, uv[2].1 - uv[0].1);
++    let dudx = (du1 * e2y - du2 * e1y) / det;
++    let dudy = (du2 * e1x - du1 * e2x) / det;
++    let dvdx = (dv1 * e2y - dv2 * e1y) / det;
++    let dvdy = (dv2 * e1x - dv1 * e2x) / det;
++    Some(footprint(tw, th, dudx, dudy, dvdx, dvdy))
++}
++
++/// The two levels a footprint of `rho` texels per logical px falls between at
++/// raster scale `scale`, for a chain of `levels` below the texture's own:
++/// `(level, t)` reads `level` and, when `t > 0`, `level + 1` weighted `t/256`.
++/// `r = rho / scale` at or below one is level 0 alone. Above it the level is
++/// `floor(log2 r)` from r's exponent and `t` the top eight bits of its
++/// mantissa — `r / 2^level - 1`, linear between the powers of two and
++/// continuous across them — so no transcendental reaches a pixel.
++pub fn pick(rho: f32, scale: i32, levels: usize) -> (usize, u32) {
++    let r = rho / scale.max(1) as f32;
++    if !(r > 1.0) {
++        return (0, 0);
++    }
++    let bits = r.to_bits();
++    let level = (((bits >> 23) & 0xff) - 127) as usize;
++    if level >= levels {
++        return (levels, 0);
++    }
++    (level, (bits >> 15) & 0xff)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    /// xorshift32, so every texture here is the same on every run.
++    fn rng(mut state: u32) -> impl FnMut() -> u32 {
++        move || {
++            state ^= state << 13;
++            state ^= state >> 17;
++            state ^= state << 5;
++            state
++        }
++    }
++
++    /// The reduction by another route: replicate every source texel into a
++    /// `dw` x `dh` block, so the source becomes `w*dw` x `h*dh` cells, and
++    /// average the `w` x `h` block of cells under each output texel —
++    /// premultiplied, rounded half up. No overlap arithmetic.
++    fn replicated(src: &TexView, dw: u32, dh: u32) -> Vec<u8> {
++        let (w, h) = (src.w, src.h);
++        let mut out = alloc::vec![0u8; (dw * dh * 4) as usize];
++        for j in 0..dh {
++            for i in 0..dw {
++                let (mut sa, mut sr, mut sg, mut sb) = (0u64, 0u64, 0u64, 0u64);
++                for gy in j * h..(j + 1) * h {
++                    for gx in i * w..(i + 1) * w {
++                        let idx = (gy / dh) as usize * w as usize + (gx / dw) as usize;
++                        let (r, g, b, a) = crate::raster::texel(src, idx).unwrap();
++                        let a = a as u64;
++                        sa += a;
++                        sr += a * r as u64;
++                        sg += a * g as u64;
++                        sb += a * b as u64;
++                    }
++                }
++                let o = ((j * dw + i) * 4) as usize;
++                let n = (w * h) as u64;
++                if sa > 0 {
++                    out[o] = ((sr + sa / 2) / sa) as u8;
++                    out[o + 1] = ((sg + sa / 2) / sa) as u8;
++                    out[o + 2] = ((sb + sa / 2) / sa) as u8;
++                    out[o + 3] = ((sa + n / 2) / n) as u8;
++                }
++            }
++        }
++        out
++    }
++
++    #[test]
++    fn reduce_is_the_area_average_of_the_replicated_texture() {
++        let mut next = rng(0x9e37_79b9);
++        let palette: Vec<u8> = (0..1024).map(|_| next() as u8).collect();
++        let sizes = [(2u32, 2u32), (3, 1), (1, 5), (5, 7), (7, 3), (8, 8), (13, 6), (33, 17), (2, 9)];
++        let mut checked = 0;
++        for &(w, h) in &sizes {
++            let n = (w * h) as usize;
++            // Every fifth RGBA texel transparent, the rest any alpha.
++            let rgba: Vec<u8> = (0..n)
++                .flat_map(|i| {
++                    let v = next();
++                    let a = if i % 5 == 4 { 0 } else { (v >> 24) as u8 };
++                    [v as u8, (v >> 8) as u8, (v >> 16) as u8, a]
++                })
++                .collect();
++            let two: Vec<u8> = (0..n).flat_map(|_| (next() as u16).to_le_bytes()).collect();
++            let idx: Vec<u8> = (0..n).map(|_| next() as u8).collect();
++            let views = [
++                TexView { pixels: &rgba, w, h, psm: spec::psm::PSM_8888, palette: None, linear: false },
++                TexView { pixels: &two, w, h, psm: spec::psm::PSM_5650, palette: None, linear: false },
++                TexView { pixels: &two, w, h, psm: spec::psm::PSM_4444, palette: None, linear: false },
++                TexView { pixels: &idx, w, h, psm: spec::psm::PSM_T8, palette: Some(&palette), linear: false },
++            ];
++            for view in &views {
++                let (dw, dh) = ((w / 2).max(1), (h / 2).max(1));
++                assert_eq!(reduce(view, dw, dh), replicated(view, dw, dh), "{w}x{h} psm {}", view.psm);
++                checked += 1;
++            }
++        }
++        assert_eq!(checked, sizes.len() * 4);
++    }
++
++    #[test]
++    fn a_transparent_neighbour_lends_a_level_no_colour() {
++        // Opaque red on transparent black, in a pattern that leaves every
++        // reduced texel some of each at every level of an odd-sided chain.
++        let (w, h) = (45u32, 27u32);
++        let rgba: Vec<u8> = (0..w * h)
++            .flat_map(|i| if (i % w + i / w) % 3 == 0 { [255, 0, 0, 255] } else { [0, 0, 0, 0] })
++            .collect();
++        let view = TexView { pixels: &rgba, w, h, psm: spec::psm::PSM_8888, palette: None, linear: false };
++        let mut chain = MipChain::default();
++        chain.ensure(&view, 0);
++        let mut partial = 0;
++        for level in chain.levels(0) {
++            for px in level.rgba.chunks_exact(4) {
++                assert!(px[3] > 0, "{}x{}: a third of every span is red", level.w, level.h);
++                assert_eq!(&px[..3], &[255, 0, 0], "{}x{}: alpha {}", level.w, level.h, px[3]);
++                partial += usize::from(px[3] < 255);
++            }
++        }
++        assert!(partial > 0, "the pattern leaves partly covered texels");
++    }
++
++    #[test]
++    fn a_chain_halves_to_one_texel_and_costs_at_most_a_third() {
++        let (w, h) = (1000u32, 1500u32);
++        let rgba: Vec<u8> = (0..w * h).flat_map(|_| [10u8, 200, 30, 77]).collect();
++        let view = TexView { pixels: &rgba, w, h, psm: spec::psm::PSM_8888, palette: None, linear: false };
++        let mut chain = MipChain::default();
++        assert!(chain.levels(0).is_empty(), "nothing until a draw asks");
++        chain.ensure(&view, 0);
++        let dims: Vec<(u32, u32)> = chain.levels(0).iter().map(|l| (l.w, l.h)).collect();
++        assert_eq!(
++            dims,
++            [(500, 750), (250, 375), (125, 187), (62, 93), (31, 46), (15, 23), (7, 11), (3, 5), (1, 2), (1, 1)]
++        );
++        for level in chain.levels(0) {
++            assert!(level.rgba.chunks_exact(4).all(|px| px == [10, 200, 30, 77]), "{}x{}", level.w, level.h);
++        }
++        assert!(chain.bytes() * 3 <= rgba.len(), "{} bytes over a {}-byte base", chain.bytes(), rgba.len());
++        assert!(chain.levels(1).is_empty(), "levels reduced from revision 0 are not revision 1's");
++    }
++
++    #[test]
++    fn a_new_revision_is_reduced_again() {
++        let (w, h) = (6u32, 4u32);
++        let a: Vec<u8> = (0..w * h).flat_map(|_| [255u8, 255, 255, 255]).collect();
++        let b: Vec<u8> = (0..w * h).flat_map(|_| [0u8, 0, 255, 255]).collect();
++        let mut chain = MipChain::default();
++        chain.ensure(&TexView { pixels: &a, w, h, psm: spec::psm::PSM_8888, palette: None, linear: false }, 3);
++        assert_eq!(&chain.levels(3)[0].rgba[..4], &[255, 255, 255, 255]);
++        chain.ensure(&TexView { pixels: &b, w, h, psm: spec::psm::PSM_8888, palette: None, linear: false }, 4);
++        assert!(chain.levels(3).is_empty());
++        assert_eq!(&chain.levels(4)[0].rgba[..4], &[0, 0, 255, 255]);
++    }
++
++    #[test]
++    fn pick_reads_the_exponent_and_the_mantissa() {
++        // (rho, scale, levels) -> (level, t)
++        let cases = [
++            (0.5f32, 1, 8, (0usize, 0u32)),
++            (1.0, 1, 8, (0, 0)),
++            (1.5, 1, 8, (0, 128)),
++            (2.0, 1, 8, (1, 0)),
++            (3.0, 1, 8, (1, 128)),
++            (6.0, 2, 8, (1, 128)),
++            (8.0, 4, 8, (1, 0)),
++            (2.0, 2, 8, (0, 0)),
++            (1000.0, 1, 3, (3, 0)),
++            (f32::MAX, 1, 5, (5, 0)),
++            (f32::NAN, 1, 5, (0, 0)),
++            (-4.0, 1, 5, (0, 0)),
++        ];
++        for &(rho, scale, levels, want) in &cases {
++            assert_eq!(pick(rho, scale, levels), want, "rho {rho} scale {scale} levels {levels}");
++        }
++        // Continuous across every power of two: read as one number, level
++        // and weight never step back and move by at most one weight unit
++        // when r grows by 1/512 of itself — half a unit within a level, and
++        // 255 -> the next level's 0 across a power of two.
++        let mut prev = 0u32;
++        let mut r = 1.0f32;
++        while r < 300.0 {
++            let (level, t) = pick(r, 1, 16);
++            let e = level as u32 * 256 + t;
++            assert!(e >= prev && e - prev <= 1, "r {r}: {prev} -> {e}");
++            prev = e;
++            r += r / 512.0;
++        }
++        assert_eq!(prev >> 8, 8, "the walk reached level 8");
++    }
++}
+diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
+index 09bf9d0a..eee9f7a8 100644
+--- a/engine/core/src/raster.rs
++++ b/engine/core/src/raster.rs
+@@ -947,6 +947,14 @@ fn render_ops<T: RenderTarget>(
+                 tex_quad(ui, target, width, scale, clip, &words[i + 1..i + 9]);
+                 i += 9;
+             }
++            draw_op::TEX_QUAD_MIP => {
++                if i + 10 > words.len() {
++                    return i;
++                }
++                let rho = f32::from_bits(words[i + 9]);
++                tex_quad_with(ui, target, width, scale, clip, &words[i + 1..i + 9], Some(rho));
++                i += 10;
++            }
+             // Native compositor instruction: software surfaces have no
+             // application compositor and leave the shell fallback visible.
+             draw_op::SURFACE_QUAD => {
+@@ -996,6 +1004,14 @@ fn render_ops<T: RenderTarget>(
+                 tex_tri(ui, target, width, scale, clip, &words[i + 1..i + 12]);
+                 i += 12;
+             }
++            draw_op::TEX_TRI_MIP => {
++                if i + 13 > words.len() {
++                    return i;
++                }
++                let rho = f32::from_bits(words[i + 12]);
++                tex_tri_with(ui, target, width, scale, clip, &words[i + 1..i + 12], Some(rho));
++                i += 13;
++            }
+             draw_op::POLY => {
+                 if i + 3 > words.len() {
+                     return i;
+@@ -3231,7 +3247,7 @@ fn glyph_stroke<T: RenderTarget>(
+ /// an unknown psm (corrupt stream — callers abort the op, matching the old
+ /// inline `_ => return` arms byte-for-byte on the known formats).
+ #[inline]
+-fn texel(view: &TexView, idx: usize) -> Option<(u32, u32, u32, u32)> {
++pub(crate) fn texel(view: &TexView, idx: usize) -> Option<(u32, u32, u32, u32)> {
+     match view.psm {
+         spec::psm::PSM_5650 => {
+             // PSP PSM 5650: u16 LE, B5:G6:R5 (red in the low bits). Always
+@@ -3382,6 +3398,41 @@ fn bilinear(view: &TexView, x: AxisTap, y: AxisTap) -> Option<(u32, u32, u32, u3
+     ))
+ }
+ 
++/// `a` and `b` blended channel by channel, `b` weighted `t/256`.
++#[inline]
++fn lerp_texel(a: (u32, u32, u32, u32), b: (u32, u32, u32, u32), t: u32) -> (u32, u32, u32, u32) {
++    let lerp8 = |a: u32, b: u32| (a * (256 - t) + b * t) >> 8;
++    (lerp8(a.0, b.0), lerp8(a.1, b.1), lerp8(a.2, b.2), lerp8(a.3, b.3))
++}
++
++/// The levels one trilinear op reads (TEX_QUAD_MIP / TEX_TRI_MIP,
++/// pocket-motion `mip.rs`): `fine`, and `coarse` weighted `t/256` when the
++/// footprint falls between two. Every level is read bilinearly, the
++/// texture's own included, whatever its flag says.
++struct MipRead<'a> {
++    fine: TexView<'a>,
++    coarse: Option<(TexView<'a>, u32)>,
++}
++
++impl<'a> MipRead<'a> {
++    fn new(base: TexView<'a>, mips: &'a [crate::mip::MipLevel], rho: f32, scale: i32) -> Self {
++        let (level, t) = crate::mip::pick(rho, scale, mips.len());
++        let fine = if level == 0 { base } else { mips[level - 1].view() };
++        let coarse = if t > 0 { Some((mips[level].view(), t)) } else { None };
++        MipRead { fine, coarse }
++    }
++
++    #[inline]
++    fn sample(&self, u: f32, v: f32) -> Option<(u32, u32, u32, u32)> {
++        let f = &self.fine;
++        let s = bilinear(f, linear_axis(f.w, u), linear_axis(f.h, v))?;
++        match &self.coarse {
++            None => Some(s),
++            Some((c, t)) => Some(lerp_texel(s, bilinear(c, linear_axis(c.w, u), linear_axis(c.h, v))?, *t)),
++        }
++    }
++}
++
+ // ---- TEX_TRI: barycentric textured triangle (affine UV; nearest, or integer
+ //      bilinear when the texture carries the linear flag) --------------------
+ 
+@@ -3392,6 +3443,20 @@ fn tex_tri<T: RenderTarget>(
+     scale: i32,
+     clip: Clip,
+     p: &[u32],
++) {
++    tex_tri_with(ui, target, stride, scale, clip, p, None);
++}
++
++/// TEX_TRI, or with `rho` TEX_TRI_MIP: the same triangle read through
++/// [`MipRead`].
++fn tex_tri_with<T: RenderTarget>(
++    ui: &impl RenderResources,
++    target: &mut T,
++    stride: i32,
++    scale: i32,
++    clip: Clip,
++    p: &[u32],
++    rho: Option<f32>,
+ ) {
+     let handle = p[0] as i32;
+     let (x0, y0) = xy(p[1], scale);
+@@ -3404,6 +3469,7 @@ fn tex_tri<T: RenderTarget>(
+     let Some(view) = ui.texture(handle) else {
+         return;
+     };
++    let mip = rho.map(|rho| MipRead::new(view, ui.texture_mips(handle), rho, scale));
+     let (ax, ay) = (2 * x0 as i64, 2 * y0 as i64);
+     let (mut bx, mut by) = (2 * x1 as i64, 2 * y1 as i64);
+     let (mut cx, mut cy) = (2 * x2 as i64, 2 * y2 as i64);
+@@ -3446,8 +3512,10 @@ fn tex_tri<T: RenderTarget>(
+             let u = u0 * f0 + u1 * f1 + u2 * f2;
+             let v = v0 * f0 + v1 * f1 + v2 * f2;
+             // Nearest is the golden-pinned default path; linear is opt-in
+-            // per texture (spec::img::FLAG_LINEAR).
+-            let sample = if view.linear {
++            // per texture (spec::img::FLAG_LINEAR), trilinear per node.
++            let sample = if let Some(mip) = &mip {
++                mip.sample(u, v)
++            } else if view.linear {
+                 sample_linear(&view, u, v)
+             } else {
+                 let tx = ((u * twf) as i32).clamp(0, tw_max);
+@@ -3478,6 +3546,20 @@ fn tex_quad<T: RenderTarget>(
+     scale: i32,
+     clip: Clip,
+     p: &[u32],
++) {
++    tex_quad_with(ui, target, stride, scale, clip, p, None);
++}
++
++/// TEX_QUAD, or with `rho` TEX_QUAD_MIP: the same quad read through
++/// [`MipRead`], its taps tabled per column and per row for each level.
++fn tex_quad_with<T: RenderTarget>(
++    ui: &impl RenderResources,
++    target: &mut T,
++    stride: i32,
++    scale: i32,
++    clip: Clip,
++    p: &[u32],
++    rho: Option<f32>,
+ ) {
+     let handle = p[0] as i32;
+     let (x, y) = xy(p[1], scale);
+@@ -3504,6 +3586,41 @@ fn tex_quad<T: RenderTarget>(
+     }
+     let (mr, mg, mb, ma) = channels(modulate);
+     let identity = modulate == 0xffff_ffff;
++    if let Some(rho) = rho {
++        let mip = MipRead::new(view, ui.texture_mips(handle), rho, scale);
++        let inv_w = 1.0f32 / w as f32;
++        let inv_h = 1.0f32 / h as f32;
++        let u_at = |px: i32| u0 + (u1 - u0) * ((px - x) as f32 + 0.5) * inv_w;
++        let taps = |size: u32| -> Vec<AxisTap> { (c.x0..c.x1).map(|px| linear_axis(size, u_at(px))).collect() };
++        let fine_cols = taps(mip.fine.w);
++        let coarse_cols = mip.coarse.as_ref().map(|(cv, _)| taps(cv.w));
++        for py in c.y0..c.y1 {
++            let v = v0 + (v1 - v0) * ((py - y) as f32 + 0.5) * inv_h;
++            let fine_row = linear_axis(mip.fine.h, v);
++            let coarse_row = mip.coarse.as_ref().map(|(cv, _)| linear_axis(cv.h, v));
++            let line = py * stride;
++            for (k, px) in (c.x0..c.x1).enumerate() {
++                let Some(mut s) = bilinear(&mip.fine, fine_cols[k], fine_row) else {
++                    return;
++                };
++                if let (Some((cv, t)), Some(cols), Some(row)) = (&mip.coarse, &coarse_cols, coarse_row) {
++                    let Some(cs) = bilinear(cv, cols[k], row) else {
++                        return;
++                    };
++                    s = lerp_texel(s, cs, *t);
++                }
++                let (mut r, mut g, mut b, mut a) = s;
++                if !identity {
++                    r = (r * mr + 127) / 255;
++                    g = (g * mg + 127) / 255;
++                    b = (b * mb + 127) / 255;
++                    a = (a * ma + 127) / 255;
++                }
++                target.blend((line + px) as usize, r, g, b, a);
++            }
++        }
++        return;
++    }
+     // A pixel's u depends on its column alone and its v on its row alone, so
+     // each column's tap is taken once into `cols` and each row's once per
+     // row, from the expressions a per-pixel loop evaluates: the taps, and so
+@@ -4475,6 +4592,274 @@ mod tests {
+         // Most draws reach the ground; a comparison of two no-ops proves nothing.
+         assert!(painted * 4 >= compared * 3, "only {painted} of {compared} draws painted anything");
+     }
++
++    // ---- TEX_QUAD_MIP / TEX_TRI_MIP (pocket-motion, mip.rs) ---------------------------
++
++    /// Reduce a texture's mip chain the way a trilinear draw does.
++    fn reduce_chain(ui: &mut Ui, handle: i32) {
++        let slot = crate::tex_resolve(&ui.textures, handle).unwrap();
++        ui.textures[slot as usize].tex.as_mut().unwrap().ensure_mips();
++    }
++
++    fn tri_words(handle: i32, xy: [(i16, i16); 3], uv: [(f32, f32); 3], modulate: u32) -> Vec<u32> {
++        let mut p = vec![handle as u32];
++        for k in 0..3 {
++            p.extend([xy_word(xy[k].0, xy[k].1), uv[k].0.to_bits(), uv[k].1.to_bits()]);
++        }
++        p.push(modulate);
++        p
++    }
++
++    #[test]
++    fn a_mip_read_no_wider_than_a_texel_is_the_bilinear_read() {
++        // Drawn at or above its size — r = rho / scale <= 1 — a trilinear op
++        // reads the texture alone, bilinearly, whatever the texture's flag:
++        // byte for byte the TEX_QUAD / TEX_TRI of the same bytes uploaded
++        // linear. So declaring the filter moves no image that is not drawn
++        // below its size.
++        let mut ui = Ui::new();
++        let mut state = 0x1234_5678u32;
++        let mut next = move || {
++            state ^= state << 13;
++            state ^= state >> 17;
++            state ^= state << 5;
++            state
++        };
++        let (fw, fh) = (128i32, 72i32);
++        let mut compared = 0;
++        for &(w, h) in &[(25u32, 27u32), (41, 6), (7, 41), (100, 3), (16, 16)] {
++            let rgba: Vec<u8> = (0..w * h)
++                .flat_map(|i| {
++                    let v = next();
++                    [v as u8, (v >> 8) as u8, (v >> 16) as u8, if i % 5 == 4 { 0 } else { (v >> 24) as u8 }]
++                })
++                .collect();
++            let linear = ui.upload_texture_flags(&rgba, w, h, spec::psm::PSM_8888, spec::img::FLAG_LINEAR);
++            let nearest = ui.upload_texture_flags(&rgba, w, h, spec::psm::PSM_8888, 0);
++            reduce_chain(&mut ui, nearest);
++            let (tw, th) = (w as i32, h as i32);
++            // (x, y, w, h, u0, v0, u1, v1) at or above the texture's size.
++            let quads = [
++                (0, 0, tw, th, 0.0f32, 0.0f32, 1.0f32, 1.0f32),
++                (5, 4, 2 * tw, 2 * th, 0.0, 0.0, 1.0, 1.0),
++                (1, 2, tw * 3 / 2 + 1, th * 5 / 4 + 1, 0.0, 0.0, 1.0, 1.0),
++                (3, 3, tw, th, 0.25, 0.125, 0.75, 0.875),
++                (4, 2, tw, th, 1.0, 1.0, 0.0, 0.0),
++            ];
++            for &(qx, qy, qw, qh, u0, v0, u1, v1) in &quads {
++                let rho = ((u1 - u0).abs() * w as f32 / qw as f32).max((v1 - v0).abs() * h as f32 / qh as f32);
++                for scale in [1i32, 2] {
++                    // At scale 2 a footprint up to two texels is still one
++                    // texel per physical pixel.
++                    for rho in [rho, rho * scale as f32] {
++                        assert!(rho / scale as f32 <= 1.0);
++                        for modulate in [0xffff_ffffu32, 0x80c0_40ff] {
++                            let quad = |h: i32| {
++                                vec![
++                                    h as u32,
++                                    xy_word(qx as i16, qy as i16),
++                                    wh_word(qw as u16, qh as u16),
++                                    u0.to_bits(),
++                                    v0.to_bits(),
++                                    u1.to_bits(),
++                                    v1.to_bits(),
++                                    modulate,
++                                ]
++                            };
++                            let tri = |h: i32| {
++                                let (x1, y1) = ((qx + qw) as i16, (qy + qh) as i16);
++                                tri_words(h, [(qx as i16, qy as i16), (x1, qy as i16), (x1, y1)], [(u0, v0), (u1, v0), (u1, v1)], modulate)
++                            };
++                            let (sw, sh) = (fw * scale, fh * scale);
++                            let clip = Clip { x0: 0, y0: 0, x1: sw, y1: sh };
++                            let ground: Vec<u8> = (0..sw * sh * 4).map(|i| (i * 7 % 251) as u8).collect();
++                            let (mut want, mut got) = (ground.clone(), ground.clone());
++                            tex_quad(&ui, &mut RgbaTarget::<false> { bytes: &mut want }, sw, scale, clip, &quad(linear));
++                            tex_quad_with(&ui, &mut RgbaTarget::<false> { bytes: &mut got }, sw, scale, clip, &quad(nearest), Some(rho));
++                            assert!(want == got, "TEX_QUAD_MIP {w}x{h}: quad {qx},{qy} {qw}x{qh} rho {rho} scale {scale}");
++                            assert!(want != ground);
++                            let (mut want, mut got) = (ground.clone(), ground.clone());
++                            tex_tri(&ui, &mut RgbaTarget::<false> { bytes: &mut want }, sw, scale, clip, &tri(linear));
++                            tex_tri_with(&ui, &mut RgbaTarget::<false> { bytes: &mut got }, sw, scale, clip, &tri(nearest), Some(rho));
++                            assert!(want == got, "TEX_TRI_MIP {w}x{h}: tri over {qx},{qy} {qw}x{qh} rho {rho} scale {scale}");
++                            compared += 2;
++                        }
++                    }
++                }
++            }
++        }
++        assert_eq!(compared, 5 * 5 * 2 * 2 * 2 * 2);
++    }
++
++    #[test]
++    fn a_minified_checkerboard_reads_its_average_and_holds_still_as_it_moves() {
++        // One-texel black and white squares, 256 a side, drawn 37 px wide:
++        // 6.9 texels a pixel. Nearest and bilinear read a few texels of each
++        // pixel's 48 and land on black or white by where the grid falls, so a
++        // shift of a fraction of a texel — a slow pan or zoom — repaints the
++        // image: shimmer. Trilinear reads levels 2 and 3, whose every texel
++        // is the square's average, grey at every shift.
++        let n = 256u32;
++        let rgba: Vec<u8> = (0..n * n)
++            .flat_map(|i| if (i % n + i / n) % 2 == 0 { [255u8; 4] } else { [0, 0, 0, 255] })
++            .collect();
++        let mut ui = Ui::new();
++        let nearest = ui.upload_texture_flags(&rgba, n, n, spec::psm::PSM_8888, 0);
++        let linear = ui.upload_texture_flags(&rgba, n, n, spec::psm::PSM_8888, spec::img::FLAG_LINEAR);
++        reduce_chain(&mut ui, nearest);
++        let (qx, qy, q) = (5i32, 4i32, 37i32);
++        let rho = n as f32 / q as f32;
++        let (sw, sh) = (64i32, 48i32);
++        let clip = Clip { x0: 0, y0: 0, x1: sw, y1: sh };
++        let pixels = |fb: &[u8]| -> Vec<u8> {
++            (qy..qy + q).flat_map(|y| (qx..qx + q).map(move |x| (y * sw + x) as usize * 4)).map(|o| fb[o]).collect()
++        };
++        let (mut mip_frames, mut plain_frames, mut bilinear_frames) = (Vec::new(), Vec::new(), Vec::new());
++        for k in 0..7 {
++            // A shift of k/7 of a texel, the whole image moving together.
++            let du = k as f32 / 7.0 / n as f32;
++            let quad = |h: i32| {
++                vec![h as u32, xy_word(qx as i16, qy as i16), wh_word(q as u16, q as u16),
++                     du.to_bits(), du.to_bits(), (1.0 - 1.0 / n as f32 + du).to_bits(), (1.0 - 1.0 / n as f32 + du).to_bits(), 0xffff_ffff]
++            };
++            let mut fb = vec![0u8; (sw * sh * 4) as usize];
++            tex_quad_with(&ui, &mut RgbaTarget::<false> { bytes: &mut fb }, sw, 1, clip, &quad(nearest), Some(rho));
++            mip_frames.push(pixels(&fb));
++            let mut fb = vec![0u8; (sw * sh * 4) as usize];
++            tex_quad(&ui, &mut RgbaTarget::<false> { bytes: &mut fb }, sw, 1, clip, &quad(nearest));
++            plain_frames.push(pixels(&fb));
++            let mut fb = vec![0u8; (sw * sh * 4) as usize];
++            tex_quad(&ui, &mut RgbaTarget::<false> { bytes: &mut fb }, sw, 1, clip, &quad(linear));
++            bilinear_frames.push(pixels(&fb));
++        }
++        for (k, frame) in mip_frames.iter().enumerate() {
++            let (lo, hi) = (*frame.iter().min().unwrap(), *frame.iter().max().unwrap());
++            assert!(lo >= 127 && hi <= 129, "shift {k}/7: trilinear reads {lo}..{hi}");
++        }
++        // What the test is against: the other two filters swing.
++        let changed = |frames: &[Vec<u8>]| -> usize {
++            frames.windows(2).map(|w| w[0].iter().zip(&w[1]).filter(|(a, b)| (**a as i32 - **b as i32).abs() > 32).count()).sum()
++        };
++        let per_step = (q * q) as usize * 6;
++        assert_eq!(changed(&mip_frames), 0);
++        // Measured when this was written: nearest 2024, bilinear 2309 of 8214.
++        assert!(changed(&plain_frames) * 8 > per_step, "nearest: {} of {per_step}", changed(&plain_frames));
++        assert!(changed(&bilinear_frames) * 8 > per_step, "bilinear: {} of {per_step}", changed(&bilinear_frames));
++        // The same through a triangle: grey wherever it draws.
++        let mut fb = vec![0u8; (sw * sh * 4) as usize];
++        let tri = tri_words(nearest, [(5, 4), (42, 4), (42, 41)], [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)], 0xffff_ffff);
++        tex_tri_with(&ui, &mut RgbaTarget::<false> { bytes: &mut fb }, sw, 1, clip, &tri, Some(rho));
++        let drawn: Vec<u8> = fb.chunks_exact(4).filter(|px| px[3] != 0).map(|px| px[0]).collect();
++        assert!(drawn.len() > 600 && drawn.iter().all(|&c| (127..=129).contains(&c)), "{} px", drawn.len());
++    }
++    /// A trilinear read pixel by pixel: the two levels `pick` names, each
++    /// sampled by the bilinear arithmetic of 0021's reference, blended.
++    fn trilinear_reference(base: &TexView, mips: &[crate::mip::MipLevel], rho: f32, scale: i32, u: f32, v: f32) -> (u32, u32, u32, u32) {
++        let level_view = |k: usize| if k == 0 { *base } else { mips[k - 1].view() };
++        let bil = |view: &TexView, u: f32, v: f32| {
++            let (tw_max, th_max) = (view.w as i32 - 1, view.h as i32 - 1);
++            let uf = (u * view.w as f32 * 256.0) as i32 - 128;
++            let vf = (v * view.h as f32 * 256.0) as i32 - 128;
++            let x0 = (uf >> 8).clamp(0, tw_max);
++            let y0 = (vf >> 8).clamp(0, th_max);
++            let (x1, y1) = ((x0 + 1).min(tw_max), (y0 + 1).min(th_max));
++            let (fx, fy) = ((uf & 255) as u32, (vf & 255) as u32);
++            let w = view.w as i32;
++            let c = |x: i32, y: i32| texel(view, (y * w + x) as usize).unwrap();
++            let (c00, c01, c10, c11) = (c(x0, y0), c(x1, y0), c(x0, y1), c(x1, y1));
++            let lerp8 = |a: u32, b: u32, f: u32| (a * (256 - f) + b * f) >> 8;
++            let mix = |a: u32, b: u32, c: u32, d: u32| lerp8(lerp8(a, b, fx), lerp8(c, d, fx), fy);
++            [mix(c00.0, c01.0, c10.0, c11.0), mix(c00.1, c01.1, c10.1, c11.1), mix(c00.2, c01.2, c10.2, c11.2), mix(c00.3, c01.3, c10.3, c11.3)]
++        };
++        let (level, t) = crate::mip::pick(rho, scale, mips.len());
++        let a = bil(&level_view(level), u, v);
++        let out = if t == 0 {
++            a
++        } else {
++            let b = bil(&level_view(level + 1), u, v);
++            core::array::from_fn(|i| (a[i] * (256 - t) + b[i] * t) >> 8)
++        };
++        (out[0], out[1], out[2], out[3])
++    }
++
++    #[test]
++    fn tex_quad_mip_is_the_per_pixel_trilinear_read() {
++        let mut ui = Ui::new();
++        let mut state = 0x0bad_f00du32;
++        let mut next = move || {
++            state ^= state << 13;
++            state ^= state >> 17;
++            state ^= state << 5;
++            state
++        };
++        let (fw, fh) = (96i32, 64i32);
++        let mut compared = 0;
++        let mut blended = 0;
++        for &(w, h) in &[(37u32, 23u32), (64, 64), (5, 90), (200, 7)] {
++            let rgba: Vec<u8> = (0..w * h)
++                .flat_map(|i| {
++                    let v = next();
++                    [v as u8, (v >> 8) as u8, (v >> 16) as u8, if i % 7 == 3 { 0 } else { (v >> 24) as u8 }]
++                })
++                .collect();
++            let handle = ui.upload_texture_flags(&rgba, w, h, spec::psm::PSM_8888, 0);
++            reduce_chain(&mut ui, handle);
++            let view = ui.texture(handle).unwrap();
++            let mips = ui.texture_mips(handle);
++            for &rho in &[1.3f32, 2.0, 2.7, 5.5, 13.0, 40.0, 500.0] {
++                for scale in [1i32, 2] {
++                    for &(qx, qy, qw, qh, u0, v0, u1, v1) in &[
++                        (3i32, 2i32, 20i32, 17i32, 0.0f32, 0.0f32, 1.0f32, 1.0f32),
++                        (-4, 5, 31, 9, 0.1, 0.2, 0.7, 0.9),
++                        (10, 1, 13, 40, 1.0, 1.0, 0.0, 0.0),
++                    ] {
++                        for modulate in [0xffff_ffffu32, 0x80c0_40ff] {
++                            let p = [handle as u32, xy_word(qx as i16, qy as i16), wh_word(qw as u16, qh as u16),
++                                     u0.to_bits(), v0.to_bits(), u1.to_bits(), v1.to_bits(), modulate];
++                            let (sw, sh) = (fw * scale, fh * scale);
++                            let clip = Clip { x0: 0, y0: 0, x1: sw, y1: sh };
++                            let ground: Vec<u8> = (0..sw * sh * 4).map(|i| (i * 13 % 251) as u8).collect();
++                            let mut got = ground.clone();
++                            tex_quad_with(&ui, &mut RgbaTarget::<false> { bytes: &mut got }, sw, scale, clip, &p, Some(rho));
++                            let mut want = ground.clone();
++                            let (x, y) = xy(p[1], scale);
++                            let (qw, qh) = wh(p[2], scale);
++                            let (mr, mg, mb, ma) = channels(modulate);
++                            let c = clip.intersect(Clip { x0: x, y0: y, x1: x + qw, y1: y + qh });
++                            for py in c.y0..c.y1 {
++                                let v = v0 + (v1 - v0) * ((py - y) as f32 + 0.5) * (1.0 / qh as f32);
++                                for px in c.x0..c.x1 {
++                                    let u = u0 + (u1 - u0) * ((px - x) as f32 + 0.5) * (1.0 / qw as f32);
++                                    let (mut r, mut g, mut b, mut a) = trilinear_reference(&view, mips, rho, scale, u, v);
++                                    if modulate != 0xffff_ffff {
++                                        r = (r * mr + 127) / 255;
++                                        g = (g * mg + 127) / 255;
++                                        b = (b * mb + 127) / 255;
++                                        a = (a * ma + 127) / 255;
++                                    }
++                                    RgbaTarget::<false> { bytes: &mut want }.blend((py * sw + px) as usize, r, g, b, a);
++                                }
++                            }
++                            assert!(want == got, "{w}x{h} rho {rho} scale {scale} quad {qx},{qy} {qw}x{qh}");
++                            assert!(want != ground);
++                            compared += 1;
++                            blended += usize::from(crate::mip::pick(rho, scale, mips.len()).1 > 0);
++                        }
++                    }
++                }
++            }
++            // The triangle's sampler, at scattered points.
++            for &rho in &[1.3f32, 2.7, 13.0] {
++                let read = MipRead::new(view, mips, rho, 1);
++                for _ in 0..200 {
++                    let (u, v) = ((next() % 1000) as f32 / 999.0, (next() % 1000) as f32 / 999.0);
++                    assert_eq!(read.sample(u, v), Some(trilinear_reference(&view, mips, rho, 1, u, v)), "{w}x{h} rho {rho} at {u},{v}");
++                }
++            }
++        }
++        assert_eq!(compared, 4 * 7 * 2 * 3 * 2);
++        assert!(blended * 2 > compared, "most reads blend two levels: {blended} of {compared}");
++    }
+ }
+ 
+ /// Cost instrumentation (the pathwasm harness): run only the PATH coverage of every op in
+diff --git a/engine/core/src/resources.rs b/engine/core/src/resources.rs
+index ebd8545b..7d617daf 100644
+--- a/engine/core/src/resources.rs
++++ b/engine/core/src/resources.rs
+@@ -33,6 +33,12 @@ pub trait RenderResources {
+     fn raster_revision(&self) -> u64;
+     fn texture(&self, handle: i32) -> Option<TexView<'_>>;
+     fn font_atlas(&self, slot: u8) -> Option<FontView<'_>>;
++    /// The levels below a texture's own for trilinear sampling (pocket-motion,
++    /// `mip.rs`). A resource set without them draws every level request from
++    /// the texture itself.
++    fn texture_mips(&self, _handle: i32) -> &[crate::mip::MipLevel] {
++        &[]
++    }
+ }
+ 
+ impl RenderResources for Ui {
+@@ -45,6 +51,9 @@ impl RenderResources for Ui {
+     fn texture(&self, handle: i32) -> Option<TexView<'_>> {
+         Ui::texture(self, handle)
+     }
++    fn texture_mips(&self, handle: i32) -> &[crate::mip::MipLevel] {
++        Ui::texture_mips(self, handle)
++    }
+     fn font_atlas(&self, slot: u8) -> Option<FontView<'_>> {
+         Ui::font_atlas(self, slot).map(|atlas| FontView {
+             bitmap: &atlas.bitmap,
+diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
+index 77378595..b9a76976 100644
+--- a/engine/core/src/spec.rs
++++ b/engine/core/src/spec.rs
+@@ -239,6 +239,7 @@ pub mod prop {
+     pub const TRIM_OFFSET: u8 = 209;
+     pub const TRIM_MODE: u8 = 210;
+     pub const MORPH: u8 = 211;
++    pub const IMAGE_FILTER: u8 = 221;
+ }
+ 
+ /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
+@@ -263,7 +264,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+     0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
+     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
+     0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
+-    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+ ];
+@@ -481,6 +482,14 @@ pub enum TrimMode {
+     Whole = 1,
+ }
+ 
++/// ImageFilter
++#[repr(u8)]
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum ImageFilter {
++    Texture = 0,
++    Trilinear = 1,
++}
++
+ /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
+ #[repr(u8)]
+ #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+@@ -642,6 +651,8 @@ pub mod draw_op {
+     pub const PAINT_PUSH: u32 = 69;
+     pub const PAINT_POP: u32 = 70;
+     pub const PATH: u32 = 71;
++    pub const TEX_QUAD_MIP: u32 = 72;
++    pub const TEX_TRI_MIP: u32 = 73;
+     /// Largest vertex count a MASK_PUSH may carry.
+     pub const MASK_MAX_VERTS: usize = 256;
+     pub const STROKE_MAX_WIDTH: f32 = 64.0;
+diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
+index c490f529..396cb789 100644
+--- a/engine/core/src/style.rs
++++ b/engine/core/src/style.rs
+@@ -339,6 +339,8 @@ pub struct Resolved {
+     pub arc_width: f32,
+     /// spec::ArcCap ordinal.
+     pub arc_cap: u8,
++    /// spec::ImageFilter ordinal (pocket-motion): how an image samples.
++    pub image_filter: u8,
+     /// Horizontal shear in degrees about the transform origin, composed
+     /// between rotate and scale (spec.ts PROP.skewX).
+     pub skew_x: f32,
+@@ -464,6 +466,7 @@ impl Default for Resolved {
+             arc_sweep: 0.0,
+             arc_width: 0.0,
+             arc_cap: spec::ArcCap::Round as u8,
++            image_filter: spec::ImageFilter::Texture as u8,
+             skew_x: 0.0,
+             text_stroke_width: 0.0,
+             text_stroke_color: 0,
+@@ -599,6 +602,7 @@ impl Resolved {
+             p::ARC_SWEEP => self.arc_sweep = f,
+             p::ARC_WIDTH => self.arc_width = f,
+             p::ARC_CAP => self.arc_cap = bits as u8,
++            p::IMAGE_FILTER => self.image_filter = bits as u8,
+             p::SKEW_X => self.skew_x = f,
+             p::TEXT_STROKE_WIDTH => self.text_stroke_width = f,
+             p::TEXT_STROKE_COLOR => self.text_stroke_color = bits,
+@@ -727,6 +731,7 @@ impl Resolved {
+             p::ARC_SWEEP => self.arc_sweep.to_bits(),
+             p::ARC_WIDTH => self.arc_width.to_bits(),
+             p::ARC_CAP => self.arc_cap as u32,
++            p::IMAGE_FILTER => self.image_filter as u32,
+             p::SKEW_X => self.skew_x.to_bits(),
+             p::TEXT_STROKE_WIDTH => self.text_stroke_width.to_bits(),
+             p::TEXT_STROKE_COLOR => self.text_stroke_color,
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index ab2ac59a..ae9c02db 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -265,7 +265,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
+ /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
+ /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
+ /// balanced, only known ops. Returns per-op counts (indexed by op code).
+-pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 72] {
++pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 74] {
+     let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
+     let xy_ok = |w: u32| {
+         let (x, y) = decode_xy(w);
+@@ -277,7 +277,7 @@ pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+         let (w, h) = decode_wh(whw);
+         assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
+     };
+-    let mut counts = [0u32; 72];
++    let mut counts = [0u32; 74];
+     let mut depth = 0i32;
+     let mut mask_depth = 0i32;
+     let mut layer_depth = 0i32;
+@@ -313,6 +313,16 @@ pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+                 }
+                 i += 9;
+             }
++            spec::draw_op::TEX_QUAD_MIP => {
++                rect_ok(words[i + 2], words[i + 3]);
++                for uv in 4..8 {
++                    let f = f32::from_bits(words[i + uv]);
++                    assert!((0.0..=1.0).contains(&f), "UV out of range: {f}");
++                }
++                let rho = f32::from_bits(words[i + 9]);
++                assert!(rho.is_finite() && rho >= 0.0, "footprint {rho}");
++                i += 10;
++            }
+             spec::draw_op::SURFACE_QUAD => {
+                 for word in i + 2..i + 6 {
+                     assert!(f32::from_bits(words[word]).is_finite());
+@@ -347,6 +357,14 @@ pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+                 }
+                 i += 12;
+             }
++            spec::draw_op::TEX_TRI_MIP => {
++                for vertex in 0..3 {
++                    xy_ok(words[i + 2 + vertex * 3]);
++                }
++                let rho = f32::from_bits(words[i + 12]);
++                assert!(rho.is_finite() && rho >= 0.0, "footprint {rho}");
++                i += 13;
++            }
+             spec::draw_op::PATH => {
+                 // 1/256 px coordinates, clipped to the viewport grown by the
+                 // 4 px guard band (exempt from the i16 guarantee, bounded).
+@@ -7664,3 +7682,149 @@ fn freeing_a_bound_texture_moves_the_raster_revision_and_not_the_draw_list() {
+     let _ = ui.draw();
+     assert_eq!(ui.raster_revision(), revision);
+ }
++
++// ---- image-filter-trilinear (pocket-motion, mip.rs) ---------------------------------
++
++/// Every trilinear op's code and footprint, in draw order.
++fn mip_footprints(words: &[u32]) -> Vec<(u32, f32)> {
++    let mut out = Vec::new();
++    let mut i = 0;
++    while i < words.len() {
++        let len = crate::compositor::draw_op_len(words, i).expect("known op");
++        match words[i] {
++            spec::draw_op::TEX_QUAD_MIP | spec::draw_op::TEX_TRI_MIP => {
++                out.push((words[i], f32::from_bits(words[i + len - 1])))
++            }
++            _ => {}
++        }
++        i += len;
++    }
++    out
++}
++
++fn trilinear_image(ui: &mut Ui, tex: i32, parent: i32, x: f64, y: f64, w: f64, h: f64) -> i32 {
++    let img = ui.create_node(spec::NodeType::Image as u8);
++    ui.set_prop(img, spec::prop::POS_TYPE, spec::PosType::Absolute as u32 as f64);
++    ui.set_prop(img, spec::prop::INSET_L, x);
++    ui.set_prop(img, spec::prop::INSET_T, y);
++    ui.set_prop(img, spec::prop::WIDTH, w);
++    ui.set_prop(img, spec::prop::HEIGHT, h);
++    ui.set_prop(img, spec::prop::IMAGE_FILTER, spec::ImageFilter::Trilinear as u32 as f64);
++    ui.set_image(img, tex);
++    ui.insert_before(parent, img, 0);
++    img
++}
++
++fn close(a: f32, b: f32) -> bool {
++    (a - b).abs() <= b.abs() * 1e-5
++}
++
++#[test]
++fn a_trilinear_image_carries_its_footprint_under_any_affine_world() {
++    let (tw, th) = (400u32, 300u32);
++    let px = alloc::vec![200u8; (tw * th * 4) as usize];
++    // Drawn 100 x 75: four texels a logical pixel on both axes.
++    for &turn in &[0.0f64, 30.0, 90.0, 135.0, 200.0, -45.0] {
++        let mut ui = Ui::new();
++        let tex = ui.upload_texture(&px, tw, th, spec::psm::PSM_8888);
++        let img = trilinear_image(&mut ui, tex, spec::ROOT_ID, 190.0, 100.0, 100.0, 75.0);
++        if turn != 0.0 {
++            ui.set_prop(img, spec::prop::ROTATE, turn);
++        }
++        ui.tick();
++        let words = ui.draw().words.clone();
++        let counts = validate_drawlist(&words);
++        let ops = mip_footprints(&words);
++        let want_op = if turn == 0.0 { spec::draw_op::TEX_QUAD_MIP } else { spec::draw_op::TEX_TRI_MIP };
++        assert!(!ops.is_empty() && ops.iter().all(|&(op, rho)| op == want_op && close(rho, 4.0)), "rotate {turn}: {ops:?}");
++        assert_eq!(counts[spec::draw_op::TEX_QUAD as usize] + counts[spec::draw_op::TEX_TRI as usize], 0);
++        // 200x150, 100x75, 50x37, 25x18, 12x9, 6x4, 3x2, 1x1.
++        assert_eq!(ui.texture_mips(tex).len(), 8, "rotate {turn}");
++    }
++    // Squeezed on one axis, the footprint is the squeezed axis's: 400
++    // texels over 50 px.
++    let mut ui = Ui::new();
++    let tex = ui.upload_texture(&px, tw, th, spec::psm::PSM_8888);
++    let img = trilinear_image(&mut ui, tex, spec::ROOT_ID, 190.0, 100.0, 100.0, 75.0);
++    ui.set_prop(img, spec::prop::SCALE_X, 0.5);
++    ui.tick();
++    let ops = mip_footprints(&ui.draw().words.clone());
++    assert!(ops.len() == 1 && close(ops[0].1, 8.0), "{ops:?}");
++    // A sub-rect footprint is the sub-rect's texels: a quarter of the
++    // texture's width over the same 100 px.
++    ui.set_image_uv(img, 0.0, 0.0, 0.25, 1.0);
++    ui.set_prop(img, spec::prop::SCALE_X, 1.0);
++    ui.tick();
++    let ops = mip_footprints(&ui.draw().words.clone());
++    assert!(ops.len() == 1 && close(ops[0].1, 4.0), "{ops:?}");
++    // The same image without the class draws as it always did.
++    let mut ui = Ui::new();
++    let tex = ui.upload_texture(&px, tw, th, spec::psm::PSM_8888);
++    let img = trilinear_image(&mut ui, tex, spec::ROOT_ID, 190.0, 100.0, 100.0, 75.0);
++    ui.set_prop(img, spec::prop::IMAGE_FILTER, spec::ImageFilter::Texture as u32 as f64);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    assert_eq!(validate_drawlist(&words)[spec::draw_op::TEX_QUAD as usize], 1);
++    assert!(mip_footprints(&words).is_empty());
++    assert!(ui.texture_mips(tex).is_empty(), "no trilinear draw, no chain");
++}
++
++#[test]
++fn a_trilinear_image_in_perspective_carries_each_cells_footprint() {
++    // Turned away about Y, the image's far side crosses more texels a pixel
++    // than its near side; each cell carries its own.
++    let (tw, th) = (256u32, 256u32);
++    let px = alloc::vec![200u8; (tw * th * 4) as usize];
++    let mut ui = Ui::new();
++    let tex = ui.upload_texture(&px, tw, th, spec::psm::PSM_8888);
++    let stage = place_box(&mut ui, 480.0, 272.0, 0.0, 0.0);
++    ui.set_prop(stage, spec::prop::PERSPECTIVE, 400.0);
++    let img = trilinear_image(&mut ui, tex, stage, 140.0, 36.0, 200.0, 200.0);
++    ui.set_prop(img, spec::prop::ROTATE_Y, 60.0);
++    ui.tick();
++    let words = ui.draw().words.clone();
++    validate_drawlist(&words);
++    let ops = mip_footprints(&words);
++    assert!(ops.len() >= 4 && ops.iter().all(|&(op, _)| op == spec::draw_op::TEX_TRI_MIP), "{ops:?}");
++    let lo = ops.iter().map(|o| o.1).fold(f32::MAX, f32::min);
++    let hi = ops.iter().map(|o| o.1).fold(0.0f32, f32::max);
++    // Unturned it is 1.28 texels a pixel; turned, every cell is narrower
++    // than that and the far ones narrowest (1.74 and 3.68 when written).
++    assert!(lo > 1.28 && hi > lo * 1.5, "footprints {lo}..{hi}");
++    assert!(!ui.texture_mips(tex).is_empty());
++}
++
++#[test]
++fn a_chain_is_reduced_when_a_draw_reads_below_the_texture_and_again_when_its_bytes_change() {
++    let (tw, th) = (64u32, 64u32);
++    let palette = |rgba: [u8; 4]| -> Vec<u8> { (0..256).flat_map(|_| rgba).collect() };
++    let mut blob = palette([90, 90, 90, 255]);
++    blob.extend(alloc::vec![7u8; (tw * th) as usize]);
++    let mut ui = Ui::new();
++    let tex = ui.upload_texture(&blob, tw, th, spec::psm::PSM_T8);
++    assert!(tex >= 0);
++    // At its own size: one texel a pixel, no level below it is read.
++    let img = trilinear_image(&mut ui, tex, spec::ROOT_ID, 10.0, 10.0, 64.0, 64.0);
++    ui.tick();
++    let ops = mip_footprints(&ui.draw().words.clone());
++    assert!(ops.len() == 1 && close(ops[0].1, 1.0), "{ops:?}");
++    assert!(ui.texture_mips(tex).is_empty(), "drawn at its size: nothing reduced");
++    // A quarter of its size: four texels a pixel, six levels to 1x1.
++    ui.set_prop(img, spec::prop::WIDTH, 16.0);
++    ui.set_prop(img, spec::prop::HEIGHT, 16.0);
++    ui.tick();
++    ui.draw();
++    let levels = ui.texture_mips(tex);
++    assert_eq!(levels.len(), 6);
++    assert_eq!(&levels[0].rgba[..4], &[90, 90, 90, 255]);
++    // New bytes in place: the old levels are gone at once and the next draw
++    // reduces the new ones.
++    assert!(ui.update_texture_t8(tex, &palette([200, 10, 40, 255]), &alloc::vec![7u8; (tw * th) as usize]));
++    assert!(ui.texture_mips(tex).is_empty());
++    ui.draw();
++    let levels = ui.texture_mips(tex);
++    assert_eq!(levels.len(), 6);
++    assert!(levels.iter().all(|l| l.rgba.chunks_exact(4).all(|p| p == [200, 10, 40, 255])));
++    let fb = raster_fb(&mut ui);
++    assert_eq!(sample_rgba(&fb, 18, 18), [200, 10, 40, 255]);
++}
+diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
+index 761a55c1..e21d4e97 100644
+--- a/engine/crates/microts/src/spec.rs
++++ b/engine/crates/microts/src/spec.rs
+@@ -129,6 +129,7 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+     ("trimOffset", 209, "f32"),
+     ("trimMode", 210, "i32"),
+     ("morph", 211, "f32"),
++    ("imageFilter", 221, "i32"),
+ ];
+ pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
+     ("View", &["class", "style", "focusable", "debug-name"]),
+diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
+index b653d6bb..271c3229 100644
+--- a/engine/wasm/src/lib.rs
++++ b/engine/wasm/src/lib.rs
+@@ -117,6 +117,7 @@ impl pocketjs_core::resources::RenderResources for AuxiliaryResources<'_> {
+     fn viewport(&self) -> (f32, f32) { self.0.auxiliary_viewport().unwrap() }
+     fn raster_revision(&self) -> u64 { self.0.raster_revision() }
+     fn texture(&self, handle: i32) -> Option<pocketjs_core::TexView<'_>> { self.0.texture(handle) }
++    fn texture_mips(&self, handle: i32) -> &[pocketjs_core::mip::MipLevel] { self.0.texture_mips(handle) }
+     fn font_atlas(&self, slot: u8) -> Option<pocketjs_core::resources::FontView<'_>> {
+         pocketjs_core::resources::RenderResources::font_atlas(self.0, slot)
+     }
+diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
+index b64b0e70..8b948919 100644
+--- a/framework/compiler/tailwind.ts
++++ b/framework/compiler/tailwind.ts
+@@ -568,6 +568,14 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+       return true;
+     }
+   }
++  // pocket-motion: how an image samples its texture. `image-filter-texture`
++  // (the default) is the texture's own flag; `image-filter-trilinear` reads
++  // the core's mip chain, two levels by the drawn footprint
++  // (engine/core/src/mip.rs). Not inherited.
++  if (tok === "image-filter-texture" || tok === "image-filter-trilinear") {
++    D.push([PROP.imageFilter, int(tok === "image-filter-trilinear" ? ENUMS.ImageFilter.Trilinear : ENUMS.ImageFilter.Texture)]);
++    return true;
++  }
+   // Arc ends: `arc-cap-round` (the default) or `arc-cap-butt`.
+   if (tok === "arc-cap-round" || tok === "arc-cap-butt") {
+     D.push([PROP.arcCap, int(tok === "arc-cap-butt" ? ENUMS.ArcCap.Butt : ENUMS.ArcCap.Round)]);
+diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
+index 13be2acf..4cdb8f2d 100644
+--- a/framework/src/component-types-microts.ts
++++ b/framework/src/component-types-microts.ts
+@@ -124,6 +124,7 @@ export interface MicroTsStyleProps {
+   trimOffset?: MicroTsFloatInput;
+   trimMode?: i32;
+   morph?: MicroTsFloatInput;
++  imageFilter?: i32;
+ }
+ export interface MicroTsViewBaseProps {
+   "class"?: MicroTsValue<string>;
+diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
+index fce557ce..f9fb9707 100644
+--- a/tests/tailwind.test.ts
++++ b/tests/tailwind.test.ts
+@@ -907,6 +907,15 @@ describe("gradient paint (pocket-motion)", () => {
+   });
+ });
+ 
++describe("image-filter (pocket-motion)", () => {
++  test("image-filter-trilinear and image-filter-texture set how an image samples", () => {
++    expect(props(parseClassLiteral("w-[120px] image-filter-trilinear")).get(PROP.imageFilter)).toBe(ENUMS.ImageFilter.Trilinear);
++    expect(props(parseClassLiteral("w-[120px] image-filter-texture")).get(PROP.imageFilter)).toBe(ENUMS.ImageFilter.Texture);
++    expect(props(parseClassLiteral("w-[120px]")).has(PROP.imageFilter)).toBe(false);
++    expect(parseClassLiteral("w-[120px] image-filter-bicubic")).toBeNull();
++  });
++});
++
+ describe("shutter-hold (pocket-motion)", () => {
+   test("compiles to the shutterHold flag and nothing else", () => {
+     const m = props(parseClassLiteral("shutter-hold"));

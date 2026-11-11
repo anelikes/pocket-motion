@@ -1,0 +1,34 @@
+{
+  "motion": 1,
+  "durationFrames": 30,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf",
+    "faces": {
+      "sc": {
+        "regular": "assets/fonts/NotoSansSC-Regular.otf",
+        "bold": "assets/fonts/NotoSansSC-Bold.otf"
+      }
+    }
+  },
+  "assertions": [
+    { "node": "short", "inPicture": [0, 29] },
+    { "node": "short", "untruncated": true },
+    { "node": "long", "insideBox": true },
+    { "node": "long", "untruncated": true },
+    { "node": "overlong", "insideBox": true },
+    { "node": "price", "insideBox": true },
+    { "node": "price", "untruncated": true },
+    { "node": "price-short", "untruncated": true },
+    { "node": "flex-short", "untruncated": true },
+    { "node": "flex-long", "insideBox": true },
+    { "node": "flex-long", "untruncated": true },
+    { "node": "cjk", "insideBox": true },
+    { "node": "cjk", "untruncated": true },
+    { "node": "legal-short", "untruncated": true },
+    { "node": "legal", "insideBox": true },
+    { "node": "legal", "dwellFrames": 30 }
+  ]
+}

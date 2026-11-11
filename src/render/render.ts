@@ -108,6 +108,13 @@ export interface RenderOptions extends Omit<WasmFrameSourceOptions, "composition
    * so this cannot move a digest without the digest saying so.
    */
   readonly reuse?: boolean;
+  /**
+   * Throw `MissingGlyphError` rather than deliver text drawn as tofu: checked
+   * on the first frame rendered, before it reaches the sink, and after the
+   * last. `render --spec` sets it — a job's text comes from data nobody
+   * looked at.
+   */
+  readonly refuseMissingGlyphs?: boolean;
 }
 
 export interface RenderResult {
@@ -146,6 +153,27 @@ export interface RenderResult {
   readonly reusedFrames: number;
   /** What the encode leg was told; absent with no output and for `png-seq`. */
   readonly encoder?: EncoderSettings;
+  /**
+   * Codepoints the render drew as the tofu box, ascending: no glyph in the
+   * slot's face or in any `fonts.fallback` face (`src/text/missing.ts`).
+   * Empty when every glyph was found.
+   */
+  readonly missingGlyphs: readonly number[];
+}
+
+/**
+ * A render asked to refuse tofu (`RenderOptions.refuseMissingGlyphs`) found
+ * text with a glyph no declared face carries. Thrown before the first frame
+ * reaches the sink when the mounted text has one, and after the last when a
+ * later frame's does.
+ */
+export class MissingGlyphError extends Error {
+  constructor(readonly codepoints: readonly number[]) {
+    super(
+      `PocketJS Motion: ${codepoints.length} codepoint(s) have no glyph in the slot's face or any ` +
+        "fonts.fallback face and would be drawn as the tofu box",
+    );
+  }
 }
 
 export async function render(options: RenderOptions): Promise<RenderResult> {
@@ -217,6 +245,7 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
   const reuse = options.reuse === false ? null : new RasterReuse(source.world, () => source.read());
 
   let finished = false;
+  let missingGlyphs: readonly number[] = [];
   try {
     for (let f = 0; f < end; f++) {
       if (options.signal) {
@@ -228,6 +257,10 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
       await source.seekFrame(f);
       // Before the range: folded, never drawn (see `range`).
       if (f < start) continue;
+      if (options.refuseMissingGlyphs && f === start) {
+        const missing = source.world.missingGlyphs();
+        if (missing.length > 0) throw new MissingGlyphError(missing);
+      }
       const rgba = reuse ? reuse.read() : source.read();
       hashes.push(rgba);
       if (wantAlphaFloor) {
@@ -240,6 +273,8 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
       // runs from 0 like a whole render's.
       options.onProgress?.(f - start, end - start);
     }
+    missingGlyphs = source.world.missingGlyphs();
+    if (options.refuseMissingGlyphs && missingGlyphs.length > 0) throw new MissingGlyphError(missingGlyphs);
     if (sink) await sink.finish();
     finished = true;
   } finally {
@@ -263,5 +298,6 @@ export async function render(options: RenderOptions): Promise<RenderResult> {
     ...(encode ? { encode } : {}),
     reusedFrames: reuse?.reused ?? 0,
     ...(encoder ? { encoder } : {}),
+    missingGlyphs,
   };
 }

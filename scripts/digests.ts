@@ -214,6 +214,39 @@ const ENTRIES = [
   // change to the inventory, the order it bakes in or the monotone curve
   // moves this digest; the same chart written as literals bakes the same pak.
   "compositions/data-chart",
+  // text-fit. patches/0059: runs fitted to a declared ladder, wrapped at
+  // spaces and U+200B and clamped with an ellipsis by layout, in fixed boxes
+  // and in boxes flex sizes. A change to the rung a box takes, where a line
+  // breaks, what a clamp keeps or which slot paint draws moves this digest.
+  "compositions/text-fit",
+  // hero-type. patches/0063: a 480 px CJK hero past the atlas's ceiling, a
+  // turning `text-vector` character and a turning colour glyph — outlines
+  // filled as PATH ops under moving transforms — and a title whose emoji come
+  // from the atlas slot's colour supplement, one of them under a nine-stop
+  // radial gradient. A change to the vector bake, the glyph placement, the
+  // COLR flattening or the gradient mapping moves this digest; it is also the
+  // one composition that bakes Noto Color Emoji.
+  "compositions/hero-type",
+  // image-wall. patches/0064: sixty 300x420 covers drawn at 15% under
+  // `image-filter-trilinear` and pushed in to 26% over 300 frames, so every
+  // frame reads two levels of sixty mip chains and the push crosses a level.
+  // A change to the reduction, the footprint, the level pick or the blend
+  // moves this digest and no other.
+  "compositions/image-wall",
+  // colour-filters. patches/0065 over 30 frames: one gradient card plain and
+  // under each of the seven colour filters, grey to colour as a `filter`
+  // list, a brightness flash, a looping hue cycle, a greyed disc whose glow
+  // keeps its colour, and `brightness-200 contrast-50`, where the clamp
+  // between the steps is the picture. A change to a matrix, its fixed point,
+  // the clamp, the order or where the pass sits in the layer moves this
+  // digest and no other.
+  "compositions/colour-filters",
+  // origin. patches/0066 over 30 frames: three bars turned about a keyword,
+  // a px and a calc() origin, and a card held at scale 2 whose origin moves
+  // corner to corner. A change to how an origin's length is parsed, stored
+  // or added to its fraction, or to how the origin animates, moves this
+  // digest and no other.
+  "compositions/origin",
 ] as const;
 
 /**

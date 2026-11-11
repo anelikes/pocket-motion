@@ -69,7 +69,7 @@ const KNOWN_FLAGS = new Set([
  * commands. `--out` and `--at` have two owners each; a single-string map
  * cannot refuse `trace --out` without also refusing `frame --out`.
  */
-const FLAG_COMMAND: Record<string, readonly string[]> = {
+export const FLAG_COMMAND: Record<string, readonly string[]> = {
   spec: ["render", "preview"],
   "out-dir": ["render"],
   verify: ["sound"],

@@ -1,0 +1,14 @@
+{
+  "motion": 1,
+  "durationFrames": 300,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf"
+  },
+  "assertions": [
+    { "node": "cover-00", "inPicture": [0, 299] },
+    { "node": "cover-59", "inPicture": [0, 299] }
+  ]
+}

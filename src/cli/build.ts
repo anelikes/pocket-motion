@@ -37,7 +37,36 @@ import { buildSpawn, type ResolvedComposition } from "./resolve.ts";
 /** The line `tools/build.ts` prints when some `d` attribute is known only at mount. */
 const PATHS_AT_MOUNT = /^\s*paths at mount: (\d+) /m;
 
-async function spawnBuild(argv: readonly string[], cwd: string, env: Record<string, string>): Promise<string> {
+/**
+ * What this repository adds to a refusal the upstream build prints, where the
+ * refusal's own advice was written for an app and is wrong for a film.
+ *
+ * `bake-font` (`patches/0002`) refuses a size whose glyph cell passes 255 px
+ * and used to advise rendering "at a larger logical viewport instead of a
+ * larger font". A film's viewport is its frame, so that advice resized the
+ * delivery; an agent that read it on a 1920 × 1080 brief had nowhere to go
+ * (docs/agent-adoption-eval.md). Since `patches/0063` a build bakes such a
+ * size as outlines and the refusal is `bakeSlot`'s alone, reached by a bake
+ * run outside `bakeAtlases`; the answer here is the face's ceiling, which the
+ * refusal states, and the vector route. The line goes last because the
+ * refusal is printed in the middle of the build's log, and an agent reading
+ * the end of the output reads this.
+ */
+export function buildRefusalHint(output: string): string | null {
+  const font = /bake-font: (\d+)px needs a \d+px cell[\s\S]*?about (\d+)px/.exec(output);
+  if (font) {
+    return (
+      `pocket-motion: text-[${font[1]}px] does not bake as an atlas in this face (its ceiling is about ` +
+      `${font[2]}px), and a larger viewport would change the film's frame. A build through ` +
+      "`bun src/cli/main.ts build` bakes a size past the ceiling as the face's outlines (patches/0063), " +
+      "and `text-vector` beside a smaller size asks for the same; emoji come from `fonts.fallback`."
+    );
+  }
+  return null;
+}
+
+/** Exported for `tests/cli.test.ts`, which holds the hint to the failure it answers. */
+export async function spawnBuild(argv: readonly string[], cwd: string, env: Record<string, string>): Promise<string> {
   const proc = Bun.spawn([...argv], { cwd, env, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -45,8 +74,10 @@ async function spawnBuild(argv: readonly string[], cwd: string, env: Record<stri
     proc.exited,
   ]);
   if (code !== 0) {
+    const hint = buildRefusalHint(`${stderr}\n${stdout}`);
     throw new Error(
-      `build failed (${code})${stderr.trim() ? `\n${stderr.trim()}` : ""}${stdout.trim() ? `\n${stdout.trim()}` : ""}`,
+      `build failed (${code})${stderr.trim() ? `\n${stderr.trim()}` : ""}${stdout.trim() ? `\n${stdout.trim()}` : ""}` +
+        (hint ? `\n${hint}` : ""),
     );
   }
   return stdout;
@@ -61,6 +92,13 @@ async function spawnBuild(argv: readonly string[], cwd: string, env: Record<stri
  */
 export async function runBuild(
   c: Pick<ResolvedComposition, "buildArgs" | "dir" | "bundlePath" | "pakPath" | "width" | "height" | "fps">,
+  options: {
+    /** Receives the build's font lines that say something an author acts
+     *  on (patches/0063): a slot baked as outlines and why, a slot's colour
+     *  glyphs, and the codepoints a face maps that were left out of a slot —
+     *  each of those misses at render and is reported as tofu. */
+    readonly fontNotes?: string[];
+  } = {},
 ): Promise<BuildRecord> {
   const { argv, cwd, env } = buildSpawn(c);
   const outDir = outDirOf(argv);
@@ -74,6 +112,9 @@ export async function runBuild(
   // One a previous build left would describe a bundle this one replaces.
   rmSync(inventoryPath, { force: true });
   const stdout = await spawnBuild(argv, cwd, env);
+  for (const line of stdout.split("\n")) {
+    if (/^ {2}font: slot \d+ .*(?:\) vector \(|colour glyph|left out)/.test(line)) options.fontNotes?.push(line.trim());
+  }
 
   let recorded: readonly string[] = argv;
   const unread = PATHS_AT_MOUNT.exec(stdout);

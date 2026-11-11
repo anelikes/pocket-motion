@@ -241,7 +241,9 @@ which is what supersampling means — lanczos was here and rang on hard edges),
 while `trace` digests and
 `frame` PNGs stay on the supersampled buffer — the hash covers what the
 rasteriser produced, scaling is an encode-side step. Use 2+ when text moves
-slowly (sub-pixel motion is quantized at 1×).
+slowly (sub-pixel motion is quantized at 1×). An upright picture is not
+helped: its place is rounded to a whole logical pixel before the scale is
+applied ("Still pictures").
 
 **`supersample: N` is half a recipe. The other half is `--density=N` on the
 build**, and the two must agree. Glyphs are baked bitmaps, so a supersampled
@@ -265,8 +267,10 @@ Three node types: `View`, `Text`, `Image` (from
 layout (flex, size, inset, gap, padding), color/gradient (`bg-*`,
 `from-*`/`via-*`/`to-*` with positions, any angle, radial, arbitrary
 `linear-gradient()`, gradient text with `bg-clip-text`), `rounded`, `opacity`, `border`,
-`shadow`, 2D/3D transforms, named font faces (`font-[name]`), text stroke,
-filters (`blur-*`, `drop-shadow-*`, `glow-*`), blend modes (`mix-blend-*`),
+`shadow`, 2D/3D transforms about any origin (`origin-[x_y]`), named font
+faces (`font-[name]`), text stroke, filters (`blur-*`, `drop-shadow-*`,
+`glow-*`, and the colour filters `brightness-*`, `contrast-*`, `grayscale`,
+`hue-rotate-*`, `invert`, `saturate-*`, `sepia`), blend modes (`mix-blend-*`),
 and an arc primitive
 (`arc-start-[deg] arc-sweep-[deg] arc-width-[px]`). Arbitrary values use
 bracket syntax: `w-[880px]`, `text-[38px]`. The authoritative list of
@@ -386,6 +390,21 @@ on a wrapper, where opacities multiply instead of contending
 in its `--json` under `partialCuts` and `contended`, and `late-anim` carries
 one of each.
 
+**A transform turns about any point, and the point can move.** Besides the
+nine keywords (`origin-top-left`, …), `origin-[x_y]` takes CSS's
+`transform-origin` with `_` for a space: percentages (`origin-[25%_75%]`),
+px from the top-left corner (`origin-[12px_0]`), keywords in either order
+(`origin-[top_right]`), and `calc()` of a percentage and a length
+(`origin-[calc(100%_-_20px)_bottom]`, 20 px in from the right edge whatever
+width the box takes). One value is x with y centred, as in CSS; a third
+(z) is refused. The origin animates — `transformOrigin: "20% 30%"` in a
+keyframe, or `originX`/`originY` (fractions from the centre) and
+`originXPx`/`originYPx` by name — which is how a zoom travels across a
+picture: hold `scale-200` and move the origin, and the magnified card pans
+by the origin's path, a product of two motions no eased translate carries
+(`compositions/origin`). Under a declared shutter the origin is sampled
+between ticks like a translate (`patches/0066`, `0067`).
+
 **A window has a shape.** `overflow-hidden` clips children to the node's
 axis-aligned box; `overflow-mask` clips them, and the node's own ground, to
 the node's OUTLINE — its rounded rectangle under its transform. So a
@@ -458,12 +477,20 @@ Keys whose commands line up once normalised (a line against a curve counts)
 morph point for point as drawn. Keys drawn separately — a play icon and a
 pause icon, a heart and a star — are equalised at build time by a stated
 rule (`patches/0046`): key 0 keeps its subpaths, start points and direction;
-a later key's subpaths pair with the earlier key's by size, a subpath with no
+a later key's subpaths pair with the earlier key's by size — compared exactly,
+so two subpaths drawn alike in two places tie only when their bits do: two
+equal rounded bars whose corners are arcs normalise a few units in the last
+place apart, and the larger by that margin pairs first, whatever the order
+they were written in — a subpath with no
 partner grows out of or shrinks into the centre of its own box, a whole key
 is reversed if it winds the other way, a closed subpath's start moves to
 where the two outlines sit closest, and every key is cut where any key has a
 vertex. Each key keeps the outline it was written as; to choose the
-correspondence yourself, draw keys whose commands line up. More than eight
+correspondence yourself, draw keys whose commands line up after
+normalisation, which is not as written: `H`, `V` and `L` are lines, `Q`,
+`S` and `T` are cubics, and an `A` is 1, 2, 4 or 8 cubics, halved until each
+spans at most an eighth of a turn — a rounded corner written as a quarter
+`A` is two cubics. A corner paired by hand is one `C`. More than eight
 keys is refused. Two paths sharing an edge split its samples instead of
 both drawing them, but each is still blended alone, so a seam between two
 shapes of one colour shows a trace of what is behind it; overlap them by a
@@ -506,8 +533,10 @@ centre is put on the path and it turns about its centre, so keep it
 `node`, the path's coordinates are the node's translation. The `d` is
 followed exactly as a `<Path>` with that `d` draws it, through the same
 `viewBox` mapping when `path: { viewBox, box }` names the `<Path>`'s; a
-transform on the `<Path>` node is not followed. A `d` used by both has to be
-written in both files, because `main.tsx` may not import its outlines.
+transform on the `<Path>` node is not followed. A `d` used by both lives in
+one module both import: `pocket.config.ts` reads it at build time, and the
+`<Path>` in `main.tsx` is baked from it whether the build reads the import or
+the mount does (`patches/0054`).
 `ease` is progress along the path in time; `from`/`to` run part of it, or
 backward; `iterations: "infinite"` loops a closed path. Keys sit on tick 0,
 every odd tick and the last, so every frame of a 30 fps film whose delay is a
@@ -558,6 +587,42 @@ unfiltered. What each costs per frame is measured in
 about 10 ms at 1080p. Drawn by this repository's rasteriser only
 (`patches/0018`).
 
+**Colour filters grade a node and its subtree.** `grayscale`, `sepia`,
+`invert`, `brightness-150`, `contrast-200`, `saturate-50`, `hue-rotate-90`
+(and `-hue-rotate-15`) are CSS's colour filter functions under Tailwind's
+names: a step is a percentage (`brightness-150` is 1.5) or degrees, and
+`[x]` takes a CSS amount (`grayscale-[30%]`, `saturate-[2.5]`) or a CSS angle
+(`hue-rotate-[0.5turn]`). Each is the Filter Effects matrix on the node's
+filter layer, applied after the blur and before the shadow, in Tailwind's
+order whatever order the classes are written in — brightness, contrast,
+grayscale, hue-rotate, invert, saturate, sepia — and each result is clamped
+before the next, so `brightness-200 contrast-50` flattens the highlights
+the first step clipped rather than undoing it (`compositions/colour-filters`
+shows it). Alpha is left alone, so a greyed node's glow or shadow keeps its
+own colour. All seven animate, under their own names (`grayscale`,
+`hueRotate`, …) or in a `filter` list — the fade from grey, the flash and
+the hue cycle in `compositions/colour-filters` are:
+
+```ts
+"colour-in": { from: { filter: "grayscale(100%)" }, to: { filter: "grayscale(0%)" } },
+flash: { "0%, 100%": { brightness: "1" }, "40%": { brightness: "3" } },
+"hue-cycle": { from: { hueRotate: "0deg" }, to: { hueRotate: "1turn" } },
+```
+
+A `filter` list must be written in the order above (blur first, drop-shadow
+last); the build refuses another order rather than reorder it, because with
+a clamp between steps the order is in the picture. Keyframes interpolate
+their lists as CSS does: a list pins every function any keyframe names,
+padded with its identity (`none` too), and two neighbouring lists CSS would
+switch between discretely — `grayscale(1)` and `sepia(1)` — are refused;
+write `grayscale(1) sepia(0)` and `grayscale(0) sepia(1)`. A colour filter
+is always a layer, even on a node with one solid colour, where recolouring
+at draw time would cost nothing: that is exact only for a subtree of one op,
+and the layer costs about half a millisecond for a line of 96 px text at
+1080p. Grading a whole 1080p frame costs 20-30 ms; both are measured in
+`baselines/colour-filters.md` with the rest of the decision. Drawn by this
+repository's rasteriser only (`patches/0065`).
+
 **Gradients take any number of stops up to six, any angle, and text.**
 `bg-gradient-to-r from-red-500 to-blue-500` is the two-stop gradient it
 always was, drawn the way it always was. Add `via-white` (50% unless
@@ -593,10 +658,11 @@ frame's duration (180 of 360 degrees), centred on the frame's own tick, and
 averaged in integers by the core (`patches/0034`). What a sample moves is
 narrow, and each limit is a rule rather than a tuning:
 
-- Only translate, scale, rotate and skew timelines are evaluated between
-  ticks. Opacity, colour, size, insets and every paint value keep the frame's
-  own tick in every sample, so a 34 ms gate opens on the frame it opens on
-  without a shutter, and a fade reads the same.
+- Only translate, scale, rotate, skew and transform-origin timelines are
+  evaluated between ticks. Opacity, colour, size, insets and every paint value,
+  colour filters included, keep the frame's own tick in every sample, so a
+  34 ms gate opens on the frame it opens on without a shutter, and a fade
+  reads the same.
 - A sample never crosses a jump: a one-tick segment, a zero-length keyframe
   interval (`50%` beside `50.01%`), a start or end with no fill, a loop or
   iteration wrap whose two sides differ. A cut stays a cut. `keyframes` lists
@@ -649,11 +715,62 @@ viewport, or just lay out with flex).
 
 Two constraints, both absolute:
 
-1. **The renderer does not wrap or shrink text.** A `Text` run breaks only on
-   explicit `\n`. Text wider than its box draws past it (or is silently
-   clipped by `overflow-hidden`).
-2. **Every font size is baked at build time.** Any `text-[Npx]` works, but
-   only sizes that appear in class literals get an atlas.
+1. **A run wraps, shrinks or is clamped only where its class says so.** A
+   `Text` with none of the three utilities below breaks only on explicit
+   `\n`, and text wider than its box draws past it (or is clipped by
+   `overflow-hidden`, which no ink code can tell from a run that ends there).
+2. **Every font size is baked at build time.** Any `text-[Npx]` up to
+   4096 px works, but only sizes that appear in class literals are baked. Up
+   to the face's ceiling a size is an atlas of coverage cells; past it — a
+   glyph cell is at most 255 px tall, which is about 176 px for Noto Sans SC,
+   211 for Inter and 217 for HarmonyOS Sans — the build bakes the face's
+   outlines instead (a vector slot, `patches/0063`), filled at the size and
+   under the transform the node is drawn with, and `text-vector` asks for the
+   same below the ceiling. Emoji and any other glyph the face lacks come from
+   a declared `fonts.fallback`. Both are below, under "Sizes the atlas cannot
+   hold" and "Emoji and other faces' glyphs".
+
+**Fit, wrap and clamp are decided by layout, against the box layout gave the
+node** (`patches/0059`). Three utilities, which combine:
+
+- `text-wrap` wraps the run to its content width at the break opportunities
+  it carries: a run of spaces, which the break drops, and U+200B, which is
+  never drawn. `\n` always breaks. No language rule is applied in the core:
+  CJK and Thai break where the text says they may, so a generator writes
+  U+200B where its segmenter allows a break — `markBreaks(text, locale)` in
+  `src/text/fit.ts` writes exactly the breaks `wrapLines` would take.
+- `text-fit-[48..88]` (a ten-percent ladder from the top: 88, 80, 72, 65, 59,
+  54, 49, 48) or `text-fit-[48,64,88]` (the sizes named) draws the run at the
+  largest rung whose block holds the box: every line within the content
+  width, the lines times the rung's line height within the height when the
+  node bounds it (`h-*`, `h-full`, `max-h-*`), and no word cut between its
+  letters. When none holds, the smallest. At most 8 rungs; each is a baked
+  slot carrying every character the build collects, so a ladder of five costs
+  five atlases (`baselines/text-fit.md`: a 1,000-character CJK charset at 88
+  px bold is 12.8 MB of pak for one rung, 37.3 MB for five). It replaces the
+  size class: `text-[Npx]` beside it is refused.
+- `line-clamp-N` keeps the first N lines and ends the last with `…` (or `...`
+  where the face has no U+2026), cutting characters from that line until the
+  ellipsis fits.
+
+```tsx
+<Text class="w-[992px] max-h-[254px] text-fit-[48,56,64,76,88] text-wrap line-clamp-3 font-bold">{name}</Text>
+<Text class="text-fit-[52,64,80] font-bold">{price}</Text>
+<Text class="w-[1680px] text-[24px] text-wrap line-clamp-4">{disclaimer}</Text>
+```
+
+The box can come from flex, which no generator sees: `flex-1` halves of a row
+fit to the width the row gives them. `compositions/text-fit` puts each case
+on a named node.
+
+**What a gate sees.** `layout --json` carries `fit` on every such node: the
+size drawn, the ladder, whether a rung held, lines kept of lines wrapped,
+characters left out, words cut. A run drawn at a smaller rung is the
+declaration working and is not a finding. A clamp that left characters out,
+or a ladder whose smallest rung did not hold, is `text_truncated` — read from
+the core's record, because text that is not drawn has no ink — and
+`untruncated: true` in `assertions[]` is how a node says it must be drawn
+whole (a price, a legal line).
 
 A third edge worth knowing before you animate: **an axis-aligned `scale`
 resizes glyphs by resampling the size that was baked.** The run is drawn as
@@ -666,14 +783,26 @@ size: a rotated or skewed one, and one with a text stroke (`patches/0017`
 draws its outline from unscaled cells, so its fill stays unscaled too).
 Before the pin moved every scaled run behaved like those two, which is why
 `compositions/reel` fades its copy in after a card's scale lands.
+A run declared `text-vector` (below) has none of these edges: its glyphs are
+outlines filled at whatever size and under whatever transform the node is
+drawn, so it scales without softening and turns with its node.
 
-So multi-line or fitted text is decided *before* `app.tsx` exists, by
-measuring with the renderer's own advance tables. That is what
-`src/text/fit.ts` + `src/text/measure.ts` do, and `compositions/copy/gen.ts`
-is the worked example: `gen.ts` declares the copy and the boxes, calls
+Text can also be fitted *before* `app.tsx` exists, by measuring with the
+renderer's own advance tables. That is what `src/text/fit.ts` +
+`src/text/measure.ts` do, and `compositions/copy/gen.ts` is the worked
+example: `gen.ts` declares the copy and the boxes, calls
 `openMeasurer(...)` / `wrapLines(...)` / `fitToBox(...)`, and emits `app.tsx`
-with the `\n` already placed. The measurement is exact — a break decided at
-build time *is* layout, not an approximation of it.
+with the `\n` already placed. The measurement is exact, and it reaches only
+boxes the generator knows the size of; a box flex sizes, or a field whose
+neighbour's length moves it, is layout's to fit.
+
+**A job's characters are checked before it is staged.** `render --spec`
+reads every string the template draws against both weights' cmaps and
+refuses the job — exit 1, nothing built — with `missingGlyphs[]`, one
+`{ field, char, codePoint, face, file }` per field, character and weight.
+The read is the font file's `cmap` table and takes milliseconds; a build
+would bake the tofu cell for a missing character and exit 0. The MCP
+`render` tool returns the same object.
 
 A generator that measures the same faces at the same sizes on every run —
 a `render --spec` template, a batch — can pass `cache: { charset }` to
@@ -713,10 +842,71 @@ sidecar's `faces` map as `faces`, list sizes as `{ px, bold, face }`, and call
 `measure(px, bold, face)` / `lineHeight(px, bold, face)`.
 `compositions/faces` sets four faces in one frame.
 
+**Sizes the atlas cannot hold, and text that turns: `text-vector`.** An atlas
+cell is at most 255 px tall, which is a size per face — 176 px for Noto Sans
+SC, 211 px for Inter, 217 px for HarmonyOS Sans (`round(ascender * px / upm)
++ ceil(-descender * px / upm)`, from the face's `hhea`). A larger `text-[N]`
+(up to 4096 px) is baked as a **vector slot** instead (`patches/0063`): the
+glyphs' outlines, filled as PATH ops by the core under the node's world
+transform. Below the ceiling, `text-vector` in the same literal as the size —
+or as a `text-fit-[..]` ladder, every rung of which is then a vector slot —
+asks for the same: `<Text class="text-[120px] text-vector animate-turn">` turns
+its glyphs with the node, where an atlas run turns its anchors and keeps its
+cells upright. The build prints each vector slot and why it is one:
+
+```
+font: slot 21 (480px bold) vector (over the atlas's 255px cell), …
+font: slot 22 (120px bold) vector (text-vector), …
+```
+
+At a size both can bake, the two lay a string out identically — the vector
+slot carries the atlas's baseline, cell and line height, advances and kern
+pairs by the same formulas in wider fields — and the outline lands within a
+pixel of the atlas glyph (`tests/vector-glyphs.test.ts`, at each face's
+ceiling). A vector glyph costs a flatten in the draw walk and a PATH fill
+per glyph every frame; `baselines/vector-glyphs.md` has the numbers. A text
+stroke on a vector run is outlined from the same outlines; the hollow
+outside form (`text-transparent text-stroke-outside`) is drawn centred.
+
+**Emoji and other faces' glyphs: `fonts.fallback`.** A codepoint the slot's
+face does not map is looked up in each face of the sidecar's fallback chain,
+in order, at build time — never on the host:
+
+```json
+"fonts": {
+  "regular": "assets/fonts/NotoSansSC-Regular.otf",
+  "bold": "assets/fonts/NotoSansSC-Bold.otf",
+  "fallback": ["assets/fonts/Noto-COLRv1.ttf"]
+}
+```
+
+A `render --spec` job declares the same chain in its own `fonts`
+(`"fallback": [...]`, the same path rules): the template's generator measures
+with it and writes it into the staged sidecar, so platform data with an emoji
+in it reaches the colour face. A face with COLR colour glyphs (Noto Color
+Emoji, COLRv1, fetched by `scripts/assets.ts`) draws each as layered outlines, solid or under a linear
+or radial gradient, in an atlas run or a vector one alike. The slot's own
+face wins where it maps a codepoint: Noto Sans SC draws U+26A0 ⚠ itself, in
+the text colour. What the core cannot draw is **left out by name**, and the
+build lists it: a sweep gradient, a radial gradient with a focal point, a
+composite (Noto's flags blend soft-light; a few emoji clip src-in), and
+every codepoint that is one picture only inside a shaped sequence — regional
+indicators (flags), ZWJ, skin-tone modifiers, the keycap, tags — because the
+core does not shape. Of Noto Color Emoji's 1,469 colour codepoints, 1,398 draw.
+
+**Tofu is reported, never shipped quietly.** A codepoint no face in the chain
+maps — or one left out above — is laid out and drawn as the tofu box, and
+the core keeps it: `check` fails, naming the codepoint and every text node
+whose string carries it; `trace` and `render` print it and put
+`missingGlyphs` in `--json`; `render --spec` refuses the job before the
+first frame is encoded. Declare a face that maps it, or take it out of the
+text.
+
 Files: In-repo:
 HarmonyOS Sans (`assets/fonts/HarmonyOS_Sans_*.ttf`); fetched by
 `scripts/assets.ts`: Noto Sans SC (`assets/fonts/NotoSansSC-*.otf`) — the only
-face here with CJK coverage; upstream's default: Inter
+face here with CJK coverage — and Noto Color Emoji (`assets/fonts/Noto-COLRv1.ttf`),
+the colour face a `fonts.fallback` names; upstream's default: Inter
 (`vendor/pocketjs/assets/fonts/Inter-*.ttf` — `DEFAULT_REGULAR` in
 `framework/compiler/bake-font.ts`; the Inter Display files beside them are
 not the default, and measuring against them lands every width 7% short). The atlas bakes only
@@ -728,9 +918,10 @@ error, not a plausible-looking wrong width.
 
 Real video enters as a host-owned tile grid: the sidecar declares it, the
 guest declares placeholder `Image` nodes, and the host decodes at build time
-(ingest) and uploads pixels every frame. Scaling footage on screen is filtered
-correctly up to 2× minification (`linear: true`); beyond that it aliases —
-plan shots accordingly.
+(ingest) and uploads pixels every frame. Scaling footage on screen is
+bilinear (`linear: true`): up to 2× minification it has no nearest-sampling
+blocks, beyond that it aliases, and detail finer than a drawn pixel aliases
+at any minification (see "Still pictures") — plan shots accordingly.
 
 **A sidecar that declares `footage` gets it presented by every command that
 produces frames** — `check`, `frame`, `trace` and `render` build one layer per
@@ -831,7 +1022,15 @@ the composition's own directory, then `assets/images/` and `assets/` **inside
 the vendored engine tree** — `tools/build.ts` resolves those two against its
 own root, not this repository's, so `"logo.png"` finds the demo logo shipped
 with the engine and this repository's `assets/` is never consulted. In
-practice a composition's pictures live beside it.
+practice a composition's pictures live beside it — and git does not see them:
+`.gitignore` ignores `*.png` everywhere but `docs/`, because frames are PNGs.
+`compositions/images` writes the pictures it draws from its `gen.ts`, which
+the digest ledger and the tests run before they build; a picture no generator writes is tracked
+only if it is added with `git add -f`, and is otherwise on one machine.
+`build` does not run a generator, so a picture a `gen.ts` derives — a
+graded or resized copy of a source — has to be written before the build that
+bakes it. A generator reads and writes PNGs through the vendored tree's
+`tools/png.ts` (`decodePNG`, `encodePNG`).
 
 **Each side is 1 to 2048 px, a power of two or not** (`patches/0020`).
 `encodeImageEntry` (`framework/compiler/pak.ts`) throws past that, naming the
@@ -843,6 +1042,77 @@ makes footage a tile grid in the first place. The whole image is baked into
 the pak: a 2048×2048 picture is 16 MiB there and 16 MiB again in the core.
 SVG is rasterised at the composition's density. `compositions/images` draws a
 900×506 picture and a 3×5 one.
+
+**`linear` is two by two texels, with no mip chain.** It removes nearest
+sampling's blocks, and it does not filter detail finer than the drawn pixel:
+a one-pixel pattern — fabric, foliage, a checkerboard — drawn at any size
+under its own aliases into moiré that crawls as the picture moves (measured
+on a 1 px checker at 1.04–1.67× minification: luma spread 30–41 levels where
+a filtered one is under 1). A picture drawn far below its size takes
+`image-filter-trilinear`, below; one drawn only a little below it is
+resampled to the largest size it is drawn at in its `gen.ts`, with a
+filter, so the core only magnifies it — between one and two texels a pixel
+trilinear is the bilinear read blended toward the first reduced level by how
+far past one the footprint is, so that 1 px checker keeps 96% of its moiré
+at 1.04× and a third of it at 1.67×.
+
+**An image drawn well below its size takes `image-filter-trilinear`**
+(`patches/0064`). Without it an Image reads its texture the way the texture
+says — nearest, or bilinear under `"linear": true` — and either reads a
+handful of the dozens of texels under a pixel once the image is drawn below
+half its size: a wall of covers at 15% lands on whichever texels the pixel
+grid crosses, and a push redraws it differently at every frame. With it, the
+core reduces a mip chain from the texture's bytes the first time a draw needs
+one — each level the last halved by an exact area average, in integers — and
+reads the two levels the drawn footprint falls between, each bilinearly,
+blended:
+
+```tsx
+<Image class="w-[45px] h-[63px] image-filter-trilinear" src="cover-07.png" />
+```
+
+The footprint is the image's texels per pixel along the screen axis that
+crosses the most of them, taken from its transform before any rounding, so a
+`scale` on an ancestor, a rotation and a perspective turn all count — in
+perspective each cell of the image's mesh carries its own. At or above the
+image's own size the read is the texture's bilinear read and nothing is
+reduced. `compositions/image-wall` is sixty 300×420 covers drawn at 45×63
+and pushed in to 26% over ten seconds. The part of each frame's change that
+is not steady — the second difference over three frames — falls from 17.9
+levels nearest and 17.0 bilinear to 8.7, under the 12.0 of the same wall
+supersampled ×4, and the frame-to-frame difference halves; the price is
+softness, a cover's 2 px title bars blurrier than at ×4
+(`baselines/image-wall.md`). The cost is the levels — a third of an RGBA
+texture's bytes again, two thirds of an RGB565 one's, for each texture
+drawn below its size — reduced on the first frame that needs them (51 ms
+for the wall's sixty covers), and two bilinear reads a pixel instead of
+one: the wall's frame costs 1.9× bilinear's.
+
+**It is a class, not the default.** As the default for every image drawn
+below its size it moves two of the ledger's recorded digests, `images` and
+`probe`, and both showcase films on most of their frames; as the default for
+textures already flagged `linear`, `images` and both films
+(`baselines/image-wall.md` has the probe). A picture here moves when its
+composition says so, so a template that draws images small writes the
+class.
+
+It is isotropic: an image squeezed on one axis, or tilted steeply in
+perspective, is filtered for its most compressed axis and goes soft along
+the other. It does not move an image off whole pixels (next paragraph): under
+a push a cover's edges still step a pixel at a time. A footage tile does not
+carry it — `tileNodes` writes the tiles, and a track is ingested at its drawn
+size.
+
+**An upright picture is placed on whole logical pixels.** Its position and
+its size are each rounded (`emit_tex_quad`, `draw.rs`), and `supersample`
+multiplies those integers rather than refining them. The texture coordinates
+come from the unrounded box, so a picture's content is stretched over the
+rounded one, at most half a pixel from where it belongs, and a picture larger
+than the frame zooms without stepping; but two pictures that abut at a
+fractional position — a grid under a push — can open a one-pixel seam or
+overlap by one on some frames. A grid that moves is drawn as one picture, or
+its tiles overlap by a pixel. A turned picture is two triangles whose
+vertices are rounded the same way.
 
 **An SVG is drawn by the build's own baker, and it draws a subset of SVG**
 (`framework/compiler/bake-svg.ts`, `patches/0040`). Its `width` and `height`
@@ -980,7 +1250,10 @@ else its viewBox's — clipped to it unless the root `<svg>` says
   transform that is not a uniform scale and rotation, and a duplicate `id`.
   Each names the element and its line in the file. Flatten what an editor
   can flatten; give a part a gradient (`bg-clip-path`), a blur or a shadow
-  through its class.
+  through its class. Illustrator's Export As writes every colour into a
+  `<style>` sheet of classes by default (Styling: Internal CSS), which is
+  refused; export with Styling: Presentation Attributes, or write each
+  class's declarations onto its shapes as attributes.
 - **`lint` and `check` read the same elements** and fail with
   `svg.missingFile` or `svg.unsupported` at the `src`, without building.
 - **`layout` reads one picture as one picture**: two parts inside one
@@ -1857,6 +2130,13 @@ anything can read it.** A node declared at `left-[2000px] w-[300px]` on a
 above the bottom comes back 40 px tall. So a PARTIAL overhang leaves no trace
 in the numbers and this code says nothing about one; what it catches is the
 node that went off entirely and collapsed against the edge.
+
+**A box is read after its transforms.** A word that slides in by 24 px
+leaves its parent's box for the frames it is moving, and a parent sized by its
+content (an auto-height row, a zero-width wrapper) has no room for the slide
+at all — those frames read `escaped_container` and fail an `insideBox`
+assertion. Give the parent the room the motion travels through, or allow
+`overflow` on the node with the reason.
 
 **`layout` still exits 0 with every one of them.** A node outside its window is
 not painted, an intended lower third does overlap the shot under it, and a cut

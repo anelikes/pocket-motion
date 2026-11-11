@@ -129,6 +129,32 @@ that is said rather than implied.
   padded to the film (`src/sound/mix.ts`). `tests/format.test.ts` reads
   each back out of the file.
 
+- **An emoji drawn as an empty box with every gate green.** The hajibang
+  port's title carried an emoji no declared face mapped: the build baked what
+  the face had, the core laid the codepoint out and drew the tofu box,
+  counted the miss on a counter nothing read, and `lint`, `check`, `trace`
+  and the digest all passed — seen. A face that can supply such codepoints is
+  now declared, `fonts.fallback` (`--font-fallback`) — in a sidecar, and in
+  a `render --spec` job's `fonts`, which every template measures with and
+  writes into the staged sidecar — and never looked up on the host; the core keeps the distinct codepoints that missed
+  (`ui_glyph_missed`, `patches/0063`); `check` fails naming each codepoint
+  and every text node whose string carries it, `trace` and `render` print
+  them and put `missingGlyphs` in `--json`, and `render --spec` refuses the
+  job before its first frame reaches the encoder (`src/text/missing.ts`) —
+  behind `patches/0059`'s pre-check (`src/text/coverage.ts`), which reads the
+  job's faces' cmaps before anything is staged, counts what the first
+  fallback face mapping a character supplies, and asks the baker's own rule
+  (`leftOutBy`) whether the build would leave it out. A
+  glyph the core cannot draw as declared — a colour glyph with a composite
+  or a focal radial, a codepoint that is a picture only inside a shaped
+  sequence — is left out of the slot by name at build, so it takes the same
+  road. `tests/colour-glyphs.test.ts` holds it. Its first sweep of the tree
+  found two: `compositions/curves-race` drew ∝ (U+221D, not in Inter) as a
+  box in two panel titles since it was generated, now `= k ·`; and
+  `compositions/fit`'s committed probe output sets Chinese in HarmonyOS Sans,
+  a Latin-only cut, which is what `scripts/fit-probe.ts` builds it with too —
+  `check` fails on it, and is right to.
+
 Four defects are **not** instances of either invariant, and forcing them in
 would make both rules useless.
 
@@ -360,11 +386,13 @@ mechanisms with the file or test beside them.
   (invisible by declaration — the walk returns above it at `op <= 0.0`, so
   inherited opacity is included without anyone reading it).
   `src/render/visibility.ts` holds the predicate and the table.
-- **Seven finding CODES sit on top of that**, in `src/render/findings.ts`, so a
+- **Eight finding CODES sit on top of that**, in `src/render/findings.ts`, so a
   caller can branch on a name instead of parsing a sentence: `text_not_painted`
-  and `text_occluded` are the two dark states renamed, and the other five are
+  and `text_occluded` are the two dark states renamed, the next five are
   `panel_out_of_canvas`, `escaped_container`, `content_overlap`,
-  `text_box_overflow` and `clipped_text`. The last two are measured in PIXELS,
+  `text_box_overflow` and `clipped_text`, and the eighth, `text_truncated`, is
+  the core's record of a clamp or a fit (the entry after the next). The two
+  before it are measured in PIXELS,
   not from a build-time advance table: `probe()` already hides the node and
   rasterises for `inPicture`, so the bounding box of the pixels that changed —
   the node's INK — comes out of a render that was happening anyway. The advance
@@ -720,6 +748,68 @@ mechanisms with the file or test beside them.
   `compositions/path-primitives` is the fixture, in both ledgers; its test
   reads the movers' centres off `layout` against the outline and the dashed
   connector's pixels against its pattern.
+- **An image drawn below its size reads a mip chain when it says so**
+  (`patches/0064`, class `motion`; the table in `baselines/image-wall.md`).
+  `image-filter-trilinear` makes an image node emit TEX_QUAD_MIP (72) or
+  TEX_TRI_MIP (73), each its plain op plus one word: the footprint, texels
+  of the texture per logical pixel along the screen axis that crosses the
+  most of them, computed by the core from the unrounded transform — for a
+  perspective cell, the larger of its two triangles'. The raster divides it
+  by the raster scale and reads the level its exponent names and the next,
+  each bilinearly, blended by the top eight bits of its mantissa, so no
+  transcendental reaches a pixel. The chain is a pure function of the
+  texture's bytes — each level the last reduced to `max(1, floor(w/2))` by
+  an exact area average of premultiplied texels, in u64, rounded half up —
+  reduced in the draw walk the first time a footprint above one texel needs
+  it, keyed by the texture's revision, so a texture never drawn below its
+  size costs nothing. At or below one texel a pixel the read is the
+  texture's own bilinear read byte for byte, whatever its flag. The core's
+  guards are in `mip.rs` (the reduction against an oracle that replicates
+  every texel into a block and box-averages it, over four pixel formats and
+  odd sides), `raster.rs` (both ops against the plain ones at r <= 1, the
+  quad against a per-pixel trilinear reference, a checkerboard grey at
+  every sub-texel shift) and `tests.rs` (the footprint under six rotations,
+  a squeeze, a sub-rect and a perspective turn; the chain reduced only when
+  needed and again when the bytes change); the patch header lists the edit
+  that turns each red. `compositions/image-wall` is the fixture, in both
+  ledgers, and `tests/image-wall.test.ts` holds its first 30 frames to
+  moving less than the same wall nearest or bilinear — red with the class
+  taken out of the generator. **It is not the default, by
+  measurement**: built as two throwaway cores, a default for every texture
+  drawn below its size moves `images` and `probe` in the ledger and both
+  showcase films on most sampled frames, and one for textures flagged
+  linear moves `images` and both films (`baselines/image-wall.md`).
+- **A colour filter is a matrix on the filter layer, and always a layer**
+  (`patches/0065`, class `motion`; the measurement in
+  `baselines/colour-filters.md`). brightness, contrast, grayscale,
+  hue-rotate, invert, saturate and sepia are Filter Effects 1's matrices in
+  1/16384ths on the layer's straight colour, after its blur and before its
+  shadow, in Tailwind's order, each step clamped — so the order is in the
+  picture, and a keyframe `filter` list written in another order is refused
+  rather than reordered, as is a pair of lists CSS interpolates discretely.
+  Alpha is untouched, so a shadow keeps its colour. LAYER_PUSH carries them
+  in its blend word's bits 24-30 and one f32 each after its eighth word: a
+  layer with none is the words it was, and every draw-list walker reads the
+  length from `layer_push_len`. Applying a filter at draw time instead was
+  measured and refused: it would save about 0.05 ms a word-sized node
+  native, and it is exact only for a subtree of one op that cannot overlap
+  itself — a text run's glyphs meet in a pixel, and there two blends round
+  differently from one. What made small layers cost was 0018's scan and
+  clear of whole 1920-pixel rows; a layer now bounds both by the columns it
+  touched, 0.20 to 0.05 ms a word-sized layer, byte-identical. The core's
+  guards are in `tests.rs` against an f64 transcription of the spec, each
+  red under an edit the 0065 header lists; `tests/colour-filters.test.ts`
+  reads `compositions/colour-filters` against a second, TypeScript one.
+- **A transform origin is a fraction and a length, and it animates**
+  (`patches/0066`, class `upstream`; `0067` puts it under the shutter).
+  `origin-[x_y]` is CSS's 2D `transform-origin`, stored as the fraction
+  of the box the keywords always wrote plus a px length beside it, so
+  `calc(100% - 20px)` holds whatever width layout gives the box; a keyword
+  origin still writes the fraction alone and every record naming one is the
+  bytes it was. The origin animates because a zoom whose focal point
+  travels is the product of two motions, which no eased translate track
+  carries. `tests/origin.test.ts` reads `compositions/origin`'s bars and
+  zoom out of their pixels against the geometry.
 - **`doctor` asks before a build answers late.** `src/cli/commands/doctor.ts`
   reports seven checks, each with what was observed and, when it failed, the
   command that repairs it: the running Bun against the one
@@ -849,6 +939,68 @@ mechanisms with the file or test beside them.
   as literals bakes the same pak byte for byte; the mount path costs it one
   build and two boots, 0.90-1.24 s a build against 0.45-0.53 s. Fixture
   `compositions/data-chart`, in both ledgers.
+- **Fit, wrap and clamp are layout's, and what a clamp drops is a code**
+  (`patches/0059`, class `upstream`). A template filled from data used to
+  predict, in its generator, the size and the lines every field would take
+  — and the batch-QA prototype measured that prediction right 58% of the
+  time it said a field would not fit, while 83 of 1,000 rows pushed a box out
+  of its container (`docs/batch-qa-prototype.md`). Three class utilities now
+  put the decision where the box is known: `text-fit-[..]` (a ladder of baked
+  slots, packed into props 101-102), `text-wrap` (104) and `line-clamp-N`
+  (103). The core's `text_fit.rs` evaluates them in the taffy measure of the
+  text leaf against the content box the solver offers, records the result on
+  the node at readback, and paint draws the record's slot and laid-out text.
+  Four rules carry it. **Breaks are the run's own**: spaces and U+200B, which
+  is never looked up or drawn, and `'\n'`; a generator writes U+200B where
+  its segmenter allows a break (`markBreaks`, `src/text/fit.ts`), so no
+  language rule enters the core and `scripts/digests.ts` still re-derives
+  every break. **A rung holds** when its widest line fits, its lines times
+  its line height fit a bounded height, the clamp's count is not exceeded and
+  no segment was cut; the first that holds is taken, else the smallest. **A
+  fitted block measures as its laid-out text**, summed per line exactly as
+  `measure_run` sums it, so the box layout reserves is the box paint fills.
+  **A clamp counts what it leaves out**, because text that is not drawn has
+  no ink and no pixel code can see it: `ui_debug_text_fit` exports the record,
+  `layout --json` reports it as `fit` on the node, and `text_truncated` fires
+  on a clamp that dropped characters or a declared ladder that bottomed out —
+  not on a fit that took a smaller rung, which is the declaration working.
+  `assert`'s `untruncated: true` fails a node `text_truncated` named at a
+  sampled frame. The size mapping was measured before it was chosen
+  (`baselines/text-fit.md`): a ladder of baked slots against the top rung
+  drawn scaled, which is the path an axis-aligned scale takes today. Scaled
+  glyph pages cost 92 CPU-ms a frame against 10 for the same 40 runs and
+  differ from a native bake by 10-21 coverage levels per glyph; a ladder
+  costs its length in atlases (12.8 MB of pak for 1,000 CJK characters at one
+  rung, 37.3 at five). So a fitted run draws the bytes a run declared at its
+  rung draws, and `tests/text-fit.test.ts` holds that pixel for pixel. No
+  existing digest moved: a node with none of the three utilities resolves to
+  no fit and lays out as it did, and all 45 recorded digests reproduced. The
+  batch-QA card rerun over its 1,000 rows with the fit in layout
+  (`baselines/text-fit.md`): of the 83 rows whose box left its container,
+  44 stay inside and are `text_truncated` (20 names, 24 disclaimers), 39
+  still leave it — every one a price, which the card declares unwrappable
+  and unclampable — and none goes quiet; no row that passed fails. The cost
+  is a ladder's atlases (pak 2.26 → 5.02 MB, median) and a hard box: 135
+  long names the generator's card drew whole in spare room are clamped, each
+  one reported. `compositions/text-fit` is the fixture, in both ledgers.
+  Guards: `engine/core/src/text_fit_tests.rs` (12 edits, all
+  red, `baselines/text-fit/redcheck.py`), `tests/text-fit.test.ts`,
+  `tests/mcp.test.ts` and catalogue G3/G6/G8 (11 edits, all red,
+  `baselines/text-fit/redcheck-ts.ts`).
+- **A job's characters are read against its faces before it is staged.** A
+  build accepts a code point the face lacks and bakes the tofu cell, exit 0,
+  and every gate then passes boxes of tofu; the measurer's refusal was the one
+  that existed and it costs a build. `render --spec` now reads every string
+  the job's template draws — copy's eyebrow, headline and body,
+  lower-third's name and title, captions' words with the style's case applied
+  — against both declared weights' cmaps (`src/text/coverage.ts`: the sfnt
+  `cmap` table's format 4 and 12 subtables, equal to opentype.js's reading on
+  all four faces in `assets/fonts`, 12 ms for Noto Sans SC) and refuses the job
+  with `missingGlyphs[]` — field, character, code point, weight, file — before
+  the generator runs. A directory of jobs reports every job's before any
+  renders, and the MCP `render` tool returns the object as its error. Both
+  weights, because nothing here knows which weight a template draws a field
+  in; a weight that maps a character the other does not is named.
 - **A job is a spec, and the sample is not the job.** `render --spec job.json`
   stages a throwaway copy of the composition (`src/cli/stage-sources.ts`), runs
   the generator into it, builds, encodes and removes the tree, so a batch never
@@ -1105,6 +1257,46 @@ mechanisms with the file or test beside them.
   replaced by the opaque expression, three of them fail. What this does NOT
   change is the RGB565 targets, which have no alpha byte, and it does not
   reach the hosts upstream presents to — which is why it is class `motion`.
+- **A size the atlas cannot hold is baked as outlines, and the switch-over
+  is measured rather than assumed** (`patches/0063`, class `motion`; the
+  numbers and their reproducers in `baselines/vector-glyphs.md`). The FONT
+  ATLAS stores its cell, baseline, line height, advances and kern deltas in
+  bytes, so `patches/0002` refused a size whose cell passed 255 px, and its
+  cells stay upright under a rotation. A FONT VECTOR blob carries the same
+  quantities from the same formulas in u16/i16 fields and the glyphs as
+  outlines; `bakeAtlases` bakes one where the cell would pass 255 px or the
+  literal says `text-vector`, and the build says which and why. The core
+  lays the run out as an atlas run and fills each glyph's layers as PATH
+  ops through the node's world affine, rounding the anchor to a pixel
+  exactly where GLYPH_RUN rounds it, so the turn and the scale reach the
+  glyph and the static case lands where the atlas would. At each face's
+  ceiling — 176 px Noto Sans SC Bold, 211 px Inter — `tests/vector-glyphs.test.ts`
+  holds every advance, kern pair, baseline, cell and line height of the
+  vector slot equal to the atlas slot's over the whole collected charset,
+  and the drawn ink within a pixel at every edge and 0.5% apart pixel for
+  pixel with each cell's anchor half a pixel off the grid (the bound is
+  1.5%; left unrounded, the anchor measured 2.96%). One px past the ceiling bakes rather than
+  being refused. A face with COLR draws its glyphs as layers — solid, or a
+  gradient under PAINT_PUSH, whose stop bound went from 6 to 16 for Noto's
+  colour lines (a class literal's gradient keeps 6, its style props' count)
+  — in a vector slot as the glyph, and in an atlas slot as a supplement the
+  run draws after its cells. `colr.ts` flattens COLR v0 and v1 and refuses by
+  name what the core cannot draw: of Noto Color Emoji's 1,469 colour
+  codepoints 1,398 draw, and every other is listed by
+  `baselines/vector-glyphs/refused.ts`. The core's own tests
+  (`engine/core/src/vector_text_tests.rs`) hold the blob's refusals, the
+  wide metrics, the PATH emission, the turn, the supplement and the
+  gradient mapping. Every guard here and in `tests/colour-glyphs.test.ts`
+  was watched red by `baselines/vector-glyphs/redcheck.ts`.
+  `compositions/hero-type` is the fixture, in both ledgers: a 480 px CJK
+  hero rising scaled and turned, a turning `text-vector` character, a
+  turning colour glyph from a vector slot, and a 64 px title with two
+  emoji from the atlas slot's supplement, its sidecar asserting each is up.
+  With `patches/0059` a fitted run reads the same faces: a ladder rung
+  measures from whichever face owns its slot (`Fonts::metrics`), so a rung
+  past the ceiling or of a `text-vector` ladder fits as an atlas rung does,
+  and `text-vector` beside a `text-fit-[..]` ladder makes every rung a vector
+  slot (core `a_fit_ladder_measures_its_vector_rungs`, catalogue G6).
 - **A delivered file is read back the way a player reads it.** Frame
   digests are taken before the encoder, so nothing about the file itself was
   checked until `tests/format.test.ts`'s "delivered files, read back" drove
@@ -1587,6 +1779,23 @@ mechanisms with the file or test beside them.
 
 ## What does not reach them yet
 
+- **What fit and clamp do not do.** The core wraps greedily; a balanced
+  block is still a generator's (`fitToBox` with `balanced`). A rung's height
+  bound is the node's own `h-*`, `h-full` or `max-h-*` and nothing else — a
+  percentage `max-h` and the height a flex parent happens to leave are not
+  bounds, so a run without one grows its box as it always has. A word cut at
+  the smallest rung is counted (`fit.split`) and is not a finding. The
+  ellipsis is the face's U+2026 glyph: Noto Sans SC draws it as three centred
+  dots, the Chinese form, under Latin text too. A ladder bakes every collected
+  character into every rung, so its cost is rungs times charset, and nothing
+  bakes a rung's glyphs only for the runs that can reach it. Shaped runs
+  (`docs/text-shaping.design.md`) are not fitted: the fit sums the cmap's
+  advances, which is what the core draws today.
+- **The glyph pre-check knows the templates in this repository.** It reads the
+  strings `copy`, `lower-third` and `captions` draw; a template added
+  tomorrow is checked for nothing until `jobStrings` names its fields, and a
+  face a generator declares beyond the job's `fonts` is not read.
+
 - **The shutter blurs baked timelines and nothing else.** Tracks `animate()`
   and transitions spawn, springs and physics keep their tick value in every
   sample; a mount-only composition cannot start one after mount, and one
@@ -1602,9 +1811,54 @@ mechanisms with the file or test beside them.
   39,864 rasters over the default grid, about 4½ hours at its raster cost,
   against 3,322 and 20 minutes with `--read tick` — the reading that misses
   `peek`. `reel` declares no shutter.
+- **Text is not shaped, so an emoji sequence is refused rather than
+  formed.** A flag is two regional indicators joined by the font's GSUB, a
+  family is emoji joined by ZWJ, a skin tone and a keycap combine with what
+  precedes them; the core lays out one glyph per codepoint. Each such
+  codepoint is left out of the slot and reported as tofu, so the sequence
+  fails `check` instead of drawing as its pieces. Shaping
+  (`docs/text-shaping.design.md`) is what would form them.
+- **The slot's own face wins over the fallback chain, presentation selector
+  or not.** Noto Sans SC maps U+26A0 ⚠ and draws it in the text colour,
+  `fonts.fallback` declared or not, and U+FE0F asks for nothing here — it is
+  a codepoint like any other, drawn if a face maps it and reported if none
+  does. CSS's order, and the one a composition can predict from its faces.
+- **A vector glyph is flattened every frame, and every vector slot carries
+  the whole charset.** Nothing caches a glyph's flattened outline across
+  frames; the cost per frame is in `baselines/vector-glyphs.md`. The
+  collected charset is global, so each vector slot bakes the outline of
+  every codepoint its faces map: the fixture's 480 px slot is 50 KB for 112
+  glyphs, and a template that declares the 3,755 GB2312 characters would
+  carry them in every vector slot it uses.
+- **A text stroke on a vector run is outlined, not a distance field, and its
+  hollow outside form is drawn centred.** Outside with a fill is a stroke of
+  twice the width under the fill, centred is over it — `patches/0017`'s two
+  pictures. With no fill, the outside ring cannot be cut from a centred
+  stroke without a boolean, so it is drawn centred at the declared width,
+  half of it inside the glyph. Colour layers take no stroke in either kind
+  of slot. Nothing pins either picture.
+- **Colour glyphs are measured on one font.** `colr.ts` was written against
+  the COLR specification and validated on Noto Color Emoji alone; its
+  paints there are solid, linear and concentric radial gradients, transforms,
+  and the two composites it refuses. Another COLRv1 face may use a sweep
+  gradient, a variable paint or a reflecting colour line: each is refused by
+  name and its codepoints reported, never drawn otherwise.
 - **A path's trim, morph and dash offset do not blur, and nothing caches its
   geometry.** The shutter integrates transform tracks only, so a moving
   `<Path>` blurs and a draw-on's tip and a march do not. The geometry is rebuilt every frame — and
+- **A full-frame colour grade is the dearest filter, and nothing caches it.**
+  Grading a 1080p frame (`hue-rotate-90 saturate-150` over a gradient
+  ground) costs 21-28 ms a frame in the wasm core over the ungraded
+  frame, 4-14 ms of it the colour pass — per pixel, every step, with only
+  the last colour remembered — and the rest 0018's layer composite
+  (`baselines/colour-filters.md`, measured at a load of 15-55, hence the
+  ranges). Footage
+  is where a grade is wanted and where a colour cache would help least;
+  neither a cache nor a fused pass is built. A colour filter inside a
+  perspective (3D) subtree is ignored, as a blur is.
+- **A path's trim and morph do not blur, and nothing caches its geometry.**
+  The shutter integrates transform tracks only, so a moving `<Path>` blurs
+  and a draw-on's tip does not. The geometry is rebuilt every frame — and
   under a shutter every sample — from the table: stage 1 measured a 1080p
   frame of 300 paths of 67 cubics at 20-70 ms of wasm, against 1.19 ms for a
   frame of the reel, so a dense illustration is a cost no ledger composition
@@ -1629,6 +1883,20 @@ mechanisms with the file or test beside them.
   a seam between two shapes of one colour lets `(1 - h_a/16)(1 - h_b/16)` of
   the ground through; stage 1's fan of 24 wedges shows faint radial lines. A
   coverage-merging op would close it and is not built.
+- **A trilinear image is filtered isotropically and placed on whole
+  pixels.** The footprint is the longer of the Jacobian's two columns, so an
+  image squeezed on one axis, or tilted steeply in perspective, is filtered
+  for its most compressed axis and soft along the other; nothing anisotropic
+  is built. And TEX_QUAD and TEX_TRI place on whole logical pixels at any
+  raster scale, so a cover's edges step a pixel at a time under a push —
+  `image-wall`'s supersampled reference steps too, which is why it cancels
+  out of crawl and why no filter here takes it out. The levels are RGBA8888
+  whatever the texture's format, so a 16-bit texture pays two thirds of its
+  bytes, not a third, and nothing reduces a chain at bake time: every boot
+  reduces again on the first frame that needs it (`frame`, a `preview`
+  reload, each ledger trace). A footage tile cannot carry the class —
+  `tileNodes` writes the tiles — and if one did, a texture uploaded every
+  frame would be reduced every frame.
 - **An outline computed at mount is as deterministic as the arithmetic that
   computed it.** The realm pins the clock, randomness and locale formatting,
   not `Math.sin`, `cos`, `tan`, `pow`, `exp`, `log` or `atan2`, which
@@ -1712,22 +1980,20 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   `alpha_mode` tag — on a file the sound mux rewrote, `ALPHA_MODE`, and the
   element behind it is what the delivery test reads. A test asserting
   `pix_fmt=yuva420p` would be red on a correct file.
-- **The largest bakeable text size is a property of the face, not of the
-  format.** The FONT ATLAS header stores `cellH` as a u8, so
-  `patches/0002-loud-font-cell-limit.patch` refuses a size whose cell would
-  exceed 255 px and names the largest that fits:
-  `maxPx = floor(px * 255 / wantCellH)`, where `wantCellH` is
-  `round(ascender * px / unitsPerEm) + ceil(-descender * px / unitsPerEm)` and
-  so comes from that family's own `hhea`. Computed over the four faces in
-  `assets/fonts`: **Noto Sans SC bakes up to 176 px, HarmonyOS Sans up to
-  217 px** — CJK ascent and descent run taller against the same 1000 upem
-  (1160/−288 against 928/−244). The ceiling is a property of the family, not
-  the weight: Bold and Regular of each share an `hhea` and share a ceiling.
-  The message is correct at the moment it fires and carries the answer. What
-  nothing says, at the place it matters, is that **the number a composition
-  records beside a hero size is not transferable** — swapping the face changes
-  the ceiling, and a size that baked yesterday is refused today with no edit
-  to the size itself.
+- **Which sizes draw from the atlas is a property of the face, not of the
+  format.** The FONT ATLAS header stores `cellH` as a u8, so a size whose
+  cell — `round(ascender * px / unitsPerEm) + ceil(-descender * px /
+  unitsPerEm)`, from the family's own `hhea` — passes 255 px cannot be an
+  atlas: **Noto Sans SC up to 176 px, Inter up to 211, HarmonyOS Sans up to
+  217**, Bold and Regular of each sharing a ceiling. Above it the build now
+  bakes a vector slot (`patches/0063`) where `patches/0002` refused, and
+  0002's message fires only for a direct `bakeSlot` call. So swapping the
+  face moves the line between the two, and a size that drew from the atlas
+  yesterday may draw as outlines today with no edit to the size: the same
+  layout — the metrics are one set of formulas — a raster that differs at
+  the ink's edge, and the per-frame cost of a flatten and a PATH fill per
+  glyph. The build's `font: slot N (…) vector (over the atlas's 255px cell)`
+  line is what says which.
 - **A full ledger run's disk cost is set by the footage in the tree, and
   only the ledger can measure it.** Ingest decodes the span each footage
   artifact's tracks can show to raw RGBA next to the bundle and leaves it

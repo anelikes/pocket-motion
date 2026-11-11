@@ -26,6 +26,7 @@ import {
   VALID_FPS,
 } from "../manifest/sidecar.ts";
 import { CAPTIONS_ROWS } from "./captions.ts";
+import type { TextFitReading } from "../render/text-fit.ts";
 
 /** How thoroughly this repository has verified the row it renders. */
 export type Verification =
@@ -195,6 +196,9 @@ export interface FindingProbeNode {
   readonly ink?: readonly [number, number, number, number] | null;
   /** id of the nearest ancestor with a box. */
   readonly container?: number;
+  /** The core's fit record (`src/render/text-fit.ts`), for a run that
+   *  declares a fit, a clamp or wrapping. */
+  readonly fit?: TextFitReading;
 }
 
 export interface CapabilityRow {
@@ -620,7 +624,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "[]",
     constraint:
-      "array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames — the even grid plus the frames each entry names (inPicture's ends, entersBy, exitsBy and the frame after it, and the frames that pin a before pair's first showings); changes no pixel",
+      "array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / untruncated: true / dwellFrames / before. Frame values are inside the composition's clock. `untruncated` holds when `text_truncated` fires at no sampled frame the node has a box: no clamp left characters out and no declared fit ladder bottomed out. Evaluated by `assert` over sampled frames — the even grid plus the frames each entry names (inPicture's ends, entersBy, exitsBy and the frame after it, and the frames that pin a before pair's first showings); changes no pixel",
     source: "src/manifest/sidecar.ts:750",
     verification: "probed",
     diagnostics: [
@@ -632,6 +636,7 @@ export const SURFACE: readonly CapabilityRow[] = [
       "sidecar.assertions.inPicture",
       "sidecar.assertions.frame",
       "sidecar.assertions.insideBox",
+      "sidecar.assertions.untruncated",
       "sidecar.assertions.dwellFrames",
       "sidecar.assertions.before",
     ],
@@ -662,6 +667,10 @@ export const SURFACE: readonly CapabilityRow[] = [
       {
         code: "sidecar.assertions.insideBox",
         input: { ...MIN, assertions: [{ node: "caption", insideBox: false }] },
+      },
+      {
+        code: "sidecar.assertions.untruncated",
+        input: { ...MIN, assertions: [{ node: "caption", untruncated: "yes" }] },
       },
       {
         code: "sidecar.assertions.dwellFrames",
@@ -1003,6 +1012,41 @@ export const SURFACE: readonly CapabilityRow[] = [
         code: "sidecar.fonts.faces.bold.traversal",
         input: withFonts({ ...FACE, faces: { display: { ...FACE, bold: "../x.ttf" } } }),
       },
+    ],
+    pinned: [],
+  },
+  {
+    id: "fonts.fallback",
+    group: "fonts",
+    declaredIn: "pocket-motion.json",
+    key: "fallback",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "optional array of 1 to 4 relative paths beside `regular` and `bold` (which `fonts` always needs), tried in order for a codepoint the slot's own face does not map (the build's `--font-fallback`); same path rules as footage src, no path twice. A face here with COLR colour glyphs draws them as layered outlines (patches/0064). The files are identity components `font:fallback/<i>/<file>` and count toward the 64 MiB the declared font files may total. A codepoint no face in the chain maps is drawn as the tofu box and reported: `check` fails naming the codepoint and the text nodes carrying it, `trace` and `render` print it, `render --spec` refuses the job",
+    source: "src/manifest/sidecar.ts",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.fonts.fallback.notArray",
+      "sidecar.fonts.fallback.count",
+      "sidecar.fonts.fallback.notString",
+      "sidecar.fonts.fallback.empty",
+      "sidecar.fonts.fallback.absolute",
+      "sidecar.fonts.fallback.traversal",
+      "sidecar.fonts.fallback.duplicate",
+    ],
+    probes: [
+      { code: "sidecar.fonts.fallback.notArray", input: withFonts({ ...FACE, fallback: "emoji.ttf" }) },
+      { code: "sidecar.fonts.fallback.count", input: withFonts({ ...FACE, fallback: [] }) },
+      {
+        code: "sidecar.fonts.fallback.count",
+        input: withFonts({ ...FACE, fallback: ["a.ttf", "b.ttf", "c.ttf", "d.ttf", "e.ttf"] }),
+      },
+      { code: "sidecar.fonts.fallback.notString", input: withFonts({ ...FACE, fallback: [7] }) },
+      { code: "sidecar.fonts.fallback.empty", input: withFonts({ ...FACE, fallback: [""] }) },
+      { code: "sidecar.fonts.fallback.absolute", input: withFonts({ ...FACE, fallback: ["/e.ttf"] }) },
+      { code: "sidecar.fonts.fallback.traversal", input: withFonts({ ...FACE, fallback: ["../e.ttf"] }) },
+      { code: "sidecar.fonts.fallback.duplicate", input: withFonts({ ...FACE, fallback: ["e.ttf", "e.ttf"] }) },
     ],
     pinned: [],
   },
@@ -1594,7 +1638,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     key: "angle",
     required: true,
     defaultValue: null,
-    constraint: `integer degrees ${SHUTTER_ANGLE_MIN}..${SHUTTER_ANGLE_MAX}: the shutter is open for angle/360 of a frame, which the host passes to the core as the exact fraction angle·(60/fps)/360 ticks, so no sample time is a float. Only translate, scale, rotate and skew timelines are evaluated between ticks; opacity, colour and layout keep the frame's own tick in every sample, and no sample crosses a keyframe jump`,
+    constraint: `integer degrees ${SHUTTER_ANGLE_MIN}..${SHUTTER_ANGLE_MAX}: the shutter is open for angle/360 of a frame, which the host passes to the core as the exact fraction angle·(60/fps)/360 ticks, so no sample time is a float. Only translate, scale, rotate, skew and transform-origin timelines are evaluated between ticks; opacity, colour, colour filters and layout keep the frame's own tick in every sample, and no sample crosses a keyframe jump`,
     source: "src/manifest/sidecar.ts:876",
     verification: "probed",
     diagnostics: ["sidecar.shutter.angle"],
@@ -2393,7 +2437,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: true,
     defaultValue: null,
     constraint:
-      "an ANIMATABLE property, camelCase or kebab-case, or `transform` decomposed into translate/translateX/Y/Z, rotate/rotateX/Y, skewX and scale/scaleX/Y (perspective is ignored — it is static). Any other property or transform function is refused",
+      "an ANIMATABLE property, camelCase or kebab-case, or `transform` decomposed into translate/translateX/Y/Z, rotate/rotateX/Y, skewX and scale/scaleX/Y (perspective is ignored — it is static), `transformOrigin` (`animation.origin`) or a `filter` list (`animation.filter`). Any other property or transform function is refused",
     source: "vendor/pocketjs/framework/compiler/animation.ts:216",
     verification: "probed",
     diagnostics: [],
@@ -2543,6 +2587,73 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["text-[40px] font-[Display]"],
         fromClassAttribute: true,
         outcome: { refuses: "`font-[Display]` in class" },
+      },
+    ],
+  },
+
+  {
+    id: "paint.text-vector",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-vector",
+    required: false,
+    defaultValue: "atlas cells below the face's ceiling",
+    constraint:
+      "draws this literal's text size as outlines (a FONT VECTOR slot, patches/0063): each glyph's layers filled as PATH ops through the node's world affine, so the run scales without resampling a bitmap and its glyphs turn with the node, where an atlas run turns its anchors and keeps upright cells. Must sit beside a text size or a `text-fit-[..]` ladder in the same literal — a font slot is declared per literal and nothing inherits one — and is refused without one; beside a ladder every rung is a vector slot, which layout measures from its outlines' metrics as it measures an atlas rung. Allocates a dynamic slot of its own, never the atlas slot of its size. At a size the atlas also holds, the vector slot carries the atlas's baseline, cell height, line height, every advance and every kern pair (tests/vector-glyphs.test.ts, at each face's ceiling). A text stroke is outlined from the same outlines; the hollow outside form is drawn centred",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "text-vector beside a size takes a dynamic slot of its own",
+        literals: ["text-[120px] text-vector"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fontSlot", value: 21 } },
+      },
+      {
+        what: "text-vector with no size beside it is refused",
+        literals: ["text-vector text-white"],
+        fromClassAttribute: true,
+        outcome: { refuses: "has no text size beside it" },
+      },
+      {
+        what: "beside a text-fit ladder every rung is a vector slot of its own",
+        literals: ["text-fit-[96,48] text-vector"],
+        fromClassAttribute: true,
+        // 96 vector is the node's slot, 21, and the first rung; 48 vector is
+        // 22. Rungs allocated without the flag would be 22 and 23 instead.
+        outcome: { declares: { prop: "textFit0", value: 22 | (23 << 8) } },
+      },
+    ],
+  },
+  {
+    id: "paint.text-size-ceiling",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-[Npx]",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "any size from above 0 to 4096 px. A size whose atlas cell — round(ascender * px / upm) + ceil(-descender * px / upm), from the face's hhea — would pass the FONT ATLAS header's 255 px is baked as a FONT VECTOR slot rather than refused (patches/0063; 176 px for Noto Sans SC, 211 for Inter, 217 for HarmonyOS Sans); the build prints `vector (over the atlas's 255px cell)` for it. Its metrics are the atlas's formulas in u16/i16 fields",
+    source: "vendor/pocketjs/framework/compiler/bake-font.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: ["atlasCellHeight(font, px) > 255"],
+    bakeProbes: [
+      {
+        what: "4096 px, the largest size a literal takes",
+        literals: ["text-[4096px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fontSlot", value: 21 } },
+      },
+      {
+        what: "one px past it is not a utility, and is refused",
+        literals: ["text-[4097px] text-white"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`text-[4097px]`" },
       },
     ],
   },
@@ -2737,6 +2848,191 @@ export const SURFACE: readonly CapabilityRow[] = [
   },
 
   {
+    id: "paint.colour-filter",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "grayscale | sepia | invert | <filter>-N | <filter>-[x] | hue-rotate-N | -hue-rotate-N | hue-rotate-[angle]",
+    required: false,
+    defaultValue: "identity (no layer)",
+    constraint:
+      "CSS's colour filter functions on the node AND its subtree as one layer: brightness, contrast, grayscale, hue-rotate, invert, saturate, sepia, each the Filter Effects 1 matrix on straight-alpha colour in 1/16384ths, applied after the layer's blur and before its shadow in Tailwind's order (that one, whatever order the classes are written in), each result clamped to 0..1 before the next — so `brightness-200 contrast-50` is not one matrix. Alpha is untouched, so a shadow or glow keeps its own colour. `-N` is N percent (`brightness-150` is 1.5, `grayscale-50` 0.5) and `hue-rotate-N` N degrees; `[x]` is a CSS amount (`[0.5]`, `[50%]`) or for hue-rotate a CSS angle (`[270deg]`, `[0.5turn]`, `[-200grad]`, `[1.2rad]`). grayscale, invert and sepia clamp at 1 as CSS clamps them; brightness, contrast and saturate above 256 (COLOR_FILTER_MAX), a negative amount and an angle with no unit are refused. Keyframe-animatable as `brightness`, `contrast`, `grayscale`, `hueRotate`, `invert`, `saturate`, `sepia` or in a `filter` list (`animation.filter`). Always a layer — measured against applying the filter at draw time in baselines/colour-filters.md. Inside a perspective (3D) subtree it is ignored, as a blur is. patches/0065, class motion",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "grayscale compiles to grayscale = 1.0",
+        literals: ["grayscale w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "grayscale", value: 1065353216 } },
+      },
+      {
+        what: "brightness-150 is 150 percent, 1.5",
+        literals: ["brightness-150 w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "brightness", value: 1069547520 } },
+      },
+      {
+        what: "grayscale-200 clamps to 1, as CSS clamps it",
+        literals: ["grayscale-200 w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "grayscale", value: 1065353216 } },
+      },
+      {
+        what: "hue-rotate-[0.5turn] is 180 degrees",
+        literals: ["hue-rotate-[0.5turn] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "hueRotate", value: 1127481344 } },
+      },
+      {
+        what: "-hue-rotate-15 is -15 degrees, Tailwind's negative form",
+        literals: ["-hue-rotate-15 w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "hueRotate", value: 3245342720 } },
+      },
+      {
+        what: "saturate-[50%] is 0.5",
+        literals: ["saturate-[50%] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "saturate", value: 1056964608 } },
+      },
+      {
+        what: "a brightness past 256 is refused",
+        literals: ["brightness-[257] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`brightness-[257]` in class" },
+      },
+      {
+        what: "a negative amount is refused",
+        literals: ["contrast-[-1] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`contrast-[-1]` in class" },
+      },
+      {
+        what: "a hue with no unit is not a CSS angle and is refused",
+        literals: ["hue-rotate-[90] w-[100px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`hue-rotate-[90]` in class" },
+      },
+    ],
+  },
+  {
+    id: "animation.filter",
+    group: "animation",
+    declaredIn: "<compositionDir>/pocket.config.ts",
+    key: "filter: \"blur() <colour filters> drop-shadow()\"",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "a keyframe `filter` list: `blur()`, the seven colour filters with CSS's arguments (`grayscale(100%)`, `hue-rotate(1turn)`, `brightness()` alone being 1) and `drop-shadow()`. The functions apply in ONE order — blur, brightness, contrast, grayscale, hue-rotate, invert, saturate, sepia, drop-shadow — each clamped before the next, so a list written in another order is refused rather than reordered, and a function named twice is refused. Lists interpolate as CSS interpolates them: a keyframe that writes `filter` pins every function any keyframe names, at its initial value where it does not name it (`none` included; a missing drop-shadow fades to its colour at alpha 0), and two neighbouring lists neither of which is a prefix of the other — which CSS interpolates discretely — are refused. A prop a `filter` sets may not also be set by its own keyframe property in the same animation. patches/0065",
+    source: "vendor/pocketjs/framework/compiler/animation.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "grey to colour, and a list padded against `none`",
+        keyframes: { grade: { from: { filter: "blur(4px) grayscale(100%)" }, "50%": { filter: "blur(4px)" }, to: { filter: "none" } } },
+        animation: { grade: { value: "grade 1s linear both" } },
+        literals: ["animate-grade"],
+        outcome: { bakes: true },
+      },
+      {
+        what: "a list out of the one order is refused, naming it",
+        keyframes: { x: { from: { filter: "sepia(1) brightness(0.5)" }, to: { filter: "sepia(0) brightness(1)" } } },
+        animation: { x: { value: "x 1s" } },
+        literals: ["animate-x"],
+        outcome: { refuses: "`brightness()` is written after `sepia()`" },
+      },
+      {
+        what: "lists CSS would not interpolate are refused",
+        keyframes: { x: { from: { filter: "grayscale(1)" }, to: { filter: "sepia(1)" } } },
+        animation: { x: { value: "x 1s" } },
+        literals: ["animate-x"],
+        outcome: { refuses: "which CSS interpolates discretely" },
+      },
+      {
+        what: "a function named twice is refused",
+        keyframes: { x: { from: { filter: "grayscale(1) grayscale(0.5)" }, to: { filter: "none" } } },
+        animation: { x: { value: "x 1s" } },
+        literals: ["animate-x"],
+        outcome: { refuses: "is listed twice" },
+      },
+      {
+        what: "the keyframe property names: a hue cycle in a CSS angle",
+        keyframes: { spin: { from: { hueRotate: "0deg" }, to: { hueRotate: "1turn" } } },
+        animation: { spin: { value: "spin 1s linear infinite" } },
+        literals: ["animate-spin"],
+        outcome: { bakes: true },
+      },
+      {
+        what: "a negative grayscale is refused",
+        keyframes: { x: { from: { grayscale: "-0.5" }, to: { grayscale: "1" } } },
+        animation: { x: { value: "x 1s" } },
+        literals: ["animate-x"],
+        outcome: { refuses: "is not a grayscale amount" },
+      },
+    ],
+  },
+  {
+    id: "animation.origin",
+    group: "animation",
+    declaredIn: "class literal; <compositionDir>/pocket.config.ts",
+    key: "origin-<keyword> | origin-[x_y] | transformOrigin",
+    required: false,
+    defaultValue: "center",
+    constraint:
+      "the point a node rotates, scales and skews about. The nine keyword classes are the fraction of the box they always were; `origin-[x_y]` is CSS's 2D `transform-origin` with `_` for spaces — one or two of `left|center|right|top|bottom`, a percentage, a px length, or `calc()` adding and subtracting those (`origin-[calc(100%_-_20px)_bottom]`) — stored as a fraction of the box and a length beside it (props originX/Y and originXPx/YPx), so the length holds whatever size layout gives the box. A third value (z), keywords on one axis twice, and a length written before an x keyword are refused, as CSS refuses them. The origin ANIMATES: `transformOrigin: \"20% 30%\"` in a keyframe pins both axes' fraction and length (and `originX`, `originY`, `originXPx`, `originYPx` by name), because a zoom whose focal point travels is the product of two motions no eased translate carries; under a declared shutter it is sampled between ticks like a translate. patches/0066 (class upstream), 0067",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "origin-[25%_75%] is the fraction -0.25 from the centre",
+        literals: ["origin-[25%_75%] rotate-45"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "originX", value: 3196059648 } },
+      },
+      {
+        what: "origin-[12px_0] carries the 12 px beside the fraction",
+        literals: ["origin-[12px_0] rotate-45"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "originXPx", value: 1094713344 } },
+      },
+      {
+        what: "calc() of a percentage and a length",
+        literals: ["origin-[calc(100%_-_20px)_bottom] rotate-45"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "originXPx", value: 3248488448 } },
+      },
+      {
+        what: "a z the 2D origin cannot draw is refused",
+        literals: ["origin-[0_0_10px] rotate-45"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`origin-[0_0_10px]` in class" },
+      },
+      {
+        what: "transformOrigin keyframes bake",
+        keyframes: { pan: { from: { transformOrigin: "0% 0%" }, to: { transformOrigin: "100% 100%" } } },
+        animation: { pan: { value: "pan 1s linear both" } },
+        literals: ["animate-pan scale-200"],
+        outcome: { bakes: true },
+      },
+      {
+        what: "a transformOrigin CSS refuses is refused",
+        keyframes: { pan: { from: { transformOrigin: "left right" }, to: { transformOrigin: "center" } } },
+        animation: { pan: { value: "pan 1s linear both" } },
+        literals: ["animate-pan scale-200"],
+        outcome: { refuses: "is not a 2D transform-origin" },
+      },
+    ],
+  },
+  {
     id: "paint.gradient",
     group: "paint",
     declaredIn: "class literal",
@@ -2911,6 +3207,42 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-square"],
         fromClassAttribute: true,
         outcome: { refuses: "`arc-cap-square` in class" },
+      },
+    ],
+  },
+
+  {
+    id: "paint.image-filter",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "image-filter-texture | image-filter-trilinear",
+    required: false,
+    defaultValue: "texture",
+    constraint:
+      "how an Image samples its texture. `image-filter-texture` reads it the way the texture says — nearest, or bilinear when `images.json` marks it `linear` (or a footage track) — and is the default, so an image without the class draws as it always did. `image-filter-trilinear` reads a mip chain the core reduces from the texture's bytes the first time a draw needs it, each level the last halved by an exact area average: the drawn footprint (texels per pixel, from the unrounded transform, under any rotation, scale or perspective) picks two levels, each read bilinearly, blended. At or above the image's own size the read is bilinear and nothing is reduced. Costs a third of the texture's RGBA bytes (two thirds for a 16-bit texture) for every texture drawn below its size, and per pixel two bilinear reads instead of one. Not inherited; not animatable (an enum, PROP `imageFilter` 221). patches/0064, class motion; `compositions/image-wall` and `baselines/image-wall.md`",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "image-filter-trilinear compiles to ImageFilter.Trilinear (1)",
+        literals: ["w-[45px] h-[63px] image-filter-trilinear"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "imageFilter", value: 1 } },
+      },
+      {
+        what: "image-filter-texture compiles to ImageFilter.Texture (0)",
+        literals: ["w-[45px] h-[63px] image-filter-texture"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "imageFilter", value: 0 } },
+      },
+      {
+        what: "a filter the core does not draw is refused",
+        literals: ["w-[45px] h-[63px] image-filter-bicubic"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`image-filter-bicubic` in class" },
       },
     ],
   },
@@ -3268,6 +3600,126 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
 
+  {
+    id: "paint.textFit",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-fit-[min..max] | text-fit-[a,b,...]",
+    required: false,
+    defaultValue: "none: the run is drawn at its text size",
+    constraint:
+      "a ladder of sizes for a `<Text>`; layout draws the run at the largest rung whose block holds the box the solver gives the node — every line no wider than its content width, the lines times the rung's line height no taller than its height when the node bounds its height (`h-*`, `h-full`, `max-h-*`), no more lines than a `line-clamp`, and no segment cut between its own characters — and at the smallest when none does. A range is the ten-percent ladder from its top, each rung the one above times 9/10 rounded up, the bottom the last: `[48..88]` is 88, 80, 72, 65, 59, 54, 49, 48. A list (`,` or `_` between sizes) is the ladder as written. At most 8 rungs; every rung is a baked slot carrying every collected character (`baselines/text-fit.md` has what that costs). Weight and face apply to every rung. A text size in the same literal is refused. `layout --json` reports the rung taken as `fit`; a ladder that bottoms out is `text_truncated`. patches/0059, class upstream",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "a range compiles its top rung as the node's slot and eight rungs into two words",
+        literals: ["text-fit-[48..88] font-bold"],
+        fromClassAttribute: true,
+        // Slots 21..28 in first-sight order: 88 (the node's), then 80..48.
+        outcome: { declares: { prop: "textFit0", value: 22 | (23 << 8) | (24 << 16) | (25 << 24) } },
+      },
+      {
+        what: "and the second word holds rungs five to eight, 54 px on its pinned slot",
+        literals: ["text-fit-[48..88] font-bold"],
+        fromClassAttribute: true,
+        // 59 -> 25, 54 bold -> 15 (the pinned 54 px pair), 49 -> 26, 48 -> 27.
+        outcome: { declares: { prop: "textFit1", value: 26 | (16 << 8) | (27 << 16) | (28 << 24) } },
+      },
+      {
+        what: "a list is the ladder as written, largest first",
+        literals: ["text-fit-[52,80,64]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textFit0", value: 22 | (23 << 8) | (24 << 16) } },
+      },
+      {
+        what: "a range of nine rungs is refused with its rungs named",
+        literals: ["text-fit-[48..96] w-[400px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "is 9 rungs (96, 87, 79, 72, 65, 59, 54, 49, 48)" },
+      },
+      {
+        what: "a text size beside a ladder is refused",
+        literals: ["text-fit-[48..88] text-[40px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "names the node's sizes" },
+      },
+      {
+        what: "a size of zero does not parse",
+        literals: ["text-fit-[0,48]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`text-fit-[0,48]`" },
+      },
+    ],
+  },
+  {
+    id: "paint.textWrap",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-wrap | text-nowrap",
+    required: false,
+    defaultValue: "text-nowrap: a run breaks at '\\n' only",
+    constraint:
+      "wraps a `<Text>`'s run to its content width at the break opportunities the run carries: a run of spaces, which is dropped at the break, and U+200B, which a generator writes where its language allows a break (CJK, Thai) and which is never looked up or drawn; '\\n' always breaks. No language rule is applied in the core, so where a line may end is the run's author's decision. A segment wider than the line is cut between characters only at a ladder's smallest rung, and the cut is counted as `fit.split`. patches/0059, class upstream",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "text-wrap compiles to textWrap 1",
+        literals: ["text-wrap text-[24px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textWrap", value: 1 } },
+      },
+      {
+        what: "text-nowrap compiles to textWrap 0",
+        literals: ["text-nowrap text-[24px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textWrap", value: 0 } },
+      },
+    ],
+  },
+  {
+    id: "paint.lineClamp",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "line-clamp-N | line-clamp-[N] | line-clamp-none",
+    required: false,
+    defaultValue: "line-clamp-none",
+    constraint:
+      "keeps a `<Text>`'s first N lines (1..65535). When the run had more, the last kept line ends in U+2026 — or '...' where the face maps no U+2026 — and loses characters from its end until the ellipsis fits the content width, a combining mark with the character it sits on; the build bakes U+2026 into every slot when any literal clamps, and bakes the characters it did otherwise. What the clamp left out is counted (spaces not counted) and reported as `text_truncated`: text that is not drawn has no ink for a pixel code to see. patches/0059, class upstream",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "line-clamp-3 compiles to lineClamp 3",
+        literals: ["line-clamp-3 text-wrap"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "lineClamp", value: 3 } },
+      },
+      {
+        what: "line-clamp-[7] compiles to lineClamp 7",
+        literals: ["line-clamp-[7] text-wrap"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "lineClamp", value: 7 } },
+      },
+      {
+        what: "line-clamp-0 is not a clamp, and is refused",
+        literals: ["line-clamp-0 text-wrap"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`line-clamp-0`" },
+      },
+    ],
+  },
+
   // -------------------------------------------------------------------------
   // Declaring footage (generator side)
   //
@@ -3450,6 +3902,24 @@ export const SURFACE: readonly CapabilityRow[] = [
     pinned: [
       "assertions = await assertComposition(c);",
       "--no-assert skips a job's own assertions and needs --spec",
+    ],
+  },
+  {
+    id: "output.missingGlyphs",
+    group: "output",
+    declaredIn: "render command",
+    key: "--spec → missingGlyphs[]",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "before a job is staged, every string its template draws (copy's eyebrow, headline and body; lower-third's name and title; captions' words with `style.case` applied) is read against the cmap of both weights the job's `fonts` names — the sfnt `cmap` table's format 4 and 12 Unicode subtables, no build — and a character either weight does not map refuses the job, exit 1, with `missingGlyphs[]`: `{ field, char, codePoint, face, file }`, one per field, character and weight. A directory of jobs reports every job's before any renders. The MCP `render` tool returns the same object as its error. A line break is not checked. Held by tests/text-fit.test.ts",
+    source: "src/cli/commands/render.ts:368",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: [
+      "json: { ok: false, error, missingGlyphs: report.missing },",
+      "const refusal = await glyphRefusal(options.dir, options.spec);",
     ],
   },
   {
@@ -3944,6 +4414,88 @@ export const SURFACE: readonly CapabilityRow[] = [
           },
         ],
         expect: ["escaped_container:spills"],
+      },
+    ],
+  },
+
+  {
+    id: "layout.text_truncated",
+    group: "layout",
+    declaredIn: "layout --json findings[]",
+    key: "text_truncated",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "the node's run drew less than it declared: a `line-clamp` left characters out, or a `text-fit-[..]` ladder bottomed out — no rung held the box and the run is drawn at the smallest. Read from the core's record of what layout chose (`ui_debug_text_fit`, patches/0059), not from pixels: text that is not drawn has no ink. A fit that settles on a smaller rung is the declaration working and is not this; `fit.px` reports the rung. Asserted against by `untruncated`. Excused by layoutAllow `overflow`",
+    source: "src/render/findings.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    findingProbes: [
+      {
+        what: "text-fit `legal`, three lines kept of five at 24px",
+        viewport: [1920, 1080],
+        nodes: [
+          {
+            id: 1,
+            name: "legal",
+            text: "Prices include VAT where applicable. Offer valid while stocks last…",
+            box: [1000, 800, 840, 84],
+            inPicture: true,
+            visibility: "on-screen",
+            fit: { slot: 30, px: 24, rung: 0, rungs: 1, fitted: false, declaredLadder: false, wraps: true, clamp: 3, linesKept: 3, linesTotal: 5, dropped: 124, split: 0 },
+          },
+        ],
+        expect: ["text_truncated:legal"],
+      },
+      {
+        what: "text-fit `overlong`, a ladder that bottomed out and clamped",
+        viewport: [1920, 1080],
+        nodes: [
+          {
+            id: 1,
+            name: "overlong",
+            text: "Kühlschrankzubehör Pro 3000 Ultra with an extended warranty…",
+            box: [80, 500, 820, 200],
+            inPicture: true,
+            visibility: "on-screen",
+            fit: { slot: 28, px: 48, rung: 7, rungs: 8, fitted: false, declaredLadder: true, wraps: true, clamp: 2, linesKept: 2, linesTotal: 5, dropped: 62, split: 0 },
+          },
+        ],
+        expect: ["text_truncated:overlong"],
+      },
+      {
+        what: "a ladder that bottomed out with no clamp, nothing dropped",
+        viewport: [1920, 1080],
+        nodes: [
+          {
+            id: 1,
+            name: "floor",
+            text: "a run longer than its box at every rung",
+            box: [80, 500, 820, 200],
+            inPicture: true,
+            visibility: "on-screen",
+            fit: { slot: 28, px: 48, rung: 7, rungs: 8, fitted: false, declaredLadder: true, wraps: true, clamp: 0, linesKept: 5, linesTotal: 5, dropped: 0, split: 0 },
+          },
+        ],
+        expect: ["text_truncated:floor"],
+      },
+      {
+        what: "text-fit `long`, a smaller rung that held — the fit working, not a finding",
+        viewport: [1920, 1080],
+        nodes: [
+          {
+            id: 1,
+            name: "long",
+            text: "A product name long enough to need a second line",
+            box: [80, 280, 820, 200],
+            inPicture: true,
+            visibility: "on-screen",
+            fit: { slot: 26, px: 54, rung: 5, rungs: 8, fitted: true, declaredLadder: true, wraps: true, clamp: 0, linesKept: 2, linesTotal: 2, dropped: 0, split: 0 },
+          },
+        ],
+        expect: [],
       },
     ],
   },

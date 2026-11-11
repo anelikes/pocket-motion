@@ -15,6 +15,7 @@ import { extname, resolve } from "node:path";
 import {
   DURATION_FRAMES_MAX,
   DURATION_FRAMES_MIN,
+  FONT_FALLBACK_MAX,
   FONT_WEIGHT_KEYS,
   FOOTAGE_FIT_VALUES,
   SUPERSAMPLE_VALUES,
@@ -33,11 +34,14 @@ import {
 } from "../captions/spec.ts";
 
 /**
- * A job spec names the default pair only. Named faces are a sidecar
- * declaration (`fonts.faces`), written by the generator that reads the spec,
- * so the spec's own key set stays the two weights.
+ * A job spec names the default pair, and optionally a fallback chain — the
+ * faces a codepoint the pair does not map is looked up in, which is how an
+ * emoji in a job's text reaches a colour face (`patches/0063`). Named faces are
+ * a sidecar declaration (`fonts.faces`), written by the generator that reads
+ * the spec, so the spec's own key set stays these.
  */
 const SPEC_FONT_KEYS = new Set<string>(FONT_WEIGHT_KEYS);
+export const SPEC_FONT_ALLOWED = new Set<string>([...FONT_WEIGHT_KEYS, "fallback"]);
 
 export const SPEC_TEMPLATE_COPY = "copy";
 export const SPEC_TEMPLATE_LOWER_THIRD = "lower-third";
@@ -293,6 +297,56 @@ function parseTemplate(input: Record<string, unknown>, diagnostics: Diagnostic[]
   return input.template as SpecTemplate;
 }
 
+/**
+ * `fonts.fallback` of a job: 1 to FONT_FALLBACK_MAX repo-relative paths, each
+ * on disk, none twice — the sidecar's own rule (`src/manifest/sidecar.ts`),
+ * which the generated sidecar then carries, plus the file check every face a
+ * spec names gets here.
+ */
+function parseSpecFallback(raw: unknown, root: string, diagnostics: Diagnostic[]): string[] | undefined {
+  if (!Array.isArray(raw)) {
+    diagnostics.push(
+      diag("spec.fonts.fallback.notArray", "/fonts/fallback", `\`fonts.fallback\` must be an array of font file paths; got ${describeType(raw)}`),
+    );
+    return undefined;
+  }
+  if (raw.length === 0 || raw.length > FONT_FALLBACK_MAX) {
+    diagnostics.push(
+      diag("spec.fonts.fallback.count", "/fonts/fallback", `\`fonts.fallback\` lists ${raw.length} faces; it must list 1 to ${FONT_FALLBACK_MAX}`),
+    );
+    return undefined;
+  }
+  const out: string[] = [];
+  let ok = true;
+  raw.forEach((value, i) => {
+    const at = `/fonts/fallback/${i}`;
+    if (typeof value !== "string") {
+      diagnostics.push(diag("spec.fonts.fallback.notString", at, `\`fonts.fallback[${i}]\` must be a string path; got ${describeType(value)}`));
+      ok = false;
+      return;
+    }
+    const issue = pathIssue(value, `fonts.fallback[${i}]`, "spec.fonts.fallback");
+    if (issue) {
+      diagnostics.push(diag(issue.code, at, issue.message));
+      ok = false;
+      return;
+    }
+    if (out.includes(value)) {
+      diagnostics.push(diag("spec.fonts.fallback.duplicate", at, `\`fonts.fallback\` lists ${JSON.stringify(value)} twice`));
+      ok = false;
+      return;
+    }
+    const abs = resolve(root, value);
+    if (!existsSync(abs)) {
+      diagnostics.push(diag("spec.fonts.fallback.missingFile", at, `fallback face ${i} is not on disk: ${abs}`));
+      ok = false;
+      return;
+    }
+    out.push(value);
+  });
+  return ok ? out : undefined;
+}
+
 function parseEnvelope(
   input: Record<string, unknown>,
   options: ParseSpecOptions,
@@ -412,12 +466,12 @@ function parseEnvelope(
   } else {
     const obj = input.fonts;
     for (const key of Object.keys(obj)) {
-      if (!SPEC_FONT_KEYS.has(key)) {
+      if (!SPEC_FONT_ALLOWED.has(key)) {
         diagnostics.push(
           diag(
             "spec.fonts.unknownKey",
             `/fonts/${key}`,
-            `unknown key ${JSON.stringify(key)}; allowed keys are ${[...SPEC_FONT_KEYS].join(", ")}`,
+            `unknown key ${JSON.stringify(key)}; allowed keys are ${[...SPEC_FONT_ALLOWED].join(", ")}`,
           ),
         );
       }
@@ -453,8 +507,9 @@ function parseEnvelope(
       }
       parts[key] = value;
     }
+    const fallback = "fallback" in obj ? parseSpecFallback(obj.fallback, options.root, diagnostics) : undefined;
     if (parts.regular && parts.bold) {
-      fonts = { regular: parts.regular, bold: parts.bold };
+      fonts = { regular: parts.regular, bold: parts.bold, ...(fallback !== undefined ? { fallback } : {}) };
     }
   }
 

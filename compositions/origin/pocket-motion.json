@@ -1,0 +1,12 @@
+{
+  "motion": 1,
+  "durationFrames": 30,
+  "fps": 30,
+  "supersample": 1,
+  "assertions": [
+    { "node": "named", "inPicture": [0, 29] },
+    { "node": "px", "inPicture": [0, 29] },
+    { "node": "calc", "inPicture": [0, 29] },
+    { "node": "zoom", "inPicture": [0, 29] }
+  ]
+}

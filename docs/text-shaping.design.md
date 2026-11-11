@@ -453,6 +453,19 @@ fact.
   under `verify --strict`. A pixel reading cannot show text that is not
   drawn, so this one comes from the core's record.
 
+**Status, 2026-11-06: F1 and F2 landed together as `patches/0059`.** Where
+the landing departs from the plan above: wrapping came with the fit rather
+than after it (`text-wrap`), because a ladder whose lines are the
+generator's cannot fit a box the generator never sees; a rung that would
+have to cut a word between its letters does not hold, so a smaller rung is
+tried first; the record is read through `ui_debug_text_fit` and reported as
+`fit` per node, `text_truncated` and `assert`'s `untruncated`; and
+`minTextPx` was not built — `fit.px` is reported, and a template that needs a
+floor names it as its ladder's last rung. The size mapping was measured
+before it was chosen (`baselines/text-fit.md`): a ladder of baked slots,
+because the top rung drawn scaled cost nine times the frame and is not the
+picture a declared size draws.
+
 ## 8. Identity and digests
 
 - **No existing digest moves.** A face declares shaping or it does not; a

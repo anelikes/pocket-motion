@@ -64,6 +64,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/colour-filters": {
+      "failures": [],
+      "nodes": 25,
+      "named": 13,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/copy": {
       "failures": [],
       "nodes": 3,
@@ -141,6 +148,20 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/hero-type": {
+      "failures": [],
+      "nodes": 4,
+      "named": 4,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/image-wall": {
+      "failures": [],
+      "nodes": 60,
+      "named": 60,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/images": {
       "failures": [],
       "nodes": 6,
@@ -173,8 +194,8 @@
       "failures": [
         "buried"
       ],
-      "nodes": 12,
-      "named": 12,
+      "nodes": 13,
+      "named": 13,
       "neverShown": 1,
       "buriedAfterShown": 0
     },
@@ -228,6 +249,13 @@
       "failures": [],
       "nodes": 8,
       "named": 8,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/origin": {
+      "failures": [],
+      "nodes": 4,
+      "named": 4,
       "neverShown": 0,
       "buriedAfterShown": 0
     },
@@ -322,6 +350,13 @@
       "failures": [],
       "nodes": 16,
       "named": 16,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/text-fit": {
+      "failures": [],
+      "nodes": 13,
+      "named": 13,
       "neverShown": 0,
       "buriedAfterShown": 0
     },

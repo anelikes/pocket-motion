@@ -16,7 +16,7 @@
 
 import { createSandbox, type AuditReport, type Sandbox } from "../harness/sandbox.ts";
 import type { SidecarShutter } from "../manifest/sidecar.ts";
-import { parseAtlases } from "../text/atlas.ts";
+import { parseAtlases, parseVectorFaces } from "../text/atlas.ts";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -100,6 +100,13 @@ export interface BootedWorld {
    * (`patches/0055`).
    */
   readonly rasterKey: () => string;
+  /**
+   * The distinct codepoints a font lookup has missed since boot, ascending:
+   * each one was laid out and drawn as the tofu box, because neither the
+   * slot's face nor any declared fallback maps it. The core keeps at most 64.
+   * Throws on a core without `ui_glyph_missed` (`patches/0063`).
+   */
+  readonly missingGlyphs: () => readonly number[];
   /** The declared shutter as the core takes it, or null. */
   readonly exposure: Exposure | null;
   /**
@@ -392,7 +399,12 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
   if (pakPath) {
     const pak = await Bun.file(pakPath).arrayBuffer();
     if (!options.allowMetricsOnly) {
-      const thin = [...parseAtlases(new Uint8Array(pak)).values()].filter((a) => a.metricsOnly);
+      const bytes = new Uint8Array(pak);
+      const thin = [
+        ...[...parseAtlases(bytes).values()].filter((a) => a.metricsOnly),
+        // A vector slot baked --metrics-only carries no outlines (patches/0063).
+        ...parseVectorFaces(bytes).filter((v) => v.metricsOnly),
+      ];
       if (thin.length > 0) {
         throw new Error(
           `PocketJS Motion: ${pakPath} carries ${thin.length} metrics-only font atlas(es) ` +
@@ -442,6 +454,21 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
         ? ex.ui_draw_hash_exposure!(exposure.spanNum, exposure.spanDen, exposure.samples)
         : ex.ui_draw_hash!();
       return `${draw}:${revision()}`;
+    },
+    missingGlyphs: () => {
+      const missed = ex.ui_glyph_missed as unknown as ((i: number) => number) | undefined;
+      if (typeof missed !== "function") {
+        throw new Error(
+          `PocketJS Motion: ${wasmPath} has no ui_glyph_missed (patches/0063-vector-glyphs.patch), ` +
+            "so what was drawn as tofu cannot be asked of it. Rebuild the core:\n  bun scripts/vendor.ts",
+        );
+      }
+      const out: number[] = [];
+      for (let i = 0; ; i++) {
+        const cp = missed(i) >>> 0;
+        if (cp === 0xffffffff) return out;
+        out.push(cp);
+      }
     },
     exposure,
     exposureScratch: () => (exposure ? wasm.exposureScratch() : { ptr: 0, len: 0 }),
