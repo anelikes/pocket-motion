@@ -11,6 +11,7 @@ import { countingOps } from "../../lint/oracle.ts";
 import { describeShutter, hardenedBootWorld, totalPendingWork } from "../../runtime/boot.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { openFootage, scratchTree } from "../footage.ts";
+import { codepointLabel, missingGlyphLines, nodesCarrying } from "../../text/missing.ts";
 import { errMsg, listCompositionSources, resolveComposition } from "../resolve.ts";
 import {
   EXIT_FAIL,
@@ -173,8 +174,15 @@ export async function run(options: CheckOptions): Promise<CommandResult> {
       staticFindings.push(...lintSource(await Bun.file(file).text(), file));
     }
 
+    // Text the window laid out with a glyph no declared face has: drawn as
+    // the tofu box, with the realm clean and the digest stable
+    // (`src/text/missing.ts`). Read after the run, so a string the window
+    // sets later is in it too.
+    const missing = world.missingGlyphs();
+
     const payload = {
-      ok: report.mountOnly && pendingTotal === 0 && staticFindings.length === 0,
+      ok: report.mountOnly && pendingTotal === 0 && staticFindings.length === 0 && missing.length === 0,
+      missingGlyphs: missing.map(codepointLabel),
       mountOnly: report.mountOnly,
       staticFindings,
       framesObserved: report.framesObserved,
@@ -212,6 +220,23 @@ export async function run(options: CheckOptions): Promise<CommandResult> {
         stderrLines: [
           `mount-only oracle: ${report.totalOps} guest HostOps after mount across ${frames} frame(s)`,
           `opsByName: ${JSON.stringify(report.opsByName)}`,
+        ],
+      };
+    }
+
+    if (missing.length > 0) {
+      // The nodes from a throwaway world: a tree read on this one would take a
+      // guest turn.
+      const nodes = nodesCarrying(tree ?? (await scratchTree(c)), missing);
+      return {
+        exitCode: EXIT_FAIL,
+        json: { ...payload, missingGlyphNodes: nodes },
+        stdoutLines: [
+          `check failed — ${missing.length} codepoint(s) have no glyph in the slot's face or any fonts.fallback face, and were drawn as the tofu box`,
+          ...missingGlyphLines(missing, nodes),
+        ],
+        stderrLines: [
+          "declare a face that maps them in pocket-motion.json's fonts.fallback, or take them out of the text",
         ],
       };
     }

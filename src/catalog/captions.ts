@@ -19,16 +19,19 @@ const DECLARED = 'job spec (`template: "captions"`)';
 const SPEC = "src/captions/spec.ts";
 const INGEST = "src/captions/ingest.ts";
 
+/** The default pair every probe's job names. */
+const FONTS = {
+  regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+  bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf",
+};
+
 /** A captions job that parses. */
 const JOB: Record<string, unknown> = {
   spec: 1,
   template: "captions",
   viewport: [1280, 720],
   fps: 30,
-  fonts: {
-    regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf",
-    bold: "assets/fonts/HarmonyOS_Sans_Bold.ttf",
-  },
+  fonts: FONTS,
   transcript: { words: [{ text: "Hello", start: 0, end: 0.5 }], language: "en" },
   style: { name: "highlight" },
 };
@@ -303,6 +306,24 @@ export const CAPTIONS_ROWS: readonly CapabilityRow[] = [
     source: "src/manifest/spec.ts",
     diagnostics: [],
     specProbes: [probe("spec.footage.missingFile", job({ footage: { src: "assets/synthetic/absent.mp4" } }))],
+  }),
+  row("fonts.fallback", {
+    required: false,
+    defaultValue: null,
+    constraint:
+      "optional array of 1 to 4 repo-relative faces, each on disk and none twice, the envelope key every template shares (copy, lower-third, captions): the generator measures with them and writes them into the staged sidecar's `fonts.fallback`, so an emoji in the job's text is drawn from a colour face (patches/0063). A codepoint no declared face maps is measured as the tofu box and the job is refused at mount, before anything is encoded, naming the node and the codepoint (`render --spec`, src/text/missing.ts)",
+    source: "src/manifest/spec.ts",
+    diagnostics: [],
+    specProbes: [
+      probe("spec.fonts.fallback.notArray", job({ fonts: { ...FONTS, fallback: "assets/fonts/Noto-COLRv1.ttf" } })),
+      probe("spec.fonts.fallback.count", job({ fonts: { ...FONTS, fallback: [] } })),
+      probe("spec.fonts.fallback.notString", job({ fonts: { ...FONTS, fallback: [7] } })),
+      probe("spec.fonts.fallback.absolute", job({ fonts: { ...FONTS, fallback: ["/e.ttf"] } })),
+      probe("spec.fonts.fallback.traversal", job({ fonts: { ...FONTS, fallback: ["../e.ttf"] } })),
+      probe("spec.fonts.fallback.duplicate", job({ fonts: { ...FONTS, fallback: ["assets/fonts/Noto-COLRv1.ttf", "assets/fonts/Noto-COLRv1.ttf"] } })),
+      probe("spec.fonts.fallback.missingFile", job({ fonts: { ...FONTS, fallback: ["assets/fonts/absent.ttf"] } })),
+      probe("spec.fonts.unknownKey", job({ fonts: { ...FONTS, faces: {} } })),
+    ],
   }),
   row("viewport", {
     required: false,

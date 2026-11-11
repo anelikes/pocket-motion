@@ -141,6 +141,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/hero-type": {
+      "failures": [],
+      "nodes": 4,
+      "named": 4,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/image-wall": {
       "failures": [],
       "nodes": 60,

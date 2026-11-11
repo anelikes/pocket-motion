@@ -27,10 +27,11 @@
  */
 
 import { readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { JobSpec } from "../manifest/spec.ts";
 import { displayText } from "../captions/template.ts";
+import { pocketjsRoot } from "../runtime/boot.ts";
 
 /** One string a template draws from a job. `field` is a JSON pointer into the job. */
 export interface JobString {
@@ -47,6 +48,11 @@ export interface MissingGlyph {
   readonly face: "regular" | "bold";
   /** The face file, as the job names it. */
   readonly file: string;
+  /**
+   * pocket-motion: a fallback face (`fonts.fallback`) maps the character and
+   * the build leaves it out of the slot (`patches/0063`): which face, and why.
+   */
+  readonly leftOut?: { readonly file: string; readonly reason: string };
 }
 
 export interface CoverageReport {
@@ -160,16 +166,43 @@ export function jobStrings(spec: JobSpec): JobString[] {
 
 const hex = (cp: number): string => `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
 
+/** The vendored baker's rule for what a fallback face leaves out of a slot. */
+type LeftOutBy = (path: string, cps: Iterable<number>) => Map<number, string>;
+let leftOutBy: LeftOutBy | undefined;
+function bakerLeftOut(path: string, cps: Iterable<number>): Map<number, string> {
+  // A computed specifier, so the vendored compiler stays out of tsc's graph,
+  // and only when a job's character reaches a fallback face.
+  leftOutBy ??= (require(join(pocketjsRoot(), "framework/compiler/bake-font.ts")) as { leftOutBy: LeftOutBy }).leftOutBy;
+  return leftOutBy(path, cps);
+}
+
 /**
  * Check `strings` against each of `faces` (repo-relative or absolute paths,
  * resolved against `root`). One entry per (field, character, face), in field
  * order, then character order of first appearance.
+ *
+ * pocket-motion: a character neither weight maps is looked up in
+ * `faces.fallback`, in order, as the build looks it up — the FIRST fallback
+ * face that maps it supplies it — and is covered unless the build leaves it
+ * out of the slot (`patches/0063`: a codepoint drawn only inside a shaped
+ * sequence, or a colour glyph the core cannot draw). One it leaves out is
+ * reported with the face and the reason.
  */
 export function checkCoverage(
   strings: readonly JobString[],
-  faces: { readonly regular: string; readonly bold: string },
+  faces: { readonly regular: string; readonly bold: string; readonly fallback?: readonly string[] },
   root: string,
 ): CoverageReport {
+  const chain = (faces.fallback ?? []).map((file) => ({ file, abs: resolve(root, file), set: faceCoverage(resolve(root, file)) }));
+  /** The first fallback face that maps `cp`, and why it leaves it out (null: it supplies it). */
+  const fromChain = new Map<number, { file: string; reason: string | null } | null>();
+  const viaFallback = (cp: number): { file: string; reason: string | null } | null => {
+    if (!fromChain.has(cp)) {
+      const face = chain.find((f) => f.set.has(cp));
+      fromChain.set(cp, face === undefined ? null : { file: face.file, reason: bakerLeftOut(face.abs, [cp]).get(cp) ?? null });
+    }
+    return fromChain.get(cp)!;
+  };
   const maps = (["regular", "bold"] as const).map((face) => ({
     face,
     file: faces[face],
@@ -185,7 +218,17 @@ export function checkCoverage(
       all.add(char);
       const cp = char.codePointAt(0)!;
       for (const m of maps) {
-        if (!m.set.has(cp)) missing.push({ field, char, codePoint: hex(cp), face: m.face, file: m.file });
+        if (m.set.has(cp)) continue;
+        const fallback = viaFallback(cp);
+        if (fallback !== null && fallback.reason === null) continue;
+        missing.push({
+          field,
+          char,
+          codePoint: hex(cp),
+          face: m.face,
+          file: m.file,
+          ...(fallback !== null ? { leftOut: { file: fallback.file, reason: fallback.reason! } } : {}),
+        });
       }
     }
   }
@@ -199,5 +242,9 @@ export function jobCoverage(spec: JobSpec, root: string): CoverageReport {
 
 /** One line per missing character, for a refusal a person reads. */
 export function describeMissing(missing: readonly MissingGlyph[]): string[] {
-  return missing.map((m) => `${m.field}: ${JSON.stringify(m.char)} ${m.codePoint} is not in ${m.face} (${m.file})`);
+  return missing.map((m) =>
+    m.leftOut !== undefined
+      ? `${m.field}: ${JSON.stringify(m.char)} ${m.codePoint} is not in ${m.face} (${m.file}), and ${m.leftOut.file} maps it but the build leaves it out — ${m.leftOut.reason}`
+      : `${m.field}: ${JSON.stringify(m.char)} ${m.codePoint} is not in ${m.face} (${m.file})`,
+  );
 }

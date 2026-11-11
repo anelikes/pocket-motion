@@ -50,7 +50,8 @@ export async function run(options: BuildOptions): Promise<CommandResult> {
 
   const c = resolved.value;
   try {
-    const record = await runBuild(c);
+    const fontNotes: string[] = [];
+    const record = await runBuild(c, { fontNotes });
     const pak = existsSync(c.pakPath) ? c.pakPath : null;
     return {
       exitCode: EXIT_OK,
@@ -61,6 +62,7 @@ export async function run(options: BuildOptions): Promise<CommandResult> {
         pakPath: pak,
         buildRecordPath: buildRecordPath(c.bundlePath),
         buildRecord: record,
+        ...(fontNotes.length > 0 ? { fontNotes } : {}),
       },
       stdoutLines: [
         `build ok — ${c.distDir}`,
@@ -68,6 +70,7 @@ export async function run(options: BuildOptions): Promise<CommandResult> {
         ...(pak ? [`pak    ${pak}`] : ["pak    (none — this composition bakes no assets)"]),
         `${BUILD_RECORD_FILE}  bun ${record.bun}, upstream ${record.upstream}, ` +
           `${record.patches.length} patch(es)`,
+        ...fontNotes,
       ],
     };
   } catch (e) {

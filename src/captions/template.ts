@@ -100,6 +100,11 @@ export async function layoutCaptions(spec: CaptionsSpec): Promise<Measured> {
   }
   const m = await openMeasurer({
     face,
+    // An emoji in a word measures at the fallback face's advance; one no face
+    // maps measures as the tofu box, and `render --spec` refuses the job at
+    // mount, naming the word.
+    fallback: (spec.fonts.fallback ?? []).map((f) => join(ROOT, f)),
+    missing: "tofu",
     sizes: ladder.map((px) => ({ px, bold: true })),
     texts: words.map((w) => w.text),
     density: spec.supersample,
@@ -269,7 +274,11 @@ function sidecarSource(spec: CaptionsSpec, rendered: Rendered): string {
         durationFrames: spec.durationFrames,
         fps: spec.fps,
         supersample: spec.supersample,
-        fonts: { regular: spec.fonts.regular, bold: spec.fonts.bold },
+        fonts: {
+          regular: spec.fonts.regular,
+          bold: spec.fonts.bold,
+          ...(spec.fonts.fallback !== undefined ? { fallback: spec.fonts.fallback } : {}),
+        },
         ...(footage ? { footage } : {}),
         ...(layoutAllow ? { layoutAllow } : {}),
         assertions,

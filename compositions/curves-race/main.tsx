@@ -10,7 +10,7 @@ mount(() => (
     </View>
       <View class="w-[1440] flex-col gap-3 px-9 py-5 rounded-xl border border-zinc-800 bg-zinc-900">
         <View class="flex-row items-end gap-5">
-          <Text class="text-[26px] font-bold text-zinc-50">{"ease-in-out · duration ∝ value"}</Text>
+          <Text class="text-[26px] font-bold text-zinc-50">{"ease-in-out · duration = k · value"}</Text>
           <Text class="text-[19px] text-zinc-500">{"cubic-bezier(0.4,0,0.6,1)"}</Text>
         </View>
         <View class="flex-row items-center gap-5 h-[34]">
@@ -36,7 +36,7 @@ mount(() => (
       </View>
       <View class="w-[1440] flex-col gap-3 px-9 py-5 rounded-xl border border-zinc-800 bg-zinc-900">
         <View class="flex-row items-end gap-5">
-          <Text class="text-[26px] font-bold text-zinc-50">{"ease-out · duration ∝ value"}</Text>
+          <Text class="text-[26px] font-bold text-zinc-50">{"ease-out · duration = k · value"}</Text>
           <Text class="text-[19px] text-zinc-500">{"cubic-bezier(0.2,0.7,0.5,1)"}</Text>
         </View>
         <View class="flex-row items-center gap-5 h-[34]">
