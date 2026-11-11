@@ -227,6 +227,12 @@ const ENTRIES = [
   // COLR flattening or the gradient mapping moves this digest; it is also the
   // one composition that bakes Noto Color Emoji.
   "compositions/hero-type",
+  // image-wall. patches/0064: sixty 300x420 covers drawn at 15% under
+  // `image-filter-trilinear` and pushed in to 26% over 300 frames, so every
+  // frame reads two levels of sixty mip chains and the push crosses a level.
+  // A change to the reduction, the footprint, the level pick or the blend
+  // moves this digest and no other.
+  "compositions/image-wall",
 ] as const;
 
 /**

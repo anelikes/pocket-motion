@@ -994,9 +994,60 @@ sampling's blocks, and it does not filter detail finer than the drawn pixel:
 a one-pixel pattern — fabric, foliage, a checkerboard — drawn at any size
 under its own aliases into moiré that crawls as the picture moves (measured
 on a 1 px checker at 1.04–1.67× minification: luma spread 30–41 levels where
-a filtered one is under 1). A picture shown smaller than it is, is resampled
-to the largest size it is drawn at in its `gen.ts`, with a filter; the core
-then only magnifies it.
+a filtered one is under 1). A picture drawn far below its size takes
+`image-filter-trilinear`, below; one drawn only a little below it is
+resampled to the largest size it is drawn at in its `gen.ts`, with a
+filter, so the core only magnifies it — between one and two texels a pixel
+trilinear is the bilinear read blended toward the first reduced level by how
+far past one the footprint is, so that 1 px checker keeps 96% of its moiré
+at 1.04× and a third of it at 1.67×.
+
+**An image drawn well below its size takes `image-filter-trilinear`**
+(`patches/0064`). Without it an Image reads its texture the way the texture
+says — nearest, or bilinear under `"linear": true` — and either reads a
+handful of the dozens of texels under a pixel once the image is drawn below
+half its size: a wall of covers at 15% lands on whichever texels the pixel
+grid crosses, and a push redraws it differently at every frame. With it, the
+core reduces a mip chain from the texture's bytes the first time a draw needs
+one — each level the last halved by an exact area average, in integers — and
+reads the two levels the drawn footprint falls between, each bilinearly,
+blended:
+
+```tsx
+<Image class="w-[45px] h-[63px] image-filter-trilinear" src="cover-07.png" />
+```
+
+The footprint is the image's texels per pixel along the screen axis that
+crosses the most of them, taken from its transform before any rounding, so a
+`scale` on an ancestor, a rotation and a perspective turn all count — in
+perspective each cell of the image's mesh carries its own. At or above the
+image's own size the read is the texture's bilinear read and nothing is
+reduced. `compositions/image-wall` is sixty 300×420 covers drawn at 45×63
+and pushed in to 26% over ten seconds. The part of each frame's change that
+is not steady — the second difference over three frames — falls from 17.9
+levels nearest and 17.0 bilinear to 8.7, under the 12.0 of the same wall
+supersampled ×4, and the frame-to-frame difference halves; the price is
+softness, a cover's 2 px title bars blurrier than at ×4
+(`baselines/image-wall.md`). The cost is the levels — a third of an RGBA
+texture's bytes again, two thirds of an RGB565 one's, for each texture
+drawn below its size — reduced on the first frame that needs them (51 ms
+for the wall's sixty covers), and two bilinear reads a pixel instead of
+one: the wall's frame costs 1.9× bilinear's.
+
+**It is a class, not the default.** As the default for every image drawn
+below its size it moves two of the ledger's recorded digests, `images` and
+`probe`, and both showcase films on most of their frames; as the default for
+textures already flagged `linear`, `images` and both films
+(`baselines/image-wall.md` has the probe). A picture here moves when its
+composition says so, so a template that draws images small writes the
+class.
+
+It is isotropic: an image squeezed on one axis, or tilted steeply in
+perspective, is filtered for its most compressed axis and goes soft along
+the other. It does not move an image off whole pixels (next paragraph): under
+a push a cover's edges still step a pixel at a time. A footage tile does not
+carry it — `tileNodes` writes the tiles, and a track is ingested at its drawn
+size.
 
 **An upright picture is placed on whole logical pixels.** Its position and
 its size are each rounded (`emit_tex_quad`, `draw.rs`), and `supersample`

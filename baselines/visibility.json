@@ -148,6 +148,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/image-wall": {
+      "failures": [],
+      "nodes": 60,
+      "named": 60,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/images": {
       "failures": [],
       "nodes": 6,

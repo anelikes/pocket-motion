@@ -3027,6 +3027,42 @@ export const SURFACE: readonly CapabilityRow[] = [
   },
 
   {
+    id: "paint.image-filter",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "image-filter-texture | image-filter-trilinear",
+    required: false,
+    defaultValue: "texture",
+    constraint:
+      "how an Image samples its texture. `image-filter-texture` reads it the way the texture says — nearest, or bilinear when `images.json` marks it `linear` (or a footage track) — and is the default, so an image without the class draws as it always did. `image-filter-trilinear` reads a mip chain the core reduces from the texture's bytes the first time a draw needs it, each level the last halved by an exact area average: the drawn footprint (texels per pixel, from the unrounded transform, under any rotation, scale or perspective) picks two levels, each read bilinearly, blended. At or above the image's own size the read is bilinear and nothing is reduced. Costs a third of the texture's RGBA bytes (two thirds for a 16-bit texture) for every texture drawn below its size, and per pixel two bilinear reads instead of one. Not inherited; not animatable (an enum, PROP `imageFilter` 221). patches/0064, class motion; `compositions/image-wall` and `baselines/image-wall.md`",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "image-filter-trilinear compiles to ImageFilter.Trilinear (1)",
+        literals: ["w-[45px] h-[63px] image-filter-trilinear"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "imageFilter", value: 1 } },
+      },
+      {
+        what: "image-filter-texture compiles to ImageFilter.Texture (0)",
+        literals: ["w-[45px] h-[63px] image-filter-texture"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "imageFilter", value: 0 } },
+      },
+      {
+        what: "a filter the core does not draw is refused",
+        literals: ["w-[45px] h-[63px] image-filter-bicubic"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`image-filter-bicubic` in class" },
+      },
+    ],
+  },
+
+  {
     id: "paint.path",
     group: "paint",
     declaredIn: "<Path d=… viewBox=…>",
