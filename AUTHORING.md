@@ -41,7 +41,7 @@ failed — the command that fixes it: the running Bun against the one
 `build.json` names; rustup and the wasm target; `ffmpeg` and `ffprobe`
 separately, with their version lines; the vendored tree at the pin with the
 patches applied; `assets/*/manifest.json` fetched and matching; and free disk
-against what a full ledger run was measured to decode (1.3 GiB — it fails below
+against what a full ledger run was measured to decode (789 MiB — it fails below
 that and calls the headroom thin below 3x it).
 
 `ffprobe` is asked for separately because it is separately load-bearing:
@@ -185,6 +185,18 @@ Worked examples, roughly in reading order:
   wedges sharing their edges, a wireframe globe in a viewBox with a trimmed
   ring orbiting it, and a wave morphing under an `overflow-mask` window. Its
   sidecar asserts what each is for.
+- `compositions/path-primitives` — dashed, dotted and marching connectors,
+  three morphs between keys drawn separately (play into pause, heart into
+  star, ring into square), and a dart flying a drawn route turned to its
+  direction of travel, its keyframes made by `motionPath` in
+  `pocket.config.ts`. Its sidecar asserts what each is for.
+- `compositions/svg-import` — `lighthouse.svg` imported with `<Svg>`: eleven
+  parts drawn on one after another by `trimEnd`, a lamp scaled up about its
+  own centre and a beam turning about the lamp, its sidecar asserting the
+  order the parts are drawn in by their ids.
+- `compositions/data-chart` — a line chart whose rules, area, series and dots
+  are `<Path>`s computed at mount from rows in another module, baked from the
+  mounted tree.
 - `compositions/kenburns` — the tile grid video footage draws through, with no
   `footage` in its sidecar at all: its pixels are pushed by
   `scripts/push-probe.ts` (see "Footage" below).
@@ -229,7 +241,9 @@ which is what supersampling means — lanczos was here and rang on hard edges),
 while `trace` digests and
 `frame` PNGs stay on the supersampled buffer — the hash covers what the
 rasteriser produced, scaling is an encode-side step. Use 2+ when text moves
-slowly (sub-pixel motion is quantized at 1×).
+slowly (sub-pixel motion is quantized at 1×). An upright picture is not
+helped: its place is rounded to a whole logical pixel before the scale is
+applied ("Still pictures").
 
 **`supersample: N` is half a recipe. The other half is `--density=N` on the
 build**, and the two must agree. Glyphs are baked bitmaps, so a supersampled
@@ -338,14 +352,19 @@ are read the same — and every arm of a `?:`, `||` or `??` is checked.
 **Timing is quantised twice, and the second one depends on `fps`.** A duration
 or a delay written in ms bakes to whole frames at the realm's 60 Hz —
 `round(ms × 60 / 1000)` — and the render then samples every `60 / fps`-th of
-those ticks, because that is how many the core steps between rasterises. At
-30 fps only even ticks are ever looked at, so a 45 ms delay bakes to tick 3 and
-is first seen at tick 4. The shift is under one frame and it is not spread
-evenly across a stagger: 45/90/135/180 ms bake to ticks 3/5/8/11 and are shown
-at 4/6/8/12 — gaps of 2, 2, 4 where four equal ones were written. Nothing here
-is nondeterministic and no digest moves; the timing is simply not the timing you
-wrote. When the spacing carries meaning, write times that are whole rendered
-frames (33.333 ms at 30 fps) rather than round-looking ms, and run
+those ticks, because that is how many the core steps between rasterises. It
+samples the LAST of them: frame `f` shows tick `(f + 1) × 60 / fps − 1`
+(`clockOfFrame`, `src/runtime/clock.ts`). At 30 fps only odd ticks are ever
+looked at — frame 0 shows tick 1 — so an entrance written at 0 ms is a tick
+under way in the first frame, and a delay of one frame, 33 ms, bakes to tick 2
+and is first seen at tick 3. The shift is under one frame and it is not spread
+evenly across a stagger: 45/90/135/180 ms bake to ticks 3/5/8/11 and are first
+shown by frames 1/2/4/5 — gaps of 1, 2, 1 frames where three equal ones were
+written. Nothing here is nondeterministic and no digest moves; the timing is
+simply not the timing you wrote. When the spacing carries meaning, write times
+that are whole rendered frames apart (33.333 ms at 30 fps) rather than
+round-looking ms; to have each land on the tick its frame shows, start the
+count one tick in — 16.667, 50, 83.333 ms … at 30 fps. Run
 `bun src/cli/main.ts keyframes compositions/<name>` to see which of your
 instants the render never samples. At `fps: 60` every tick is rendered and the
 question does not arise.
@@ -358,8 +377,8 @@ on it (`compositions/late-anim`).
 It reports two more things, each the shape of a defect a composition here
 shipped with. **A step the grid lands inside**: a segment no longer than one
 rendered frame is a cut, and when its two ticks straddle a sampled one, the
-frame taken there shows the cut half done — a `gin 34ms` gate at an odd tick,
-rendered at 30 fps, arrives a frame late and grey. A 17 ms gate is one tick
+frame taken there shows the cut half done — a `gin 34ms` gate from an even
+tick, rendered at 30 fps, arrives a frame late and grey. A 17 ms gate is one tick
 and no frame can land inside it (`compositions/rename-card`'s close uses
 those). **A property two animations of one comma list write at once**: the
 core takes the LAST animation currently writing a property, and `both` or
@@ -384,7 +403,7 @@ keyframe, or `originX`/`originY` (fractions from the centre) and
 picture: hold `scale-200` and move the origin, and the magnified card pans
 by the origin's path, a product of two motions no eased translate carries
 (`compositions/origin`). Under a declared shutter the origin is sampled
-between ticks like a translate (`patches/0056`, `0057`).
+between ticks like a translate (`patches/0066`, `0067`).
 
 **A window has a shape.** `overflow-hidden` clips children to the node's
 axis-aligned box; `overflow-mask` clips them, and the node's own ground, to
@@ -435,23 +454,98 @@ and `stroke-[Npx]` stroke it in the path's own units — viewBox units under a
 viewBox — with `stroke-join-*`, `stroke-cap-*` and `stroke-miter-[N]`; and
 `trim-start-[f]`, `trim-end-[f]` and `trim-offset-[f]` draw only part of the
 stroke, by fractions of its length. A draw-on is one keyframe, `trimEnd` from
-`"0"` to `"1"`; `stroke-dashoffset` is not a spelling of it, being a length.
-`d={[A, B]}` gives morph keys, and `morph-[f]` (keyframe `morph`) moves
-between them; `bg-clip-path` paints the node's ground, a gradient included,
-into the fill. Colours, width, trim and morph all animate. The outline is
-baked at build time, so write `d` where the build can read it — a string, a
+`"0"` to `"1"`. `d={[A, B]}` gives morph keys, and `morph-[f]` (keyframe
+`morph`) moves between them; `bg-clip-path` paints the node's ground, a
+gradient included, into the fill. Colours, width, trim and morph all
+animate. The outline is baked at build time. A `d` written where the build can read it — a string, a
 `+` of two, an array of them, a `const` of any of those, or a `.map` over a
-`const` array — and a `d` it cannot read, an import or a string computed at
-run time, is refused at mount, naming the outline. The keys of a morph must
-have the same commands once normalised: a line against a curve is promoted,
-anything else is refused at the line that wrote it, and nothing resamples one
-key to fit another. Two paths sharing an edge split its samples instead of
+`const` array — is baked from the source. One it cannot read, imported from
+another module or computed from data, is baked from the tree: the build
+prints `paths at mount: N d attribute(s) not read by the build (file:line:col,
+…)`, mounts the bundle, takes every outline the tree asked for, writes them to
+`<output>.paths.json` beside the pak, builds again with them and mounts that
+bundle, which must ask for nothing more (`patches/0054`,
+`compositions/data-chart`). A chart is therefore one `<Path
+d={line(rows)}>`. The mount runs in the render's realm, so no clock or random
+number reaches it; what does is the host's `Math.sin`, `cos`, `pow`, `exp`,
+`log` and `atan2`, whose last bit is the machine's — compute an outline with
+`+ - * /` and `Math.sqrt`, and keep a scale's domain fixed rather than `nice()`d
+(`nice()` and `ticks()` go through `Math.log10` and `Math.pow`). A build run
+by hand with upstream's `tools/build.ts` takes no inventory, and the render's
+mount refuses an outline that build did not bake, naming it.
+Keys whose commands line up once normalised (a line against a curve counts)
+morph point for point as drawn. Keys drawn separately — a play icon and a
+pause icon, a heart and a star — are equalised at build time by a stated
+rule (`patches/0046`): key 0 keeps its subpaths, start points and direction;
+a later key's subpaths pair with the earlier key's by size — compared exactly,
+so two subpaths drawn alike in two places tie only when their bits do: two
+equal rounded bars whose corners are arcs normalise a few units in the last
+place apart, and the larger by that margin pairs first, whatever the order
+they were written in — a subpath with no
+partner grows out of or shrinks into the centre of its own box, a whole key
+is reversed if it winds the other way, a closed subpath's start moves to
+where the two outlines sit closest, and every key is cut where any key has a
+vertex. Each key keeps the outline it was written as; to choose the
+correspondence yourself, draw keys whose commands line up after
+normalisation, which is not as written: `H`, `V` and `L` are lines, `Q`,
+`S` and `T` are cubics, and an `A` is 1, 2, 4 or 8 cubics, halved until each
+spans at most an eighth of a turn — a rounded corner written as a quarter
+`A` is two cubics. A corner paired by hand is one `C`. More than eight
+keys is refused. Two paths sharing an edge split its samples instead of
 both drawing them, but each is still blended alone, so a seam between two
 shapes of one colour shows a trace of what is behind it; overlap them by a
 hair where that matters. A path trimmed to nothing emits nothing, which
 `layout` reports as `text_not_painted` and `visibility` as invisible by
 declaration, not covered. Drawn by this repository's rasteriser only
 (`patches/0042` and `0043`; the design is `patches/0042-vector-paths.design.md`).
+
+**A stroke can be dashed.** `stroke-dash-[12_8]` is SVG's
+`stroke-dasharray`: one to four lengths in the path's own units, dash, gap,
+dash, gap, an odd count repeated as SVG repeats it; `stroke-dash-offset-[N]`
+is `stroke-dashoffset`, the distance into the pattern at each subpath's
+start, and it animates as `dashOffset` or `stroke-dashoffset`. Running the
+offset back by one period, `linear infinite`, is marching ants that loop
+without a seam. A zero-length dash draws its caps alone, so
+`stroke-dash-[0_14] stroke-cap-round` is a dotted line. The pattern restarts
+on every subpath and is measured from its start, so a `trimEnd` draw-on
+reveals dashes without sliding them, and a dash over a closed subpath's start
+is one piece through it. A pattern that would draw solid — more than four
+lengths, a negative one, all zero — is refused at the class. At most 65,536
+dashes a stroke a frame are drawn (`patches/0045`; the design, with the morph
+rule and motion along a path, is `patches/0045-path-primitives.design.md`).
+
+**A node can follow an outline.** `motionPath` in `src/anim/path-motion.ts`
+turns a `d` into a keyframe set of `translateX`, `translateY` and, with
+`rotate`, the direction of travel; call it in `pocket.config.ts`:
+
+```ts
+import { motionPath } from "../../src/anim/path-motion.ts";
+import { bezier } from "../../src/anim/sampled.ts";
+
+const ROUTE = "M70 430 C230 430 250 150 410 150 S600 360 890 430";
+const fly = motionPath({ d: ROUTE, node: { x: 0, y: 0, w: 56, h: 56 }, durationMs: 3600, ease: bezier(0.65, 0, 0.35, 1), rotate: true });
+// theme.keyframes.fly = fly.keyframes; theme.animation.fly = { value: fly.value("fly", { delayMs: 400 }) }
+```
+
+`node` is the moving node's box in the same containing block as the path: its
+centre is put on the path and it turns about its centre, so keep it
+`absolute` at that box and leave its transform origin at the centre. Without
+`node`, the path's coordinates are the node's translation. The `d` is
+followed exactly as a `<Path>` with that `d` draws it, through the same
+`viewBox` mapping when `path: { viewBox, box }` names the `<Path>`'s; a
+transform on the `<Path>` node is not followed. A `d` used by both lives in
+one module both import: `pocket.config.ts` reads it at build time, and the
+`<Path>` in `main.tsx` is baked from it whether the build reads the import or
+the mount does (`patches/0054`).
+`ease` is progress along the path in time; `from`/`to` run part of it, or
+backward; `iterations: "infinite"` loops a closed path. Keys sit on tick 0,
+every odd tick and the last, so every frame of a 30 fps film whose delay is a
+whole number of frames is on the curve. Between keys the node moves on the
+chord, which a 60 fps film or a `shutter` shows: `chordError` reports how far
+before you render — 3.75 px on a 21 px-a-tick swoop through a 58 px loop,
+0.19 px on a 7 px-a-tick ellipse. `every: 1` keys every tick, exact at 60
+fps but sharp under a shutter, which reads a one-tick segment as a cut.
+`El.along` does the same for a generator's element.
 
 **Text can carry an outline.** `text-stroke-[6px] text-stroke-[#7c2d12]`
 draws a 6 px outline around a Text node's glyphs; `text-stroke-outside` (the
@@ -527,7 +621,7 @@ at draw time would cost nothing: that is exact only for a subtree of one op,
 and the layer costs about half a millisecond for a line of 96 px text at
 1080p. Grading a whole 1080p frame costs 20-30 ms; both are measured in
 `baselines/colour-filters.md` with the rest of the decision. Drawn by this
-repository's rasteriser only (`patches/0055`).
+repository's rasteriser only (`patches/0065`).
 
 **Gradients take any number of stops up to six, any angle, and text.**
 `bg-gradient-to-r from-red-500 to-blue-500` is the two-stop gradient it
@@ -621,11 +715,61 @@ viewport, or just lay out with flex).
 
 Two constraints, both absolute:
 
-1. **The renderer does not wrap or shrink text.** A `Text` run breaks only on
-   explicit `\n`. Text wider than its box draws past it (or is silently
-   clipped by `overflow-hidden`).
-2. **Every font size is baked at build time.** Any `text-[Npx]` works, but
-   only sizes that appear in class literals get an atlas.
+1. **A run wraps, shrinks or is clamped only where its class says so.** A
+   `Text` with none of the three utilities below breaks only on explicit
+   `\n`, and text wider than its box draws past it (or is clipped by
+   `overflow-hidden`, which no ink code can tell from a run that ends there).
+2. **Every font size is baked at build time.** Any `text-[Npx]` up to the
+   face's ceiling works, but only sizes that appear in class literals get an
+   atlas. The ceiling is the face's, not the format's: a glyph cell is at most
+   255 px tall, which is about 176 px for Noto Sans SC, 210 for Inter and 217
+   for HarmonyOS Sans (`patches/0002`'s refusal names the number for the face
+   it was asked of). Its advice to render at a larger logical viewport is
+   upstream's and resizes a film's frame; type larger than the ceiling is
+   drawn as the face's glyph outlines in a `<Path>`, which is filled at the
+   size it is shown at.
+
+**Fit, wrap and clamp are decided by layout, against the box layout gave the
+node** (`patches/0059`). Three utilities, which combine:
+
+- `text-wrap` wraps the run to its content width at the break opportunities
+  it carries: a run of spaces, which the break drops, and U+200B, which is
+  never drawn. `\n` always breaks. No language rule is applied in the core:
+  CJK and Thai break where the text says they may, so a generator writes
+  U+200B where its segmenter allows a break — `markBreaks(text, locale)` in
+  `src/text/fit.ts` writes exactly the breaks `wrapLines` would take.
+- `text-fit-[48..88]` (a ten-percent ladder from the top: 88, 80, 72, 65, 59,
+  54, 49, 48) or `text-fit-[48,64,88]` (the sizes named) draws the run at the
+  largest rung whose block holds the box: every line within the content
+  width, the lines times the rung's line height within the height when the
+  node bounds it (`h-*`, `h-full`, `max-h-*`), and no word cut between its
+  letters. When none holds, the smallest. At most 8 rungs; each is a baked
+  slot carrying every character the build collects, so a ladder of five costs
+  five atlases (`baselines/text-fit.md`: a 1,000-character CJK charset at 88
+  px bold is 12.8 MB of pak for one rung, 37.3 MB for five). It replaces the
+  size class: `text-[Npx]` beside it is refused.
+- `line-clamp-N` keeps the first N lines and ends the last with `…` (or `...`
+  where the face has no U+2026), cutting characters from that line until the
+  ellipsis fits.
+
+```tsx
+<Text class="w-[992px] max-h-[254px] text-fit-[48,56,64,76,88] text-wrap line-clamp-3 font-bold">{name}</Text>
+<Text class="text-fit-[52,64,80] font-bold">{price}</Text>
+<Text class="w-[1680px] text-[24px] text-wrap line-clamp-4">{disclaimer}</Text>
+```
+
+The box can come from flex, which no generator sees: `flex-1` halves of a row
+fit to the width the row gives them. `compositions/text-fit` puts each case
+on a named node.
+
+**What a gate sees.** `layout --json` carries `fit` on every such node: the
+size drawn, the ladder, whether a rung held, lines kept of lines wrapped,
+characters left out, words cut. A run drawn at a smaller rung is the
+declaration working and is not a finding. A clamp that left characters out,
+or a ladder whose smallest rung did not hold, is `text_truncated` — read from
+the core's record, because text that is not drawn has no ink — and
+`untruncated: true` in `assertions[]` is how a node says it must be drawn
+whole (a price, a legal line).
 
 A third edge worth knowing before you animate: **an axis-aligned `scale`
 resizes glyphs by resampling the size that was baked.** The run is drawn as
@@ -639,13 +783,22 @@ draws its outline from unscaled cells, so its fill stays unscaled too).
 Before the pin moved every scaled run behaved like those two, which is why
 `compositions/reel` fades its copy in after a card's scale lands.
 
-So multi-line or fitted text is decided *before* `app.tsx` exists, by
-measuring with the renderer's own advance tables. That is what
-`src/text/fit.ts` + `src/text/measure.ts` do, and `compositions/copy/gen.ts`
-is the worked example: `gen.ts` declares the copy and the boxes, calls
+Text can also be fitted *before* `app.tsx` exists, by measuring with the
+renderer's own advance tables. That is what `src/text/fit.ts` +
+`src/text/measure.ts` do, and `compositions/copy/gen.ts` is the worked
+example: `gen.ts` declares the copy and the boxes, calls
 `openMeasurer(...)` / `wrapLines(...)` / `fitToBox(...)`, and emits `app.tsx`
-with the `\n` already placed. The measurement is exact — a break decided at
-build time *is* layout, not an approximation of it.
+with the `\n` already placed. The measurement is exact, and it reaches only
+boxes the generator knows the size of; a box flex sizes, or a field whose
+neighbour's length moves it, is layout's to fit.
+
+**A job's characters are checked before it is staged.** `render --spec`
+reads every string the template draws against both weights' cmaps and
+refuses the job — exit 1, nothing built — with `missingGlyphs[]`, one
+`{ field, char, codePoint, face, file }` per field, character and weight.
+The read is the font file's `cmap` table and takes milliseconds; a build
+would bake the tofu cell for a missing character and exit 0. The MCP
+`render` tool returns the same object.
 
 A generator that measures the same faces at the same sizes on every run —
 a `render --spec` template, a batch — can pass `cache: { charset }` to
@@ -700,17 +853,24 @@ error, not a plausible-looking wrong width.
 
 Real video enters as a host-owned tile grid: the sidecar declares it, the
 guest declares placeholder `Image` nodes, and the host decodes at build time
-(ingest) and uploads pixels every frame. Scaling footage on screen is filtered
-correctly up to 2× minification (`linear: true`); beyond that it aliases —
-plan shots accordingly.
+(ingest) and uploads pixels every frame. Scaling footage on screen is
+bilinear (`linear: true`): up to 2× minification it has no nearest-sampling
+blocks, beyond that it aliases, and detail finer than a drawn pixel aliases
+at any minification (see "Still pictures") — plan shots accordingly.
 
 **A sidecar that declares `footage` gets it presented by every command that
 produces frames** — `check`, `frame`, `trace` and `render` build one layer per
-track, ingest on demand into `dist/<composition>/footage/<track-id>/` (cached
-on everything that can move a pixel), and present each track once per frame.
-Each layer holds one decoded frame (`width × height × 4` bytes) for its life;
-the rest of the clip stays on disk and is read as `present` walks it. A
-1080×1920 track is about 8 MiB, independent of duration. A track that cannot
+track, ingest on demand into `dist/<composition>/footage/<track-id>/`, and
+present each track once per frame. The ingest keeps the source frames the
+track's window can show, not the whole clip, and tracks that decode one source
+at one drawn size and `fit` share the first one's directory, holding the union
+of what each shows (`src/cli/footage.ts`). It is cached on everything that can
+move a pixel — the source, the drawn size, the frames shown, the ingest's own
+ffmpeg argv and the installed ffmpeg — so a cut that changes which source
+frames it shows re-decodes them, and one that only moves them in the film does
+not. Each layer holds one decoded frame (`width × height × 4` bytes) for its
+life; the rest stays on disk and is read as `present` walks it. A 1080×1920
+track is about 8 MiB, independent of duration. A track that cannot
 be built fails the command: a missing source file, no
 `ffmpeg`, a `nodePrefix` matching no node, a sidecar `grid` that disagrees
 with the tile nodes, or a source whose aspect does not match the drawn size
@@ -797,7 +957,15 @@ the composition's own directory, then `assets/images/` and `assets/` **inside
 the vendored engine tree** — `tools/build.ts` resolves those two against its
 own root, not this repository's, so `"logo.png"` finds the demo logo shipped
 with the engine and this repository's `assets/` is never consulted. In
-practice a composition's pictures live beside it.
+practice a composition's pictures live beside it — and git does not see them:
+`.gitignore` ignores `*.png` everywhere but `docs/`, because frames are PNGs.
+`compositions/images` writes the pictures it draws from its `gen.ts`, which
+the digest ledger and the tests run before they build; a picture no generator writes is tracked
+only if it is added with `git add -f`, and is otherwise on one machine.
+`build` does not run a generator, so a picture a `gen.ts` derives — a
+graded or resized copy of a source — has to be written before the build that
+bakes it. A generator reads and writes PNGs through the vendored tree's
+`tools/png.ts` (`decodePNG`, `encodePNG`).
 
 **Each side is 1 to 2048 px, a power of two or not** (`patches/0020`).
 `encodeImageEntry` (`framework/compiler/pak.ts`) throws past that, naming the
@@ -809,6 +977,26 @@ makes footage a tile grid in the first place. The whole image is baked into
 the pak: a 2048×2048 picture is 16 MiB there and 16 MiB again in the core.
 SVG is rasterised at the composition's density. `compositions/images` draws a
 900×506 picture and a 3×5 one.
+
+**`linear` is two by two texels, with no mip chain.** It removes nearest
+sampling's blocks, and it does not filter detail finer than the drawn pixel:
+a one-pixel pattern — fabric, foliage, a checkerboard — drawn at any size
+under its own aliases into moiré that crawls as the picture moves (measured
+on a 1 px checker at 1.04–1.67× minification: luma spread 30–41 levels where
+a filtered one is under 1). A picture shown smaller than it is, is resampled
+to the largest size it is drawn at in its `gen.ts`, with a filter; the core
+then only magnifies it.
+
+**An upright picture is placed on whole logical pixels.** Its position and
+its size are each rounded (`emit_tex_quad`, `draw.rs`), and `supersample`
+multiplies those integers rather than refining them. The texture coordinates
+come from the unrounded box, so a picture's content is stretched over the
+rounded one, at most half a pixel from where it belongs, and a picture larger
+than the frame zooms without stepping; but two pictures that abut at a
+fractional position — a grid under a push — can open a one-pixel seam or
+overlap by one on some frames. A grid that moves is drawn as one picture, or
+its tiles overlap by a pixel. A turned picture is two triangles whose
+vertices are rounded the same way.
 
 **An SVG is drawn by the build's own baker, and it draws a subset of SVG**
 (`framework/compiler/bake-svg.ts`, `patches/0040`). Its `width` and `height`
@@ -885,6 +1073,77 @@ the fixture, and it traces green on purpose.
 `<compositionDir>/images.json` sets a per-image pixel format (`psm`) where
 8888 is not wanted, and a sprite manifest in the same directory bakes an image
 as an animated sprite atlas instead of a still.
+
+### SVG files as parts
+
+An SVG baked as a picture is one image. To animate its parts, import it as a
+tree:
+
+```tsx
+import { Svg } from "@pocketjs/framework/components";
+
+<Svg
+  src="./lighthouse.svg"
+  debugName="lighthouse"
+  width={960}
+  height={720}
+  class="absolute left-[480px] top-[150px]"
+  parts={{ tower: "animate-draw-3", lamp: "animate-pop", beam: "animate-sweep" }}
+/>
+```
+
+**The build expands the element** (`patches/0053`), before it reads a single
+literal, into a View carrying `class` and `debugName`, a canvas View named
+`svg:<src>` at the picture's size — `width` and `height`, else the file's,
+else its viewBox's — clipped to it unless the root `<svg>` says
+`overflow="visible"`, and under it a View for every `<g>` with an `id` and a
+`<Path>` for every `path`, `rect`, `circle`, `ellipse`, `line`, `polyline` and
+`polygon`. Each element's `id` is its node's `debugName`, so `assertions[]`,
+`visibility` and `layoutAllow` name parts the way they name anything else.
+`src` is relative to the module that writes the element, as an import is.
+
+- **Geometry is folded in.** Every `transform`, the `viewBox` and
+  `preserveAspectRatio` — the nine alignments, `meet`, `slice`, `none` — are
+  applied to the outline at build time, in SVG's order, rotations and skews
+  exact at quarter turns. Each part's node is its own bounds on whole px, so a
+  rotate or scale on a part turns about the part's centre (CSS's
+  `transform-box: fill-box`), and a group's about the group's. A group with
+  neither `id` nor `opacity` adds no node.
+- **Paint becomes classes.** `fill`, `stroke` and their opacities,
+  `stroke-width` (scaled with the map), `stroke-linejoin`, `stroke-linecap`,
+  `stroke-miterlimit`, `fill-rule` and `opacity`, from attributes, `style=""`
+  and what a `<g>` passes down, as hex, `rgb()`, CSS names or `currentColor`.
+  A circle's or a rect's outline starts where SVG 2 starts it — a circle at
+  its rightmost point, clockwise — so a draw-on begins where a browser's does.
+  `opacity` on a `<g>` multiplies each part's alpha; parts of a group that
+  overlap blend one over the other where a browser would composite the group
+  first.
+- **`parts` adds classes to a part.** An entry is joined to the classes the
+  part's paint became, at build time, as one literal: the build refuses a
+  token in it that does not parse, or an `animate-*` naming nothing, as it
+  would on a `class=` attribute, and locates the first at the entry. A value
+  is a string literal or a ternary of them; a key naming no id is refused at
+  the key, listing the file's ids. Trim and the paint utilities draw only on a
+  `<Path>`: on a group's View they do nothing, so draw a group's shapes on by
+  their own ids.
+- **What is refused, by name**: gradients, patterns, clip paths, masks,
+  filters, `<use>`, `<symbol>`, `<style>` sheets, text, `<image>`, a nested
+  `<svg>`, markers, `<switch>`, `<a>`, scripts and SMIL animation — in
+  `<defs>` as well — and a `url()` paint, `stroke-dasharray`, `clip-path`,
+  `mask`, `filter`, `vector-effect`, `paint-order`, a stroke under a
+  transform that is not a uniform scale and rotation, and a duplicate `id`.
+  Each names the element and its line in the file. Flatten what an editor
+  can flatten; give a part a gradient (`bg-clip-path`), a blur or a shadow
+  through its class. Illustrator's Export As writes every colour into a
+  `<style>` sheet of classes by default (Styling: Internal CSS), which is
+  refused; export with Styling: Presentation Attributes, or write each
+  class's declarations onto its shapes as attributes.
+- **`lint` and `check` read the same elements** and fail with
+  `svg.missingFile` or `svg.unsupported` at the `src`, without building.
+- **`layout` reads one picture as one picture**: two parts inside one
+  `svg:<src>` canvas overlap where the file draws them over each other, and
+  that is not a `content_overlap`. A part and a node outside the picture
+  still are.
 
 ### Pictures and motion a generator computes
 
@@ -999,10 +1258,14 @@ resolve.
 
 `render` does. After the frames are encoded it builds the mix graph from
 the sidecar (`src/sound/mix.ts`), muxes it under the video stream
-(copied, not re-encoded), and writes a sibling `*.sound.json` with the
-mixed audio's sha256 (the soundtrack decoded to s16le / 48 kHz / stereo)
-and the ffmpeg version that produced it — the same first-line convention
-ingest uses. Nothing in that pass is reachable from `trace`.
+(copied, not re-encoded) in the container `--format` names (table under
+"Delivery formats"), and writes a record named after the whole delivered
+file — `hero.mp4` gets `hero.mp4.sound.json`, so `hero.mp4` and `hero.webm`
+keep one each — with the mixed audio's sha256 (the soundtrack decoded to
+s16le / 48 kHz / stereo) and the ffmpeg version that produced it — the same
+first-line convention ingest uses. The mix is padded with silence to the
+film's length, so the audio stream ends with the picture whenever the last
+element does. Nothing in that pass is reachable from `trace`.
 
 Ducking is a computed envelope, not a compressor. `duck` on a narration
 line is the linear factor applied to the bed's gain while that line
@@ -1210,12 +1473,11 @@ onto the sampled clock, `assert --samples 101` on `burn-zh` fails all nine
 words, each at exactly its first frame; `tests/captions.test.ts` sweeps every
 frame of all five styles at 30 and 60 fps.
 
-`assert` without `--samples` looks at 24 frames, and an assertion whose window
-holds none of them FAILS ("raise --samples"). Every window in the two samples
-is at least as wide as that stride, so `assert` and `verify` pass on them with
-the default grid — a property of those two transcripts, not of the template.
-For a job of any length, the exact check is `--samples <durationFrames>`.
-`verify` passes on both. `burn-zh` carries 23 layout warnings, so `--strict`
+`assert` without `--samples` looks at 24 evenly spaced frames plus both ends
+of every word's window, so a word shorter than the stride is read at its own
+first and last frame rather than missed — on `alpha-en` that is 48 frames for
+13 words. `assert` and `verify` pass on both samples with that grid, and the
+exact check is still `--samples <durationFrames>`. `burn-zh` carries 23 layout warnings, so `--strict`
 fails it: 21 are `text_not_painted` on words whose clip window has not opened
 yet, which is what `clip-wipe` is, and two are on the unnamed text inside a
 window as it closes. The word-over-tile `content_overlap` a burn-in draws on
@@ -1238,11 +1500,12 @@ bun src/cli/main.ts render compositions/captions/burn-zh --spec job.json --out o
 
 The third line renders the sample's own spec as a job, and its digest is the
 one the ledger records for the sample: the job path and the sample are one
-picture. Two things it does not do yet: a job's assertions are written into
-its staged sidecar and deleted with it, so `render --spec` never evaluates
-them — the samples and `tests/captions.test.ts` are what hold the claim; and
-no style carries an outline or shadow for text over busy footage, though
-`text-stroke-*` and `text-shadow-*` exist in the vocabulary.
+picture. A job's render checks every word's window before it encodes (see
+"Build, then verify" — a job's assertions are checked by default), so a
+transcript unlike either sample is read at the first and last frame of every
+word; the every-frame claim is still `tests/captions.test.ts`'s. One thing it
+does not do yet: no style carries an outline or shadow for text over busy
+footage, though `text-stroke-*` and `text-shadow-*` exist in the vocabulary.
 
 ## Build, then verify
 
@@ -1266,7 +1529,17 @@ tree — the sample is not a job. A directory of jobs is
 builds that job and opens `/watch`. User copy becomes a text literal; palette
 hex becomes a class literal the generator writes. A job is a complete spec,
 not a patch on the sample: `--frames`, `--fps`, `--width`, `--height`,
-`--supersample`, `--bundle` and `--pak` are refused with `--spec`. `copy`
+`--supersample`, `--bundle` and `--pak` are refused with `--spec`.
+
+**A job's own `assertions[]` are checked before it renders.** The staged
+tree is removed when `render` returns, so `render --spec` runs `assert` on
+it after the build and before the encode, and carries `assert`'s JSON
+verbatim as `assertions` in `--json`. A job whose assertions fail is
+refused — exit 1, no output written, the failing frames named. It is on by
+default for what it was measured to cost: 7 to 32% of a job's CPU (a 60 s captions job,
+132 words, 57.8 → 66.4 CPU-s; a burn-in over footage is the 32%), and no
+boot at all for a sidecar with no assertions. `--no-assert` skips it, for
+when you want the video of a failing job to look at. `copy`
 is a title card;
 `lower-third` is a name plate (optional logo, optional one footage clip);
 `captions` is a caption track from a word-level transcript (see "Captions from
@@ -1278,8 +1551,12 @@ generator written today could use `glow-*` instead). Omit it to leave the
 sample's picture unchanged. A logo is a still picture (each side at most
 2048 — see Still pictures above). Footage is ingested into the throwaway job tree and deleted with it,
 so a batch of jobs sharing one clip still decodes it once per job. The
-digest in `render --json` is the job's picture at a fixed `--hash`;
-`trace` does not accept `--spec`, so a job is not in the identity ledger.
+digest in `render --json` is the job's picture at a fixed `--hash`, and
+`identity` beside it is the job's input identity: the staging directory's
+random name reaches neither the bundle nor `build.json`, so one spec
+rendered twice reports one identity and a spec that changes one field
+reports another. `trace` does not accept `--spec`, so a job is not in the
+identity ledger.
 
 ```bash
 bun compositions/copy/gen.ts     # only if the composition has a generator
@@ -1401,12 +1678,12 @@ them changes: frames are hashed before a byte reaches it, so **a
 composition's digest is the same whichever format you ask for**, and
 `tests/format.test.ts` asserts that rather than leaving it to be believed.
 
-| `--format` | what it writes |
-|---|---|
-| `mp4` (default) | libx264, `yuv420p` — unchanged |
-| `webm` | libvpx-vp9, `yuv420p`; `--alpha` → `yuva420p` |
-| `mov` | ProRes 422 HQ (`yuv422p10le`); `--alpha` → ProRes 4444 |
-| `png-seq` | `<out>/%06d.png`, no ffmpeg at all |
+| `--format` | what it writes | declared `sound` muxes as |
+|---|---|---|
+| `mp4` (default) | libx264, `yuv420p` | AAC, 192 kb/s |
+| `webm` | libvpx-vp9, `yuv420p`; `--alpha` → `yuva420p` | Opus, 192 kb/s, 48 kHz |
+| `mov` | ProRes 422 HQ (`yuv422p10le`); `--alpha` → ProRes 4444 | PCM s24le, 48 kHz |
+| `png-seq` | `<out>/%06d.png`, no ffmpeg at all | nothing — said in the output |
 
 ```bash
 bun src/cli/main.ts build  compositions/alpha
@@ -1419,6 +1696,15 @@ With no `--format` the `--out` extension decides. **A `--format` that
 disagrees with the extension is refused**, because a `.webm` holding H.264
 plays, reports a sensible duration, and is not what it says it is. `png-seq`
 writes a directory, so its `--out` must not carry an extension.
+
+**Every encoded file is BT.709, converted and tagged**: the RGB → YUV
+conversion names the BT.709 matrix at video range, and the stream carries
+BT.709 primaries, transfer and matrix, so a player decodes the colours the
+frames had rather than guessing. (ProRes has no range field; decoders take
+video range.) The container is named to ffmpeg, never inferred from `--out`,
+and so is the one the sound mux writes: a composition with `sound` rendered
+to `webm` or `mov` is a WebM or a MOV, alpha included, not an MP4 under that
+name.
 
 `png-seq`'s frames are **the same PNG bytes `frame --at N` writes** — asserted,
 not intended, the way `preview`'s `/frame` is. It is the format to reach for
@@ -1451,7 +1737,130 @@ Two things reading the flags would get wrong, both pinned by the tests:
 ProRes 4444 is asked for as `yuva444p10le` and *decodes* as `yuva444p12le`,
 because the 4444 bitstream is 12-bit; and VP9 stores alpha out of band, so an
 alpha WebM's stream still reports `pix_fmt=yuv420p` and the evidence is the
-container's `alpha_mode=1`.
+track's AlphaMode element — which ffprobe shows as `alpha_mode=1`, and on a
+file the sound mux rewrote as `ALPHA_MODE=1`, from a tag the remux copied.
+
+### The mp4's encoder: `--encoder` and `--preset`
+
+The H.264 encode is half or more of a render's CPU — 53% on a 10 s 1080p
+title and 60% on a 55 s ranking film (`baselines/encode-cost.md`) — so the
+mp4 leg takes two flags:
+
+| flag | what it does |
+|---|---|
+| `--preset <name>` | libx264's preset, `ultrafast` … `veryslow`; CRF stays 16. Default `medium`. |
+| `--encoder h264_videotoolbox` | macOS's hardware encoder, at constant quality `-q:v 87` (`VIDEOTOOLBOX_QUALITY`) |
+
+Both are mp4 only and refused with any other format; `--preset` is refused
+with the hardware encoder, which has none, and `--encoder` with `--alpha`.
+An encoder the installed ffmpeg does not list is refused before anything is
+rendered. `render --json` reports what the leg ran with as `encoder`.
+
+**The hardware encoder's mp4 is not the same bytes on another Mac.** The
+bitstream is the hardware's. The frame digest is unaffected — frames are
+hashed before the encode leg — so `render --json`'s `digest` still matches
+`trace` and the ledger; it is only the file that stops being comparable byte
+for byte. On Linux, which has no hardware encoder here, `--preset` is the
+lever. What each choice costs in CPU, time, bytes and PSNR/SSIM against the
+default is measured in `baselines/encode-cost.md`.
+
+```bash
+bun src/cli/main.ts render compositions/alpha --preset veryfast --out /tmp/alpha-veryfast.mp4
+bun src/cli/main.ts render compositions/alpha --encoder h264_videotoolbox --out /tmp/alpha-vt.mp4  # not run: macOS only; tests/reuse.test.ts reads one back where ffmpeg has the encoder
+bun src/cli/main.ts render compositions/alpha --encoder h264_videotoolbox --format mov --out /tmp/alpha-vt.mov  # exit 2
+```
+
+### Held frames are not rasterised again
+
+A frame whose draw list and raster revision both equal the frame before's
+would rasterise to the same pixels, so `render` and `trace` deliver the frame
+before's pixels instead (`src/render/reuse.ts`; the revision is exported by
+`patches/0055`). Every delivered frame is still hashed, so the digest is the
+same with or without it, and `--no-reuse` — which rasterises every frame — is
+there to check that. Both commands print how many frames were rasterised and
+report `reusedFrames` in `--json`.
+
+```bash
+bun src/cli/main.ts trace compositions/smoke --no-reuse  # every frame rasterised; the digest `trace` prints without the flag
+```
+
+A hold is a frame where *nothing* in the draw list moved. A slow pan that
+moves an image a fraction of a texel per frame moves its draw list every
+frame while leaving many frames' pixels unchanged; those are rasterised.
+
+A segment (`--range`, below) rasterises its first frame whatever came
+before it, because the frames it folds are never drawn. `--workers` hands
+`--encoder`, `--preset` and `--no-reuse` to every segment it starts — the
+join copies the segments' bitstreams only when one encoder argv wrote them
+all — and its `--json` carries the `encoder` and no `reusedFrames`, which
+were counted in the segment processes.
+
+### A film in pieces: `--workers`, `--range` and `concat`
+
+A **segment** runs every frame before its own exactly as a whole render runs
+it — the frame boundary, the guest turn, the ticks — and draws, hashes and
+encodes none of them; rasterisation is where a frame's cost is, and it is
+skipped. So a film splits into segments on as many processes or machines as
+you have, and the pieces join to the film a single render would have made:
+**the joined digest is the one `trace` reports**, held hash for hash by
+`tests/segments.test.ts`.
+
+```bash
+bun src/cli/main.ts render compositions/smoke --frames 60 --workers 3 --out smoke.mp4  # three processes, one film
+bun src/cli/main.ts render compositions/smoke --frames 60 --range 30..59 --out part-b.mp4  # one segment: frames 30 to 59, both included
+bun src/cli/main.ts render compositions/smoke --frames 60 --range 0..29 --out part-a.mp4
+bun src/cli/main.ts concat compositions/smoke part-b.mp4 part-a.mp4 --frames 60 --out joined.mp4  # any order; refused unless they are one film
+bun src/cli/main.ts concat compositions/smoke part-a.mp4 --frames 60 --out short.mp4  # exit 1: frames 30..59 are in no segment
+```
+
+`--range` writes the segment and `<out>.segment.json` beside it: the
+segment's frame hashes, the film's input identity — the same value `trace`
+prints, frame count included — the hash algorithm and the encoder argv. Move
+the two together; `concat` finds the file by name beside its manifest. A
+segment has no `digest`, because the digest of some frames is not a film's,
+and no sound.
+
+`concat` names the composition because two things come from it: the identity
+every segment must carry, and the sound. It **refuses** before joining a byte
+when the segments are not one film — two identities, or not this
+composition's (`join.identity`, naming which components moved: render every
+segment with the same flags, `--frames` included); frames in no segment
+(`join.gap`); frames in two (`join.overlap`); a different format, alpha, hash
+or encoder (`join.encoding`); a file changed since its manifest was written
+(`join.media`); bitstreams a stream copy cannot join (`join.bitstream`). The
+last one is measured, not assumed: libx264 writes its reorder delay only for
+a segment of three or more frames, so a one- or two-frame segment after a
+longer one cannot be copied in, and `--workers` never cuts one that short.
+
+The join is a **stream copy** — each segment is its own encode, so it starts
+on a keyframe and nothing refers across a boundary, and no codec here needs
+pre-roll — and then the joined file is **read back**: one packet per frame,
+decode timestamps increasing, a keyframe at every segment start,
+presentation timestamps exactly `i / fps`, and every decoded frame equal to
+the frame its segment decodes to on its own. WebM is joined with its
+timestamps rewritten from the frame index, because Matroska stores
+milliseconds and the demuxer's rounded offsets put frames 1 ms early after a
+segment whose length is not a whole number of them. `png-seq` segments name
+their PNGs by film frame and join by copying them into one directory.
+
+The joined file's **bytes are not a one-shot render's**: the encoder's rate
+control and keyframe placement see one segment at a time. The pixels before
+the encoder are what the digest is about, and those are the same.
+
+**Sound is muxed once, by `concat` or `--workers`, over the joined film** —
+the same mix a one-shot render muxes, decoded-audio hash for hash. Footage
+is the one input `concat` takes from the segments rather than measuring: its
+identity components are hashes of ingest artifacts, `concat` ingests
+nothing, and `--json` lists them under `identityFromSegments`. `--range`
+refuses `--spec`: `concat` joins against a composition directory, and a
+job's composition exists only inside its staging, removed when the render
+returns. `--workers` with `--spec` stages, builds and checks the job's
+assertions once, and every worker renders that staging.
+
+Both write the film to a hidden file beside `--out` and rename it over
+`--out` only once the join has been read back, so a refused join, a failed
+one or a cancelled one leaves `--out` as it was — the rule every `render`
+follows.
 
 ### What `--json` will and will not say about your machine
 
@@ -1605,6 +2014,13 @@ anything can read it.** A node declared at `left-[2000px] w-[300px]` on a
 above the bottom comes back 40 px tall. So a PARTIAL overhang leaves no trace
 in the numbers and this code says nothing about one; what it catches is the
 node that went off entirely and collapsed against the edge.
+
+**A box is read after its transforms.** A word that slides in by 24 px
+leaves its parent's box for the frames it is moving, and a parent sized by its
+content (an auto-height row, a zero-width wrapper) has no room for the slide
+at all — those frames read `escaped_container` and fail an `insideBox`
+assertion. Give the parent the room the motion travels through, or allow
+`overflow` on the node with the reason.
 
 **`layout` still exits 0 with every one of them.** A node outside its window is
 not painted, an intended lower third does overlap the shot under it, and a cut
@@ -1782,7 +2198,10 @@ all. None of them knows what the film is FOR. Write that down in the sidecar:
 One predicate per entry — two would be two assertions sharing one verdict, and
 a reader could not tell which half failed. `node` is a `debugName`; a name the
 tree does not carry is a FAILURE and not a skip, so renaming a node cannot turn
-every assertion about it green at once.
+every assertion about it green at once. A name the tree carries whose node no
+sampled frame laid out — it or an ancestor was `display: none`, or an ancestor
+was at opacity 0, at every one — fails as well, because nothing about it was
+measured; the detail says which of the two it is and names the frames.
 
 Each one is evaluated from the picture, over the frames `assert` samples:
 
@@ -1798,8 +2217,24 @@ Each one is evaluated from the picture, over the frames `assert` samples:
 - `before: other` — first shown strictly earlier than that other node.
 
 **Every verdict is about the sampled frames and nothing between them**, and the
-printed line names the grid it used. `--samples <durationFrames>` is the exact
-case and costs what it costs. `assert` exits 1 on any failure.
+printed line and the JSON's `grid` name them. They are `--samples` evenly
+spaced frames (24 by default) plus the frames the assertions themselves name:
+
+- `inPicture: [from, to]` — `from` and `to`.
+- `entersBy: f` — `f`.
+- `exitsBy: f` — `f` and `f + 1`.
+- `before: other` — no frame of its own. Once the rest has been read, every
+  frame between each node's first showing and the sampled frame before it is
+  read too, so each first showing is the frame it happens on — unless the
+  node was also shown and hidden again between two earlier samples — and two
+  entrances inside one stride are not a tie.
+
+So every window has a sampled frame at each end, however much narrower than
+the stride it is.
+`compositions/short-sections` is eight 9-frame ranks under a 13-frame stride,
+and on the even grid alone 8 of its 19 assertions fail on a correct film.
+`--samples <durationFrames>` is the exact case and costs what it costs.
+`assert` exits 1 on any failure.
 
 **An assertion moves no pixel.** `identityProjection` drops the key, so adding
 one does not change a recorded digest — `tests/identity.test.ts` proves that

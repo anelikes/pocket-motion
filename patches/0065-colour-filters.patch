@@ -1,6 +1,6 @@
 pocket-motion-only: a colour filter is applied to a filter layer (0018) — a span of the draw list rendered offscreen, read back and composited — which no upstream backend draws; a stream carrying LAYER_PUSH stops there on every upstream target.
 
-0055 — colour filters: CSS's `brightness`, `contrast`, `grayscale`,
+0065 — colour filters: CSS's `brightness`, `contrast`, `grayscale`,
 `hue-rotate`, `invert`, `saturate` and `sepia`, as Tailwind classes, as
 keyframe properties and in a keyframe `filter` list.
 
@@ -28,7 +28,7 @@ What the patch adds, by file:
 
 - `contracts/spec/spec.ts`, `gen-rust.ts`, the regenerated `spec.rs`, the
   microts spec and component types: props `brightness` .. `sepia`
-  (212-218, f32), animatable at bits 65-71 (timeline and `animate()`);
+  (212-218, f32), animatable at bits 66-72 (timeline and `animate()`);
   `COLOR_FILTER` (each filter's order and bit), `COLOR_FILTER_MAX`; LAYER_PUSH
   documented as 8 + k words — bits 24-30 of the blend word name the filters
   present, and one f32 amount per set bit follows the eighth word. A layer
@@ -95,7 +95,8 @@ at 8 in compositor.rs, in damage.rs, and in lib.rs's
 blend word's new bits and every amount's range. Vendored
 `tests/tailwind.test.ts` pins the compiler, its refusals included.
 
-Ledgers, against what main recorded without this patch: no existing digest
+Ledgers, measured when this was 0055 on main at 524173f, before
+0045-0059, against what main had recorded: no existing digest
 and no existing `visibility` row moves — 42 compositions, `filters`,
 `bloom`, `stroke`, `shutter-blur` and every other one that draws a filter
 layer among them, so the column-bounded layer is byte-identical where it is
@@ -105,7 +106,7 @@ named, every one shown.
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index 09414125..d1e07626 100644
+index 75801f20..62db8f83 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
 @@ -102,6 +102,8 @@ import {
@@ -117,7 +118,7 @@ index 09414125..d1e07626 100644
    PAINT_MAX_STOPS,
    ENUMS,
    FIXED_DT,
-@@ -494,6 +496,13 @@ export function generateRust(): string {
+@@ -497,6 +499,13 @@ export function generateRust(): string {
    put(`    pub const STROKE_MAX_WIDTH: f32 = ${STROKE_MAX_WIDTH}.0;`);
    put(`    pub const LAYER_MAX_DEPTH: usize = ${LAYER_MAX_DEPTH};`);
    put(`    pub const BLUR_MAX: f32 = ${BLUR_MAX}.0;`);
@@ -132,10 +133,10 @@ index 09414125..d1e07626 100644
    put("}");
    put("");
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index 38e53662..6a48917e 100644
+index feb77b49..a21cebc8 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -509,6 +509,19 @@ export const PROP = {
+@@ -532,6 +532,19 @@ export const PROP = {
    trimOffset: 209, //      f32, wraps (1 = once round)
    trimMode: 210, //        enum TrimMode
    morph: 211, //           f32 morph key, 0..keys-1
@@ -155,31 +156,31 @@ index 38e53662..6a48917e 100644
  } as const;
  
  export type PropName = keyof typeof PROP;
-@@ -594,6 +607,13 @@ export const ANIMATABLE: readonly PropName[] = [
-   "trimEnd", //       62
+@@ -618,6 +631,13 @@ export const ANIMATABLE: readonly PropName[] = [
    "trimOffset", //    63
    "morph", //         64
-+  "brightness", //    65
-+  "contrast", //      66
-+  "grayscale", //     67
-+  "hueRotate", //     68
-+  "invert", //        69
-+  "saturate", //      70
-+  "sepia", //         71
+   "dashOffset", //    65
++  "brightness", //    66
++  "contrast", //      67
++  "grayscale", //     68
++  "hueRotate", //     69
++  "invert", //        70
++  "saturate", //      71
++  "sepia", //         72
  ];
  
  /** Anim bit index for a prop, or -1 if not animatable. */
-@@ -692,6 +712,9 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
-   strokeJoin: VALUE_KIND.int, strokeCap: VALUE_KIND.int, strokeMiter: VALUE_KIND.f32,
-   trimStart: VALUE_KIND.f32, trimEnd: VALUE_KIND.f32, trimOffset: VALUE_KIND.f32,
+@@ -721,6 +741,9 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
    trimMode: VALUE_KIND.int, morph: VALUE_KIND.f32,
+   dashCount: VALUE_KIND.int, dash0: VALUE_KIND.f32, dash1: VALUE_KIND.f32,
+   dash2: VALUE_KIND.f32, dash3: VALUE_KIND.f32, dashOffset: VALUE_KIND.f32,
 +  brightness: VALUE_KIND.f32, contrast: VALUE_KIND.f32,
 +  grayscale: VALUE_KIND.f32, hueRotate: VALUE_KIND.f32,
 +  invert: VALUE_KIND.f32, saturate: VALUE_KIND.f32, sepia: VALUE_KIND.f32,
  };
  
  // ---------------------------------------------------------------------------
-@@ -1833,18 +1856,27 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+@@ -1867,18 +1890,27 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
  //                           edge offset (0.5 - coverage), so a width of 0 is
  //                           the glyph's own coverage. Width is clamped to
  //                           STROKE_MAX_WIDTH. Software rasteriser only.
@@ -211,7 +212,7 @@ index 38e53662..6a48917e 100644
  //                           made from its alpha (offset rounded to whole
  //                           physical px, blurred, times gain, tinted), the
  //                           layer is composited over its shadow, and that
-@@ -1952,6 +1984,21 @@ export const PAINT_MAX_STOPS = 6;
+@@ -1986,6 +2018,21 @@ export const PAINT_MAX_STOPS = 6;
  
  /** Deepest nesting of filter layers (LAYER_PUSH). */
  export const LAYER_MAX_DEPTH = 4;
@@ -262,7 +263,7 @@ index 219f0adf..3bccbd46 100644
              spec::draw_op::PAINT_PUSH => {
                  let n = self.words.get(start + 2).copied().ok_or(())? as usize;
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 4713d470..268fc27c 100644
+index 1e9e3f28..736eb306 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
 @@ -285,6 +285,36 @@ fn alpha(color: u32) -> u32 {
@@ -317,7 +318,7 @@ index 4713d470..268fc27c 100644
                  0
              };
 -            dl.words.push(r.blend_mode as u32 | glow);
-+            // Colour filters (pocket-motion patch 0055) are bits 24-30, and
++            // Colour filters (pocket-motion patch 0065) are bits 24-30, and
 +            // their amounts follow the eight words; a layer with none is the
 +            // eight words it was.
 +            dl.words.push(r.blend_mode as u32 | glow | colors << 24);
@@ -336,10 +337,10 @@ index 4713d470..268fc27c 100644
          }
          self.paint_body(slot, &r, world, op, clip, in_transform, dl);
 diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
-index 8739a75b..413be184 100644
+index 2960a9ce..d314cac4 100644
 --- a/engine/core/src/lib.rs
 +++ b/engine/core/src/lib.rs
-@@ -1291,7 +1291,10 @@ impl Ui {
+@@ -1299,7 +1299,10 @@ impl Ui {
                      let Some(meta) = words.get(i + 1) else { break };
                      5 + 2 * ((*meta >> 16) as usize)
                  }
@@ -352,7 +353,7 @@ index 8739a75b..413be184 100644
                  x if x == spec::draw_op::PAINT_PUSH => {
                      let Some(n) = words.get(i + 2) else { break };
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index 09bf9d0a..266a5ec0 100644
+index 09bf9d0a..1b71ff38 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
 @@ -1074,22 +1074,26 @@ fn render_ops<T: RenderTarget>(
@@ -395,7 +396,7 @@ index 09bf9d0a..266a5ec0 100644
  // ---- LAYER_PUSH / LAYER_POP: filter layers (pocket-motion patch 0018) ----------------
  
 +/// Words in a LAYER_PUSH whose blend word is `blend`: eight, and one more
-+/// per colour filter it carries (bits 24-30, pocket-motion patch 0055).
++/// per colour filter it carries (bits 24-30, pocket-motion patch 0065).
 +#[inline]
 +pub(crate) fn layer_push_len(blend: u32) -> usize {
 +    8 + ((blend >> 24) & 0x7f).count_ones() as usize
@@ -408,7 +409,7 @@ index 09bf9d0a..266a5ec0 100644
      luma: bool,
      /// Luma only: brightest-channel level, 0..=255, where emission starts.
      threshold: u32,
-+    /// Colour filters (pocket-motion patch 0055), applied after the blur.
++    /// Colour filters (pocket-motion patch 0065), applied after the blur.
 +    colors: ColorProgram,
  }
  
@@ -605,7 +606,7 @@ index 09bf9d0a..266a5ec0 100644
 -/// composite reads only the rows something reached.
 +/// arithmetic, and the touched span of pixel offsets and the columns it
 +/// reached are recorded, so the composite reads — and the pool clears — only
-+/// the rectangle something reached (pocket-motion patch 0055: a word-sized
++/// the rectangle something reached (pocket-motion patch 0065: a word-sized
 +/// layer on a 1080p frame scanned and cleared whole 1920-pixel rows, measured
 +/// 0.27 ms a layer).
  struct LayerTarget {
@@ -685,7 +686,7 @@ index 09bf9d0a..266a5ec0 100644
 +        y1: written.y1.max(content.y1),
 +    };
 +
-+    // Colour filters (pocket-motion patch 0055): after the blur and before
++    // Colour filters (pocket-motion patch 0065): after the blur and before
 +    // the shadow, the place Tailwind's `filter` gives them, on straight
 +    // colour. Alpha is untouched, so the shadow below is made from the alpha
 +    // an unfiltered layer has; a luma glow reads the filtered colour.
@@ -694,10 +695,10 @@ index 09bf9d0a..266a5ec0 100644
      // Shadow: the layer's alpha, offset, blurred, times gain, tinted.
      let (sr, sg, sb, sa) = channels(fx.shadow_color);
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 7f240725..b34d9695 100644
+index a729eb00..5b3b8a87 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
-@@ -227,6 +227,13 @@ pub mod prop {
+@@ -239,6 +239,13 @@ pub mod prop {
      pub const TRIM_OFFSET: u8 = 209;
      pub const TRIM_MODE: u8 = 210;
      pub const MORPH: u8 = 211;
@@ -711,32 +712,32 @@ index 7f240725..b34d9695 100644
  }
  
  /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
-@@ -251,7 +258,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+@@ -263,7 +270,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
      0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
-     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
-     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
+     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
+     0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
 -    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 +    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
  ];
-@@ -272,13 +279,13 @@ pub const ANIM_BIT: [u8; 256] = [
+@@ -284,13 +291,13 @@ pub const ANIM_BIT: [u8; 256] = [
      0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0x2f, 0x30, 0x31, 0x32, 0x33,
      0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3a, 0xff, 0x3b, 0x3c, 0xff, 0xff, 0xff, 0x3d,
+     0x41, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3a, 0xff, 0x3b, 0x3c, 0xff, 0xff, 0xff, 0x3d,
 -    0x3e, 0x3f, 0xff, 0x40, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-+    0x3e, 0x3f, 0xff, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0xff, 0xff, 0xff, 0xff, 0xff,
++    0x3e, 0x3f, 0xff, 0x40, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
  ];
  
  /// Bitset over prop ids: animatable props (tween/spring/transition targets).
--pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x00000000000b8d00];
-+pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x0000000007fb8d00];
+-pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x00000000000b8d01];
++pub const ANIMATABLE_BITS: [u64; 4] = [0x000000001e41ff06, 0x00000019000000f7, 0x003ff9fb0000f73f, 0x0000000007fb8d01];
  /// Bitset over prop ids: props whose change invalidates layout.
- pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x0000001e00000000, 0x0000000000000000, 0x0000000000000000];
+ pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x000001fe00000000, 0x0000000000000000, 0x0000000000000000];
  
-@@ -621,6 +628,17 @@ pub mod draw_op {
+@@ -633,6 +640,17 @@ pub mod draw_op {
      pub const STROKE_MAX_WIDTH: f32 = 64.0;
      pub const LAYER_MAX_DEPTH: usize = 4;
      pub const BLUR_MAX: f32 = 128.0;
@@ -755,10 +756,10 @@ index 7f240725..b34d9695 100644
  }
  
 diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
-index e4c2bd04..a1105e99 100644
+index c490f529..eceb45e5 100644
 --- a/engine/core/src/style.rs
 +++ b/engine/core/src/style.rs
-@@ -352,6 +352,16 @@ pub struct Resolved {
+@@ -360,6 +360,16 @@ pub struct Resolved {
      pub glow_mode: u8,
      /// Luma glow: the brightest-channel level (0..1) where emission starts.
      pub glow_threshold: f32,
@@ -775,7 +776,7 @@ index e4c2bd04..a1105e99 100644
      /// Gradient paint (pocket-motion; spec.ts PROP.gradKind..bgClip).
      /// spec::GradKind ordinal; Legacy keeps the gradDir path.
      pub grad_kind: u8,
-@@ -460,6 +470,13 @@ impl Default for Resolved {
+@@ -477,6 +487,13 @@ impl Default for Resolved {
              blend_mode: spec::BlendMode::Normal as u8,
              glow_mode: spec::GlowMode::Alpha as u8,
              glow_threshold: 0.5,
@@ -789,7 +790,7 @@ index e4c2bd04..a1105e99 100644
              grad_kind: spec::GradKind::Legacy as u8,
              grad_angle: 180.0,
              grad_from_pos: 0.0,
-@@ -588,6 +605,13 @@ impl Resolved {
+@@ -612,6 +629,13 @@ impl Resolved {
              p::BLEND_MODE => self.blend_mode = bits as u8,
              p::GLOW_MODE => self.glow_mode = bits as u8,
              p::GLOW_THRESHOLD => self.glow_threshold = f,
@@ -803,7 +804,7 @@ index e4c2bd04..a1105e99 100644
              p::GRAD_KIND => self.grad_kind = bits as u8,
              p::GRAD_ANGLE => self.grad_angle = f,
              p::GRAD_FROM_POS => self.grad_from_pos = f,
-@@ -706,6 +730,13 @@ impl Resolved {
+@@ -740,6 +764,13 @@ impl Resolved {
              p::BLEND_MODE => self.blend_mode as u32,
              p::GLOW_MODE => self.glow_mode as u32,
              p::GLOW_THRESHOLD => self.glow_threshold.to_bits(),
@@ -818,7 +819,7 @@ index e4c2bd04..a1105e99 100644
              p::GRAD_ANGLE => self.grad_angle.to_bits(),
              p::GRAD_FROM_POS => self.grad_from_pos.to_bits(),
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 5dfd45e4..4467fdc6 100644
+index 97f15bbe..af079e3d 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
 @@ -397,12 +397,37 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
@@ -827,7 +828,7 @@ index 5dfd45e4..4467fdc6 100644
                  // Blend mode in the low byte; GlowMode and its threshold
 -                // above it (patch 0033), and nothing above those.
 +                // above it (patch 0033); the colour filters present in bits
-+                // 24-30 (patch 0055), and nothing above those.
++                // 24-30 (patch 0065), and nothing above those.
                  assert!(words[i + 1] & 0xff <= 4, "bad BlendMode");
                  assert!((words[i + 1] >> 8) & 0xff <= 1, "bad GlowMode");
 -                assert!(words[i + 1] >> 24 == 0, "LAYER_PUSH blend word past its fields");
@@ -875,7 +876,7 @@ index 5dfd45e4..4467fdc6 100644
      }
  }
  
-+// ---- colour filters on a filter layer (pocket-motion patch 0055) ---------------------
++// ---- colour filters on a filter layer (pocket-motion patch 0065) ---------------------
 +
 +/// CSS Filter Effects 1's colour filter functions, typed from the spec in
 +/// f64 rather than from raster.rs, on 0..1 channels; each result clamped
@@ -1303,10 +1304,10 @@ index 5dfd45e4..4467fdc6 100644
  
  /// A 200x40 box at (0, 100) over white, painted by a gradient.
 diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
-index a88b1a84..d7f9c0e9 100644
+index 761a55c1..73ab31ce 100644
 --- a/engine/crates/microts/src/spec.rs
 +++ b/engine/crates/microts/src/spec.rs
-@@ -119,6 +119,13 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+@@ -129,6 +129,13 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
      ("trimOffset", 209, "f32"),
      ("trimMode", 210, "i32"),
      ("morph", 211, "f32"),
@@ -1321,7 +1322,7 @@ index a88b1a84..d7f9c0e9 100644
  pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
      ("View", &["class", "style", "focusable", "debug-name"]),
 diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
-index 21016d06..e95d25ee 100644
+index 5bc6a71d..3d28167f 100644
 --- a/framework/compiler/animation.ts
 +++ b/framework/compiler/animation.ts
 @@ -31,6 +31,7 @@ import {
@@ -1337,7 +1338,7 @@ index 21016d06..e95d25ee 100644
  type Encode = (value: string | number, where: string) => number; // -> u32 bits
  
 +/**
-+ * The colour filter functions (pocket-motion patch 0055), in the order they
++ * The colour filter functions (pocket-motion patch 0065), in the order they
 + * apply: Tailwind's `filter` composition, and the bit order of the
 + * LAYER_PUSH that carries them. `unit` amounts stop at 1, as CSS clamps
 + * grayscale, invert and sepia; the others stop at COLOR_FILTER_MAX.
@@ -1410,7 +1411,7 @@ index 21016d06..e95d25ee 100644
    dropShadowBlur: [[PROP.dropShadowBlur], pxBits],
    dropShadowColor: [[PROP.dropShadowColor], colorBits],
    dropShadowGain: [[PROP.dropShadowGain], scalarBits],
-+  // Colour filters (pocket-motion patch 0055), by CSS function name
++  // Colour filters (pocket-motion patch 0065), by CSS function name
 +  // camel-cased: `hueRotate` takes degrees or a CSS angle.
 +  ...Object.fromEntries(
 +    COLOR_FILTERS.map((f) => [f.fn.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()), [[f.prop], colorFilterBits(f)]]),
@@ -1418,8 +1419,8 @@ index 21016d06..e95d25ee 100644
    gradFrom: [[PROP.gradFrom], colorBits],
    gradTo: [[PROP.gradTo], colorBits],
    gradAngle: [[PROP.gradAngle], degBits],
-@@ -300,17 +373,32 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
-   morph: [[PROP.morph], scalarBits],
+@@ -303,17 +376,32 @@ const KEYFRAME_PROPS: Record<string, [number[], Encode]> = {
+   strokeDashoffset: [[PROP.dashOffset], pxBits],
  };
  
 +/** One keyframe's `filter`: the functions in the order written, and the
@@ -1438,7 +1439,7 @@ index 21016d06..e95d25ee 100644
 + * `filter: "blur(8px) grayscale(1) drop-shadow(0px 0px 12px #fbbf24)"` ->
 + * props (pocket-motion). `blur()` is the standard deviation; `drop-shadow(x y
 + * [blur] [color])` takes px lengths and one colour in any order after the two
-+ * offsets, as CSS; the colour filters (patch 0055) take CSS's amounts —
++ * offsets, as CSS; the colour filters (patch 0065) take CSS's amounts —
 + * `brightness(1.5)`, `grayscale(50%)`, `hue-rotate(0.5turn)`, a bare
 + * `grayscale()` being 1.
 + *
@@ -1458,7 +1459,7 @@ index 21016d06..e95d25ee 100644
    const re = /([a-z-]+)\(([^()]*(?:\([^()]*\))?[^()]*)\)/g;
    let m: RegExpExecArray | null;
    let matched = 0;
-@@ -318,7 +406,25 @@ function parseFilter(value: string | number, where: string): Map<number, number>
+@@ -321,7 +409,25 @@ function parseFilter(value: string | number, where: string): Map<number, number>
      matched++;
      const fn = m[1];
      const w = `${where} filter ${fn}()`;
@@ -1485,7 +1486,7 @@ index 21016d06..e95d25ee 100644
        out.set(PROP.blur, f32Bits(parsePx(m[2].trim(), w)));
      } else if (fn === "drop-shadow") {
        const parts = m[2].trim().split(/\s+/);
-@@ -335,11 +441,25 @@ function parseFilter(value: string | number, where: string): Map<number, number>
+@@ -338,11 +444,25 @@ function parseFilter(value: string | number, where: string): Map<number, number>
        out.set(PROP.dropShadowBlur, f32Bits(lengths[2] ?? 0));
        if (color !== undefined) out.set(PROP.dropShadowColor, color);
      } else {
@@ -1513,7 +1514,7 @@ index 21016d06..e95d25ee 100644
  }
  
  /** kebab-case -> camelCase (accepts `background-color` next to `backgroundColor`). */
-@@ -552,6 +672,11 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+@@ -555,6 +675,11 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
    // keyframes (pcts) mention `transform` at all.
    const transformPcts: Array<[number, Map<number, number>]> = [];
    const transformUnion = new Set<number>();
@@ -1525,7 +1526,7 @@ index 21016d06..e95d25ee 100644
  
    for (const [sel, props] of Object.entries(frames)) {
      const pcts = sel.split(",").map((s) => parsePct(s.trim(), where));
-@@ -565,7 +690,9 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+@@ -568,7 +693,9 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
            continue;
          }
          if (key === "filter") {
@@ -1536,7 +1537,7 @@ index 21016d06..e95d25ee 100644
            continue;
          }
          const spec = KEYFRAME_PROPS[key];
-@@ -583,6 +710,55 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
+@@ -586,6 +713,55 @@ function decomposeKeyframes(name: string, frames: Keyframes): Map<number, Map<nu
        put(prop, pct, f32Bits(v));
      }
    }
@@ -1593,10 +1594,10 @@ index 21016d06..e95d25ee 100644
    for (const [prop, m] of mentions) {
      if (!ANIMATABLE_IDS.has(prop)) err(`${where}: prop id ${prop} is not animatable.`);
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index f545e06a..a1ea9720 100644
+index 9d743ab4..8d49eb40 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -40,7 +40,15 @@ import {
+@@ -42,7 +42,15 @@ import {
    type StyleRecord,
    type StyleTransition,
  } from "../../contracts/spec/spec.ts";
@@ -1613,7 +1614,7 @@ index f545e06a..a1ea9720 100644
  
  // ---------------------------------------------------------------------------
  // Font slots (build-assigned, pinned here — bake-font.ts uses the same table)
-@@ -826,11 +834,21 @@ function arbPx(part: string): number | null {
+@@ -947,11 +955,21 @@ function arbPx(part: string): number | null {
   *                     luma: a bloom from the bright pixels' own colour,
   *                     added over the content (pocket-motion patch 0033)
   *   mix-blend-normal|multiply|screen|overlay|plus-lighter|add
@@ -1625,7 +1626,7 @@ index f545e06a..a1ea9720 100644
 + *   hue-rotate-[x]                         a CSS angle: [270deg], [-0.25turn]
 + *                     the colour filters are brightness, contrast, grayscale,
 + *                     hue-rotate, invert, saturate and sepia (pocket-motion
-+ *                     patch 0055), applied in that order after the blur
++ *                     patch 0065), applied in that order after the blur
   *
   * A shadow draws only with a colour; B is the CSS blur radius (deviation =
   * B / 2), as drop-shadow() and text-shadow.
@@ -1635,7 +1636,7 @@ index f545e06a..a1ea9720 100644
    if (tok in BLUR_STEPS) { D.push([PROP.blur, px(BLUR_STEPS[tok]!)]); return true; }
    if (tok.startsWith("blur-[")) {
      const v = arbPx(tok.slice(5));
-@@ -904,6 +922,37 @@ function parseFilterUtility(tok: string, D: Decl[]): boolean {
+@@ -1025,6 +1043,37 @@ function parseFilterUtility(tok: string, D: Decl[]): boolean {
    return false;
  }
  
@@ -1674,10 +1675,10 @@ index f545e06a..a1ea9720 100644
  const DIR_ANGLE: Record<number, number> = {
    [ENUMS.GradDir.ToTop]: 0, [ENUMS.GradDir.ToRight]: 90,
 diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
-index c217cca3..2a18c69d 100644
+index 13be2acf..d3a951ea 100644
 --- a/framework/src/component-types-microts.ts
 +++ b/framework/src/component-types-microts.ts
-@@ -114,6 +114,13 @@ export interface MicroTsStyleProps {
+@@ -124,6 +124,13 @@ export interface MicroTsStyleProps {
    trimOffset?: MicroTsFloatInput;
    trimMode?: i32;
    morph?: MicroTsFloatInput;

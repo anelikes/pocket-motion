@@ -15,13 +15,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { TICKS_PER_SECOND, assertBakedTickRate, hardenedBootWorld } from "../src/runtime/boot.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
 const BUNDLE = "/tmp/whatever/main.js";
 const BUILD = "bun tools/build.ts main.tsx --hz=60";
-
-process.env.POCKETJS_ROOT = VENDOR;
 
 describe("assertBakedTickRate", () => {
   test("the realm's own rate passes", () => {
@@ -98,7 +97,7 @@ describe("assertBakedTickRate", () => {
  * three-node composition, and the boot path either refuses or does not.
  */
 describe("a bundle actually built at another rate", () => {
-  const TMP = "/tmp/pocketjs-motion-tick-rate-test";
+  const TMP = scratchDir("tick-rate");
   const DIR = join(ROOT, "compositions", "late-anim");
 
   const build = async (hz: number): Promise<string> => {
@@ -113,7 +112,7 @@ describe("a bundle actually built at another rate", () => {
         "--framework=solid",
         `--hz=${hz}`,
       ],
-      { cwd: VENDOR, stdout: "pipe", stderr: "pipe", env: { ...process.env, POCKETJS_ROOT: VENDOR } },
+      { cwd: VENDOR, stdout: "pipe", stderr: "pipe", env: { ...process.env } },
     );
     const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
     const bundle = join(outdir, "main.js");

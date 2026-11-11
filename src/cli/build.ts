@@ -14,14 +14,71 @@
  * vendored tree only content-addressed transform-cache entries
  * (upstream #591, on the pin since 66caf4e5;
  * `tests/style-table.test.ts` holds both halves).
+ *
+ * A build whose collector met a `<Path>` `d` it could not read says so on one
+ * line (`paths at mount:`, `patches/0054`). Only then is the bundle mounted
+ * to read the outlines it computes (`src/render/path-inventory.ts`), and when
+ * there are any it is built again with them as `--path-inventory=`, which is
+ * the argv recorded. A composition whose every `d` is a literal never takes
+ * that path, so its artifacts are the bytes they were.
  */
+
+import { rmSync } from "node:fs";
+import { basename, join } from "node:path";
 
 import {
   outDirOf,
   writeBuildRecord,
   type BuildRecord,
 } from "../render/build-record.ts";
+import { unbakedOutlines, type PathInventory } from "../render/path-inventory.ts";
 import { buildSpawn, type ResolvedComposition } from "./resolve.ts";
+
+/** The line `tools/build.ts` prints when some `d` attribute is known only at mount. */
+const PATHS_AT_MOUNT = /^\s*paths at mount: (\d+) /m;
+
+/**
+ * What this repository adds to a refusal the upstream build prints, where the
+ * refusal's own advice was written for an app and is wrong for a film.
+ *
+ * `bake-font` (`patches/0002`) refuses a size whose glyph cell passes 255 px
+ * and advises rendering "at a larger logical viewport instead of a larger
+ * font". A film's viewport is its frame, so that advice resizes the delivery;
+ * an agent that read it on a 1920 × 1080 brief had nowhere to go
+ * (docs/agent-adoption-eval.md). The answer here is the face's own ceiling,
+ * which the refusal states, or outlines. The line goes last because the
+ * refusal is printed in the middle of the build's log, and an agent reading
+ * the end of the output reads this.
+ */
+export function buildRefusalHint(output: string): string | null {
+  const font = /bake-font: (\d+)px needs a \d+px cell[\s\S]*?about (\d+)px/.exec(output);
+  if (font) {
+    return (
+      `pocket-motion: text-[${font[1]}px] does not bake in this face, and a larger viewport would ` +
+      `change the film's frame. Set it at ${font[2]}px or less, or draw type larger than that ` +
+      `as the face's glyph outlines in a <Path> (SKILL.md, "Text does not wrap or shrink").`
+    );
+  }
+  return null;
+}
+
+/** Exported for `tests/cli.test.ts`, which holds the hint to the failure it answers. */
+export async function spawnBuild(argv: readonly string[], cwd: string, env: Record<string, string>): Promise<string> {
+  const proc = Bun.spawn([...argv], { cwd, env, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (code !== 0) {
+    const hint = buildRefusalHint(`${stderr}\n${stdout}`);
+    throw new Error(
+      `build failed (${code})${stderr.trim() ? `\n${stderr.trim()}` : ""}${stdout.trim() ? `\n${stdout.trim()}` : ""}` +
+        (hint ? `\n${hint}` : ""),
+    );
+  }
+  return stdout;
+}
 
 /**
  * Build a composition and record what built it.
@@ -31,20 +88,9 @@ import { buildSpawn, type ResolvedComposition } from "./resolve.ts";
  * and surfaced three layers down as `cannot resolve app "dist"`.
  */
 export async function runBuild(
-  c: Pick<ResolvedComposition, "buildArgs" | "dir">,
+  c: Pick<ResolvedComposition, "buildArgs" | "dir" | "bundlePath" | "pakPath" | "width" | "height" | "fps">,
 ): Promise<BuildRecord> {
   const { argv, cwd, env } = buildSpawn(c);
-  const proc = Bun.spawn(argv, { cwd, env, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  if (code !== 0) {
-    throw new Error(
-      `build failed (${code})${stderr.trim() ? `\n${stderr.trim()}` : ""}${stdout.trim() ? `\n${stdout.trim()}` : ""}`,
-    );
-  }
   const outDir = outDirOf(argv);
   if (outDir === null) {
     // buildSpawn always writes one; a caller that dropped it would leave an
@@ -52,8 +98,45 @@ export async function runBuild(
     // discovering later.
     throw new Error(`build argv names no --outdir: ${argv.join(" ")}`);
   }
-  // `cwd` is the composition's repository root, which the record's paths
-  // are written relative to — in a project that installed this package, the
-  // project rather than `node_modules/pocket-motion`.
-  return writeBuildRecord(outDir, argv, cwd);
+  const inventoryPath = join(outDir, `${basename(c.bundlePath, ".js")}.paths.json`);
+  // One a previous build left would describe a bundle this one replaces.
+  rmSync(inventoryPath, { force: true });
+  const stdout = await spawnBuild(argv, cwd, env);
+
+  let recorded: readonly string[] = argv;
+  const unread = PATHS_AT_MOUNT.exec(stdout);
+  if (unread) {
+    const read = async (): Promise<PathInventory["outlines"]> => {
+      try {
+        return await unbakedOutlines(c);
+      } catch (e) {
+        throw new Error(
+          `${unread[1]} <Path> d attribute(s) are not literals, so the build mounts the bundle to read their outlines, ` +
+            `and the mount failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    };
+    const outlines = await read();
+    if (outlines.length > 0) {
+      const inventory: PathInventory = { outlines };
+      await Bun.write(inventoryPath, JSON.stringify(inventory, null, 2) + "\n");
+      recorded = [...argv, `--path-inventory=${inventoryPath}`];
+      await spawnBuild(recorded, cwd, env);
+      // The rebuilt bundle differs from the one mounted (its PATH_IDS), so the
+      // inventory holds only if its mount computes the same outlines.
+      const again = await read();
+      if (again.length > 0) {
+        throw new Error(
+          `the bundle rebuilt with the ${outlines.length} outline(s) its mount computed (${inventoryPath}) ` +
+            `mounts ${again.length} more: what the composition draws depends on something that changed between ` +
+            `the two builds. First: ${JSON.stringify(again[0]).slice(0, 200)}`,
+        );
+      }
+    }
+  }
+  // The record names the entry relative to the composition and the outdir
+  // relative to itself, so it says nothing about where either sits; `cwd`,
+  // the composition's repository, is what a face the sidecar names by an
+  // absolute path is written relative to.
+  return writeBuildRecord(outDir, recorded, { compositionDir: c.dir, projectRoot: cwd });
 }

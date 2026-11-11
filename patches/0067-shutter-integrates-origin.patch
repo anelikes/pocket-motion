@@ -1,8 +1,8 @@
 pocket-motion-only: the shutter (0034) is this repository's; no upstream target renders an exposure.
 
-0057 — a declared shutter samples the transform origin between ticks.
+0067 — a declared shutter samples the transform origin between ticks.
 
-0056 made the origin animatable. The shutter evaluates only the props
+0066 made the origin animatable. The shutter evaluates only the props
 `integrates` names off the tick, and every other prop keeps the frame's
 tick in every sample. Left out, a zoom whose focal point travels — scale
 2 held, the origin moving — would render sharp under a shutter while the
@@ -23,7 +23,7 @@ animated origin, and `shutter-blur`'s 90 frames are what they were.
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/engine/core/src/shutter.rs b/engine/core/src/shutter.rs
-index 2d4499cd..323da994 100644
+index 2d4499cd..7be687b7 100644
 --- a/engine/core/src/shutter.rs
 +++ b/engine/core/src/shutter.rs
 @@ -5,10 +5,12 @@
@@ -35,7 +35,7 @@ index 2d4499cd..323da994 100644
 -//!   own tick in every sample, so a gate stays a gate and a fade reads as it
 -//!   does unblurred.
 +//! - Only TRANSFORM props are ever evaluated off the tick (`integrates`), the
-+//!   transform origin among them (pocket-motion patch 0057): a zoom whose
++//!   transform origin among them (pocket-motion patch 0067): a zoom whose
 +//!   pivot travels moves its pixels through both. Opacity, colours, colour
 +//!   filters, layout and paint props keep the value of the frame's own tick
 +//!   in every sample, so a gate stays a gate and a fade reads as it does
@@ -55,7 +55,7 @@ index 2d4499cd..323da994 100644
  }
  
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 6870d401..2368f820 100644
+index 628f7ea3..a8e90cbe 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
 @@ -8063,6 +8063,9 @@ fn shutter_holds_everything_but_transforms() {
@@ -73,7 +73,7 @@ index 6870d401..2368f820 100644
      assert_eq!(after.opacity.to_bits(), before.opacity.to_bits(), "opacity is the frame's");
      assert_eq!(after.width.to_bits(), before.width.to_bits(), "layout is the frame's");
 +    assert_eq!(after.hue_rotate.to_bits(), before.hue_rotate.to_bits(), "a colour filter is the frame's");
-+    // The origin is part of the transform (patch 0057): its fraction and its
++    // The origin is part of the transform (patch 0067): its fraction and its
 +    // length are sampled between ticks like a translate.
 +    assert_eq!((before.origin_x, after.origin_x), (0.0, 0.03125));
 +    assert_eq!((before.origin_y_px, after.origin_y_px), (8.0, 8.5));

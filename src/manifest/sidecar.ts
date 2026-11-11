@@ -218,6 +218,10 @@ export type SidecarAssertion =
    *  inside the canvas — `escaped_container` and `panel_out_of_canvas` fire at
    *  no sampled frame. */
   | { readonly node: string; readonly insideBox: true }
+  /** At every sampled frame it has a box, its run is drawn whole: no clamp
+   *  left characters out and no declared fit ladder bottomed out —
+   *  `text_truncated` fires at no sampled frame. */
+  | { readonly node: string; readonly untruncated: true }
   /** Shown across a run of consecutive sampled frames spanning at least this
    *  many composition frames. */
   | { readonly node: string; readonly dwellFrames: number }
@@ -348,6 +352,7 @@ export const ASSERTION_KEYS = new Set([
   "entersBy",
   "exitsBy",
   "insideBox",
+  "untruncated",
   "dwellFrames",
   "before",
 ]);
@@ -358,6 +363,7 @@ export const ASSERTION_PREDICATES = [
   "entersBy",
   "exitsBy",
   "insideBox",
+  "untruncated",
   "dwellFrames",
   "before",
 ] as const;
@@ -1239,6 +1245,19 @@ function parsePredicate(
         return undefined;
       }
       return { insideBox: true };
+    }
+    case "untruncated": {
+      if (raw !== true) {
+        diagnostics.push(
+          diag(
+            "sidecar.assertions.untruncated",
+            path,
+            `\`untruncated\` must be exactly true; got ${JSON.stringify(raw)}`,
+          ),
+        );
+        return undefined;
+      }
+      return { untruncated: true };
     }
     case "dwellFrames": {
       const code = "sidecar.assertions.dwellFrames";

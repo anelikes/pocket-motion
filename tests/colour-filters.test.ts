@@ -1,11 +1,11 @@
 /**
- * Colour filters (patches/0055) through the whole pipeline: the class or
+ * Colour filters (patches/0065) through the whole pipeline: the class or
  * keyframe a composition writes, the amount the compiler bakes into the pak,
  * and the layer the wasm core filters.
  *
  * The matrices themselves are held in the core (`engine/core/src/tests.rs`,
  * against an f64 transcription of Filter Effects 1, each guard red under an
- * edit the 0055 header lists). Here `compositions/colour-filters` is read
+ * edit the 0065 header lists). Here `compositions/colour-filters` is read
  * against a second transcription, in TypeScript, applied to the fixture's own
  * unfiltered card: a Tailwind step baked to the wrong amount, a filter that
  * reaches the shadow, or an animation that stops driving the filter turns a

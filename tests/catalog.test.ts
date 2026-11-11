@@ -610,7 +610,20 @@ describe("catalog gates", () => {
       }
     }
     expect(parts, parts.join("\n") || "G7 clean").toEqual([]);
-  });
+    // Two costs, timed apart on 2026-10-26 (Apple M4, 10 cores), three runs
+    // each: importing jsx-plugin.ts, 574 modules, Babel and Vue's language
+    // tools among them, whether or not the transform cache is warm; and the 13
+    // transforms, against an empty cache and a warm one.
+    //
+    //   load average   import       transforms, empty   transforms, warm
+    //   13-16          0.29-0.41 s  73-131 ms           4 ms
+    //   280-310        2.2-5.0 s    2.4-4.9 s           0.2-1.0 s
+    //
+    // So G7 is half a second on a quiet machine, cold or warm (with Bun's own
+    // transpiler cache off as well), and 3.5-8.3 s on one other work holds at
+    // a load of 300, against bun's 5 s default. 60 s is G10's bound, for the
+    // same work.
+  }, 60_000);
 
   /**
    * The finding codes are the one part of the catalogue nobody declares: they
@@ -641,6 +654,7 @@ describe("catalog gates", () => {
             ...(n.ink === undefined
               ? {}
               : { ink: n.ink === null ? null : { x: n.ink[0], y: n.ink[1], w: n.ink[2], h: n.ink[3] } }),
+            ...(n.fit ? { fit: n.fit } : {}),
             container: null,
           });
         }
@@ -691,6 +705,7 @@ describe("catalog gates", () => {
     const canon = (r: { d: readonly string[]; viewBox?: string }): string => JSON.stringify([r.d, r.viewBox ?? null]);
 
     const parts: string[] = [];
+    const svgDirs: string[] = [];
     for (const row of SURFACE) {
       for (const [i, probe] of (row.pathProbes ?? []).entries()) {
         const where = `${row.id} / ${probe.what}`;
@@ -699,11 +714,34 @@ describe("catalog gates", () => {
           continue;
         }
         if (probe.source !== undefined) {
-          if (!("records" in probe.outcome)) {
-            parts.push(`${where}: a module probe states what the collector records`);
+          if ("verbs" in probe.outcome) {
+            parts.push(`${where}: a module probe states what the collector records, or what the transform refuses`);
             continue;
           }
-          const result = await transformFile(`/catalog-g9/${row.id}-${i}.tsx`, probe.source, "solid");
+          // An `<Svg src>` probe (patches/0053) reads a file beside the module:
+          // a real directory, so the expansion opens the bytes the row wrote.
+          let file = `/catalog-g9/${row.id}-${i}.tsx`;
+          if (probe.svg !== undefined) {
+            const dir = realpathSync(mkdtempSync(join(tmpdir(), "catalog-g10-")));
+            svgDirs.push(dir);
+            writeFileSync(join(dir, "pic.svg"), probe.svg);
+            file = join(dir, `${row.id}-${i}.tsx`);
+          }
+          let result: Awaited<ReturnType<typeof transformFile>>;
+          try {
+            result = await transformFile(file, probe.source, "solid");
+          } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            if (!("refuses" in probe.outcome)) parts.push(`${where}: expected the collector's record, the transform threw: ${message}`);
+            else if (!message.includes(probe.outcome.refuses)) {
+              parts.push(`${where}: refused with a different message\n  want substring: ${probe.outcome.refuses}\n  got: ${message}`);
+            }
+            continue;
+          }
+          if ("refuses" in probe.outcome) {
+            parts.push(`${where}: expected a refusal, the transform accepted it`);
+            continue;
+          }
           const got = result.pathDecls.map(canon).sort();
           const want = probe.outcome.records.map(canon).sort();
           if (JSON.stringify(got) !== JSON.stringify(want)) {
@@ -734,6 +772,7 @@ describe("catalog gates", () => {
         }
       }
     }
+    for (const dir of svgDirs) rmSync(dir, { recursive: true, force: true });
     expect(parts, parts.join("\n") || "G10 clean").toEqual([]);
     // Each module probe is a real Babel transform; at a load average past 150
     // G7, the same work, has run past bun's 5 s default.

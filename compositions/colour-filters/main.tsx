@@ -1,6 +1,6 @@
 // @title PocketJS Motion — colour filters
 //
-// patches/0055: CSS's colour filter functions on a node's filter layer —
+// patches/0065: CSS's colour filter functions on a node's filter layer —
 // brightness, contrast, grayscale, hue-rotate, invert, saturate, sepia — each
 // a fixed-point colour matrix applied after the blur and before the shadow,
 // in Tailwind's order, clamped between steps.

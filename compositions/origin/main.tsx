@@ -1,6 +1,6 @@
 // @title PocketJS Motion — transform origin anywhere
 //
-// patches/0056: `origin-[..]` takes CSS's transform-origin — percentages,
+// patches/0066: `origin-[..]` takes CSS's transform-origin — percentages,
 // px lengths, keywords and calc() of a percentage and a length — and the
 // origin animates. Three 100x40 bars turned 90 degrees, each a flat colour:
 //

@@ -83,7 +83,7 @@ const CASES: readonly Case[] = [
       "bg-[linear-gradient(30deg,#1e3a8a,#7c3aed_35%,#ec4899_70%,#fde68a)]",
     ),
   },
-  // Colour filters (patches/0055). A greyed line drawn directly in the grey
+  // Colour filters (patches/0065). A greyed line drawn directly in the grey
   // `grayscale` gives it costs what `baseline` costs — one colour word
   // changes — which is all a draw-time filter could save.
   { name: "grayscale", what: "+ grayscale on every line (six layers)", source: lyrics("grayscale") },

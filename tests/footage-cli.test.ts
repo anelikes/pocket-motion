@@ -3,10 +3,11 @@
  *
  * No full-film render. openFootage fails loud before it needs a real world
  * for the missing-source and missing-prefix cases, and the cache key is a
- * pure function of the pixel-affecting inputs.
+ * pure function of everything a decode's bytes depend on.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,9 +17,18 @@ import {
   clipFrameAt,
   footageCacheKey,
   openFootage,
+  reachableSpan,
   type FootageCacheKeyInput,
 } from "../src/cli/footage.ts";
-import { ingestScaleFilter } from "../src/footage/ingest.ts";
+import {
+  ingestFootage,
+  ingestRecipe,
+  ingestScaleFilter,
+  RECIPE_SRC,
+  unionSpans,
+  type IngestManifest,
+} from "../src/footage/ingest.ts";
+import { FootageLayer } from "../src/footage/layer.ts";
 import type { ResolvedComposition } from "../src/cli/resolve.ts";
 import type { BootedWorld } from "../src/runtime/boot.ts";
 import {
@@ -132,21 +142,24 @@ describe("openFootage — loud failures", () => {
 });
 
 describe("footage cache key", () => {
-  const base = {
+  const spans = [[0, 300]] as const;
+  const base: FootageCacheKeyInput = {
     srcSha256: "aa".repeat(32),
     tile: 512,
     fps: 30,
     width: 1080,
     height: 1920,
-    frames: 300,
-    fit: "stretch" as const,
+    fit: "stretch",
+    spans,
+    recipe: ingestRecipe({ width: 1080, height: 1920, fps: 30, spans, fit: "stretch" }),
+    ffmpeg: "ff".repeat(32),
   };
 
   test("the same inputs produce the same key", () => {
     expect(footageCacheKey(base)).toBe(footageCacheKey({ ...base }));
   });
 
-  test("changes when any pixel-affecting input changes", () => {
+  test("changes when any input a decode depends on changes", () => {
     const origin = footageCacheKey(base);
     const variants: FootageCacheKeyInput[] = [
       { ...base, srcSha256: "bb".repeat(32) },
@@ -154,9 +167,12 @@ describe("footage cache key", () => {
       { ...base, fps: 15 },
       { ...base, width: 720 },
       { ...base, height: 1280 },
-      { ...base, frames: 180 },
       { ...base, fit: "cover" },
       { ...base, fit: "contain" },
+      { ...base, spans: [[0, 180]] },
+      { ...base, spans: [[20, 300]] },
+      { ...base, spans: [[0, 60], [89, 300]] },
+      { ...base, ffmpeg: "fe".repeat(32) },
     ];
     const keys = new Set(variants.map(footageCacheKey));
     expect(keys.size).toBe(variants.length);
@@ -170,20 +186,67 @@ describe("footage cache key", () => {
     expect(new Set([stretch, cover, contain]).size).toBe(3);
   });
 
-  // The other half of the same claim, and the one with a cost attached:
-  // moving a cut must not re-decode the clip. An author trimming a film to an
-  // exact length changes placement on almost every iteration.
-  test("does not change when only the placement does", () => {
+  // What the ingest code decides, as opposed to what the sidecar decides. The
+  // key used to hold only the second, so editing a scaler flag left every warm
+  // `dist` serving the artifact the previous flags made. Every token of the
+  // argv but the source path is the recipe, and each one moves the key.
+  test("changes when any token of the recipe changes", () => {
     const origin = footageCacheKey(base);
-    for (const extra of [
-      { startFrame: 12 },
-      { endFrame: 60 },
-      { sourceFrame: 8 },
-      { durationFrames: 60 },
-      { grid: [2, 2] as const },
-    ]) {
-      expect(footageCacheKey({ ...base, ...extra } as FootageCacheKeyInput)).toBe(origin);
-    }
+    expect(base.recipe).toContain(RECIPE_SRC);
+    const keys = new Set<string>([origin]);
+    base.recipe.forEach((token, i) => {
+      if (token === RECIPE_SRC) return;
+      const recipe = base.recipe.with(i, `${token}~`);
+      keys.add(footageCacheKey({ ...base, recipe }));
+    });
+    expect(keys.size).toBe(base.recipe.length);
+  });
+
+  test("the recipe is the argv the ingest runs, with the source path taken out", () => {
+    expect(base.recipe).toEqual([
+      "ffmpeg", "-v", "error",
+      "-fflags", "+bitexact",
+      "-flags", "+bitexact",
+      "-sws_flags", "+accurate_rnd+bitexact",
+      "-i", RECIPE_SRC,
+      "-vf", ingestScaleFilter(1080, 1920, "stretch"),
+      "-r", "30",
+      "-frames:v", "300",
+      "-pix_fmt", "rgba",
+      "-f", "rawvideo",
+      "pipe:1",
+    ]);
+  });
+
+  // The other half: moving a cut in the film without changing which source
+  // frames it shows reuses the decode, and so does declaring the same frames
+  // in another order.
+  test("does not change when placement moves without changing the frames shown", () => {
+    const at0 = reachableSpan({ startFrame: 0, endFrame: 60, sourceFrame: 89 }, 150);
+    const at90 = reachableSpan({ startFrame: 90, endFrame: 150, sourceFrame: 89 }, 150);
+    expect(at0).toEqual([89, 149]);
+    expect(at90).toEqual(at0);
+    expect(unionSpans([[89, 179], [0, 60]])).toEqual(unionSpans([[0, 60], [89, 179]]));
+    const key = (s: readonly (readonly [number, number])[]) =>
+      footageCacheKey({ ...base, spans: unionSpans(s) });
+    expect(key([[0, 60], [89, 179]])).toBe(key([[89, 179], [0, 60]]));
+    expect(key([[0, 60], [30, 90]])).toBe(key([[0, 90]]));
+    expect(key([[0, 60], [60, 90]])).toBe(key([[0, 90]]));
+  });
+});
+
+describe("reachable span", () => {
+  test("a track's span is its window mapped onto the clip, ended by the film", () => {
+    expect(reachableSpan({ startFrame: 30, endFrame: 150, sourceFrame: 20 }, 180)).toEqual([20, 140]);
+    expect(reachableSpan({ startFrame: 0, endFrame: 101, sourceFrame: 0 }, 101)).toEqual([0, 101]);
+    // The parser refuses endFrame past the film; the span does not rely on it.
+    expect(reachableSpan({ startFrame: 10, endFrame: 200, sourceFrame: 5 }, 60)).toEqual([5, 55]);
+  });
+
+  test("the union sorts, merges overlapping and touching spans, and drops empty ones", () => {
+    expect(unionSpans([[89, 179], [0, 60]])).toEqual([[0, 60], [89, 179]]);
+    expect(unionSpans([[0, 60], [40, 90], [90, 100], [5, 5]])).toEqual([[0, 100]]);
+    expect(unionSpans([[10, 20], [0, 5], [12, 15]])).toEqual([[0, 5], [10, 20]]);
   });
 });
 
@@ -450,6 +513,189 @@ describe("openFootage — placement window", () => {
     expect(Buffer.from(uploads[0]!).equals(Buffer.from(uploads[1]!))).toBe(false);
     expect(clipFrameAt(head, 0)).not.toBe(clipFrameAt(tail, 0));
     await handle!.close();
+  });
+});
+
+describe("openFootage — decoded spans and the recipe", () => {
+  const TILE = 16;
+  const PX = 8;
+  const FRAME = PX * PX * 4;
+  let work = "";
+  let clipPath = "";
+  let whole: { manifest: IngestManifest; bytes: Buffer };
+
+  beforeAll(async () => {
+    work = await mkdtemp(join(tmpdir(), "pocketjs-motion-spans-"));
+    await mkdir(join(work, "compositions", "spans"), { recursive: true });
+    clipPath = join(work, "ramp.mp4");
+    // Luma 4N on frame N, losslessly encoded, so every frame of the 2 s clip is
+    // a different picture and an off-by-one shows as a wrong buffer.
+    const proc = Bun.spawn(
+      [
+        "ffmpeg", "-y", "-v", "error",
+        "-f", "lavfi", "-i", `nullsrc=s=${PX}x${PX}:r=30:d=2,geq=lum='4*N':cb=128:cr=128`,
+        "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p",
+        clipPath,
+      ],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const err = await new Response(proc.stderr).text();
+    if ((await proc.exited) !== 0) throw new Error(`test fixture ffmpeg failed: ${err}`);
+    // The whole clip, decoded the way every ingest did before spans: the
+    // reference each span has to be a byte slice of. 2 s at 30 fps is 59
+    // frames once `sourceFrameCount` drops the last.
+    const outDir = join(work, "whole");
+    const manifest = await ingestFootage({
+      src: clipPath, outDir, width: PX, height: PX, fps: 30, spans: [[0, 59]], tile: TILE,
+    });
+    whole = { manifest, bytes: readFileSync(join(outDir, "frames.rgba")) };
+  });
+
+  afterAll(async () => {
+    if (work) await rm(work, { recursive: true, force: true });
+  });
+
+  const dir = () => join(work, "compositions", "spans");
+  const footageDir = (id: string) => join(dir(), "dist", "footage", id);
+
+  function spansComposition(footage: FootageTrack[], durationFrames: number): ResolvedComposition {
+    return {
+      ...composition(footage, dir(), durationFrames),
+      bundlePath: join(dir(), "dist", "main.js"),
+      pakPath: join(dir(), "dist", "main.pak"),
+      distDir: join(dir(), "dist"),
+    };
+  }
+
+  const tree = (...prefixes: string[]) => ({
+    i: 0,
+    k: prefixes.map((n, i) => ({
+      i: i + 1,
+      n: `${n}/tile:0:0`,
+      c: `absolute w-[${PX}px] h-[${PX}px] left-[0px] top-[0px]`,
+    })),
+  });
+
+  function uploadingWorld(): { world: BootedWorld; uploads: Uint8Array[] } {
+    const uploads: Uint8Array[] = [];
+    const world = {
+      ops: {
+        uploadTexture: (buf: Uint8Array) => uploads.push(Uint8Array.from(buf)),
+        setImage: () => {},
+        setImageUv: () => {},
+        freeTexture: () => {},
+      },
+    } as unknown as BootedWorld;
+    return { world, uploads };
+  }
+
+  function track(id: string, o: Partial<FootageTrack>): FootageTrack {
+    return {
+      id,
+      src: "ramp.mp4",
+      nodePrefix: `footage:${id}`,
+      tile: TILE,
+      grid: [1, 1],
+      startFrame: 0,
+      endFrame: 10,
+      sourceFrame: 0,
+      ...o,
+    };
+  }
+
+  // The defect this answers: a 101-frame window kept all 179 frames of its
+  // clip on disk, and one clip mapped twice was decoded whole twice.
+  test("one clip mapped twice is one artifact holding exactly the union of what each can show", async () => {
+    await rm(join(dir(), "dist"), { recursive: true, force: true });
+    const head = track("head", { startFrame: 0, endFrame: 10, sourceFrame: 0 });
+    const tail = track("tail", { startFrame: 10, endFrame: 20, sourceFrame: 40 });
+    // What a tree built before spans holds for `tail`: its own whole decode.
+    // Nothing reads it once `head`'s artifact serves both, so it goes; a
+    // directory that is not an ingest's is left alone.
+    await mkdir(footageDir("tail"), { recursive: true });
+    writeFileSync(join(footageDir("tail"), "cache.json"), "{}");
+    writeFileSync(join(footageDir("tail"), "frames.rgba"), whole.bytes);
+    await mkdir(footageDir("notes"), { recursive: true });
+    writeFileSync(join(footageDir("notes"), "README"), "not an ingest");
+    const { world, uploads } = uploadingWorld();
+    const handle = await openFootage(spansComposition([head, tail], 30), world, tree(head.nodePrefix, tail.nodePrefix));
+
+    const manifest = JSON.parse(readFileSync(join(footageDir("head"), "manifest.json"), "utf8")) as IngestManifest;
+    expect(manifest.spans).toEqual([[0, 10], [40, 50]]);
+    expect(manifest.frames).toBe(20);
+    expect(existsSync(footageDir("tail"))).toBe(false);
+    expect(existsSync(join(footageDir("notes"), "README"))).toBe(true);
+    expect(handle!.hashes).toEqual({ head: manifest.sha256, tail: manifest.sha256 });
+
+    // Byte for byte the frames a whole decode holds at those indices: stopping
+    // the decode at frame 50 of 59 moved none of the 50 before it.
+    const stored = readFileSync(join(footageDir("head"), "frames.rgba"));
+    const slice = (a: number, b: number) => whole.bytes.subarray(a * FRAME, b * FRAME);
+    expect(stored.equals(Buffer.concat([slice(0, 10), slice(40, 50)]))).toBe(true);
+
+    // And `sourceFrame + (f - startFrame)` still lands on them: every
+    // composition frame uploads what the whole clip's layer uploads for the
+    // source frame that mapping names.
+    const ref = uploadingWorld();
+    const wholeLayer = await FootageLayer.create({
+      manifest: whole.manifest,
+      rawPath: join(work, "whole", "frames.rgba"),
+      nodePrefix: head.nodePrefix,
+      tree: tree(head.nodePrefix),
+      ops: ref.world.ops as never,
+    });
+    for (let f = 0; f < 20; f++) {
+      uploads.length = 0;
+      handle!.present(f);
+      const bind = f < 10 ? head : tail;
+      expect(uploads).toHaveLength(1);
+      wholeLayer.present(clipFrameAt(bind, f)!);
+      expect(Buffer.from(uploads[0]!).equals(Buffer.from(ref.uploads.at(-1)!))).toBe(true);
+    }
+    wholeLayer.close();
+    await handle!.close();
+  });
+
+  // The cache's half of the same defect: a key that holds what the sidecar
+  // decides and not what the ingest code decides hands a warm `dist` the
+  // artifact an older recipe made. The older recipe here is today's with
+  // `+accurate_rnd+bitexact` taken out, roughly what ran before CI run
+  // 33599991463 — which on aarch64 decodes the same bytes, so a stale hit
+  // would have been invisible on the machine that made it. It is only ever a
+  // key; nothing runs it. The planted artifact is filled with a byte no
+  // decode of this clip produces, so a hit is seen in the hash.
+  test("an artifact an older recipe made is decoded again, not handed back", async () => {
+    await rm(join(dir(), "dist"), { recursive: true, force: true });
+    const only = track("only", {});
+    const open = async () => {
+      const handle = await openFootage(spansComposition([only], 30), uploadingWorld().world, tree(only.nodePrefix));
+      await handle!.close();
+      return handle!.hashes.only!;
+    };
+    const fresh = await open();
+    const cachePath = join(footageDir("only"), "cache.json");
+    const manifestPath = join(footageDir("only"), "manifest.json");
+    const record = JSON.parse(readFileSync(cachePath, "utf8")) as FootageCacheKeyInput & { key: string };
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as IngestManifest;
+    // The recipe keyed is the recipe that ran.
+    expect(record.recipe).toEqual(manifest.recipe);
+
+    const plant = (recipe: readonly string[]) => {
+      const { key: _key, ...input } = record;
+      writeFileSync(join(footageDir("only"), "frames.rgba"), Buffer.alloc(manifest.bytes, 0x7f));
+      writeFileSync(manifestPath, JSON.stringify({ ...manifest, sha256: "7f".repeat(32), recipe }));
+      writeFileSync(cachePath, JSON.stringify({ ...input, recipe, key: footageCacheKey({ ...input, recipe }) }));
+    };
+
+    // Control: planted under today's recipe, the artifact IS handed back —
+    // so what the next case measures is the recipe, not a cache that never hits.
+    plant(record.recipe);
+    expect(await open()).toBe("7f".repeat(32));
+
+    const older = record.recipe.map((t) => t.replaceAll("+accurate_rnd+bitexact", ""));
+    expect(older).not.toEqual(record.recipe);
+    plant(older);
+    expect(await open()).toBe(fresh);
   });
 });
 

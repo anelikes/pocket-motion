@@ -40,7 +40,7 @@ const GLOBAL_VALUE = new Set([
 ]);
 
 /** Command-specific booleans. Must be listed here so `--no-open` is not parsed as a value flag. */
-const COMMAND_BOOL = new Set(["no-open", "no-watch", "alpha", "annotate", "strict"]);
+const COMMAND_BOOL = new Set(["no-open", "no-watch", "alpha", "annotate", "strict", "no-assert", "no-reuse"]);
 
 /** All known flag names (global + command-specific) so unknown flags exit 2. */
 const KNOWN_FLAGS = new Set([
@@ -56,7 +56,11 @@ const KNOWN_FLAGS = new Set([
   "out-dir",
   "example",
   "format",
+  "encoder",
+  "preset",
   "zoom",
+  "range",
+  "workers",
   // keep room for future command flags without expanding GLOBAL_*
 ]);
 
@@ -65,7 +69,7 @@ const KNOWN_FLAGS = new Set([
  * commands. `--out` and `--at` have two owners each; a single-string map
  * cannot refuse `trace --out` without also refusing `frame --out`.
  */
-const FLAG_COMMAND: Record<string, readonly string[]> = {
+export const FLAG_COMMAND: Record<string, readonly string[]> = {
   spec: ["render", "preview"],
   "out-dir": ["render"],
   verify: ["sound"],
@@ -73,7 +77,7 @@ const FLAG_COMMAND: Record<string, readonly string[]> = {
   bind: ["preview"],
   "no-open": ["preview"],
   "no-watch": ["preview"],
-  out: ["frame", "render", "snapshot"],
+  out: ["frame", "render", "snapshot", "concat"],
   at: ["frame", "layout", "snapshot", "verify"],
   samples: ["visibility", "snapshot", "assert", "verify"],
   read: ["layout", "visibility", "assert", "verify"],
@@ -81,6 +85,12 @@ const FLAG_COMMAND: Record<string, readonly string[]> = {
   example: ["init"],
   format: ["render"],
   alpha: ["render"],
+  range: ["render"],
+  workers: ["render"],
+  "no-assert": ["render"],
+  encoder: ["render"],
+  preset: ["render"],
+  "no-reuse": ["render", "trace"],
   annotate: ["snapshot"],
   zoom: ["snapshot"],
   strict: ["verify"],

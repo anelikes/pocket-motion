@@ -195,7 +195,31 @@ const ENTRIES = [
   // 320×180. A count read short, a segment found wrong by the core's search,
   // or a kit that splits or thins a long move moves this digest and no other.
   "compositions/long-track",
-  // colour-filters. patches/0055 over 30 frames: one gradient card plain and
+  // path-primitives. patches/0045-0046 and src/anim/path-motion.ts over 150
+  // frames: dashed, dotted and marching connectors, three morphs between keys
+  // drawn separately, a dart and a dot flying a dashed route by keyframes the
+  // kit bakes in pocket.config.ts, and a dashed ring drawn on. A change to
+  // where a dash falls, to the equalisation rule or to the kit's keys moves
+  // this digest; a stroke without a pattern moves none.
+  "compositions/path-primitives",
+  // svg-import. patches/0053: lighthouse.svg expanded into a View per named
+  // group and a <Path> per shape, its transforms, viewBox and
+  // preserveAspectRatio folded into the outlines, eleven parts drawn on one
+  // after another, a lamp scaled about its own box and a beam turned about the
+  // lamp. A change to the document reader, the folding, the paint mapping or
+  // the parts join moves this digest and no other.
+  "compositions/svg-import",
+  // data-chart. patches/0054: a chart whose four outlines are computed at
+  // mount from rows in another module and baked from the mounted tree. A
+  // change to the inventory, the order it bakes in or the monotone curve
+  // moves this digest; the same chart written as literals bakes the same pak.
+  "compositions/data-chart",
+  // text-fit. patches/0059: runs fitted to a declared ladder, wrapped at
+  // spaces and U+200B and clamped with an ellipsis by layout, in fixed boxes
+  // and in boxes flex sizes. A change to the rung a box takes, where a line
+  // breaks, what a clamp keeps or which slot paint draws moves this digest.
+  "compositions/text-fit",
+  // colour-filters. patches/0065 over 30 frames: one gradient card plain and
   // under each of the seven colour filters, grey to colour as a `filter`
   // list, a brightness flash, a looping hue cycle, a greyed disc whose glow
   // keeps its colour, and `brightness-200 contrast-50`, where the clamp
@@ -203,7 +227,7 @@ const ENTRIES = [
   // the clamp, the order or where the pass sits in the layer moves this
   // digest and no other.
   "compositions/colour-filters",
-  // origin. patches/0056 over 30 frames: three bars turned about a keyword,
+  // origin. patches/0066 over 30 frames: three bars turned about a keyword,
   // a px and a calc() origin, and a card held at scale 2 whose origin moves
   // corner to corner. A change to how an origin's length is parsed, stored
   // or added to its fraction, or to how the origin animates, moves this
@@ -243,6 +267,13 @@ const EXEMPT: Readonly<Record<string, string>> = {
     "exactly one node with a box and no pixel — the fixture for `visibility`'s " +
     "covered classification. A `tests/cli.test.ts` fixture, not a deliverable — its " +
     "frames carry no film, and a digest would pin a test input as if it were a cut.",
+  "compositions/short-sections":
+    "Eight 9-frame ranks under the 13-frame stride of `assert`'s default 24 samples, " +
+    "each rank's card at opacity 0 outside its window — hajibang's top-reveal at " +
+    "fixture size. What it holds is which frames `assert` samples, against a " +
+    "sidecar `assert --samples 300` passes at every frame (`tests/assert.test.ts`); " +
+    "a fixture for the grid, not a deliverable, and its pixels are flat cards " +
+    "and two text runs a rank that no other test reads.",
   "compositions/spanned":
     "The same burial at the proportions it appears at in a real cut, and the three " +
     "things it has to be told apart from: a named caption shown for a clean 72 frames and covered " +

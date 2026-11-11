@@ -15,7 +15,9 @@
  *
  *   - the baked schedule: delay, period, iterations, properties, per timeline
  *   - which declared instants land between two rendered frames and are
- *     therefore never observed (`src/anim/timelines.ts` has the mechanism)
+ *     therefore never observed (`src/anim/timelines.ts` has the mechanism;
+ *     frame f shows the LAST tick of its window, `clockOfFrame` in
+ *     `src/runtime/clock.ts`)
  *   - which steps — segments no longer than one rendered frame — the render
  *     takes a frame inside of, and so shows part-way
  *   - which properties two animations of one comma list write at the same
@@ -31,9 +33,10 @@
  * late and grey; `compositions/transitions`' incoming scene showed at 0.72
  * before its cut), and both are reported rather than failed for the same
  * reason: the ledger was measured with the readings in place, and the number
- * of each in the tree is in the commit that added them. A timeline whose
- * delay outlives its clock is unambiguous: it is a declared animation that no
- * frame of this composition can show.
+ * of each in the tree is in `baselines/keyframes-phase.md`, re-measured when
+ * the grid moved to the last tick of each frame. A timeline whose delay
+ * outlives its clock is unambiguous: it is a declared animation that no frame
+ * of this composition can show.
  */
 
 import { existsSync } from "node:fs";
@@ -48,6 +51,7 @@ import {
   BuildRecordError,
 } from "../../render/build-record.ts";
 import { TICKS_PER_SECOND } from "../../runtime/boot.ts";
+import { clockOfFrame } from "../../runtime/clock.ts";
 import { UsageError, parseArgs, requirePositional } from "../args.ts";
 import { errMsg, resolveComposition } from "../resolve.ts";
 import {
@@ -219,7 +223,8 @@ function summarise(report: TimelineReport, b: Buckets): string[] {
       `${report.bakedCount} baked` +
       (report.unreferenced > 0 ? `, ${report.unreferenced} referenced by no style record` : ""),
     `  ${report.fps} fps at an assumed ${TICKS_PER_SECOND} Hz bake rate: the render ` +
-      `samples every ${report.ticksPerFrame} core tick(s), ${report.totalTicks} tick(s) ` +
+      `samples every ${report.ticksPerFrame} core tick(s), the last of each frame's window ` +
+      `(frame f shows tick ${frameTick(report.ticksPerFrame)}), ${report.totalTicks} tick(s) ` +
       "of clock in all",
     "  (the rate is published by the bundle and this command does not boot; " +
       "every command that does refuses a bundle baked at another rate)",
@@ -299,6 +304,13 @@ function summarise(report: TimelineReport, b: Buckets): string[] {
   return lines;
 }
 
+/** `clockOfFrame` as the header prints it: `2f + 1` at two ticks a frame. */
+function frameTick(ticksPerFrame: number): string {
+  const k = ticksPerFrame === 1 ? "f" : `${ticksPerFrame}f`;
+  const c = clockOfFrame(0, ticksPerFrame);
+  return c === 0 ? k : `${k} + ${c}`;
+}
+
 function describe(t: TimelineUse): string {
   const iterations = t.iterations === 0 ? "infinite" : `${t.iterations}x`;
   const shifted = t.unsampled
@@ -314,7 +326,7 @@ function describe(t: TimelineUse): string {
     (t.partialCuts.length > 0
       ? `  step ${t.partialCuts
           .slice(0, 3)
-          .map((c) => `${c.t0}→${c.t1} shown ${c.fraction.toFixed(2)} at ${c.sampledTick}`)
+          .map((c) => `${c.t0}→${c.t1} shown ${c.fraction.toFixed(2)} by frame ${c.frame} (tick ${c.sampledTick})`)
           .join(", ")}`
       : "") +
     (t.partialCuts.length > 3 ? ` (+${t.partialCuts.length - 3})` : "")

@@ -1,5 +1,5 @@
 /**
- * A transform origin anywhere (patches/0056), and moving.
+ * A transform origin anywhere (patches/0066), and moving.
  *
  * The core's tests hold the arithmetic: an origin's length is the fraction
  * it equals, on the 2D and the 3D path, and both halves animate

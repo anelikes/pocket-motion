@@ -1,6 +1,6 @@
 # Colour filters — a layer, or draw time?
 
-`patches/0055` applies CSS's colour filters on a node's filter layer
+`patches/0065` applies CSS's colour filters on a node's filter layer
 (`patches/0018`): the node and its subtree are rendered into a transparent
 layer, the layer's straight colour goes through each filter's matrix, and the
 layer is composited back. The question this note answers with numbers is
@@ -33,7 +33,7 @@ the colour it should have.
 ## What the layer costs
 
 Native (`cargo test --release --lib colour_filter_layer_cost -- --ignored
---nocapture` in `vendor/pocketjs/engine/core`, the bench is in 0055's
+--nocapture` in `vendor/pocketjs/engine/core`, the bench is in 0065's
 `tests.rs`): N boxes on a 1920×1080 ground, each `hue-rotate-90
 saturate-150` through a layer, against the colour that filter makes drawn
 directly.
@@ -63,7 +63,7 @@ compositing it and clearing it.
 
 In the wasm core, through `bun scripts/paint-bench.ts --reps 40` (six 96 px
 bold lines of copy at 1920×1080; the bench's own table and method are in
-`paint-effects.md`; `grayscale` and `grade-frame` are the two cases 0055
+`paint-effects.md`; `grayscale` and `grade-frame` are the two cases 0065
 adds). Minimum ms a frame; "rows only" is the same wasm with the layer's
 column bounds taken out, one run; "patched" is two runs, before and after
 it, which is how far apart two runs of one build land at this load:
