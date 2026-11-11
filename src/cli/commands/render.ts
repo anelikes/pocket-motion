@@ -23,7 +23,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import { render as renderComposition } from "../../render/render.ts";
+import { MissingGlyphError, render as renderComposition } from "../../render/render.ts";
+import { codepointLabel, missingGlyphLines, mountedMissingGlyphs, nodesCarrying } from "../../text/missing.ts";
 import {
   OUTPUT_FORMATS,
   assertEncoderSupported,
@@ -69,6 +70,7 @@ import {
 } from "../args.ts";
 import { openFootage, scratchTree, type FootageHandle } from "../footage.ts";
 import { parseSpec } from "../../manifest/spec.ts";
+import { describeMissing, jobCoverage, type MissingGlyph } from "../../text/coverage.ts";
 import { runBuild } from "../build.ts";
 import {
   errMsg,
@@ -110,6 +112,10 @@ export interface RenderJson {
   /** Frames delivered as the frame before's pixels, without a raster.
    *  Absent for `--workers`, whose segments rendered in other processes. */
   reusedFrames?: number;
+  /** Codepoints drawn as the tofu box (`src/text/missing.ts`), as `U+XXXX`.
+   *  Present, and non-empty, only when there were some; a `--spec` job with
+   *  any is refused instead. Absent for `--workers`. */
+  missingGlyphs?: string[];
   shutter?: SidecarShutter;
   soundSkipped?: string;
   sound?: SoundJson;
@@ -341,6 +347,35 @@ export async function stageSpec(dir: string, specPath: string): Promise<{ dir: s
   return mod.stageJob(resolve(specPath));
 }
 
+/**
+ * The characters a job draws that its faces do not map
+ * (`src/text/coverage.ts`), read before anything is staged: a build bakes
+ * the tofu cell for them and exits 0, and every gate after it passes a card
+ * of boxes. Null when the job does not parse — staging says why — or when
+ * every character is mapped.
+ */
+async function glyphRefusal(dir: string, specPath: string): Promise<CommandResult | null> {
+  let raw: unknown;
+  try {
+    raw = await Bun.file(specPath).json();
+  } catch {
+    return null;
+  }
+  const parsed = parseSpec(raw, { root: repoRootOf(resolve(dir)) });
+  if (!parsed.ok) return null;
+  const report = jobCoverage(parsed.value, repoRootOf(resolve(dir)));
+  if (report.missing.length === 0) return null;
+  const error =
+    `the job draws ${new Set(report.missing.map((m) => m.char)).size} character(s) its faces do not map; ` +
+    "nothing was staged or built";
+  return {
+    exitCode: EXIT_FAIL,
+    json: { ok: false, error, missingGlyphs: report.missing },
+    stderrLines: [error, ...describeMissing(report.missing)],
+    stdoutLines: [`render failed — ${error}`],
+  };
+}
+
 export async function run(
   options: RenderOptions,
   context: RunContext = {},
@@ -348,7 +383,11 @@ export async function run(
   const signal = context.signal;
   const cancelled = (): boolean => signal?.aborted === true;
   let staged: { dir: string; dispose: () => Promise<void> } | undefined;
+  /** The job's composition, for naming the nodes behind a refused glyph. */
+  let resolvedForGlyphs: ResolvedComposition | undefined;
   if (options.spec) {
+    const refusal = await glyphRefusal(options.dir, options.spec);
+    if (refusal !== null) return refusal;
     try {
       staged = await stageSpec(options.dir, options.spec);
     } catch (e) {
@@ -410,6 +449,7 @@ export async function run(
     }
 
     const c = resolved.value;
+    resolvedForGlyphs = c;
     const outputPath = resolve(options.out);
     const format = options.format ?? "mp4";
     if (options.range && options.range[1] >= c.durationFrames) {
@@ -452,6 +492,11 @@ export async function run(
           };
         }
       }
+      // A job's text comes from data nobody looked at: a glyph no declared
+      // face carries is refused here, before a frame is encoded, whether the
+      // film renders in this process or in `--workers`' children.
+      const missing = await mountedMissingGlyphs(c);
+      if (missing.length > 0) throw new MissingGlyphError(missing);
     }
     if (format === "png-seq") {
       wrote.madeFrameDir = !existsSync(outputPath);
@@ -518,6 +563,7 @@ export async function run(
         encoder: options.encoder,
         preset: options.preset,
         reuse: options.reuse,
+        refuseMissingGlyphs: options.spec !== undefined,
         encodePNG,
         ...(options.range ? { range: [options.range[0], options.range[1] + 1] as const } : {}),
         setup: declared
@@ -592,6 +638,7 @@ export async function run(
       msPerFrame: result.msPerFrame,
       ...(encoder ? { encoder } : {}),
       ...(rendered ? { reusedFrames: rendered.reusedFrames } : {}),
+      ...(rendered && rendered.missingGlyphs.length > 0 ? { missingGlyphs: rendered.missingGlyphs.map(codepointLabel) } : {}),
       ...(c.shutter ? { shutter: c.shutter } : {}),
       ...split,
     };
@@ -616,6 +663,12 @@ export async function run(
         ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure of ${c.shutter.samples} renders`]
         : []),
     ];
+    if (rendered && rendered.missingGlyphs.length > 0) {
+      stdoutLines.push(
+        `glyphs: ${rendered.missingGlyphs.length} codepoint(s) drawn as the tofu box — no glyph in the slot's face or any fonts.fallback face`,
+        ...missingGlyphLines(rendered.missingGlyphs, nodesCarrying(await scratchTree(c), rendered.missingGlyphs)),
+      );
+    }
     if (result.alphaFloor !== undefined) {
       // Reported every time: the number is the evidence. The rasteriser
       // clears to transparent black (patch 0014), so 255 now means the
@@ -656,6 +709,18 @@ export async function run(
       return cancelledResult(signal);
     }
     if (e instanceof UsageError) throw e;
+    if (e instanceof MissingGlyphError && staged !== undefined && resolvedForGlyphs !== undefined) {
+      // A job whose text has a glyph no declared face carries: refused, the
+      // nodes named, nothing delivered (the `finally` removes the partial).
+      const nodes = nodesCarrying(await scratchTree(resolvedForGlyphs), e.codepoints);
+      const error = `the job's text has ${e.codepoints.length} codepoint(s) no declared face carries`;
+      return {
+        exitCode: EXIT_FAIL,
+        json: { ok: false, error, missingGlyphs: e.codepoints.map(codepointLabel), missingGlyphNodes: nodes },
+        stderrLines: ["declare a face that maps them in the template's fonts.fallback, or take them out of the job's text"],
+        stdoutLines: [`render refused — ${error}, which would be drawn as the tofu box`, ...missingGlyphLines(e.codepoints, nodes)],
+      };
+    }
     const message = errMsg(e);
     return {
       exitCode: EXIT_FAIL,
@@ -1067,7 +1132,7 @@ async function runBatch(
       expectedTemplate = undefined;
     }
   }
-  const parseFails: Array<{ spec: string; error: string }> = [];
+  const parseFails: Array<{ spec: string; error: string; missingGlyphs?: readonly MissingGlyph[] }> = [];
   for (const name of files) {
     const specPath = join(options.specDir, name);
     let raw: unknown;
@@ -1097,14 +1162,36 @@ async function runBatch(
         spec: name,
         error: `this generator is ${JSON.stringify(expectedTemplate)}; got ${JSON.stringify(parsed.value.template)}`,
       });
+      continue;
+    }
+    // Every job's characters before any job renders, so a batch learns all of
+    // what its faces cannot draw at once (`glyphRefusal`).
+    const coverage = jobCoverage(parsed.value, root);
+    if (coverage.missing.length > 0) {
+      parseFails.push({
+        spec: name,
+        error: describeMissing(coverage.missing).join("\n"),
+        missingGlyphs: coverage.missing,
+      });
     }
   }
   if (parseFails.length > 0) {
     return {
       exitCode: EXIT_FAIL,
-      json: { ok: false, error: "one or more jobs failed to parse", failed: parseFails, done: [], pending: files },
+      json: {
+        ok: false,
+        error: parseFails.some((f) => f.missingGlyphs !== undefined)
+          ? "one or more jobs failed to parse or draw characters their faces do not map"
+          : "one or more jobs failed to parse",
+        failed: parseFails,
+        done: [],
+        pending: files,
+      },
       stderrLines: parseFails.map((f) => `${f.spec}: ${f.error}`),
-      stdoutLines: [`render failed — ${parseFails.length} job(s) failed to parse`],
+      stdoutLines: [
+        `render failed — ${parseFails.length} job(s) refused before any rendered` +
+          (parseFails.some((f) => f.missingGlyphs !== undefined) ? ", characters their faces do not map among them" : ""),
+      ],
     };
   }
   mkdirSync(options.outDir, { recursive: true });

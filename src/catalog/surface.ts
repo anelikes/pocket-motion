@@ -26,6 +26,7 @@ import {
   VALID_FPS,
 } from "../manifest/sidecar.ts";
 import { CAPTIONS_ROWS } from "./captions.ts";
+import type { TextFitReading } from "../render/text-fit.ts";
 
 /** How thoroughly this repository has verified the row it renders. */
 export type Verification =
@@ -195,6 +196,9 @@ export interface FindingProbeNode {
   readonly ink?: readonly [number, number, number, number] | null;
   /** id of the nearest ancestor with a box. */
   readonly container?: number;
+  /** The core's fit record (`src/render/text-fit.ts`), for a run that
+   *  declares a fit, a clamp or wrapping. */
+  readonly fit?: TextFitReading;
 }
 
 export interface CapabilityRow {
@@ -620,7 +624,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "[]",
     constraint:
-      "array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / dwellFrames / before. Frame values are inside the composition's clock. Evaluated by `assert` over sampled frames — the even grid plus the frames each entry names (inPicture's ends, entersBy, exitsBy and the frame after it, and the frames that pin a before pair's first showings); changes no pixel",
+      "array of { node, <one predicate> }; `node` is a debugName and the predicate is exactly one of inPicture [from,to] / entersBy / exitsBy / insideBox: true / untruncated: true / dwellFrames / before. Frame values are inside the composition's clock. `untruncated` holds when `text_truncated` fires at no sampled frame the node has a box: no clamp left characters out and no declared fit ladder bottomed out. Evaluated by `assert` over sampled frames — the even grid plus the frames each entry names (inPicture's ends, entersBy, exitsBy and the frame after it, and the frames that pin a before pair's first showings); changes no pixel",
     source: "src/manifest/sidecar.ts:750",
     verification: "probed",
     diagnostics: [
@@ -632,6 +636,7 @@ export const SURFACE: readonly CapabilityRow[] = [
       "sidecar.assertions.inPicture",
       "sidecar.assertions.frame",
       "sidecar.assertions.insideBox",
+      "sidecar.assertions.untruncated",
       "sidecar.assertions.dwellFrames",
       "sidecar.assertions.before",
     ],
@@ -662,6 +667,10 @@ export const SURFACE: readonly CapabilityRow[] = [
       {
         code: "sidecar.assertions.insideBox",
         input: { ...MIN, assertions: [{ node: "caption", insideBox: false }] },
+      },
+      {
+        code: "sidecar.assertions.untruncated",
+        input: { ...MIN, assertions: [{ node: "caption", untruncated: "yes" }] },
       },
       {
         code: "sidecar.assertions.dwellFrames",
@@ -1003,6 +1012,41 @@ export const SURFACE: readonly CapabilityRow[] = [
         code: "sidecar.fonts.faces.bold.traversal",
         input: withFonts({ ...FACE, faces: { display: { ...FACE, bold: "../x.ttf" } } }),
       },
+    ],
+    pinned: [],
+  },
+  {
+    id: "fonts.fallback",
+    group: "fonts",
+    declaredIn: "pocket-motion.json",
+    key: "fallback",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "optional array of 1 to 4 relative paths beside `regular` and `bold` (which `fonts` always needs), tried in order for a codepoint the slot's own face does not map (the build's `--font-fallback`); same path rules as footage src, no path twice. A face here with COLR colour glyphs draws them as layered outlines (patches/0064). The files are identity components `font:fallback/<i>/<file>` and count toward the 64 MiB the declared font files may total. A codepoint no face in the chain maps is drawn as the tofu box and reported: `check` fails naming the codepoint and the text nodes carrying it, `trace` and `render` print it, `render --spec` refuses the job",
+    source: "src/manifest/sidecar.ts",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.fonts.fallback.notArray",
+      "sidecar.fonts.fallback.count",
+      "sidecar.fonts.fallback.notString",
+      "sidecar.fonts.fallback.empty",
+      "sidecar.fonts.fallback.absolute",
+      "sidecar.fonts.fallback.traversal",
+      "sidecar.fonts.fallback.duplicate",
+    ],
+    probes: [
+      { code: "sidecar.fonts.fallback.notArray", input: withFonts({ ...FACE, fallback: "emoji.ttf" }) },
+      { code: "sidecar.fonts.fallback.count", input: withFonts({ ...FACE, fallback: [] }) },
+      {
+        code: "sidecar.fonts.fallback.count",
+        input: withFonts({ ...FACE, fallback: ["a.ttf", "b.ttf", "c.ttf", "d.ttf", "e.ttf"] }),
+      },
+      { code: "sidecar.fonts.fallback.notString", input: withFonts({ ...FACE, fallback: [7] }) },
+      { code: "sidecar.fonts.fallback.empty", input: withFonts({ ...FACE, fallback: [""] }) },
+      { code: "sidecar.fonts.fallback.absolute", input: withFonts({ ...FACE, fallback: ["/e.ttf"] }) },
+      { code: "sidecar.fonts.fallback.traversal", input: withFonts({ ...FACE, fallback: ["../e.ttf"] }) },
+      { code: "sidecar.fonts.fallback.duplicate", input: withFonts({ ...FACE, fallback: ["e.ttf", "e.ttf"] }) },
     ],
     pinned: [],
   },
@@ -2548,6 +2592,73 @@ export const SURFACE: readonly CapabilityRow[] = [
   },
 
   {
+    id: "paint.text-vector",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-vector",
+    required: false,
+    defaultValue: "atlas cells below the face's ceiling",
+    constraint:
+      "draws this literal's text size as outlines (a FONT VECTOR slot, patches/0063): each glyph's layers filled as PATH ops through the node's world affine, so the run scales without resampling a bitmap and its glyphs turn with the node, where an atlas run turns its anchors and keeps upright cells. Must sit beside a text size or a `text-fit-[..]` ladder in the same literal — a font slot is declared per literal and nothing inherits one — and is refused without one; beside a ladder every rung is a vector slot, which layout measures from its outlines' metrics as it measures an atlas rung. Allocates a dynamic slot of its own, never the atlas slot of its size. At a size the atlas also holds, the vector slot carries the atlas's baseline, cell height, line height, every advance and every kern pair (tests/vector-glyphs.test.ts, at each face's ceiling). A text stroke is outlined from the same outlines; the hollow outside form is drawn centred",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "text-vector beside a size takes a dynamic slot of its own",
+        literals: ["text-[120px] text-vector"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fontSlot", value: 21 } },
+      },
+      {
+        what: "text-vector with no size beside it is refused",
+        literals: ["text-vector text-white"],
+        fromClassAttribute: true,
+        outcome: { refuses: "has no text size beside it" },
+      },
+      {
+        what: "beside a text-fit ladder every rung is a vector slot of its own",
+        literals: ["text-fit-[96,48] text-vector"],
+        fromClassAttribute: true,
+        // 96 vector is the node's slot, 21, and the first rung; 48 vector is
+        // 22. Rungs allocated without the flag would be 22 and 23 instead.
+        outcome: { declares: { prop: "textFit0", value: 22 | (23 << 8) } },
+      },
+    ],
+  },
+  {
+    id: "paint.text-size-ceiling",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-[Npx]",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "any size from above 0 to 4096 px. A size whose atlas cell — round(ascender * px / upm) + ceil(-descender * px / upm), from the face's hhea — would pass the FONT ATLAS header's 255 px is baked as a FONT VECTOR slot rather than refused (patches/0063; 176 px for Noto Sans SC, 211 for Inter, 217 for HarmonyOS Sans); the build prints `vector (over the atlas's 255px cell)` for it. Its metrics are the atlas's formulas in u16/i16 fields",
+    source: "vendor/pocketjs/framework/compiler/bake-font.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: ["atlasCellHeight(font, px) > 255"],
+    bakeProbes: [
+      {
+        what: "4096 px, the largest size a literal takes",
+        literals: ["text-[4096px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fontSlot", value: 21 } },
+      },
+      {
+        what: "one px past it is not a utility, and is refused",
+        literals: ["text-[4097px] text-white"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`text-[4097px]`" },
+      },
+    ],
+  },
+
+  {
     id: "paint.text-stroke",
     group: "paint",
     declaredIn: "class literal",
@@ -3268,6 +3379,126 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
   },
 
+  {
+    id: "paint.textFit",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-fit-[min..max] | text-fit-[a,b,...]",
+    required: false,
+    defaultValue: "none: the run is drawn at its text size",
+    constraint:
+      "a ladder of sizes for a `<Text>`; layout draws the run at the largest rung whose block holds the box the solver gives the node — every line no wider than its content width, the lines times the rung's line height no taller than its height when the node bounds its height (`h-*`, `h-full`, `max-h-*`), no more lines than a `line-clamp`, and no segment cut between its own characters — and at the smallest when none does. A range is the ten-percent ladder from its top, each rung the one above times 9/10 rounded up, the bottom the last: `[48..88]` is 88, 80, 72, 65, 59, 54, 49, 48. A list (`,` or `_` between sizes) is the ladder as written. At most 8 rungs; every rung is a baked slot carrying every collected character (`baselines/text-fit.md` has what that costs). Weight and face apply to every rung. A text size in the same literal is refused. `layout --json` reports the rung taken as `fit`; a ladder that bottoms out is `text_truncated`. patches/0059, class upstream",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "a range compiles its top rung as the node's slot and eight rungs into two words",
+        literals: ["text-fit-[48..88] font-bold"],
+        fromClassAttribute: true,
+        // Slots 21..28 in first-sight order: 88 (the node's), then 80..48.
+        outcome: { declares: { prop: "textFit0", value: 22 | (23 << 8) | (24 << 16) | (25 << 24) } },
+      },
+      {
+        what: "and the second word holds rungs five to eight, 54 px on its pinned slot",
+        literals: ["text-fit-[48..88] font-bold"],
+        fromClassAttribute: true,
+        // 59 -> 25, 54 bold -> 15 (the pinned 54 px pair), 49 -> 26, 48 -> 27.
+        outcome: { declares: { prop: "textFit1", value: 26 | (16 << 8) | (27 << 16) | (28 << 24) } },
+      },
+      {
+        what: "a list is the ladder as written, largest first",
+        literals: ["text-fit-[52,80,64]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textFit0", value: 22 | (23 << 8) | (24 << 16) } },
+      },
+      {
+        what: "a range of nine rungs is refused with its rungs named",
+        literals: ["text-fit-[48..96] w-[400px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "is 9 rungs (96, 87, 79, 72, 65, 59, 54, 49, 48)" },
+      },
+      {
+        what: "a text size beside a ladder is refused",
+        literals: ["text-fit-[48..88] text-[40px]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "names the node's sizes" },
+      },
+      {
+        what: "a size of zero does not parse",
+        literals: ["text-fit-[0,48]"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`text-fit-[0,48]`" },
+      },
+    ],
+  },
+  {
+    id: "paint.textWrap",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-wrap | text-nowrap",
+    required: false,
+    defaultValue: "text-nowrap: a run breaks at '\\n' only",
+    constraint:
+      "wraps a `<Text>`'s run to its content width at the break opportunities the run carries: a run of spaces, which is dropped at the break, and U+200B, which a generator writes where its language allows a break (CJK, Thai) and which is never looked up or drawn; '\\n' always breaks. No language rule is applied in the core, so where a line may end is the run's author's decision. A segment wider than the line is cut between characters only at a ladder's smallest rung, and the cut is counted as `fit.split`. patches/0059, class upstream",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "text-wrap compiles to textWrap 1",
+        literals: ["text-wrap text-[24px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textWrap", value: 1 } },
+      },
+      {
+        what: "text-nowrap compiles to textWrap 0",
+        literals: ["text-nowrap text-[24px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "textWrap", value: 0 } },
+      },
+    ],
+  },
+  {
+    id: "paint.lineClamp",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "line-clamp-N | line-clamp-[N] | line-clamp-none",
+    required: false,
+    defaultValue: "line-clamp-none",
+    constraint:
+      "keeps a `<Text>`'s first N lines (1..65535). When the run had more, the last kept line ends in U+2026 — or '...' where the face maps no U+2026 — and loses characters from its end until the ellipsis fits the content width, a combining mark with the character it sits on; the build bakes U+2026 into every slot when any literal clamps, and bakes the characters it did otherwise. What the clamp left out is counted (spaces not counted) and reported as `text_truncated`: text that is not drawn has no ink for a pixel code to see. patches/0059, class upstream",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "line-clamp-3 compiles to lineClamp 3",
+        literals: ["line-clamp-3 text-wrap"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "lineClamp", value: 3 } },
+      },
+      {
+        what: "line-clamp-[7] compiles to lineClamp 7",
+        literals: ["line-clamp-[7] text-wrap"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "lineClamp", value: 7 } },
+      },
+      {
+        what: "line-clamp-0 is not a clamp, and is refused",
+        literals: ["line-clamp-0 text-wrap"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`line-clamp-0`" },
+      },
+    ],
+  },
+
   // -------------------------------------------------------------------------
   // Declaring footage (generator side)
   //
@@ -3450,6 +3681,24 @@ export const SURFACE: readonly CapabilityRow[] = [
     pinned: [
       "assertions = await assertComposition(c);",
       "--no-assert skips a job's own assertions and needs --spec",
+    ],
+  },
+  {
+    id: "output.missingGlyphs",
+    group: "output",
+    declaredIn: "render command",
+    key: "--spec → missingGlyphs[]",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "before a job is staged, every string its template draws (copy's eyebrow, headline and body; lower-third's name and title; captions' words with `style.case` applied) is read against the cmap of both weights the job's `fonts` names — the sfnt `cmap` table's format 4 and 12 Unicode subtables, no build — and a character either weight does not map refuses the job, exit 1, with `missingGlyphs[]`: `{ field, char, codePoint, face, file }`, one per field, character and weight. A directory of jobs reports every job's before any renders. The MCP `render` tool returns the same object as its error. A line break is not checked. Held by tests/text-fit.test.ts",
+    source: "src/cli/commands/render.ts:368",
+    verification: "pinned",
+    diagnostics: [],
+    probes: [],
+    pinned: [
+      "json: { ok: false, error, missingGlyphs: report.missing },",
+      "const refusal = await glyphRefusal(options.dir, options.spec);",
     ],
   },
   {
@@ -3944,6 +4193,88 @@ export const SURFACE: readonly CapabilityRow[] = [
           },
         ],
         expect: ["escaped_container:spills"],
+      },
+    ],
+  },
+
+  {
+    id: "layout.text_truncated",
+    group: "layout",
+    declaredIn: "layout --json findings[]",
+    key: "text_truncated",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "the node's run drew less than it declared: a `line-clamp` left characters out, or a `text-fit-[..]` ladder bottomed out — no rung held the box and the run is drawn at the smallest. Read from the core's record of what layout chose (`ui_debug_text_fit`, patches/0059), not from pixels: text that is not drawn has no ink. A fit that settles on a smaller rung is the declaration working and is not this; `fit.px` reports the rung. Asserted against by `untruncated`. Excused by layoutAllow `overflow`",
+    source: "src/render/findings.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    findingProbes: [
+      {
+        what: "text-fit `legal`, three lines kept of five at 24px",
+        viewport: [1920, 1080],
+        nodes: [
+          {
+            id: 1,
+            name: "legal",
+            text: "Prices include VAT where applicable. Offer valid while stocks last…",
+            box: [1000, 800, 840, 84],
+            inPicture: true,
+            visibility: "on-screen",
+            fit: { slot: 30, px: 24, rung: 0, rungs: 1, fitted: false, declaredLadder: false, wraps: true, clamp: 3, linesKept: 3, linesTotal: 5, dropped: 124, split: 0 },
+          },
+        ],
+        expect: ["text_truncated:legal"],
+      },
+      {
+        what: "text-fit `overlong`, a ladder that bottomed out and clamped",
+        viewport: [1920, 1080],
+        nodes: [
+          {
+            id: 1,
+            name: "overlong",
+            text: "Kühlschrankzubehör Pro 3000 Ultra with an extended warranty…",
+            box: [80, 500, 820, 200],
+            inPicture: true,
+            visibility: "on-screen",
+            fit: { slot: 28, px: 48, rung: 7, rungs: 8, fitted: false, declaredLadder: true, wraps: true, clamp: 2, linesKept: 2, linesTotal: 5, dropped: 62, split: 0 },
+          },
+        ],
+        expect: ["text_truncated:overlong"],
+      },
+      {
+        what: "a ladder that bottomed out with no clamp, nothing dropped",
+        viewport: [1920, 1080],
+        nodes: [
+          {
+            id: 1,
+            name: "floor",
+            text: "a run longer than its box at every rung",
+            box: [80, 500, 820, 200],
+            inPicture: true,
+            visibility: "on-screen",
+            fit: { slot: 28, px: 48, rung: 7, rungs: 8, fitted: false, declaredLadder: true, wraps: true, clamp: 0, linesKept: 5, linesTotal: 5, dropped: 0, split: 0 },
+          },
+        ],
+        expect: ["text_truncated:floor"],
+      },
+      {
+        what: "text-fit `long`, a smaller rung that held — the fit working, not a finding",
+        viewport: [1920, 1080],
+        nodes: [
+          {
+            id: 1,
+            name: "long",
+            text: "A product name long enough to need a second line",
+            box: [80, 280, 820, 200],
+            inPicture: true,
+            visibility: "on-screen",
+            fit: { slot: 26, px: 54, rung: 5, rungs: 8, fitted: true, declaredLadder: true, wraps: true, clamp: 0, linesKept: 2, linesTotal: 2, dropped: 0, split: 0 },
+          },
+        ],
+        expect: [],
       },
     ],
   },

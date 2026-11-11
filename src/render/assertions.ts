@@ -43,7 +43,7 @@
  * Two entrances inside one stride otherwise read as one sampled frame, and a
  * strict "earlier than" fails on a tie the film does not have.
  *
- * `insideBox` and `dwellFrames` name no frame and add none.
+ * `insideBox`, `untruncated` and `dwellFrames` name no frame and add none.
  *
  * Adding frames can only make a verdict more exact, never vacuous: a frame
  * added inside a dwell run that does not show the node breaks the run, which
@@ -71,6 +71,9 @@ export interface SweptNode {
   readonly outsideBox: readonly number[];
   /** Sampled frames at which it had a box at all. */
   readonly hasBox: readonly number[];
+  /** Sampled frames at which its run drew less than it declared — the
+   *  `untruncated` predicate's evidence, from `text_truncated`. */
+  readonly truncated: readonly number[];
 }
 
 export interface AssertionVerdict {
@@ -112,7 +115,7 @@ const list = (frames: readonly number[]): string =>
 
 /** The predicate an entry names, and its value. Exactly one exists. */
 export function predicateOf(a: SidecarAssertion): { key: string; value: unknown } {
-  for (const key of ["inPicture", "entersBy", "exitsBy", "insideBox", "dwellFrames", "before"]) {
+  for (const key of ["inPicture", "entersBy", "exitsBy", "insideBox", "untruncated", "dwellFrames", "before"]) {
     if (key in a) return { key, value: (a as unknown as Record<string, unknown>)[key] };
   }
   // The parser refuses an entry naming none, so reaching this means a caller
@@ -316,6 +319,16 @@ function verdict(
           node.outsideBox.length === 0
             ? `inside its container and the canvas at all ${node.hasBox.length} sampled frame(s) it has a box`
             : `outside at ${list(node.outsideBox)} of the ${node.hasBox.length} sampled frame(s) it has a box`,
+      };
+    }
+    case "untruncated": {
+      return {
+        ...base,
+        ok: node.truncated.length === 0,
+        detail:
+          node.truncated.length === 0
+            ? `drawn whole at all ${node.hasBox.length} sampled frame(s) it has a box`
+            : `text_truncated at ${list(node.truncated)} of the ${node.hasBox.length} sampled frame(s) it has a box`,
       };
     }
     case "dwellFrames": {

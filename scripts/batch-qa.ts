@@ -107,6 +107,10 @@ async function main(): Promise<void> {
   const only = arg(argv, "--only")?.split(",");
   const layoutAt = arg(argv, "--layout-at");
   const pathProbe = Number(arg(argv, "--path-probe") ?? 0);
+  // `--fit engine`: each variant is the card fitted by layout (patches/0059)
+  // rather than by its generator; see `scripts/batch-qa/variant.ts`.
+  const fitMode = arg(argv, "--fit") ?? "generator";
+  if (fitMode !== "generator" && fitMode !== "engine") throw new Error("batch-qa: --fit is generator or engine");
   if (!Number.isInteger(jobs) || jobs < 1) throw new Error("batch-qa: --jobs must be a positive integer");
   if (!out.startsWith(join(ROOT, "dist") + "/")) {
     throw new Error(`batch-qa: --out must be under ${join(ROOT, "dist")} (it is deleted and rewritten)`);
@@ -164,7 +168,7 @@ async function main(): Promise<void> {
     out,
     join(ROOT, "dist", ".measure"),
     ...readdirSync(join(ROOT, "dist"))
-      .filter((d) => d.startsWith("bqa-") && !d.endsWith(".lock"))
+      .filter((d) => (d.startsWith("bqa-") || d.startsWith("bqe-")) && !d.endsWith(".lock"))
       .map((d) => join(ROOT, "dist", d)),
   ];
   const disk = { highWaterBytes: 0, samples: 0, freeAtStartBytes: 0, freeMinBytes: Infinity };
@@ -221,6 +225,7 @@ async function main(): Promise<void> {
       ...(encode ? ["--encode"] : []),
       ...(exhaustive ? ["--exhaustive"] : []),
       ...(layoutAt ? ["--layout-at", layoutAt] : []),
+      ...(fitMode === "engine" ? ["--fit", "engine"] : []),
       // Evidence is decided after the fact for most codes, but a variant only
       // knows its verdict at the end; ask for it on every variant and keep
       // the files only for the first few of each code.

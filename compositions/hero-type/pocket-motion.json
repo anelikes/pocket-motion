@@ -1,0 +1,19 @@
+{
+  "motion": 1,
+  "durationFrames": 90,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/NotoSansSC-Regular.otf",
+    "bold": "assets/fonts/NotoSansSC-Bold.otf",
+    "fallback": ["assets/fonts/Noto-COLRv1.ttf"]
+  },
+  "assertions": [
+    {"node": "hero", "entersBy": 3},
+    {"node": "hero", "dwellFrames": 80},
+    {"node": "hero", "before": "title"},
+    {"node": "title", "inPicture": [30, 89]},
+    {"node": "turn", "inPicture": [0, 89]},
+    {"node": "flame", "inPicture": [0, 89]}
+  ]
+}

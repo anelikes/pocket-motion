@@ -10,6 +10,19 @@ to declare; every digest recorded before this reproduces unchanged.
 
 ### Added
 
+- **Text fitted, wrapped and clamped by layout** (`patches/0059`):
+  `text-fit-[min..max]` / `text-fit-[a,b,...]` (a ladder of baked sizes; the
+  run takes the largest whose block holds the box layout gave it),
+  `text-wrap` (breaks at spaces and U+200B) and `line-clamp-N` (the last kept
+  line ends in `…`). `layout --json` reports each fitted run's rung as `fit`;
+  a clamp that left text out, or a ladder that bottomed out, is the eighth
+  finding code, `text_truncated`, and `assertions[]` takes
+  `untruncated: true`. A ladder costs an atlas per rung. Fixture
+  `compositions/text-fit`; no recorded digest moved.
+- **`render --spec` reads a job's characters against its faces first**: a
+  character either weight does not map refuses the job before it is staged,
+  with `missingGlyphs[]` naming field, character and weight; the MCP
+  `render` tool returns the same object.
 - **`src/api.ts`**: `build`, `trace`, `render`, `verify`, `assert`, `layout`
   and `doctor` as functions, each returning the object its command prints
   with `--json` — the same dispatch, the same redaction, the same `runId`.
