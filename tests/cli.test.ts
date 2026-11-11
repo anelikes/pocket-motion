@@ -1134,6 +1134,7 @@ describe("layout findings", () => {
     ["content_overlap", "overlap-b"],
     ["text_box_overflow", "too-long"],
     ["clipped_text", "cut-off"],
+    ["text_truncated", "clamped"],
   ];
 
   async function findings(): Promise<{

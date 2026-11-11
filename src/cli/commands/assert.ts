@@ -194,7 +194,7 @@ export async function assertComposition(
       stdoutLines: [
         "assert — the sidecar declares no assertions.",
         "An `assertions[]` entry names a node's debugName and one of inPicture,",
-        "entersBy, exitsBy, insideBox, dwellFrames or before.",
+        "entersBy, exitsBy, insideBox, untruncated, dwellFrames or before.",
       ],
     };
   }
@@ -311,6 +311,7 @@ export function mergeSweeps(a: Sweep, b: Sweep): Sweep {
       onScreen: join(x.onScreen, y.onScreen),
       covered: join(x.covered, y.covered),
       outsideBox: join(x.outsideBox, y.outsideBox),
+      truncated: join(x.truncated, y.truncated),
       hasBox: join(x.hasBox, y.hasBox),
     });
   }
@@ -350,7 +351,7 @@ export async function sweepNamedNodes(
 
     const swept = new Map<
       string,
-      { onScreen: number[]; covered: number[]; outsideBox: number[]; hasBox: number[] }
+      { onScreen: number[]; covered: number[]; outsideBox: number[]; hasBox: number[]; truncated: number[] }
     >();
     // Every name the tree carries, off the tree: a mount-only composition
     // does not restructure after mount, so this is every node any frame has.
@@ -383,7 +384,7 @@ export async function sweepNamedNodes(
       for (const node of nodes) {
         if (!node.name) continue;
         const entry =
-          swept.get(node.name) ?? { onScreen: [], covered: [], outsideBox: [], hasBox: [] };
+          swept.get(node.name) ?? { onScreen: [], covered: [], outsideBox: [], hasBox: [], truncated: [] };
         entry.hasBox.push(frame);
         if (node.visibility === "on-screen") entry.onScreen.push(frame);
         if (node.visibility === "covered") entry.covered.push(frame);
@@ -392,6 +393,9 @@ export async function sweepNamedNodes(
         // against the author's own answer.
         if (active(node.findings ?? []).some((f) => OUTSIDE_CODES.has(f.code))) {
           entry.outsideBox.push(frame);
+        }
+        if (active(node.findings ?? []).some((f) => f.code === "text_truncated")) {
+          entry.truncated.push(frame);
         }
         swept.set(node.name, entry);
       }

@@ -6,7 +6,7 @@
  * turns the interpretations that can be stated exactly into named codes, so a
  * caller can branch on one and a sidecar can excuse one.
  *
- * SEVEN CODES, AND WHAT EACH ONE ACTUALLY EXAMINED
+ * EIGHT CODES, AND WHAT EACH ONE ACTUALLY EXAMINED
  *
  *   text_not_painted     the node emitted no geometry at all — faded out, off
  *                        screen, zero-sized, or under a parent at opacity 0.
@@ -29,7 +29,13 @@
  *   clipped_text         its box crosses its container's edge, and its ink
  *                        stops AT that edge — the overflow was scissored away.
  *
- * The last two are measured in pixels, not from a build-time advance table.
+ *   text_truncated       the run drew less than it declared: a `line-clamp`
+ *                        left characters out, or a `text-fit-[..]` ladder
+ *                        bottomed out — no rung held the box. From the
+ *                        core's record of what layout chose (`text-fit.ts`),
+ *                        not from pixels: text that is not drawn has no ink.
+ *
+ * The two before it are measured in pixels, not from a build-time advance table.
  * `Prober.ink` hides the node and takes the bounding box of the pixels that
  * changed, which is the same `debug_hide` `inPicture` rides on and needs no
  * second render: the ink box is read out of the frame the probe was already
@@ -69,6 +75,7 @@
  */
 
 import type { LayoutAllowance, LayoutAllowScope } from "../manifest/sidecar.ts";
+import { describeTruncation, truncated, type TextFitReading } from "./text-fit.ts";
 
 export const FINDING_CODES = [
   "text_not_painted",
@@ -78,6 +85,7 @@ export const FINDING_CODES = [
   "content_overlap",
   "text_box_overflow",
   "clipped_text",
+  "text_truncated",
 ] as const;
 
 export type FindingCode = (typeof FINDING_CODES)[number];
@@ -85,7 +93,7 @@ export type FindingCode = (typeof FINDING_CODES)[number];
 /**
  * Which allowance scope covers which code.
  *
- * Four scopes rather than seven, because an author excusing one of these is
+ * Four scopes rather than eight, because an author excusing one of these is
  * excusing a KIND of geometry — "this may sit over that", "this may leave its
  * box" — and asking for the code name would make the sidecar a mirror of this
  * file's identifiers.
@@ -98,6 +106,9 @@ export const ALLOW_SCOPE_OF: Readonly<Record<FindingCode, LayoutAllowScope>> = {
   content_overlap: "overlap",
   text_box_overflow: "overflow",
   clipped_text: "overflow",
+  // A clamp is what an author declares a run's overflow to become, so excusing
+  // it is excusing overflow.
+  text_truncated: "overflow",
 };
 
 export interface Box {
@@ -138,6 +149,9 @@ export interface FindingNode {
   readonly ink?: Box | null;
   /** Nearest ancestor that has a box, or null for the root. */
   readonly container?: FindingNode | null;
+  /** What layout chose for a run declaring a fit, a clamp or wrapping
+   *  (`text-fit.ts`). Absent for any other node, or when not read. */
+  readonly fit?: TextFitReading;
 }
 
 export interface FindingInputs {
@@ -323,6 +337,15 @@ export function findingsFor(inputs: FindingInputs): Finding[] {
             `${boxText(container.box)} and its ink stops at that edge (${boxText(n.ink)})`,
         });
       }
+    }
+
+    if (n.fit && truncated(n.fit)) {
+      out.push({
+        code: "text_truncated",
+        id: n.id,
+        ...(n.name ? { name: n.name } : {}),
+        detail: describeTruncation(n.fit),
+      });
     }
 
     if (n.ink) {

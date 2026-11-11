@@ -649,11 +649,54 @@ viewport, or just lay out with flex).
 
 Two constraints, both absolute:
 
-1. **The renderer does not wrap or shrink text.** A `Text` run breaks only on
-   explicit `\n`. Text wider than its box draws past it (or is silently
-   clipped by `overflow-hidden`).
+1. **A run wraps, shrinks or is clamped only where its class says so.** A
+   `Text` with none of the three utilities below breaks only on explicit
+   `\n`, and text wider than its box draws past it (or is clipped by
+   `overflow-hidden`, which no ink code can tell from a run that ends there).
 2. **Every font size is baked at build time.** Any `text-[Npx]` works, but
    only sizes that appear in class literals get an atlas.
+
+**Fit, wrap and clamp are decided by layout, against the box layout gave the
+node** (`patches/0059`). Three utilities, which combine:
+
+- `text-wrap` wraps the run to its content width at the break opportunities
+  it carries: a run of spaces, which the break drops, and U+200B, which is
+  never drawn. `\n` always breaks. No language rule is applied in the core:
+  CJK and Thai break where the text says they may, so a generator writes
+  U+200B where its segmenter allows a break — `markBreaks(text, locale)` in
+  `src/text/fit.ts` writes exactly the breaks `wrapLines` would take.
+- `text-fit-[48..88]` (a ten-percent ladder from the top: 88, 80, 72, 65, 59,
+  54, 49, 48) or `text-fit-[48,64,88]` (the sizes named) draws the run at the
+  largest rung whose block holds the box: every line within the content
+  width, the lines times the rung's line height within the height when the
+  node bounds it (`h-*`, `h-full`, `max-h-*`), and no word cut between its
+  letters. When none holds, the smallest. At most 8 rungs; each is a baked
+  slot carrying every character the build collects, so a ladder of five costs
+  five atlases (`baselines/text-fit.md`: a 1,000-character CJK charset at 88
+  px bold is 12.8 MB of pak for one rung, 37.3 MB for five). It replaces the
+  size class: `text-[Npx]` beside it is refused.
+- `line-clamp-N` keeps the first N lines and ends the last with `…` (or `...`
+  where the face has no U+2026), cutting characters from that line until the
+  ellipsis fits.
+
+```tsx
+<Text class="w-[992px] max-h-[254px] text-fit-[48,56,64,76,88] text-wrap line-clamp-3 font-bold">{name}</Text>
+<Text class="text-fit-[52,64,80] font-bold">{price}</Text>
+<Text class="w-[1680px] text-[24px] text-wrap line-clamp-4">{disclaimer}</Text>
+```
+
+The box can come from flex, which no generator sees: `flex-1` halves of a row
+fit to the width the row gives them. `compositions/text-fit` puts each case
+on a named node.
+
+**What a gate sees.** `layout --json` carries `fit` on every such node: the
+size drawn, the ladder, whether a rung held, lines kept of lines wrapped,
+characters left out, words cut. A run drawn at a smaller rung is the
+declaration working and is not a finding. A clamp that left characters out,
+or a ladder whose smallest rung did not hold, is `text_truncated` — read from
+the core's record, because text that is not drawn has no ink — and
+`untruncated: true` in `assertions[]` is how a node says it must be drawn
+whole (a price, a legal line).
 
 A third edge worth knowing before you animate: **an axis-aligned `scale`
 resizes glyphs by resampling the size that was baked.** The run is drawn as
@@ -667,13 +710,22 @@ draws its outline from unscaled cells, so its fill stays unscaled too).
 Before the pin moved every scaled run behaved like those two, which is why
 `compositions/reel` fades its copy in after a card's scale lands.
 
-So multi-line or fitted text is decided *before* `app.tsx` exists, by
-measuring with the renderer's own advance tables. That is what
-`src/text/fit.ts` + `src/text/measure.ts` do, and `compositions/copy/gen.ts`
-is the worked example: `gen.ts` declares the copy and the boxes, calls
+Text can also be fitted *before* `app.tsx` exists, by measuring with the
+renderer's own advance tables. That is what `src/text/fit.ts` +
+`src/text/measure.ts` do, and `compositions/copy/gen.ts` is the worked
+example: `gen.ts` declares the copy and the boxes, calls
 `openMeasurer(...)` / `wrapLines(...)` / `fitToBox(...)`, and emits `app.tsx`
-with the `\n` already placed. The measurement is exact — a break decided at
-build time *is* layout, not an approximation of it.
+with the `\n` already placed. The measurement is exact, and it reaches only
+boxes the generator knows the size of; a box flex sizes, or a field whose
+neighbour's length moves it, is layout's to fit.
+
+**A job's characters are checked before it is staged.** `render --spec`
+reads every string the template draws against both weights' cmaps and
+refuses the job — exit 1, nothing built — with `missingGlyphs[]`, one
+`{ field, char, codePoint, face, file }` per field, character and weight.
+The read is the font file's `cmap` table and takes milliseconds; a build
+would bake the tofu cell for a missing character and exit 0. The MCP
+`render` tool returns the same object.
 
 A generator that measures the same faces at the same sizes on every run —
 a `render --spec` template, a batch — can pass `cache: { charset }` to

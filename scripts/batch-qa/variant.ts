@@ -34,17 +34,21 @@ import * as snapshotCmd from "../../src/cli/commands/snapshot.ts";
 import * as verifyCmd from "../../src/cli/commands/verify.ts";
 import * as visibilityCmd from "../../src/cli/commands/visibility.ts";
 import { openMeasurer } from "../../src/text/measure.ts";
+import { checkCoverage } from "../../src/text/coverage.ts";
 import type { Row } from "./rows.ts";
 import {
   DURATION_FRAMES,
+  FONTS,
   GlyphRefusal,
   LAST_FRAME,
   SIZES,
   clean,
+  engineFields,
   facePaths,
   fit,
   sourceKey,
   stagedFiles,
+  stagedFilesEngine,
   type Fitted,
 } from "./template.ts";
 
@@ -197,11 +201,16 @@ async function main(): Promise<void> {
   if (!rowsPath || !id || !charsetPath || !out) {
     throw new Error("variant: --rows, --id, --charset and --out are required");
   }
+  // `--fit engine`: the card fitted by layout (`patches/0059`) instead of by
+  // this process before the build. Glyphs are checked against the faces'
+  // cmaps (`src/text/coverage.ts`), the measurer is not opened, and the run
+  // records which nodes `text_truncated` named and the rung each run took.
+  const engine = arg(argv, "--fit") === "engine";
   const encode = argv.includes("--encode");
   const evidence = argv.includes("--evidence");
   const exhaustive = argv.includes("--exhaustive");
   const keep = argv.includes("--keep");
-  const prefix = arg(argv, "--stage-prefix") ?? "bqa";
+  const prefix = arg(argv, "--stage-prefix") ?? (engine ? "bqe" : "bqa");
   const layoutAt = (arg(argv, "--layout-at") ?? "")
     .split(",")
     .filter((s) => s.length > 0)
@@ -247,8 +256,25 @@ async function main(): Promise<void> {
 
   // 1. Fit. A codepoint the face does not carry is a refusal here, before any
   //    build: the measurer would otherwise measure the tofu cell.
-  let fitted: Fitted;
-  try {
+  let fitted: Fitted | null = null;
+  let files: Record<string, string>;
+  if (engine) {
+    const fields = { name: row.name, claim: row.claim, price: row.price, disclaimer: row.disclaimer };
+    const report = await step("fit", () =>
+      checkCoverage(
+        Object.entries(fields).map(([field, text]) => ({ field, text: clean(text) })),
+        FONTS,
+        ROOT,
+      ),
+    );
+    if (report.missing.length > 0) {
+      const field = report.missing[0]!.field;
+      const missing = [...new Set(report.missing.filter((m) => m.field === field).map((m) => m.char))];
+      emit({ verdict: "refused", stage: "fit", field, reason: `${field}: not in the face's cmap`, missing });
+      return;
+    }
+    files = stagedFilesEngine(engineFields(row));
+  } else try {
     fitted = await step("fit", async () => {
       const fields = [row.name, row.price, row.claim, row.disclaimer].map(clean);
       const m = await openMeasurer({ face: facePaths(ROOT), sizes: SIZES, texts: fields, cache: { charset } });
@@ -266,9 +292,11 @@ async function main(): Promise<void> {
     throw e;
   }
 
+  if (!engine) files = stagedFiles(fitted);
+
   // 2. Stage under a directory named by the sources, so equal sources build
   //    at one path and an identity can be compared across rows at all.
-  const files = stagedFiles(fitted);
+  files = files!;
   const key = sourceKey(files);
   const dir = join(ROOT, "dist", `${prefix}-${key.slice(0, 16)}`);
   const release = await lock(`${dir}.lock`);
@@ -294,7 +322,7 @@ async function main(): Promise<void> {
     try {
       await step("build", async () => runBuild(await resolveIt(false)));
     } catch (e) {
-      emit({ verdict: "refused", stage: "build", reason: errMsg(e).split("\n").slice(0, 6).join("\n"), sourceKey: key, fit: summary(fitted) });
+      emit({ verdict: "refused", stage: "build", reason: errMsg(e).split("\n").slice(0, 6).join("\n"), sourceKey: key, ...(fitted ? { fit: summary(fitted) } : {}) });
       return;
     }
     const c = await resolveIt(true);
@@ -375,8 +403,28 @@ async function main(): Promise<void> {
       );
     }
 
+    // What layout chose (engine fit): the nodes `text_truncated` named at any
+    // layout frame, and each fitted run's reading at the last one.
+    const layouts = (envelope.layout ?? []) as Array<LayoutJson & { nodes?: Array<{ name?: string; fit?: Record<string, unknown> }> }>;
+    const truncated = [
+      ...new Set(
+        layouts.flatMap((l) =>
+          (l.findings ?? []).filter((f) => f.code === "text_truncated" && f.allowedBy === undefined).map((f) => f.name ?? "?"),
+        ),
+      ),
+    ].sort();
+    const lastLayout = layouts.at(-1);
+    const engineFit = engine
+      ? Object.fromEntries(
+          (lastLayout?.nodes ?? [])
+            .filter((n) => n.name && n.fit)
+            .map((n) => [n.name!, n.fit!]),
+        )
+      : undefined;
+
     emit({
       verdict: verdict.verdict,
+      ...(engine ? { fitMode: "engine", truncated, engineFit } : {}),
       codes: verdict.codes,
       findings: verdict.findings,
       assertions: verdict.assertions,
@@ -392,7 +440,7 @@ async function main(): Promise<void> {
             },
           }
         : {}),
-      fit: summary(fitted),
+      ...(fitted ? { fit: summary(fitted) } : {}),
       sourceKey: key,
       stagedAt: `dist/${prefix}-${key.slice(0, 16)}`,
       identity,
