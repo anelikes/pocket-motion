@@ -665,15 +665,16 @@ Two constraints, both absolute:
    `Text` with none of the three utilities below breaks only on explicit
    `\n`, and text wider than its box draws past it (or is clipped by
    `overflow-hidden`, which no ink code can tell from a run that ends there).
-2. **Every font size is baked at build time.** Any `text-[Npx]` up to the
-   face's ceiling works, but only sizes that appear in class literals get an
-   atlas. The ceiling is the face's, not the format's: a glyph cell is at most
-   255 px tall, which is about 176 px for Noto Sans SC, 210 for Inter and 217
-   for HarmonyOS Sans (`patches/0002`'s refusal names the number for the face
-   it was asked of). Its advice to render at a larger logical viewport is
-   upstream's and resizes a film's frame; type larger than the ceiling is
-   drawn as the face's glyph outlines in a `<Path>`, which is filled at the
-   size it is shown at.
+2. **Every font size is baked at build time.** Any `text-[Npx]` up to
+   4096 px works, but only sizes that appear in class literals are baked. Up
+   to the face's ceiling a size is an atlas of coverage cells; past it — a
+   glyph cell is at most 255 px tall, which is about 176 px for Noto Sans SC,
+   211 for Inter and 217 for HarmonyOS Sans — the build bakes the face's
+   outlines instead (a vector slot, `patches/0063`), filled at the size and
+   under the transform the node is drawn with, and `text-vector` asks for the
+   same below the ceiling. Emoji and any other glyph the face lacks come from
+   a declared `fonts.fallback`. Both are below, under "Sizes the atlas cannot
+   hold" and "Emoji and other faces' glyphs".
 
 **Fit, wrap and clamp are decided by layout, against the box layout gave the
 node** (`patches/0059`). Three utilities, which combine:
@@ -793,7 +794,8 @@ SC, 211 px for Inter, 217 px for HarmonyOS Sans (`round(ascender * px / upm)
 + ceil(-descender * px / upm)`, from the face's `hhea`). A larger `text-[N]`
 (up to 4096 px) is baked as a **vector slot** instead (`patches/0063`): the
 glyphs' outlines, filled as PATH ops by the core under the node's world
-transform. Below the ceiling, `text-vector` in the same literal as the size
+transform. Below the ceiling, `text-vector` in the same literal as the size —
+or as a `text-fit-[..]` ladder, every rung of which is then a vector slot —
 asks for the same: `<Text class="text-[120px] text-vector animate-turn">` turns
 its glyphs with the node, where an atlas run turns its anchors and keeps its
 cells upright. The build prints each vector slot and why it is one:

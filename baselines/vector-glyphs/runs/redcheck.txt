@@ -50,3 +50,16 @@ RED   a vector glyph's anchor not rounded where GLYPH_RUN rounds  [tests/vector-
 base GREEN [tests/colour-glyphs.test.ts renders through the fallback face the job declares]
 RED   a job spec refusing fonts.fallback  [tests/colour-glyphs.test.ts renders through the fallback face the job declares]
 RED   lower-third not writing the fallback into the staged sidecar  [tests/colour-glyphs.test.ts renders through the fallback face the job declares]
+
+# merged onto the train with 0059 (2026-11-11): the three touch points and the pre-check
+base GREEN [cargo a_fit_ladder_measures_its_vector_rungs]
+base GREEN [tests/catalog.test.ts G6]
+base GREEN [tests/colour-glyphs.test.ts renders through the fallback face the job declares]
+base GREEN [tests/colour-glyphs.test.ts a flag the fallback maps]
+RED   a fit ladder's rung measured only from an atlas  [cargo a_fit_ladder_measures_its_vector_rungs]
+RED   glyph_quiet without its vector advances  [cargo a_fit_ladder_measures_its_vector_rungs]
+RED   a text-vector ladder's rungs allocated as atlas slots  [tests/catalog.test.ts G6]
+RED   the job pre-check ignoring fonts.fallback  [tests/colour-glyphs.test.ts renders through the fallback face the job declares]
+RED   the job pre-check not asking the build what it leaves out  [tests/colour-glyphs.test.ts a flag the fallback maps]
+base GREEN [tests/cli.test.ts an oversize face gets the ceiling]
+RED   the over-ceiling hint still sending authors to a hand-made <Path>  [tests/cli.test.ts an oversize face gets the ceiling]

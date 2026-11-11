@@ -140,7 +140,11 @@ that is said rather than implied.
   (`ui_glyph_missed`, `patches/0063`); `check` fails naming each codepoint
   and every text node whose string carries it, `trace` and `render` print
   them and put `missingGlyphs` in `--json`, and `render --spec` refuses the
-  job before its first frame reaches the encoder (`src/text/missing.ts`). A
+  job before its first frame reaches the encoder (`src/text/missing.ts`) —
+  behind `patches/0059`'s pre-check (`src/text/coverage.ts`), which reads the
+  job's faces' cmaps before anything is staged, counts what the first
+  fallback face mapping a character supplies, and asks the baker's own rule
+  (`leftOutBy`) whether the build would leave it out. A
   glyph the core cannot draw as declared — a colour glyph with a composite
   or a focal radial, a codepoint that is a picture only inside a shaped
   sequence — is left out of the slot by name at build, so it takes the same
@@ -1226,6 +1230,11 @@ mechanisms with the file or test beside them.
   hero rising scaled and turned, a turning `text-vector` character, a
   turning colour glyph from a vector slot, and a 64 px title with two
   emoji from the atlas slot's supplement, its sidecar asserting each is up.
+  With `patches/0059` a fitted run reads the same faces: a ladder rung
+  measures from whichever face owns its slot (`Fonts::metrics`), so a rung
+  past the ceiling or of a `text-vector` ladder fits as an atlas rung does,
+  and `text-vector` beside a `text-fit-[..]` ladder makes every rung a vector
+  slot (core `a_fit_ladder_measures_its_vector_rungs`, catalogue G6).
 - **A delivered file is read back the way a player reads it.** Frame
   digests are taken before the encoder, so nothing about the file itself was
   checked until `tests/format.test.ts`'s "delivered files, read back" drove

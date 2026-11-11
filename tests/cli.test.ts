@@ -615,10 +615,11 @@ describe("invocation contract", () => {
 // ---------------------------------------------------------------------------
 
 describe("build refusals", () => {
-  // `patches/0002` refuses a size past the face's 255 px cell and tells an
-  // app to use a larger viewport; on a film that is a larger frame. The hint
-  // is read off the refusal the vendored baker actually throws, so a change
-  // to its wording turns this red rather than the hint silently vanishing.
+  // `patches/0002` refuses a size past the face's 255 px cell — since
+  // `patches/0063` only in `bakeSlot` called alone, a build baking the size as
+  // outlines. The hint is read off the refusal the vendored baker actually
+  // throws, so a change to its wording turns this red rather than the hint
+  // silently vanishing.
   test("an oversize face gets the ceiling and the outline route, last", async () => {
     const { default: opentype } = (await import(join(VENDOR, "node_modules", "opentype.js"))) as {
       default: { parse(b: ArrayBuffer): unknown };
@@ -634,11 +635,12 @@ describe("build refusals", () => {
     } catch (e) {
       refusal = (e as Error).message;
     }
-    expect(refusal).toContain("larger logical viewport");
+    expect(refusal).toContain("FONT VECTOR face");
     const hint = buildRefusalHint(refusal);
     expect(hint).toContain("text-[400px]");
-    expect(hint).toContain("210px or less");
-    expect(hint).toContain("<Path>");
+    expect(hint).toContain("about 210px");
+    expect(hint).toContain("text-vector");
+    expect(hint).toContain("fonts.fallback");
     expect(buildRefusalHint("error: something else entirely")).toBeNull();
 
     // Through the spawn every build goes through, the hint is the last line:

@@ -244,7 +244,12 @@ describe("tofu is refused or reported, never shipped quietly", () => {
  *   - `parseSpec` not accepting the key: the job with it is refused as an
  *     invalid spec;
  *   - lower-third's generator not writing it into the staged sidecar: the
- *     flame misses and the job is refused at mount.
+ *     flame misses and the job is refused at mount;
+ *   - the text-fit pre-check ignoring `fonts.fallback` (src/text/coverage.ts):
+ *     the job with it is refused before staging;
+ *   - the pre-check counting whatever a fallback maps, the build's left-out
+ *     rule not asked: the flag job passes the pre-check and is refused only at
+ *     mount, with no reason attached.
  */
 describe("a spec job's emoji", () => {
   const DIR = join(ROOT, "compositions/lower-third");
@@ -271,18 +276,36 @@ describe("a spec job's emoji", () => {
     expect(existsSync(out)).toBe(true);
   }, 240_000);
 
-  test("without it, the job is refused at mount, naming the node and the codepoint", async () => {
+  test("without it, the job is refused before anything is staged, naming the field", async () => {
+    // The text-fit pre-check (src/text/coverage.ts) reads the job's faces'
+    // cmaps; the mount check behind it (`mountedMissingGlyphs`, above) is what
+    // names a node for text no job field carries.
     const dir = scratchDir("spec-tofu");
     const path = join(dir, "job.json");
     writeFileSync(path, JSON.stringify(jobWith(false)));
     const out = join(dir, "job.mp4");
     const r = await renderFromArgv([DIR, "--spec", path, "--out", out, "--json"]);
-    const json = r.json as { ok: boolean; missingGlyphs?: string[]; missingGlyphNodes?: { text: string; codepoints: string[] }[] };
+    const json = r.json as { missingGlyphs?: { field: string; codePoint: string; face: string; leftOut?: unknown }[] };
     expect(r.exitCode).toBe(1);
-    expect(json.missingGlyphs).toEqual(["U+1F525"]);
-    expect(json.missingGlyphNodes).toHaveLength(1);
-    expect(json.missingGlyphNodes![0]!.text).toContain(FLAME);
-    expect(json.missingGlyphNodes![0]!.codepoints).toEqual(["U+1F525"]);
+    expect(json.missingGlyphs!.map((m) => [m.field, m.codePoint, m.face, m.leftOut])).toEqual([
+      ["/copy/title", "U+1F525", "regular", undefined],
+      ["/copy/title", "U+1F525", "bold", undefined],
+    ]);
     expect(existsSync(out)).toBe(false);
+  }, 240_000);
+
+  test("a flag the fallback maps and the build leaves out is refused with the build's reason", async () => {
+    const dir = scratchDir("spec-flag");
+    const path = join(dir, "job.json");
+    writeFileSync(path, JSON.stringify({ ...jobWith(true), copy: { name: "林知远", title: `城南市图书馆 ${FLAG_CN}` } }));
+    const r = await renderFromArgv([DIR, "--spec", path, "--out", join(dir, "job.mp4"), "--json"]);
+    const json = r.json as { missingGlyphs?: { codePoint: string; leftOut?: { file: string; reason: string } }[] };
+    expect(r.exitCode).toBe(1);
+    const flags = json.missingGlyphs!.filter((m) => m.codePoint === "U+1F1E8" || m.codePoint === "U+1F1F3");
+    expect(flags).toHaveLength(4);
+    for (const m of flags) {
+      expect(m.leftOut?.file).toBe("assets/fonts/Noto-COLRv1.ttf");
+      expect(m.leftOut?.reason).toContain("regional indicator");
+    }
   }, 240_000);
 });

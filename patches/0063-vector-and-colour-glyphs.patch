@@ -35,7 +35,9 @@ What the patch adds, by file:
   PAINT_POP.
 - `engine/core/src/lib.rs`, `engine/wasm/src/lib.rs`: `ui_glyph_misses` and
   `ui_glyph_missed(i)`, the distinct missed codepoints, ascending.
-- `framework/compiler/bake-font.ts`: `bakeVectorSlot`, the atlas's metric
+- `framework/compiler/bake-font.ts`: `leftOutBy(path, cps)`, the same
+  left-out rule as a synchronous question, for a check that runs before any
+  build (pocket-motion's job pre-check); `bakeVectorSlot`, the atlas's metric
   formulas in wider fields; `bakeAtlases` bakes a slot as one when the
   literal says `text-vector` or the atlas cell would pass 255 px, where 0002
   refused. A face carrying COLR draws its glyphs as layers: in a vector slot
@@ -51,8 +53,14 @@ What the patch adds, by file:
   clipped by another, the text colour inside a gradient. Angles through
   `cosSinDeg`, never `Math.sin`.
 - `framework/compiler/tailwind.ts`: `text-vector`, which must sit beside a
-  text size in its literal; a vector slot is dynamic and never shares a slot
-  with the atlas of its size. `text-[N]` takes up to 4096 px (was 512).
+  text size or a `text-fit-[..]` ladder in its literal; a vector slot is
+  dynamic and never shares a slot with the atlas of its size, and beside a
+  ladder (0059) every rung is one. `text-[N]` takes up to 4096 px (was 512).
+- `engine/core/src/text_fit.rs` (0059's fit): a rung measures from whichever
+  face owns its slot (`Fonts::metrics`), so a ladder of vector rungs, or one
+  whose top rungs pass the atlas's ceiling, fits as an atlas ladder does;
+  `glyph_quiet` reads a vector face's advances, and the clamp's ellipsis is
+  looked up in either. The draw takes the slot the fit chose.
 - `tools/build.ts`: `--font-fallback=<path>`, repeatable, tried after
   `fonts.json`'s list; a line per vector slot saying why it is one, per slot
   with colour glyphs, and per reason a codepoint was left out; the
@@ -69,7 +77,7 @@ in `baselines/vector-glyphs.md`.
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index 09414125..9776b1c0 100644
+index 75801f20..218fa2f0 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
 @@ -112,6 +112,16 @@ import {
@@ -89,7 +97,7 @@ index 09414125..9776b1c0 100644
    ID_SLOT_BITS,
    ID_SLOT_MASK,
    LAYOUT_DIRTYING,
-@@ -479,6 +489,22 @@ export function generateRust(): string {
+@@ -482,6 +492,22 @@ export function generateRust(): string {
    put("}");
    put("");
  
@@ -113,10 +121,10 @@ index 09414125..9776b1c0 100644
    put("/// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).");
    put("/// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,");
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index 2ede75c7..347b03b8 100644
+index feb77b49..b9845ee8 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -1741,6 +1741,81 @@ export const FONT_FLAG_BOLD = 1 << 0;
+@@ -1759,6 +1759,81 @@ export const FONT_FLAG_BOLD = 1 << 0;
   *  `--metrics-only` for a measurement pass; a host must refuse to DRAW one. */
  export const FONT_FLAG_METRICS_ONLY = 1 << 1;
  
@@ -198,7 +206,7 @@ index 2ede75c7..347b03b8 100644
  // ---------------------------------------------------------------------------
  // DRAWLIST op format  (core -> backend)
  // ---------------------------------------------------------------------------
-@@ -1963,8 +2038,15 @@ export const DRAW_OP = {
+@@ -1981,8 +2056,15 @@ export const DRAW_OP = {
    path: 71,
  } as const;
  
@@ -217,7 +225,7 @@ index 2ede75c7..347b03b8 100644
  /** Deepest nesting of filter layers (LAYER_PUSH). */
  export const LAYER_MAX_DEPTH = 4;
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 67cafad9..15446a63 100644
+index 1e9e3f28..460dac64 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
 @@ -1013,6 +1013,41 @@ fn hit_walk(
@@ -262,7 +270,7 @@ index 67cafad9..15446a63 100644
  struct Walker<'a> {
      tree: &'a Tree,
      styles: &'a StyleTable,
-@@ -3302,7 +3337,20 @@ impl<'a> Walker<'a> {
+@@ -3312,7 +3347,20 @@ impl<'a> Walker<'a> {
              }
              return;
          }
@@ -270,7 +278,7 @@ index 67cafad9..15446a63 100644
 +        // outlines through PATH ops, so the run turns and scales with its
 +        // node instead of keeping upright cells.
 +        if self.fonts.is_vector_slot(slot) {
-+            self.emit_text_vector(dl, node, r, world, op, clip, box_w, run, color, paint_grad);
++            self.emit_text_vector(dl, node, r, slot, world, op, clip, box_w, run, color, paint_grad);
 +            return;
 +        }
          let Some(atlas) = self.fonts.atlas(slot) else { return };
@@ -283,7 +291,7 @@ index 67cafad9..15446a63 100644
          let (cell_w, cell_h) = (atlas.cell_w as f32, atlas.cell_h as f32);
          let mut scratch = core::mem::take(&mut self.glyph_scratch);
          // Text stroke (pocket-motion): the ring reaches past the cells by up
-@@ -3381,7 +3429,8 @@ impl<'a> Walker<'a> {
+@@ -3391,7 +3439,8 @@ impl<'a> Walker<'a> {
              for g in glyphs {
                  let (x, y) = world.apply(g.x, g.y);
                  if x + cell_w * world.a <= clip.x0 || x >= clip.x1 ||
@@ -293,7 +301,7 @@ index 67cafad9..15446a63 100644
                      continue;
                  }
                  if !page.as_ref().is_some_and(|page| page.contains(g.gid)) {
-@@ -3396,6 +3445,9 @@ impl<'a> Walker<'a> {
+@@ -3406,6 +3455,9 @@ impl<'a> Walker<'a> {
                  self.emit_tex_quad(dl, &glyph_world, cell_w, cell_h, texture, 1.0, glyph_clip, uv[0], uv[1], uv[2], uv[3]);
                  if dl.words.len() > before { *dl.words.last_mut().unwrap() = color; }
              }
@@ -303,7 +311,7 @@ index 67cafad9..15446a63 100644
              if painted {
                  if dl.words.len() == quads_at {
                      // Nothing drawn under the paint: drop the push as well.
-@@ -3450,7 +3502,7 @@ impl<'a> Walker<'a> {
+@@ -3460,7 +3512,7 @@ impl<'a> Walker<'a> {
              if n == u16::MAX as u32 {
                  break;
              }
@@ -312,7 +320,7 @@ index 67cafad9..15446a63 100644
                  continue;
              }
              dl.words.push(xy_word(rx, ry));
-@@ -3462,6 +3514,11 @@ impl<'a> Walker<'a> {
+@@ -3472,6 +3524,11 @@ impl<'a> Walker<'a> {
          } else {
              dl.words[start + 1] = (slot as u32) | (n << 16);
          }
@@ -324,7 +332,7 @@ index 67cafad9..15446a63 100644
          if painted {
              if n == 0 {
                  // Nothing drawn under the paint: drop the push as well.
-@@ -3630,6 +3687,186 @@ impl<'a> Walker<'a> {
+@@ -3640,6 +3697,188 @@ impl<'a> Walker<'a> {
          true
      }
  
@@ -342,6 +350,9 @@ index 67cafad9..15446a63 100644
 +        dl: &mut DrawList,
 +        node: &crate::tree::Node,
 +        r: &style::Resolved,
++        // The slot the run draws from: the node's, or the rung layout chose
++        // for a fitted run (`text_fit`).
++        slot: u8,
 +        world: &Affine,
 +        op: f32,
 +        clip: &Clip,
@@ -350,7 +361,6 @@ index 67cafad9..15446a63 100644
 +        color: u32,
 +        paint_grad: bool,
 +    ) {
-+        let slot = r.font_slot as u8;
 +        let fonts = self.fonts;
 +        let Some(face) = fonts.vector(slot) else { return };
 +        let mut glyphs = core::mem::take(&mut self.glyph_scratch);
@@ -512,10 +522,10 @@ index 67cafad9..15446a63 100644
      /// placed exactly as GLYPH_RUN places them, kept when the cell widened
      /// by the stroke width reaches the clip — a stroke reaches past its
 diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
-index 8739a75b..2b711e7b 100644
+index 2960a9ce..ef6cb192 100644
 --- a/engine/core/src/lib.rs
 +++ b/engine/core/src/lib.rs
-@@ -2248,6 +2248,13 @@ impl Ui {
+@@ -2256,6 +2256,13 @@ impl Ui {
          self.fonts.misses.get()
      }
  
@@ -529,20 +539,20 @@ index 8739a75b..2b711e7b 100644
      /// Layout work of the main and auxiliary outputs since the last reset.
      #[cfg(feature = "counters")]
      pub fn layout_counters(&self) -> counters::LayoutCounters {
-@@ -2642,6 +2649,8 @@ fn prop_bits(kind: u8, value: f64) -> u32 {
- mod tests;
- #[cfg(test)]
+@@ -2699,6 +2706,8 @@ mod tests;
  mod path_tests;
+ #[cfg(test)]
+ mod text_fit_tests;
 +#[cfg(test)]
 +mod vector_text_tests;
  
  /// Little-endian Float64 fields of a physics wire record.
  fn wire_f64s(bytes: &[u8]) -> Vec<f64> {
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index f14e701b..f27e0e9b 100644
+index a729eb00..77378595 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
-@@ -597,6 +597,20 @@ pub mod font_atlas {
+@@ -603,6 +603,20 @@ pub mod font_atlas {
      pub const FLAG_METRICS_ONLY: u8 = 2;
  }
  
@@ -563,7 +573,7 @@ index f14e701b..f27e0e9b 100644
  /// DrawList op codes (core -> backend Vec<u32> words; layout in spec.ts).
  /// Word counts incl. header: RECT 4, GRAD_RECT 6, GLYPH_RUN 3+2n,
  /// TEX_QUAD 9, SCISSOR 3, SCISSOR_POP 1, TRI 7, TEX_TRI 12,
-@@ -627,7 +641,7 @@ pub mod draw_op {
+@@ -633,7 +647,7 @@ pub mod draw_op {
      pub const STROKE_MAX_WIDTH: f32 = 64.0;
      pub const LAYER_MAX_DEPTH: usize = 4;
      pub const BLUR_MAX: f32 = 128.0;
@@ -606,7 +616,7 @@ index 97f15bbe..ab2ac59a 100644
      let xy_ok = |w: u32| {
          let (x, y) = decode_xy(w);
 diff --git a/engine/core/src/text.rs b/engine/core/src/text.rs
-index 0a04ff03..b0338521 100644
+index 313f25ab..eed88438 100644
 --- a/engine/core/src/text.rs
 +++ b/engine/core/src/text.rs
 @@ -10,7 +10,7 @@
@@ -618,7 +628,7 @@ index 0a04ff03..b0338521 100644
  
  use crate::spec;
  
-@@ -251,6 +251,273 @@ impl Atlas {
+@@ -251,6 +251,284 @@ impl Atlas {
      }
  }
  
@@ -884,15 +894,26 @@ index 0a04ff03..b0338521 100644
 +
 +/// A slot's metrics, from whichever face owns them: the atlas, or a vector
 +/// face that is not a supplement.
-+enum Metrics<'a> {
++#[derive(Clone, Copy)]
++pub(crate) enum Metrics<'a> {
 +    Atlas(&'a Atlas),
 +    Vector(&'a VectorFace),
++}
++
++impl Metrics<'_> {
++    /// Whether the face carries a glyph for `cp`.
++    pub(crate) fn maps(&self, cp: u32) -> bool {
++        match self {
++            Metrics::Atlas(a) => a.lookup_entry(cp).is_some(),
++            Metrics::Vector(v) => v.lookup(cp).is_some(),
++        }
++    }
 +}
 +
  /// A placed glyph from inline-run layout: cell top-left relative to the box
  /// origin.
  #[derive(Clone, Copy, Debug)]
-@@ -280,9 +547,17 @@ pub type WrapFn = alloc::boxed::Box<dyn Fn(&str, u8, f32) -> alloc::vec::Vec<u32
+@@ -280,9 +558,17 @@ pub type WrapFn = alloc::boxed::Box<dyn Fn(&str, u8, f32) -> alloc::vec::Vec<u32
  /// The per-core atlas registry.
  pub struct Fonts {
      slots: [Option<Atlas>; spec::MAX_FONT_SLOTS],
@@ -910,7 +931,7 @@ index 0a04ff03..b0338521 100644
      /// Native measurer; when present, tracking-0 runs measure through it
      /// (and draw.rs emits TEXT_RUN instead of GLYPH_RUN for them). Tracked
      /// runs keep the baked path on BOTH sides so a node's measured metrics
-@@ -305,6 +580,11 @@ impl Fonts {
+@@ -305,6 +591,11 @@ impl Fonts {
                  *destination = source.take();
              }
          }
@@ -922,7 +943,7 @@ index 0a04ff03..b0338521 100644
      }
  
      pub fn new() -> Fonts {
-@@ -312,7 +592,9 @@ impl Fonts {
+@@ -312,7 +603,9 @@ impl Fonts {
              // `Default` for arrays only goes to 32 elements; MAX_FONT_SLOTS is
              // larger, so build the array explicitly.
              slots: [const { None }; spec::MAX_FONT_SLOTS],
@@ -932,7 +953,7 @@ index 0a04ff03..b0338521 100644
              native: None,
              wrap_native: None,
          }
-@@ -335,11 +617,30 @@ impl Fonts {
+@@ -335,11 +628,30 @@ impl Fonts {
          self.native.is_some()
      }
  
@@ -964,7 +985,7 @@ index 0a04ff03..b0338521 100644
                  self.slots[slot] = Some(a);
                  true
              }
-@@ -356,13 +657,82 @@ impl Fonts {
+@@ -356,13 +668,82 @@ impl Fonts {
          self.slots.get_mut(slot as usize)?.as_mut()
      }
  
@@ -981,7 +1002,7 @@ index 0a04ff03..b0338521 100644
 +        self.atlas(slot).is_none() && self.vector(slot).is_some_and(|v| !v.is_supplement())
 +    }
 +
-+    fn metrics(&self, slot: u8) -> Option<Metrics<'_>> {
++    pub(crate) fn metrics(&self, slot: u8) -> Option<Metrics<'_>> {
 +        if let Some(a) = self.atlas(slot) {
 +            return Some(Metrics::Atlas(a));
 +        }
@@ -1006,14 +1027,14 @@ index 0a04ff03..b0338521 100644
 +        }
 +    }
 +
-+    fn kern_of(m: &Metrics<'_>, left: u16, right: u16) -> i32 {
++    pub(crate) fn kern_of(m: &Metrics<'_>, left: u16, right: u16) -> i32 {
 +        match m {
 +            Metrics::Atlas(a) => a.kern(left, right),
 +            Metrics::Vector(v) => v.kern(left, right),
 +        }
 +    }
 +
-+    fn line_and_cell(m: &Metrics<'_>) -> (f32, f32) {
++    pub(crate) fn line_and_cell(m: &Metrics<'_>) -> (f32, f32) {
 +        match m {
 +            Metrics::Atlas(a) => (a.line_height as f32, a.cell_h as f32),
 +            Metrics::Vector(v) => (v.line_height as f32, v.cell_h as f32),
@@ -1048,7 +1069,30 @@ index 0a04ff03..b0338521 100644
                  (0, atlas.stream.as_ref().map_or(atlas.cell_w as f32, |s| s.advance as f32), 0.0)
              }
          }
-@@ -409,11 +779,11 @@ impl Fonts {
+@@ -371,10 +752,18 @@ impl Fonts {
+     /// (gid, advance) as [`Self::glyph`] resolves them, without counting a
+     /// miss: fitting a run tries every rung, and only the laid-out text is a
+     /// measurement the miss counter describes.
+-    pub(crate) fn glyph_quiet(&self, atlas: &Atlas, cp: u32) -> (u16, f32) {
+-        match atlas.lookup_entry(cp) {
+-            Some(e) => (e.gid, e.advance as f32),
+-            None => (0, atlas.stream.as_ref().map_or(atlas.cell_w as f32, |s| s.advance as f32)),
++    /// Either face of a slot (pocket-motion): a vector slot's ladder rung
++    /// measures from its FONT VECTOR face as layout does.
++    pub(crate) fn glyph_quiet(&self, face: &Metrics<'_>, cp: u32) -> (u16, f32) {
++        match face {
++            Metrics::Atlas(atlas) => match atlas.lookup_entry(cp) {
++                Some(e) => (e.gid, e.advance as f32),
++                None => (0, atlas.stream.as_ref().map_or(atlas.cell_w as f32, |s| s.advance as f32)),
++            },
++            Metrics::Vector(v) => match v.lookup(cp) {
++                Some((gid, adv)) => (gid, adv as f32),
++                None => (0, v.tofu_advance()),
++            },
+         }
+     }
+ 
+@@ -419,11 +808,11 @@ impl Fonts {
                  return f(text, slot, tracking, line_h_override);
              }
          }
@@ -1062,7 +1106,7 @@ index 0a04ff03..b0338521 100644
          } else {
              line_h_override
          };
-@@ -429,9 +799,9 @@ impl Fonts {
+@@ -439,9 +828,9 @@ impl Fonts {
                  prev_gid = None;
                  continue;
              }
@@ -1074,7 +1118,7 @@ index 0a04ff03..b0338521 100644
                  None => 0.0,
              };
              line_w += pair + adv + tracking;
-@@ -540,18 +910,14 @@ impl Fonts {
+@@ -550,18 +939,14 @@ impl Fonts {
          box_w: f32,
          out: &mut Vec<GlyphPos>,
      ) {
@@ -1096,7 +1140,7 @@ index 0a04ff03..b0338521 100644
          let mut line_top = 0.0f32;
          for line in text.split('\n') {
              // Single glyph pass per line (so cmap misses count once): place
-@@ -561,9 +927,9 @@ impl Fonts {
+@@ -571,9 +956,9 @@ impl Fonts {
              let mut prev_gid: Option<u16> = None;
              let y = line_top + (lh - cell_h) * 0.5;
              for ch in line.chars() {
@@ -1108,12 +1152,104 @@ index 0a04ff03..b0338521 100644
                  }
                  // The cell holds the outline shifted right by xoff (negative
                  // LSB accents) — place it at pen - xoff so ink lands at pen.
+diff --git a/engine/core/src/text_fit.rs b/engine/core/src/text_fit.rs
+index 7525bf1b..d04a17df 100644
+--- a/engine/core/src/text_fit.rs
++++ b/engine/core/src/text_fit.rs
+@@ -33,7 +33,7 @@ use alloc::string::String;
+ use alloc::vec::Vec;
+ 
+ use crate::spec;
+-use crate::text::{Atlas, Fonts};
++use crate::text::{Fonts, Metrics};
+ 
+ /// U+200B ZERO WIDTH SPACE: a break opportunity the run's author placed.
+ pub const BREAK_MARK: char = '\u{200B}';
+@@ -132,22 +132,23 @@ fn is_mark(c: char) -> bool {
+ #[derive(Clone)]
+ struct Pen<'a> {
+     fonts: &'a Fonts,
+-    atlas: &'a Atlas,
++    /// The rung's face: an atlas, or a vector slot's (pocket-motion 0063).
++    atlas: Metrics<'a>,
+     tracking: f32,
+     width: f32,
+     prev: Option<u16>,
+ }
+ 
+ impl<'a> Pen<'a> {
+-    fn new(fonts: &'a Fonts, atlas: &'a Atlas, tracking: f32) -> Self {
++    fn new(fonts: &'a Fonts, atlas: Metrics<'a>, tracking: f32) -> Self {
+         Pen { fonts, atlas, tracking, width: 0.0, prev: None }
+     }
+ 
+     /// The width after `c`, without moving the pen.
+     fn after(&self, c: char) -> (f32, u16) {
+-        let (gid, adv) = self.fonts.glyph_quiet(self.atlas, c as u32);
++        let (gid, adv) = self.fonts.glyph_quiet(&self.atlas, c as u32);
+         let pair = match self.prev {
+-            Some(prev) => self.atlas.kern(prev, gid) as f32,
++            Some(prev) => Fonts::kern_of(&self.atlas, prev, gid) as f32,
+             None => 0.0,
+         };
+         (self.width + (pair + adv + self.tracking), gid)
+@@ -160,7 +161,7 @@ impl<'a> Pen<'a> {
+     }
+ }
+ 
+-fn width_of(fonts: &Fonts, atlas: &Atlas, tracking: f32, line: &str) -> f32 {
++fn width_of(fonts: &Fonts, atlas: Metrics<'_>, tracking: f32, line: &str) -> f32 {
+     let mut pen = Pen::new(fonts, atlas, tracking);
+     for c in line.chars() {
+         pen.push(c);
+@@ -171,7 +172,7 @@ fn width_of(fonts: &Fonts, atlas: &Atlas, tracking: f32, line: &str) -> f32 {
+ /// Lay one rung's lines out. `cut` allows a segment wider than the line to be
+ /// cut between its characters; without it the segment overflows its line,
+ /// which is what a min-content measurement asks for.
+-fn wrap(fonts: &Fonts, atlas: &Atlas, tracking: f32, text: &str, wrap: bool, max_w: f32, cut: bool) -> Wrapped {
++fn wrap(fonts: &Fonts, atlas: Metrics<'_>, tracking: f32, text: &str, wrap: bool, max_w: f32, cut: bool) -> Wrapped {
+     let mut out = Wrapped { lines: Vec::new(), widths: Vec::new(), split: 0 };
+     for hard in text.split('\n') {
+         if !wrap {
+@@ -275,10 +276,12 @@ impl Fonts {
+     ) -> Fitted {
+         let mut chosen: Option<(u8, Wrapped, f32, bool)> = None;
+         for rung in 0..spec.rungs {
+-            let Some(atlas) = self.atlas(spec.slots[rung as usize]) else {
++            // pocket-motion: a rung past the atlas's ceiling, or of a
++            // `text-vector` ladder, is a vector slot and measures from it.
++            let Some(atlas) = self.metrics(spec.slots[rung as usize]) else {
+                 continue;
+             };
+-            let lh = if line_h_override.is_nan() { atlas.line_height as f32 } else { line_h_override };
++            let lh = if line_h_override.is_nan() { Fonts::line_and_cell(&atlas).0 } else { line_h_override };
+             let w = wrap(self, atlas, tracking, text, spec.wrap, max_w, cut);
+             let widest = w.widths.iter().fold(0.0f32, |a, &b| a.max(b));
+             let lines = w.lines.len();
+@@ -308,7 +311,7 @@ impl Fonts {
+             };
+         };
+         let slot = spec.slots[rung as usize];
+-        let atlas = self.atlas(slot).expect("chosen rung has an atlas");
++        let atlas = self.metrics(slot).expect("chosen rung has a face");
+         let lines_total = w.lines.len();
+         let mut dropped = 0u32;
+         let clamp = spec.clamp as usize;
+@@ -318,7 +321,7 @@ impl Fonts {
+             }
+             w.lines.truncate(clamp);
+             w.widths.truncate(clamp);
+-            let ellipsis: &str = if atlas.lookup_entry(ELLIPSIS as u32).is_some() { "\u{2026}" } else { "..." };
++            let ellipsis: &str = if atlas.maps(ELLIPSIS as u32) { "\u{2026}" } else { "..." };
+             let mut last = w.lines.pop().unwrap_or_default();
+             w.widths.pop();
+             loop {
 diff --git a/engine/core/src/vector_text_tests.rs b/engine/core/src/vector_text_tests.rs
 new file mode 100644
-index 00000000..85de7ebe
+index 00000000..12bf06b7
 --- /dev/null
 +++ b/engine/core/src/vector_text_tests.rs
-@@ -0,0 +1,377 @@
+@@ -0,0 +1,403 @@
 +//! FONT VECTOR faces (pocket-motion): a slot's glyphs as outlines drawn
 +//! through PATH, and an atlas slot's colour glyphs as layered paths.
 +//!
@@ -1491,8 +1627,34 @@ index 00000000..85de7ebe
 +    assert_eq!(words[path + 3], 0xffff_ffff, "white under the paint");
 +    assert_eq!(words[path + words[path + 1] as usize], spec::draw_op::PAINT_POP);
 +}
++
++/// A `text-fit-[..]` ladder whose rungs are vector slots (0059 with 0063): a
++/// rung measures from its FONT VECTOR face as layout measures it, so the
++/// largest rung that holds is taken — here the second, whose "AB" is 330 px
++/// where the first's is 680.
++///
++/// Red under: `fit_run` asking for an atlas per rung (every vector rung is
++/// skipped and nothing fits), or `glyph_quiet` without its vector arm (each
++/// glyph measures 0, and the first rung "holds").
++#[test]
++fn a_fit_ladder_measures_its_vector_rungs() {
++    let mut f = crate::text::Fonts::new();
++    assert!(f.load(&hero(30).encode()));
++    let mut half = hero(31);
++    half.cmap = alloc::vec![('A' as u32, 1, 200), ('B' as u32, 2, 150), (0xfffd, 0, 111)];
++    assert!(f.load(&half.encode()));
++    let mut slots = [0u8; spec::TEXT_FIT_MAX_RUNGS];
++    slots[0] = 30;
++    slots[1] = 31;
++    let ladder = crate::text_fit::FitSpec { slots, rungs: 2, ladder: true, clamp: 0, wrap: false };
++    let fit = f.fit_run("AB", &ladder, 0.0, f32::NAN, 500.0, f32::INFINITY, true);
++    assert_eq!((fit.slot, fit.rung, fit.fitted), (31, 1, true));
++    assert_eq!((fit.width, fit.height), (330.0, 520.0));
++    let fit = f.fit_run("AB", &ladder, 0.0, f32::NAN, 700.0, f32::INFINITY, true);
++    assert_eq!((fit.slot, fit.rung, fit.fitted, fit.width), (30, 0, true, 680.0));
++}
 diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
-index 9c983148..9d6f33e3 100644
+index 2d4cf324..b653d6bb 100644
 --- a/engine/wasm/src/lib.rs
 +++ b/engine/wasm/src/lib.rs
 @@ -526,6 +526,19 @@ pub extern "C" fn ui_load_font_atlas(ptr: *const u8, len: usize) -> i32 {
@@ -1516,10 +1678,10 @@ index 9c983148..9d6f33e3 100644
  pub extern "C" fn ui_measure_text(ptr: *const u8, len: usize, font_slot: u32) -> f32 {
      ui().measure_text(unsafe { text(ptr, len) }, font_slot as u8)
 diff --git a/framework/compiler/bake-font.ts b/framework/compiler/bake-font.ts
-index 4f81d00a..d89622f8 100644
+index 4f81d00a..df621b49 100644
 --- a/framework/compiler/bake-font.ts
 +++ b/framework/compiler/bake-font.ts
-@@ -36,12 +36,24 @@ import {
+@@ -36,12 +36,25 @@ import {
    FONT_HEADER_SIZE,
    FONT_KERN_PAIR_SIZE,
    FONT_MAGIC,
@@ -1537,6 +1699,7 @@ index 4f81d00a..d89622f8 100644
    MAX_FONT_SLOTS,
 +  PAINT_MAX_STOPS,
  } from "../../contracts/spec/spec.ts";
++import { readFileSync } from "node:fs";
  import { fileURLToPath } from "node:url";
  import { resolve, join } from "node:path";
  import { fontSlotInfo } from "./tailwind.ts";
@@ -1544,7 +1707,7 @@ index 4f81d00a..d89622f8 100644
  
  const FONTS_DIR = resolve(fileURLToPath(new URL("../../assets/fonts/", import.meta.url)));
  export const DEFAULT_REGULAR = join(FONTS_DIR, "Inter-Regular.ttf");
-@@ -65,6 +77,19 @@ export interface BakedAtlas {
+@@ -65,6 +78,19 @@ export interface BakedAtlas {
    /** FONT_FLAG_METRICS_ONLY is set: 1x1 empty cells, metrics real. */
    metricsOnly: boolean;  /** The named face (`font-[name]`) this slot was baked from; absent for the default pair and mono. */
    face?: string;
@@ -1564,7 +1727,7 @@ index 4f81d00a..d89622f8 100644
  }
  
  export interface BakeOptions {
-@@ -378,6 +403,7 @@ function atlasKernPairs(
+@@ -378,6 +404,7 @@ function atlasKernPairs(
    font: Font,
    glyphs: { fontGid: number }[],
    scale: number,
@@ -1572,7 +1735,7 @@ index 4f81d00a..d89622f8 100644
  ): { left: number; right: number; delta: number }[] {
    const byFont = extractGposPairs(font);
    const atlasOf = new Map<number, number[]>();
-@@ -393,8 +419,8 @@ function atlasKernPairs(
+@@ -393,8 +420,8 @@ function atlasKernPairs(
      if (!lefts || !rights) continue;
      let delta = Math.round(units * scale);
      if (delta === 0) continue;
@@ -1583,7 +1746,7 @@ index 4f81d00a..d89622f8 100644
      for (const left of lefts) {
        for (const right of rights) {
          byAtlas.set(((left & 0xffff) << 16) | (right & 0xffff), delta);
-@@ -412,7 +438,11 @@ function atlasKernPairs(
+@@ -412,7 +439,11 @@ function atlasKernPairs(
  
  async function loadFont(path: string): Promise<Font> {
    const buf = await Bun.file(path).arrayBuffer();
@@ -1596,7 +1759,20 @@ index 4f81d00a..d89622f8 100644
  }
  
  const TOFU_CODEPOINT = 0xfffd; // U+FFFD replacement char maps to gid 0
-@@ -477,6 +507,8 @@ export function bakeSlot(
+@@ -450,9 +481,9 @@ export function bakeSlot(
+     throw new Error(
+       `PocketJS bake-font: ${px}px needs a ${wantCellH}px cell, over the 255px ` +
+         `limit the FONT ATLAS header can express (cellH is a u8). ` +
+-        `The largest size this font can bake is about ${maxPx}px. ` +
+-        `For larger display type, render at a larger logical viewport instead of ` +
+-        `a larger font.`,
++        `The largest size this font can bake as an atlas is about ${maxPx}px. ` +
++        `bakeAtlases bakes a larger size as a FONT VECTOR face, its glyphs as ` +
++        `outlines (pocket-motion 0063); this is bakeSlot, the atlas alone.`,
+     );
+   }
+   const cellH = wantCellH;
+@@ -477,6 +508,8 @@ export function bakeSlot(
      xoff: number;
    }
    const glyphs: G[] = [];
@@ -1605,7 +1781,7 @@ index 4f81d00a..d89622f8 100644
    for (const cp of chars) {
      if (cp === TOFU_CODEPOINT) continue; // reserved for gid 0
      const ch = String.fromCodePoint(cp);
-@@ -497,6 +529,22 @@ export function bakeSlot(
+@@ -497,6 +530,22 @@ export function bakeSlot(
      const glyph = source.glyphs.get(gi);
      const sourceScale = source === font ? scale : px / source.unitsPerEm;
      const advance = Math.max(0, Math.min(255, Math.round((glyph.advanceWidth ?? 0) * sourceScale)));
@@ -1628,7 +1804,7 @@ index 4f81d00a..d89622f8 100644
      if (metricsOnly) {
        // No outline is read: the advance above and the kerning below are the
        // whole of what a measurement reads, and flattening every contour of a
-@@ -613,6 +661,19 @@ export function bakeSlot(
+@@ -613,6 +662,19 @@ export function bakeSlot(
      ko += FONT_KERN_PAIR_SIZE;
    }
  
@@ -1648,16 +1824,16 @@ index 4f81d00a..d89622f8 100644
    return {
      slot,
      px,
-@@ -626,9 +687,391 @@ export function bakeSlot(
+@@ -626,9 +688,425 @@ export function bakeSlot(
      coverageH,
      pairCount: pairs.length,
      metricsOnly,
 +    ...(supplement !== undefined ? { supplement } : {}),
 +    ...(colourEntries.length > 0 ? { colourGlyphs: colourEntries.length } : {}),
 +    ...(refused.length > 0 ? { refused } : {}),
-+  };
-+}
-+
+   };
+ }
+ 
 +// ---------------------------------------------------------------------------
 +// FONT VECTOR baking (pocket-motion)
 +// ---------------------------------------------------------------------------
@@ -1805,6 +1981,40 @@ index 4f81d00a..d89622f8 100644
 +/** COLR/CPAL of the faces a build loaded, by face. */
 +const colourTables = new WeakMap<Font, ColourTables>();
 +
++/** Faces `leftOutBy` has parsed, by path and size/mtime. */
++const leftOutFaces = new Map<string, { key: string; font: Font }>();
++
++/**
++ * Of `cps`, those a face would leave out of a slot it supplies, and why — the
++ * rule `bakeSlot` and `bakeVectorSlot` apply to a face with COLR: a codepoint
++ * that is a picture only inside a shaped sequence, and a colour glyph the
++ * core cannot draw. A codepoint the face does not map is not in the result,
++ * and a face without COLR leaves nothing out. Synchronous, for a check that
++ * runs before any build (pocket-motion's job pre-check).
++ */
++export function leftOutBy(path: string, cps: Iterable<number>): Map<number, string> {
++  const bytes = readFileSync(path);
++  const key = `${bytes.length}:${Bun.hash(bytes)}`;
++  let font = leftOutFaces.get(path)?.key === key ? leftOutFaces.get(path)!.font : undefined;
++  if (font === undefined) {
++    font = parseFont(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
++    const tables = readColourTables(new Uint8Array(bytes));
++    if (tables !== null) colourTables.set(font, tables);
++    leftOutFaces.set(path, { key, font });
++  }
++  const out = new Map<number, string>();
++  if (!colourTables.has(font)) return out;
++  for (const cp of cps) {
++    const gi = font.charToGlyphIndex(String.fromCodePoint(cp));
++    if (gi <= 0) continue;
++    const sequence = sequenceOnly(cp);
++    // The size does not decide a refusal; any px reads the same paints.
++    const colour = sequence === null ? colrLayersOf(font, gi, 64) : { refused: sequence };
++    if (colour !== null && "refused" in colour) out.set(cp, colour.refused);
++  }
++  return out;
++}
++
 +/** Colour layers of a face that carries COLR, mapped to the slot's px. */
 +export const colrLayersOf: ColourLayersOf = (face, gid, px) => {
 +  const tables = colourTables.get(face);
@@ -1951,9 +2161,9 @@ index 4f81d00a..d89622f8 100644
 +  return {
 +    verbs: [VERB_MOVE, VERB_LINE, VERB_LINE, VERB_LINE, VERB_CLOSE, VERB_MOVE, VERB_LINE, VERB_LINE, VERB_LINE, VERB_CLOSE],
 +    pts: [...outer, ...inner],
-   };
- }
- 
++  };
++}
++
 +/**
 + * Bake one slot as a FONT VECTOR face. Metrics are `bakeSlot`'s, written in
 + * u16/i16 instead of u8/i8: baseline `round(ascent)`, cell `baseline +
@@ -2040,7 +2250,7 @@ index 4f81d00a..d89622f8 100644
  /** Bake every requested slot. Charset = collected + ASCII 32..126 + extraChars. */
  export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
    const rasterDensity = checkedRasterDensity(opts.rasterDensity ?? 1);
-@@ -652,11 +1095,38 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+@@ -652,11 +1130,38 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
      fallbacks.push(await loadFont(path));
    }
    const results: BakedAtlas[] = [];
@@ -2080,7 +2290,7 @@ index 4f81d00a..d89622f8 100644
      if (face !== undefined) {
        const files = opts.faces?.[face];
        if (!files) {
-@@ -671,10 +1141,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+@@ -671,10 +1176,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
        const facePath = bold ? files.bold : files.regular;
        opts.onRead?.(facePath);
        fonts[key] ??= await loadFont(facePath);
@@ -2092,7 +2302,7 @@ index 4f81d00a..d89622f8 100644
        continue;
      }
      const key = mono ? "mono" : bold ? "bold" : "regular";
-@@ -685,7 +1152,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
+@@ -685,7 +1187,7 @@ export async function bakeAtlases(opts: BakeOptions): Promise<BakedAtlas[]> {
            : (opts.regularTtf ?? DEFAULT_REGULAR);
      opts.onRead?.(path);
      fonts[key] ??= await loadFont(path);
@@ -2483,7 +2693,7 @@ index 00000000..dc57d993
 +  return stops.length === 1 ? [[stops[0]![0], 0], [stops[0]![0], 1]] : stops;
 +}
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index 519c446e..d1622e08 100644
+index 9d743ab4..b64b0e70 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
 @@ -26,7 +26,7 @@ import {
@@ -2493,9 +2703,9 @@ index 519c446e..d1622e08 100644
 -  PAINT_MAX_STOPS,
 +  GRADIENT_LITERAL_MAX_STOPS,
    PATH_DASH_MAX,
+   TEXT_FIT_MAX_RUNGS,
    TRANSITION_MASK_ALL,
-   abgr,
-@@ -85,7 +85,7 @@ const FIRST_DYNAMIC_SLOT = SMALL_FONT_BOLD_SLOT + 1;
+@@ -86,7 +86,7 @@ const FIRST_DYNAMIC_SLOT = SMALL_FONT_BOLD_SLOT + 1;
   * allocated in first-sight order like any `text-[Npx]` size. `face` is
   * undefined for the default face and for `font-mono`.
   */
@@ -2504,7 +2714,7 @@ index 519c446e..d1622e08 100644
  const dynamicSlots: DynamicSlot[] = [];
  const dynamicIndex = new Map<string, number>();
  
-@@ -96,8 +96,8 @@ export function resetFontSlotPlan(): void {
+@@ -97,8 +97,8 @@ export function resetFontSlotPlan(): void {
  }
  
  /** Every slot this build uses, pinned plus dynamic. bake-font consumes it. */
@@ -2515,7 +2725,7 @@ index 519c446e..d1622e08 100644
    for (let i = 0; i < FONT_PX.length; i++) {
      out.push({ slot: i, px: FONT_PX[i]!, bold: false, mono: false });
      out.push({ slot: FONT_PX.length + i, px: FONT_PX[i]!, bold: true, mono: false });
-@@ -113,6 +113,7 @@ export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold:
+@@ -114,6 +114,7 @@ export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold:
      out.push({
        slot: FIRST_DYNAMIC_SLOT + i, px: d.px, bold: d.bold, mono: d.mono,
        ...(d.face !== undefined ? { face: d.face } : {}),
@@ -2523,7 +2733,7 @@ index 519c446e..d1622e08 100644
      }),
    );
    return out;
-@@ -122,8 +123,12 @@ export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold:
+@@ -123,8 +124,12 @@ export function fontSlotPlan(): ReadonlyArray<{ slot: number; px: number; bold:
  export const FONT_FACE_NAME = /^[a-z][a-z0-9-]*$/;
  
  /** Slot index for a (px, weight, family) triple, allocating one for unpinned sizes.
@@ -2538,7 +2748,7 @@ index 519c446e..d1622e08 100644
    if (face !== undefined) return allocDynamic(px, bold, false, face);
    if (mono) {
      const i = (MONO_FONT_PX as readonly number[]).indexOf(px);
-@@ -142,8 +147,8 @@ export function fontSlotFor(px: number, bold: boolean, mono = false, face?: stri
+@@ -143,8 +148,8 @@ export function fontSlotFor(px: number, bold: boolean, mono = false, face?: stri
    return allocDynamic(px, bold, false);
  }
  
@@ -2549,7 +2759,7 @@ index 519c446e..d1622e08 100644
    const existing = dynamicIndex.get(key);
    if (existing !== undefined) return existing;
  
-@@ -155,22 +160,24 @@ function allocDynamic(px: number, bold: boolean, mono: boolean, face?: string):
+@@ -156,22 +161,24 @@ function allocDynamic(px: number, bold: boolean, mono: boolean, face?: string):
          `atlas table holds; reduce the number of text sizes or faces.`,
      );
    }
@@ -2579,7 +2789,7 @@ index 519c446e..d1622e08 100644
    }
    if (slot === SMALL_FONT_REGULAR_SLOT) return { px: SMALL_FONT_PX, bold: false, mono: false };
    if (slot === SMALL_FONT_BOLD_SLOT) return { px: SMALL_FONT_PX, bold: true, mono: false };
-@@ -284,6 +291,8 @@ interface VariantAcc {
+@@ -285,6 +292,8 @@ interface VariantAcc {
    mono?: boolean;
    /** `font-[name]`: a named face declared to the build. */
    face?: string;
@@ -2588,7 +2798,7 @@ index 519c446e..d1622e08 100644
    /** Gradient paint (pocket-motion): something here needs the multi-stop
     *  path — a from/to position, an angle, radial, an arbitrary gradient, or
     *  `bg-clip-text` over a gradient. Resolved per variant once the literal
-@@ -612,12 +621,16 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+@@ -706,12 +715,16 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
        if (rest.startsWith("stroke-") || rest === "stroke") return parseTextStroke(rest, D);
        if (rest in TEXT_ALIGN) { D.push([PROP.textAlign, int(TEXT_ALIGN[rest])]); return true; }
        if (rest in TEXT_SIZE_PX) { acc.sizePx = TEXT_SIZE_PX[rest]; return true; }
@@ -2607,7 +2817,7 @@ index 519c446e..d1622e08 100644
          acc.sizePx = v;
          return true;
        }
-@@ -1041,7 +1054,7 @@ function parseGradientPaint(rest: string, acc: VariantAcc): boolean {
+@@ -1135,7 +1148,7 @@ function parseGradientPaint(rest: string, acc: VariantAcc): boolean {
        args.shift();
      }
    }
@@ -2616,27 +2826,40 @@ index 519c446e..d1622e08 100644
    const stops: { color: number; pos: number | null }[] = [];
    for (const a of args) {
      const m = /^(\S+)(?: (\d+(?:\.\d+)?)%)?$/.exec(a);
-@@ -1499,8 +1512,17 @@ export function parseClassLiteral(
+@@ -1610,13 +1623,29 @@ export function parseClassLiteral(
      const effBold = v.bold ?? base.bold ?? false;
      const effMono = v.mono ?? base.mono ?? false;
      const effFace = v.face ?? base.face;
--    if (v.sizePx !== undefined || v.bold !== undefined || v.mono !== undefined || v.face !== undefined) {
--      v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold, effMono, effFace))]);
 +    const effVector = v.vector ?? base.vector ?? false;
-+    // `text-vector` names how a size is drawn, so it needs the size beside
-+    // it: a font slot is declared per literal and nothing inherits one.
-+    if (v.vector !== undefined && v.sizePx === undefined && base.sizePx === undefined) {
++    // `text-vector` names how a size is drawn, so it needs a size beside it —
++    // one size or a `text-fit-[..]` ladder: a font slot is declared per
++    // literal and nothing inherits one.
++    if (
++      v.vector !== undefined && v.sizePx === undefined && base.sizePx === undefined &&
++      v.fitPx === undefined && base.fitPx === undefined
++    ) {
 +      throw new Error(
 +        `PocketJS tailwind: \`text-vector\` in "${literal}" has no text size beside it — ` +
 +          "write it next to the size it draws, e.g. `text-[96px] text-vector`.",
 +      );
 +    }
-+    if (v.sizePx !== undefined || v.bold !== undefined || v.mono !== undefined || v.face !== undefined || v.vector !== undefined) {
+     const fontTouched =
+-      v.sizePx !== undefined || v.fitPx !== undefined || v.bold !== undefined || v.mono !== undefined || v.face !== undefined;
++      v.sizePx !== undefined || v.fitPx !== undefined || v.bold !== undefined || v.mono !== undefined ||
++      v.face !== undefined || v.vector !== undefined;
+     if (fontTouched) {
+-      v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold, effMono, effFace))]);
 +      v.decls.push([PROP.fontSlot, int(fontSlotFor(effPx, effBold, effMono, effFace, effVector))]);
      }
-     // Gradient paint: kind, angle and the default via position, decided once
-     // the whole literal is known. A legacy `bg-gradient-to-*` direction
-@@ -1678,10 +1700,10 @@ export function generateStylesModule(c: CompiledStyles): string {
+     if (effFit !== undefined && fontTouched) {
+-      const [fit0, fit1] = packFitSlots(effFit.map((px) => fontSlotFor(px, effBold, effMono, effFace)));
++      // pocket-motion: every rung of a `text-vector` ladder is a vector slot,
++      // so the run keeps its outlines whichever rung layout picks.
++      const [fit0, fit1] = packFitSlots(effFit.map((px) => fontSlotFor(px, effBold, effMono, effFace, effVector)));
+       v.decls.push([PROP.textFit0, int(fit0)], [PROP.textFit1, int(fit1)]);
+     } else if (v.sizePx !== undefined && base.fitPx !== undefined && name !== "base") {
+       // A variant that names a size leaves the base's ladder.
+@@ -1809,10 +1838,10 @@ export function generateStylesModule(c: CompiledStyles): string {
    L.push(`export const STYLE_COUNT = ${c.records.length};`);
    L.push("");
    L.push("/** Baked font-atlas slots shipped in the pak: slot -> metrics. */");
@@ -2651,7 +2874,7 @@ index 519c446e..d1622e08 100644
    L.push("};");
    L.push("");
 diff --git a/tools/build.ts b/tools/build.ts
-index dcf0f1d9..c633b5fb 100644
+index 6f0bbebe..1995f69a 100644
 --- a/tools/build.ts
 +++ b/tools/build.ts
 @@ -29,6 +29,8 @@ import { BuildInputs } from "../framework/compiler/build-inputs.ts";

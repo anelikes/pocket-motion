@@ -82,7 +82,10 @@ colour and never meets the src-in refusal.
 `bun baselines/vector-glyphs/redcheck.ts` writes each defect into the patch
 (one `+` line for another) or into this repository's file, rebuilds the
 vendored tree from the patches, runs the one test that names it, and
-restores. 26 defects; each test is green on the tree as it is first.
+restores. 32 defects; each test is green on the tree as it is first. The
+last six came with the merge onto 0059 (text-fit): a ladder's rungs, the
+fit's measurement and the job pre-check each had to learn the vector slot
+and the fallback chain.
 
 | defect | test | |
 | --- | --- | --- |
@@ -112,6 +115,12 @@ restores. 26 defects; each test is green on the tree as it is first.
 | trace not saying so | `colour-glyphs` "trace and render say so" | red |
 | a job spec refusing `fonts.fallback` | `colour-glyphs` "renders through the fallback face the job declares" | red |
 | lower-third not writing the fallback into the staged sidecar | the same | red |
+| a fit ladder's rung measured only from an atlas (0059 with 0063) | core `a_fit_ladder_measures_its_vector_rungs` | red |
+| `glyph_quiet` without its vector advances | the same | red |
+| a `text-vector` ladder's rungs allocated as atlas slots | catalogue G6, `paint.text-vector` | red |
+| the job pre-check (`src/text/coverage.ts`) ignoring `fonts.fallback` | `colour-glyphs` "renders through the fallback face the job declares" | red |
+| the job pre-check not asking the build what it leaves out | `colour-glyphs` "a flag the fallback maps …" | red |
+| the over-ceiling hint still sending authors to a hand-made `<Path>` | `cli` "an oversize face gets the ceiling …" | red |
 
 The first full run left two green, and both were the test's fault, not the
 defect's. The loading test fed the supplement before the atlas, so a

@@ -2599,7 +2599,7 @@ export const SURFACE: readonly CapabilityRow[] = [
     required: false,
     defaultValue: "atlas cells below the face's ceiling",
     constraint:
-      "draws this literal's text size as outlines (a FONT VECTOR slot, patches/0063): each glyph's layers filled as PATH ops through the node's world affine, so the run scales without resampling a bitmap and its glyphs turn with the node, where an atlas run turns its anchors and keeps upright cells. Must sit beside a text size in the same literal — a font slot is declared per literal and nothing inherits one — and is refused without one. Allocates a dynamic slot of its own, never the atlas slot of its size. At a size the atlas also holds, the vector slot carries the atlas's baseline, cell height, line height, every advance and every kern pair (tests/vector-glyphs.test.ts, at each face's ceiling). A text stroke is outlined from the same outlines; the hollow outside form is drawn centred",
+      "draws this literal's text size as outlines (a FONT VECTOR slot, patches/0063): each glyph's layers filled as PATH ops through the node's world affine, so the run scales without resampling a bitmap and its glyphs turn with the node, where an atlas run turns its anchors and keeps upright cells. Must sit beside a text size or a `text-fit-[..]` ladder in the same literal — a font slot is declared per literal and nothing inherits one — and is refused without one; beside a ladder every rung is a vector slot, which layout measures from its outlines' metrics as it measures an atlas rung. Allocates a dynamic slot of its own, never the atlas slot of its size. At a size the atlas also holds, the vector slot carries the atlas's baseline, cell height, line height, every advance and every kern pair (tests/vector-glyphs.test.ts, at each face's ceiling). A text stroke is outlined from the same outlines; the hollow outside form is drawn centred",
     source: "vendor/pocketjs/framework/compiler/tailwind.ts",
     verification: "probed",
     diagnostics: [],
@@ -2617,6 +2617,14 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["text-vector text-white"],
         fromClassAttribute: true,
         outcome: { refuses: "has no text size beside it" },
+      },
+      {
+        what: "beside a text-fit ladder every rung is a vector slot of its own",
+        literals: ["text-fit-[96,48] text-vector"],
+        fromClassAttribute: true,
+        // 96 vector is the node's slot, 21, and the first rung; 48 vector is
+        // 22. Rungs allocated without the flag would be 22 and 23 instead.
+        outcome: { declares: { prop: "textFit0", value: 22 | (23 << 8) } },
       },
     ],
   },

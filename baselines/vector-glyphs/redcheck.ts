@@ -105,6 +105,18 @@ const MUTATIONS: Mutation[] = [
     edits: [["+        if o != bytes.len() {", "+        if false {"]],
     test: ["cargo", "vector_face_parse_refuses_malformed_blobs"],
   },
+  {
+    name: "a fit ladder's rung measured only from an atlas",
+    file: P,
+    edits: [["+            let Some(atlas) = self.metrics(spec.slots[rung as usize]) else {", "+            let Some(atlas) = self.atlas(spec.slots[rung as usize]).map(Metrics::Atlas) else {"]],
+    test: ["cargo", "a_fit_ladder_measures_its_vector_rungs"],
+  },
+  {
+    name: "glyph_quiet without its vector advances",
+    file: P,
+    edits: [["+                Some((gid, adv)) => (gid, adv as f32),", "+                Some((gid, _adv)) => (gid, 0.0),"]],
+    test: ["cargo", "a_fit_ladder_measures_its_vector_rungs"],
+  },
   // ---- the compiler and the switch-over ----
   {
     name: "a vector advance rounded down",
@@ -162,6 +174,12 @@ const MUTATIONS: Mutation[] = [
     edits: [["+export const PAINT_MAX_STOPS = 16;", "+export const PAINT_MAX_STOPS = 6;"]],
     test: ["tests/colour-glyphs.test.ts", "draws its colours"],
   },
+  {
+    name: "a text-vector ladder's rungs allocated as atlas slots",
+    file: P,
+    edits: [["+      const [fit0, fit1] = packFitSlots(effFit.map((px) => fontSlotFor(px, effBold, effMono, effFace, effVector)));", "+      const [fit0, fit1] = packFitSlots(effFit.map((px) => fontSlotFor(px, effBold, effMono, effFace)));"]],
+    test: ["tests/catalog.test.ts", "G6"],
+  },
   // ---- this repository ----
   {
     name: "the measurer reading atlases only",
@@ -180,6 +198,24 @@ const MUTATIONS: Mutation[] = [
     file: "compositions/lower-third/gen.ts",
     edits: [["          ...(spec.fonts.fallback !== undefined ? { fallback: spec.fonts.fallback } : {}),\n        },\n        ...(footage ? { footage } : {}),", "        },\n        ...(footage ? { footage } : {}),"]],
     test: ["tests/colour-glyphs.test.ts", "renders through the fallback face the job declares"],
+  },
+  {
+    name: "the job pre-check ignoring fonts.fallback",
+    file: "src/text/coverage.ts",
+    edits: [["  const chain = (faces.fallback ?? []).map(", "  const chain = ([] as string[]).map("]],
+    test: ["tests/colour-glyphs.test.ts", "renders through the fallback face the job declares"],
+  },
+  {
+    name: "the job pre-check not asking the build what it leaves out",
+    file: "src/text/coverage.ts",
+    edits: [["reason: bakerLeftOut(face.abs, [cp]).get(cp) ?? null", "reason: null"]],
+    test: ["tests/colour-glyphs.test.ts", "a flag the fallback maps"],
+  },
+  {
+    name: "the over-ceiling hint still sending authors to a hand-made <Path>",
+    file: "src/cli/build.ts",
+    edits: [['and `text-vector` beside a smaller size asks for the same; emoji come from `fonts.fallback`."', 'draw it as glyph outlines in a <Path>."']],
+    test: ["tests/cli.test.ts", "an oversize face gets the ceiling"],
   },
   {
     name: "check not reading the missed codepoints",
