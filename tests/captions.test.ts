@@ -39,7 +39,6 @@ import { parseSidecar, type Diagnostic } from "../src/manifest/sidecar.ts";
 import { SPEC_CAPTIONS_ROOT_KEYS, parseSpec, type CaptionsSpec } from "../src/manifest/spec.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
-process.env.POCKETJS_ROOT = join(ROOT, "vendor", "pocketjs");
 
 const FONTS = {
   regular: "assets/fonts/HarmonyOS_Sans_Regular.ttf",

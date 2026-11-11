@@ -85,6 +85,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/data-chart": {
+      "failures": [],
+      "nodes": 18,
+      "named": 6,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/faces": {
       "failures": [],
       "nodes": 5,
@@ -157,8 +164,8 @@
     },
     "compositions/late-anim": {
       "failures": [],
-      "nodes": 5,
-      "named": 5,
+      "nodes": 6,
+      "named": 6,
       "neverShown": 0,
       "buriedAfterShown": 0
     },
@@ -173,8 +180,8 @@
       "failures": [
         "buried"
       ],
-      "nodes": 12,
-      "named": 12,
+      "nodes": 13,
+      "named": 13,
       "neverShown": 1,
       "buriedAfterShown": 0
     },
@@ -231,6 +238,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/path-primitives": {
+      "failures": [],
+      "nodes": 20,
+      "named": 20,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/probe": {
       "failures": [],
       "nodes": 3,
@@ -256,6 +270,13 @@
       "failures": [],
       "nodes": 2,
       "named": 2,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/short-sections": {
+      "failures": [],
+      "nodes": 18,
+      "named": 18,
       "neverShown": 0,
       "buriedAfterShown": 0
     },
@@ -301,6 +322,20 @@
       "failures": [],
       "nodes": 5,
       "named": 5,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/svg-import": {
+      "failures": [],
+      "nodes": 16,
+      "named": 16,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/text-fit": {
+      "failures": [],
+      "nodes": 13,
+      "named": 13,
       "neverShown": 0,
       "buriedAfterShown": 0
     },

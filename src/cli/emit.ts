@@ -138,21 +138,27 @@ function writeStdout(chunk: string): Promise<void> {
  * The object `--json` writes for a result, before `envelope`.
  *
  * Always an object, even if the command forgot one — agents must always get
- * one parseable value. Separate from `applyEmit` because `src/api.ts` returns
- * this same value instead of writing it, and a second copy of the fallback
- * would be the one place the two could disagree.
+ * one parseable value — and always one carrying `ok`, which is what the
+ * documented convention tells an agent to branch on: a command whose object
+ * has none (`trace` wrote `frames` and `digest` alone, docs/agent-adoption-eval.md)
+ * gets the exit code's reading of it. Separate from `applyEmit` because
+ * `src/api.ts` returns this same value instead of writing it, and a second
+ * copy of the fallback would be the one place the two could disagree.
  */
 export function jsonPayload(result: CommandResult): unknown {
-  return result.json !== undefined
-    ? result.json
-    : {
-        ok: result.exitCode === 0,
-        exitCode: result.exitCode,
-        error:
-          result.stderrLines?.join("\n") ||
-          result.stdoutLines?.join("\n") ||
-          undefined,
-      };
+  const json = result.json;
+  if (json !== undefined) {
+    if (json === null || typeof json !== "object" || Array.isArray(json) || "ok" in json) return json;
+    return { ok: result.exitCode === 0, ...(json as Record<string, unknown>) };
+  }
+  return {
+    ok: result.exitCode === 0,
+    exitCode: result.exitCode,
+    error:
+      result.stderrLines?.join("\n") ||
+      result.stdoutLines?.join("\n") ||
+      undefined,
+  };
 }
 
 export async function applyEmit(

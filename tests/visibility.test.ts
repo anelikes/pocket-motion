@@ -29,6 +29,7 @@ import {
 import { EXIT_FAIL, EXIT_OK } from "../src/cli/types.ts";
 import { writeBuildRecord } from "../src/render/build-record.ts";
 import { classify } from "../src/render/visibility.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const VENDOR = join(ROOT, "vendor", "pocketjs");
@@ -36,9 +37,7 @@ const OCCLUDED = join(ROOT, "compositions", "occluded");
 const SMOKE = join(ROOT, "compositions", "smoke");
 const LATE_ANIM = join(ROOT, "compositions", "late-anim");
 const SPANNED = join(ROOT, "compositions", "spanned");
-const TMP = "/tmp/pocketjs-motion-visibility-test";
-
-process.env.POCKETJS_ROOT = VENDOR;
+const TMP = scratchDir("visibility");
 
 const dist = (name: string): string => join(TMP, name);
 const flags = (name: string, extra: Record<string, unknown> = {}) =>
@@ -69,7 +68,7 @@ async function build(
     cwd: VENDOR,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, POCKETJS_ROOT: VENDOR },
+    env: { ...process.env },
   });
   const [stderr, code] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
   if (code !== 0 || !existsSync(join(outdir, "main.js"))) {
@@ -327,7 +326,12 @@ describe("compositions/late-anim", () => {
       expect(node.covered).toEqual([]);
     }
 
-    expect(json.namedNodes).toBe(5);
+    // And the ruler `tests/keyframes.test.ts` reads the grid off, which moves
+    // in plain view for the whole film.
+    const ruler = byName.get("ruler")!;
+    expect(ruler.onScreen.length).toBe(json.frames.length);
+
+    expect(json.namedNodes).toBe(6);
     expect(json.failures).toEqual([]);
     expect(json.impossible).toEqual([]);
     expect(result.exitCode).toBe(EXIT_OK);

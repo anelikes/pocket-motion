@@ -118,7 +118,7 @@ const MUTATIONS: Mutation[] = [
     file: "patches/0043-path-component.patch",
     old: "+      if (!(e instanceof PathDataError)) throw e;",
     new: "+      throw e;",
-    test: ["tests/vector-paths.test.ts", "morph keys that part"],
+    test: ["tests/vector-paths.test.ts", "a morph the table cannot hold"],
   },
   {
     name: "mount counts an unbaked outline instead of refusing it",

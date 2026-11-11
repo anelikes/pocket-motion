@@ -45,12 +45,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { scratchDir } from "./scratch.ts";
+
 const ROOT = resolve(import.meta.dir, "..");
 
 /** Every document whose `bash` fences are executed, and where each one runs. */
 const DOCS: ReadonlyArray<{ rel: string; scratch: string; minCommands: number }> = [
-  { rel: "AUTHORING.md", scratch: "/tmp/pocketjs-motion-authoring-test", minCommands: 15 },
-  { rel: "skills/pocket-motion/SKILL.md", scratch: "/tmp/pocketjs-motion-skill-test", minCommands: 4 },
+  { rel: "AUTHORING.md", scratch: scratchDir("authoring"), minCommands: 15 },
+  { rel: "skills/pocket-motion/SKILL.md", scratch: scratchDir("skill"), minCommands: 4 },
 ];
 
 /** Prefixes this gate executes. */

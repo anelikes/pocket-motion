@@ -1,0 +1,139 @@
+0055 — export the raster revision, the half of "nothing to repaint" that
+`ui_draw_hash` does not carry.
+
+`ui_draw_hash` hashes the DrawList's words, and its doc comment offers it to
+browser hosts as a dirty signal for skipping a render. The words are not
+everything a raster reads. A TEX_QUAD carries a texture HANDLE, and the walk
+emits it without resolving it (`draw.rs`, `emit_tex_quad`), so freeing the
+texture an image is bound to leaves the words as they were while the raster
+resolves the handle to nothing and the image is gone. A font atlas loaded
+over a slot is the same shape: a GLYPH_RUN names the slot, not the coverage.
+The core already knows this. `Ui::raster_revision` moves on every texture
+upload and free, font atlas load, asset load and style table load, and
+`damage::DamageTracker::prepare` repaints in full unless the words, that
+revision and the render target are all unchanged. Nothing exported the
+revision, so a wasm host could compare two of the three.
+
+`ui_raster_revision()` returns it. `hosts/web/wasm-ops.js` exposes it as
+`rasterRevision`, null on a build that predates the export, the way
+`drawHash` is feature-detected. The doc comment on `ui_draw_hash` now says
+what a host that skips on it must compare as well.
+
+Why pocket-motion needs it: `render` skips the raster of a frame whose draw
+list and raster revision equal the previous frame's and delivers the previous
+frame's pixels (`src/render/reuse.ts`). Keyed on the words alone, the reuse
+would rest on which ops this repository's host and guests happen to call
+after mount, rather than on the condition the core states.
+
+The export adds no code to any render path, so no pixel can move: every
+composition in the motion repository's digest ledger traced to its recorded
+digest on a core built with it.
+
+Test, seen red under the edit named:
+
+- `engine/core/src/tests.rs`
+  `freeing_a_bound_texture_moves_the_raster_revision_and_not_the_draw_list`:
+  an image's texture freed after it was drawn leaves the words equal, moves
+  the revision, and the raster no longer draws the image. Red with
+  `free_texture`'s `bump_raster_revision()` removed.
+
+diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
+index a35e0ea..9c98314 100644
+--- a/engine/wasm/src/lib.rs
++++ b/engine/wasm/src/lib.rs
+@@ -561,11 +561,29 @@ pub extern "C" fn ui_tick() {
+ /// rasterizing the framebuffer. Browser hosts use this as the same dirty
+ /// signal as pocket-widget's EmbeddedUi: a settled guest can keep ticking
+ /// while skipping the expensive software render and texture upload.
++///
++/// The words are not everything a raster reads. A TEX_QUAD carries a texture
++/// handle, not the texels, and the walk does not resolve it: free the texture
++/// an image is bound to and the words stay the same while the raster draws
++/// nothing there. A host that skips a render on an equal hash compares
++/// [`ui_raster_revision`] as well, which is the pair the core's own
++/// `DamageTracker` compares.
+ #[no_mangle]
+ pub extern "C" fn ui_draw_hash() -> u64 {
+     draw_hash(&ui().draw().words)
+ }
+ 
++/// The core's raster revision: a counter every texture upload and free, font
++/// atlas load and style table load moves (`Ui::raster_revision`). Equal draw
++/// list words, an equal revision and the same render target are the core's
++/// condition for a frame needing no repaint (`damage::DamageTracker::prepare`);
++/// this exports the half of it the draw-list hash does not carry. Read it
++/// after `ui_draw_hash`: a walk may itself load what it draws.
++#[no_mangle]
++pub extern "C" fn ui_raster_revision() -> u64 {
++    ui().raster_revision()
++}
++
+ /// The same hash for the auxiliary surface's DrawList, so a host with a second
+ /// screen redraws it when its content changes. Returns 0 when the instance has
+ /// no auxiliary surface.
+diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
+index 5dfd45e..97f15bb 100644
+--- a/engine/core/src/tests.rs
++++ b/engine/core/src/tests.rs
+@@ -7611,3 +7611,43 @@ fn shutter_value_at_is_tick_timelines() {
+         assert_eq!(tx(&ui, n).to_bits(), expect.to_bits(), "clock {c}");
+     }
+ }
++
++/// The fact `ui_raster_revision` is exported for. An image whose texture is
++/// freed keeps its TEX_QUAD — the walk emits the handle without resolving it —
++/// so the draw list's words do not move, while the raster resolves the handle
++/// to nothing and the image is gone from the frame. A host that skips a
++/// raster on an equal draw-list hash and nothing else reuses a picture the
++/// core would no longer draw; the revision is what moves.
++#[test]
++fn freeing_a_bound_texture_moves_the_raster_revision_and_not_the_draw_list() {
++    let mut ui = Ui::new();
++    let red = [255u8, 0, 0, 255].repeat(16 * 16);
++    let tex = ui.upload_texture(&red, 16, 16, spec::psm::PSM_8888);
++    let img = ui.create_node(spec::NodeType::Image as u8);
++    ui.set_prop(img, spec::prop::WIDTH, 16.0);
++    ui.set_prop(img, spec::prop::HEIGHT, 16.0);
++    ui.insert_before(spec::ROOT_ID, img, 0);
++    ui.set_image(img, tex);
++    ui.tick();
++
++    let fb_len = spec::SCREEN_W as usize * spec::SCREEN_H as usize * 4;
++    let before = ui.draw().words.clone();
++    let revision = ui.raster_revision();
++    let mut shown = alloc::vec![0u8; fb_len];
++    crate::raster::render(&ui, &before, &mut shown);
++    assert_eq!(&shown[..4], &[255, 0, 0, 255], "the image is drawn before the free");
++
++    ui.free_texture(tex);
++    let after = ui.draw().words.clone();
++    assert_eq!(after, before, "the walk emits a freed handle unchanged");
++    assert_ne!(ui.raster_revision(), revision, "the free moves the raster revision");
++    let mut gone = alloc::vec![0u8; fb_len];
++    crate::raster::render(&ui, &after, &mut gone);
++    assert_ne!(&gone[..4], &[255, 0, 0, 255], "the raster draws nothing for a freed handle");
++
++    // Drawing again moves nothing: a walk over unchanged state is not a
++    // resource change.
++    let revision = ui.raster_revision();
++    let _ = ui.draw();
++    assert_eq!(ui.raster_revision(), revision);
++}
+diff --git a/hosts/web/wasm-ops.js b/hosts/web/wasm-ops.js
+index e96b3e4..a3afae1 100644
+--- a/hosts/web/wasm-ops.js
++++ b/hosts/web/wasm-ops.js
+@@ -284,6 +284,13 @@ export async function createWasmUi(wasm, options = {}) {
+     drawHash: ex.ui_draw_hash ? () => ex.ui_draw_hash() : null,
+     /** The same for the auxiliary surface's DrawList; null on a wasm build that predates it. */
+     drawHashAuxiliary: ex.ui_draw_hash_auxiliary ? () => ex.ui_draw_hash_auxiliary() : null,
++    /**
++     * The core's raster revision (BigInt, wasm i64): moves on every texture,
++     * font atlas or style table change. Skipping a render needs an equal
++     * drawHash() AND an equal rasterRevision(); null on a wasm build that
++     * predates the export.
++     */
++    rasterRevision: ex.ui_raster_revision ? () => ex.ui_raster_revision() : null,
+     /** Every live shell binding, including hidden/minimized surface nodes. */
+     compositorBindings() {
+       return Array.from(compositorBindings.values(), (entry) => ({ ...entry }));

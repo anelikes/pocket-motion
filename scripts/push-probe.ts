@@ -56,9 +56,9 @@ const FROM = 1.0, TO = 1.75;
 const BEZIER = [0.7, 0, 0.3, 1] as const;
 
 const MANIFEST: IngestManifest = {
-  src: "synthetic", width: W, height: H, fps: FPS, frames: FRAMES, tile: TILE,
+  src: "synthetic", width: W, height: H, fps: FPS, spans: [[0, FRAMES]], frames: FRAMES, tile: TILE,
   grid: gridOf(W, H, TILE), sha256: "0".repeat(64), bytes: W * H * 4 * FRAMES,
-  ffmpeg: "synthetic",
+  recipe: [], ffmpeg: "synthetic",
 };
 
 async function synth(name: string, px: (x: number, y: number) => number): Promise<string> {

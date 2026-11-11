@@ -41,6 +41,18 @@
  * A declared `silentTailMs` is measured on the produced file the way
  * `render` measures it (`src/sound/tail.ts`): every sample from the tail's
  * start to the end of the decode.
+ *
+ * Every window is read from ONE decode of the produced file
+ * (`decodeProducedAudio`), never by seeking into the container, because an
+ * input `-ss` is not on the same clock in every container. Measured on
+ * `compositions/sound-roles` muxed to each: a window cut with `-ss 0.75` out
+ * of the MP4 matched the full decode at 0.75 s sample for sample, and out of
+ * the Opus WebM it matched 384 samples (8.0 ms) EARLIER — the stream starts
+ * at a negative time, its pre-skip, which the full decode drops. Against a
+ * reference on the composition clock that turned a correct mix's 440 Hz
+ * narration nearly to antiphase, and the bed's level window under it read
+ * +6.0 dB against a declared −24.4, where the MP4 and MOV read within
+ * 0.02 dB of it.
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -457,6 +469,24 @@ export function sampleOffsetsInVoiced(
 }
 
 /** Channel count of the first audio stream; 0 when there is none. */
+/**
+ * The produced file's first audio stream, decoded from its start to 32-bit
+ * float PCM at its own rate and channel count — nothing resampled or
+ * remixed, so the level checks read the mix's own layout.
+ */
+async function decodeProducedAudio(path: string, wavPath: string): Promise<void> {
+  const p = Bun.spawn(
+    ["ffmpeg", "-y", "-v", "error", "-i", path, "-map", "0:a:0", "-c:a", "pcm_f32le", wavPath],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  const [err, code] = await Promise.all([new Response(p.stderr).text(), p.exited]);
+  if (code !== 0) {
+    throw new Error(
+      `PocketJS Motion: could not decode audio from ${path}${err.trim() ? `\n${err.trim()}` : ""}`,
+    );
+  }
+}
+
 export async function audioChannels(path: string): Promise<number> {
   const p = Bun.spawn(
     [
@@ -776,6 +806,8 @@ export async function verifyMix(options: {
   const out: VerifyElement[] = [];
 
   try {
+    const decoded = join(tmp, "produced.wav");
+    if (audio) await decodeProducedAudio(producedPath, decoded);
     for (const el of elements) {
       const offsetSec = mixOffsetSec(el, sidecar, fps);
       const head = {
@@ -877,8 +909,8 @@ export async function verifyMix(options: {
       const residualAt = (at: number, ref: string | null): Promise<number> =>
         ref === null
           ? // Residual against silence is the produced window itself.
-            measureRmsDb(producedPath, at)
-          : measureResidualRmsDb(producedPath, ref, at);
+            measureRmsDb(decoded, at)
+          : measureResidualRmsDb(decoded, ref, at);
 
       const residuals: number[] = [];
       for (const i of heard) residuals.push(await residualAt(offsets[i]!, refPath));

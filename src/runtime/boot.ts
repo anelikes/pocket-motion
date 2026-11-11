@@ -89,6 +89,17 @@ export interface BootedWorld {
    * `render` when no shutter is declared.
    */
   readonly renderTick: () => Uint8Array;
+  /**
+   * What the next `render()` is a function of, as the core states it: the
+   * draw list's hash and the core's raster revision. Under a declared
+   * shutter the hash is the exposure's (`ui_draw_hash_exposure`, every
+   * sample's draw list folded in order). Two frames with equal keys render
+   * to equal pixels at one scale; `src/render/reuse.ts` has why the pair and
+   * not the hash alone. Walks the tree (each sample's, under a shutter) and
+   * rasterises nothing. Throws on a core without `ui_raster_revision`
+   * (`patches/0055`).
+   */
+  readonly rasterKey: () => string;
   /** The declared shutter as the core takes it, or null. */
   readonly exposure: Exposure | null;
   /**
@@ -408,6 +419,7 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
   assertBakedTickRate(sandbox.get<unknown>("__pocketTickHz"), bundlePath, options.buildCommand);
 
   const ticksPerFrame = TICKS_PER_SECOND / hz;
+  const ex = wasm.exports as unknown as Record<string, ((...args: number[]) => bigint) | undefined>;
 
   return {
     frame: guestFrame,
@@ -416,6 +428,21 @@ export async function hardenedBootWorld(options: BootOptions): Promise<BootedWor
       ? () => wasm.renderExposure(renderScale, exposure.spanNum, exposure.spanDen, exposure.samples)
       : () => wasm.renderScaled(renderScale),
     renderTick: () => wasm.renderScaled(renderScale),
+    rasterKey: () => {
+      const revision = ex.ui_raster_revision;
+      if (typeof revision !== "function") {
+        throw new Error(
+          `PocketJS Motion: ${wasmPath} has no ui_raster_revision (patches/0055-raster-revision-export.patch), ` +
+            "so whether a frame needs a raster cannot be asked of it. Rebuild the core:\n  bun scripts/vendor.ts",
+        );
+      }
+      // The hash first: the walk it runs is the one that could load what it
+      // draws, and the revision is read after that has happened.
+      const draw = exposure
+        ? ex.ui_draw_hash_exposure!(exposure.spanNum, exposure.spanDen, exposure.samples)
+        : ex.ui_draw_hash!();
+      return `${draw}:${revision()}`;
+    },
     exposure,
     exposureScratch: () => (exposure ? wasm.exposureScratch() : { ptr: 0, len: 0 }),
     ticksPerFrame: TICKS_PER_SECOND / hz,

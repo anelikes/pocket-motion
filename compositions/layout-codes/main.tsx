@@ -1,6 +1,6 @@
 // @title PocketJS Motion — one node per layout finding code
 //
-// `src/render/findings.ts` names seven codes. This composition puts each one on
+// `src/render/findings.ts` names eight codes. This composition puts each one on
 // a node of its own, named, in a region of its own, so a change to a predicate
 // has something to be red against — and so the codes can be read next to the
 // pictures that produce them rather than only in prose.
@@ -35,6 +35,11 @@
 //                                    both are true: the box leaves the strip
 //                                    and the ink stops at its edge. A node in
 //                                    two states is not a defect in the report.
+//   clamped     text_truncated       a run wrapped to its 600 px box and
+//                                    clamped to one line (`line-clamp-1`,
+//                                    patches/0059). What the clamp left out
+//                                    draws no pixel, so this one is read from
+//                                    the core's record, not from ink.
 //   wing        escaped_container    the same shape as `escapee`, excused in
 //               (excused)            `pocket-motion.json` with a written
 //                                    reason. It is in the JSON with an
@@ -107,6 +112,13 @@ mount(() => (
         class="absolute left-[-40px] top-[30px] w-[380px] h-[60px] bg-emerald-600"
       />
     </View>
+
+    <Text
+      debugName="clamped"
+      class="absolute left-[1200px] top-[60px] w-[600px] text-[36px] text-wrap line-clamp-1 text-slate-50"
+    >
+      {"a clamp keeps one line of this run and leaves the rest of it out"}
+    </Text>
 
     <View
       debugName="offscreen"

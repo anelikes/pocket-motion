@@ -17,10 +17,11 @@ import { buildSpawn, resolveComposition } from "../src/cli/resolve.ts";
 import { pocketjsRoot } from "../src/runtime/boot.ts";
 import { openMeasurer } from "../src/text/measure.ts";
 import { pocketNexusCacheDir } from "../src/vendor/cache.ts";
+import { scratchDir } from "./scratch.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const SMOKE_DIR = join(ROOT, "compositions", "smoke");
-const TMP = "/tmp/pocketjs-motion-transform-cache-test";
+const TMP = scratchDir("transform-cache");
 
 /** Run `body` with HOME under a regular file (no directory can be created
  *  there) and no XDG_CACHE_HOME, restoring both after. */

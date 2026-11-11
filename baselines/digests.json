@@ -50,6 +50,10 @@
       "frames": 342,
       "digest": "40ae1820615583beaaee3febc2b269e9b4bc312265cc75832cdaad20db02d283"
     },
+    "compositions/data-chart": {
+      "frames": 120,
+      "digest": "c4015fc6620c4cfc4d9e7be4152eb5584a5a174e4554476064d11577498cb6b7"
+    },
     "compositions/faces": {
       "frames": 1,
       "digest": "9e43b28b9fed9cdc1b10f36f9120d4a12a0a52f80063e04b6bc3e23ab3be67eb"
@@ -110,6 +114,10 @@
       "frames": 90,
       "digest": "fefd5493b8dd398734ffaf9b10a57bbb608b4f239c7519e3d4320504b54f0f04"
     },
+    "compositions/path-primitives": {
+      "frames": 150,
+      "digest": "af7442ebde0c2fa248b1f1fc5d96ab199867a2cf969500a01834163598972ad9"
+    },
     "compositions/probe": {
       "frames": 2,
       "digest": "e400e20b2d067063bf315dc38ee2032885139dbbb3ce2657354163d15f426ac6"
@@ -141,6 +149,14 @@
     "compositions/stroke": {
       "frames": 45,
       "digest": "847ac2adc862dab231e48cc342ae856125d581b1e2fe7b9fc76c2d8dd614712e"
+    },
+    "compositions/svg-import": {
+      "frames": 150,
+      "digest": "9f02354347bc2812f9471779ac63f3fd12512c0a36448c00c0e3e3a07f35c2bf"
+    },
+    "compositions/text-fit": {
+      "frames": 30,
+      "digest": "3b5e096c4a87152dfaab1dc9f4fe6ebffd5bb3eeb63574ed9feed9147ed01f53"
     },
     "compositions/textcmp-cjk": {
       "frames": 1,

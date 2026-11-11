@@ -10,10 +10,30 @@ to declare; every digest recorded before this reproduces unchanged.
 
 ### Added
 
-- **`src/api.ts`**: `build`, `trace`, `render`, `verify` and `doctor` as
-  functions, each returning the object its command prints with `--json` —
-  the same dispatch, the same redaction, the same `runId`.
+- **Text fitted, wrapped and clamped by layout** (`patches/0059`):
+  `text-fit-[min..max]` / `text-fit-[a,b,...]` (a ladder of baked sizes; the
+  run takes the largest whose block holds the box layout gave it),
+  `text-wrap` (breaks at spaces and U+200B) and `line-clamp-N` (the last kept
+  line ends in `…`). `layout --json` reports each fitted run's rung as `fit`;
+  a clamp that left text out, or a ladder that bottomed out, is the eighth
+  finding code, `text_truncated`, and `assertions[]` takes
+  `untruncated: true`. A ladder costs an atlas per rung. Fixture
+  `compositions/text-fit`; no recorded digest moved.
+- **`render --spec` reads a job's characters against its faces first**: a
+  character either weight does not map refuses the job before it is staged,
+  with `missingGlyphs[]` naming field, character and weight; the MCP
+  `render` tool returns the same object.
+- **`src/api.ts`**: `build`, `trace`, `render`, `verify`, `assert`, `layout`
+  and `doctor` as functions, each returning the object its command prints
+  with `--json` — the same dispatch, the same redaction, the same `runId`.
   `tests/api.test.ts` holds each equal to the CLI run as a process.
+  `render` and `trace` also take an `AbortSignal` and a per-frame progress
+  callback; a cancelled call resolves with `cancelled: true`.
+- **`pocket-motion mcp`**: `verify`, `assert`, `layout`, `render`, `trace`
+  and `doctor` as Model Context Protocol tools on stdio, each returning its
+  API function's object. `render` and `trace` report progress per frame and
+  stop at the next one when cancelled; tools that rasterise take turns.
+  `tests/mcp.test.ts` drives it as a client does.
 - **An npm package**, `pocket-motion`, Bun-only, staged by
   `scripts/pack.ts` and not yet published: the CLI as the `pocket-motion`
   bin, the API as the package's export, and the patched compiler,
@@ -29,15 +49,51 @@ to declare; every digest recorded before this reproduces unchanged.
 
 ### Changed
 
+- `render` encodes a container to a hidden file beside `--out` and renames
+  it into place once ffmpeg has finished. A render that fails or is
+  cancelled no longer leaves a truncated file under the delivery's name, and
+  an earlier delivery at `--out` survives it. Frame hashes are taken before
+  the encode leg, so no digest moved.
 - `render --json` carries `identity`, the value `trace` reports, beside
-  `digest`. A `--spec` job carries none.
-- `build.json` records a composition's paths relative to the composition's
-  own repository as well as this one, so a project that installed the
-  package writes a record that does not say where it sits. Every record in
-  this repository is byte-identical to before.
+  `digest`, for a `--spec` job as for a composition: one spec rendered
+  twice reports one identity.
+- **Where a build ran is not an input.** A bundle names its modules by
+  what they are — `framework/src/index.ts`, `./app.tsx` — rather than by
+  their path from the build's cwd (`patches/0051`); `build.json` writes
+  the entry relative to the composition and `--outdir` as `.`; the wasm
+  reaches pocketjs-core inside its own workspace root (`patches/0052`) and
+  remaps cargo's home, so it carries no absolute path. One composition
+  built from the checkout, a random staging directory or a symlinked
+  project, or against the installed package, is one bundle, one pak and
+  one identity. Every bundle's bytes changed, in its module-name lines
+  and nothing else, and so did every `build.json`; every frame digest
+  recorded before reproduces unchanged.
 - `doctor` in an installed package checks the prebuilt tree against
   `vendor/prebuilt.json` and loads the compiler; `rustup` and `assets` say
   they do not apply there.
+
+### Fixed
+
+- **A composition with `sound` rendered to `webm` or `mov` is that
+  container.** The mux wrote an MP4 under the requested name — VP9 and AAC
+  with the alpha gone, in a `.webm` — and failed on every `.mov`. WebM now
+  carries Opus at 48 kHz, MOV 24-bit PCM at 48 kHz and MP4 AAC as before,
+  each with the video stream and its alpha copied.
+- **Every encoded file is BT.709, converted and tagged.** The RGB → YUV
+  conversion used swscale's default BT.601 matrix and the file named none,
+  so a player taking BT.709 for HD showed saturated colours up to 40 levels
+  off. No recorded digest moved: frames are hashed before the encode.
+- **The audio stream is as long as the picture.** A mix whose last element
+  ended early ended the audio there; every mix is now padded with silence
+  to the film.
+- `*.sound.json` is named after the whole delivered file
+  (`hero.mp4.sound.json`, where it was `hero.sound.json`), so `hero.mp4`
+  and `hero.webm` keep a record each. `render --json` prints the path.
+- `sound --verify` reads its windows from one decode of the delivery, so a
+  correct Opus WebM is not read 8 ms early and failed.
+- ffmpeg is told the container with `-f`, so `--format mov --out cut`
+  renders, and `-fflags +bitexact` now reaches the muxer instead of the
+  input, so a delivery carries no muxer version.
 
 ## v0.5.0 — 2026-09-26
 
