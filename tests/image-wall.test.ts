@@ -1,5 +1,5 @@
 /**
- * `image-filter-trilinear` (patches/0058), from the class literal to the
+ * `image-filter-trilinear` (patches/0064), from the class literal to the
  * picture.
  *
  * The reduction, the footprint, the level pick, the blend and the op a

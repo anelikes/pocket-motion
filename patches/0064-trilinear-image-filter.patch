@@ -1,6 +1,6 @@
 pocket-motion-only: TEX_QUAD_MIP and TEX_TRI_MIP are drawn by this software rasteriser alone, and every upstream backend parses the draw list by a closed op set; the PSP GE samples one bound texture with its own mip registers and a no_std EBOOT has no room for a second copy of every texture a third its size, the ESP32 and Symbian RGB565 hosts draw images at their own size, and a GPU backend asks its driver for a mip chain rather than reading one the core reduced.
 
-0058 — `image-filter-trilinear`: an image drawn below its size reads a mip
+0064 — `image-filter-trilinear`: an image drawn below its size reads a mip
 chain the core reduced from its bytes, two levels picked by the drawn
 footprint, each bilinear, blended. Nearest reads a few texels of the dozens
 under a pixel and bilinear four, so an image drawn at 15% of its size lands
@@ -44,10 +44,10 @@ What the patch adds, by file:
 - `engine/core/src/style.rs`, `contracts/spec/spec.ts` and the generated
   `spec.rs`, microts `spec.rs` and `component-types-microts.ts`: PROP
   `imageFilter` (221, enum ImageFilter { Texture, Trilinear }), DRAW_OP
-  `texQuadMip` 72 and `texTriMip` 73. 221 because an open branch's colour
-  filters and pixel origins hold 212-220, after the vector-path props'
-  211; 72 is the next op after 0042's PATH. Numbered 0058 because open
-  branches hold 0051-0057.
+  `texQuadMip` 72 and `texTriMip` 73. 221 because #24's colour filters and
+  pixel origins hold 212-220, after the vector-path props' 211; 72 is the
+  next op after 0042's PATH. Numbered 0064, after #27's 0063, in the merge
+  train that carries 0045-0046, 0051-0055 and 0059; refreshed onto them.
 - `framework/compiler/tailwind.ts`: `image-filter-texture` (the default) and
   `image-filter-trilinear`; `tests/tailwind.test.ts` holds both and refuses
   any other filter word.
@@ -86,10 +86,10 @@ reduced for every trilinear draw
 
 `git apply` skips everything above the first `diff --git`.
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index 38e53662..3d523002 100644
+index feb77b49..dae96c5f 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
-@@ -509,6 +509,14 @@ export const PROP = {
+@@ -532,6 +532,14 @@ export const PROP = {
    trimOffset: 209, //      f32, wraps (1 = once round)
    trimMode: 210, //        enum TrimMode
    morph: 211, //           f32 morph key, 0..keys-1
@@ -104,15 +104,15 @@ index 38e53662..3d523002 100644
  } as const;
  
  export type PropName = keyof typeof PROP;
-@@ -692,6 +700,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
-   strokeJoin: VALUE_KIND.int, strokeCap: VALUE_KIND.int, strokeMiter: VALUE_KIND.f32,
-   trimStart: VALUE_KIND.f32, trimEnd: VALUE_KIND.f32, trimOffset: VALUE_KIND.f32,
+@@ -721,6 +729,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
    trimMode: VALUE_KIND.int, morph: VALUE_KIND.f32,
+   dashCount: VALUE_KIND.int, dash0: VALUE_KIND.f32, dash1: VALUE_KIND.f32,
+   dash2: VALUE_KIND.f32, dash3: VALUE_KIND.f32, dashOffset: VALUE_KIND.f32,
 +  imageFilter: VALUE_KIND.int,
  };
  
  // ---------------------------------------------------------------------------
-@@ -734,6 +743,9 @@ export const ENUMS = {
+@@ -763,6 +772,9 @@ export const ENUMS = {
    StrokeJoin: { Miter: 0, Round: 1, Bevel: 2 },
    StrokeCap: { Butt: 0, Round: 1, Square: 2 },
    TrimMode: { Each: 0, Whole: 1 },
@@ -122,7 +122,7 @@ index 38e53662..3d523002 100644
    /**
     * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
     * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
-@@ -1887,6 +1899,22 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+@@ -1921,6 +1933,22 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
  //                           with X >= x), so two paths sharing an edge
  //                           partition its samples. The pixel blends at
  //                           `a * hits / 16`. Software rasteriser only.
@@ -145,7 +145,7 @@ index 38e53662..3d523002 100644
  //   TEXT_RUN    (8 + ceil(n/4) words):
  //                           op,
  //                           word1: bits 0-7 fontSlot,
-@@ -1945,6 +1973,8 @@ export const DRAW_OP = {
+@@ -1979,6 +2007,8 @@ export const DRAW_OP = {
    paintPush: 69,
    paintPop: 70,
    path: 71,
@@ -211,7 +211,7 @@ index 219f0adf..acce93a1 100644
              // A mask draws nothing itself; its bbox is a sound bound for the
              // span it shapes, and the ops inside carry their own.
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 4713d470..8588d31a 100644
+index 1e9e3f28..70c064bf 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
 @@ -212,7 +212,7 @@ enum Item3 {
@@ -402,7 +402,7 @@ index 4713d470..8588d31a 100644
      }
  
      /// Emit a native-compositor surface instruction. Unlike TEX_QUAD, full
-@@ -3393,7 +3467,7 @@ impl<'a> Walker<'a> {
+@@ -3403,7 +3477,7 @@ impl<'a> Walker<'a> {
                  let uv = page.uv(g.gid);
                  let glyph_world = world.then(&Affine::translate(g.x, g.y));
                  let before = dl.words.len();
@@ -411,7 +411,7 @@ index 4713d470..8588d31a 100644
                  if dl.words.len() > before { *dl.words.last_mut().unwrap() = color; }
              }
              if painted {
-@@ -3806,6 +3880,7 @@ fn emit_tex_tri(
+@@ -3817,6 +3891,7 @@ fn emit_tex_tri(
      v2: &ClipVert,
      clip: &Clip,
      screen: (f32, f32),
@@ -419,7 +419,7 @@ index 4713d470..8588d31a 100644
  ) {
      let px = |v: &ClipVert| {
          (
-@@ -3820,7 +3895,7 @@ fn emit_tex_tri(
+@@ -3831,7 +3906,7 @@ fn emit_tex_tri(
      if area2 == 0.0 {
          return;
      }
@@ -428,7 +428,7 @@ index 4713d470..8588d31a 100644
      dl.words.push(tex);
      for (xy, vert) in [((x0, y0), v0), ((x1, y1), v1), ((x2, y2), v2)] {
          dl.words.push(xy_word(xy.0, xy.1));
-@@ -3828,6 +3903,9 @@ fn emit_tex_tri(
+@@ -3839,6 +3914,9 @@ fn emit_tex_tri(
          dl.words.push(vert.v.to_bits());
      }
      dl.words.push(modulate);
@@ -439,7 +439,7 @@ index 4713d470..8588d31a 100644
  
  /// Stack capacity for a clipped polygon: a convex quad gains at most one
 diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
-index 8739a75b..5530bd85 100644
+index 2960a9ce..85355358 100644
 --- a/engine/core/src/lib.rs
 +++ b/engine/core/src/lib.rs
 @@ -51,6 +51,7 @@ pub mod damage;
@@ -450,7 +450,7 @@ index 8739a75b..5530bd85 100644
  pub mod package;
  pub mod pak;
  pub mod path;
-@@ -112,6 +113,9 @@ pub struct Texture {
+@@ -113,6 +114,9 @@ pub struct Texture {
      /// GPU backends refresh one still-live binding without retransferring
      /// every other texture.
      revision: u64,
@@ -460,7 +460,7 @@ index 8739a75b..5530bd85 100644
  }
  
  impl Texture {
-@@ -129,6 +133,24 @@ impl Texture {
+@@ -130,6 +134,24 @@ impl Texture {
          })
      }
  
@@ -485,7 +485,7 @@ index 8739a75b..5530bd85 100644
      fn view(&self) -> TexView<'_> {
          TexView {
              pixels: self.pixels(),
-@@ -1053,6 +1075,7 @@ impl Ui {
+@@ -1061,6 +1083,7 @@ impl Ui {
              palette,
              linear: flags & spec::img::FLAG_LINEAR != 0,
              revision: 0,
@@ -493,7 +493,7 @@ index 8739a75b..5530bd85 100644
          };
          let handle = tex_alloc(&mut self.textures, &mut self.tex_free, tex);
          if handle >= 0 {
-@@ -1143,6 +1166,9 @@ impl Ui {
+@@ -1151,6 +1174,9 @@ impl Ui {
              );
          }
          tex.revision = tex.revision.wrapping_add(1);
@@ -503,7 +503,7 @@ index 8739a75b..5530bd85 100644
          self.bump_raster_revision();
          true
      }
-@@ -1269,10 +1295,12 @@ impl Ui {
+@@ -1277,10 +1303,12 @@ impl Ui {
                      3 + 2 * ((*meta >> 16) as usize)
                  }
                  x if x == spec::draw_op::TEX_QUAD => 9,
@@ -516,7 +516,7 @@ index 8739a75b..5530bd85 100644
                  x if x == spec::draw_op::TEXT_RUN => {
                      let Some(bytes) = words.get(i + 7) else { break };
                      8 + (*bytes as usize).div_ceil(4)
-@@ -2400,6 +2428,19 @@ impl Ui {
+@@ -2455,6 +2483,19 @@ impl Ui {
          self.textures[slot as usize].tex.as_ref().map(Texture::view)
      }
  
@@ -1405,10 +1405,10 @@ index ebd8545b..7d617daf 100644
          Ui::font_atlas(self, slot).map(|atlas| FontView {
              bitmap: &atlas.bitmap,
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 7f240725..04badad6 100644
+index a729eb00..753d5935 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
-@@ -227,6 +227,7 @@ pub mod prop {
+@@ -239,6 +239,7 @@ pub mod prop {
      pub const TRIM_OFFSET: u8 = 209;
      pub const TRIM_MODE: u8 = 210;
      pub const MORPH: u8 = 211;
@@ -1416,16 +1416,16 @@ index 7f240725..04badad6 100644
  }
  
  /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
-@@ -251,7 +252,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+@@ -263,7 +264,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
      0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
-     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
-     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
+     0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
+     0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
 -    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 +    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
  ];
-@@ -469,6 +470,14 @@ pub enum TrimMode {
+@@ -481,6 +482,14 @@ pub enum TrimMode {
      Whole = 1,
  }
  
@@ -1440,7 +1440,7 @@ index 7f240725..04badad6 100644
  /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
  #[repr(u8)]
  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-@@ -616,6 +625,8 @@ pub mod draw_op {
+@@ -628,6 +637,8 @@ pub mod draw_op {
      pub const PAINT_PUSH: u32 = 69;
      pub const PAINT_POP: u32 = 70;
      pub const PATH: u32 = 71;
@@ -1450,10 +1450,10 @@ index 7f240725..04badad6 100644
      pub const MASK_MAX_VERTS: usize = 256;
      pub const STROKE_MAX_WIDTH: f32 = 64.0;
 diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
-index e4c2bd04..c29036a5 100644
+index c490f529..396cb789 100644
 --- a/engine/core/src/style.rs
 +++ b/engine/core/src/style.rs
-@@ -331,6 +331,8 @@ pub struct Resolved {
+@@ -339,6 +339,8 @@ pub struct Resolved {
      pub arc_width: f32,
      /// spec::ArcCap ordinal.
      pub arc_cap: u8,
@@ -1462,7 +1462,7 @@ index e4c2bd04..c29036a5 100644
      /// Horizontal shear in degrees about the transform origin, composed
      /// between rotate and scale (spec.ts PROP.skewX).
      pub skew_x: f32,
-@@ -447,6 +449,7 @@ impl Default for Resolved {
+@@ -464,6 +466,7 @@ impl Default for Resolved {
              arc_sweep: 0.0,
              arc_width: 0.0,
              arc_cap: spec::ArcCap::Round as u8,
@@ -1470,7 +1470,7 @@ index e4c2bd04..c29036a5 100644
              skew_x: 0.0,
              text_stroke_width: 0.0,
              text_stroke_color: 0,
-@@ -575,6 +578,7 @@ impl Resolved {
+@@ -599,6 +602,7 @@ impl Resolved {
              p::ARC_SWEEP => self.arc_sweep = f,
              p::ARC_WIDTH => self.arc_width = f,
              p::ARC_CAP => self.arc_cap = bits as u8,
@@ -1478,7 +1478,7 @@ index e4c2bd04..c29036a5 100644
              p::SKEW_X => self.skew_x = f,
              p::TEXT_STROKE_WIDTH => self.text_stroke_width = f,
              p::TEXT_STROKE_COLOR => self.text_stroke_color = bits,
-@@ -693,6 +697,7 @@ impl Resolved {
+@@ -727,6 +731,7 @@ impl Resolved {
              p::ARC_SWEEP => self.arc_sweep.to_bits(),
              p::ARC_WIDTH => self.arc_width.to_bits(),
              p::ARC_CAP => self.arc_cap as u32,
@@ -1487,7 +1487,7 @@ index e4c2bd04..c29036a5 100644
              p::TEXT_STROKE_WIDTH => self.text_stroke_width.to_bits(),
              p::TEXT_STROKE_COLOR => self.text_stroke_color,
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 5dfd45e4..2b667bff 100644
+index 97f15bbe..b444c900 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
 @@ -252,7 +252,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
@@ -1540,9 +1540,9 @@ index 5dfd45e4..2b667bff 100644
              spec::draw_op::PATH => {
                  // 1/256 px coordinates, clipped to the viewport grown by the
                  // 4 px guard band (exempt from the i16 guarantee, bounded).
-@@ -7611,3 +7629,149 @@ fn shutter_value_at_is_tick_timelines() {
-         assert_eq!(tx(&ui, n).to_bits(), expect.to_bits(), "clock {c}");
-     }
+@@ -7651,3 +7669,149 @@ fn freeing_a_bound_texture_moves_the_raster_revision_and_not_the_draw_list() {
+     let _ = ui.draw();
+     assert_eq!(ui.raster_revision(), revision);
  }
 +
 +// ---- image-filter-trilinear (pocket-motion, mip.rs) ---------------------------------
@@ -1691,10 +1691,10 @@ index 5dfd45e4..2b667bff 100644
 +    assert_eq!(sample_rgba(&fb, 18, 18), [200, 10, 40, 255]);
 +}
 diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
-index a88b1a84..c4e2dacc 100644
+index 761a55c1..e21d4e97 100644
 --- a/engine/crates/microts/src/spec.rs
 +++ b/engine/crates/microts/src/spec.rs
-@@ -119,6 +119,7 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
+@@ -129,6 +129,7 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
      ("trimOffset", 209, "f32"),
      ("trimMode", 210, "i32"),
      ("morph", 211, "f32"),
@@ -1703,7 +1703,7 @@ index a88b1a84..c4e2dacc 100644
  pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
      ("View", &["class", "style", "focusable", "debug-name"]),
 diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
-index a35e0ead..e37ec012 100644
+index 2d4cf324..d463aacd 100644
 --- a/engine/wasm/src/lib.rs
 +++ b/engine/wasm/src/lib.rs
 @@ -117,6 +117,7 @@ impl pocketjs_core::resources::RenderResources for AuxiliaryResources<'_> {
@@ -1715,10 +1715,10 @@ index a35e0ead..e37ec012 100644
          pocketjs_core::resources::RenderResources::font_atlas(self.0, slot)
      }
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index f545e06a..7498e023 100644
+index 9d743ab4..079aa0de 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -464,6 +464,14 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+@@ -559,6 +559,14 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
        return true;
      }
    }
@@ -1734,10 +1734,10 @@ index f545e06a..7498e023 100644
    if (tok === "arc-cap-round" || tok === "arc-cap-butt") {
      D.push([PROP.arcCap, int(tok === "arc-cap-butt" ? ENUMS.ArcCap.Butt : ENUMS.ArcCap.Round)]);
 diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
-index c217cca3..bbee47b2 100644
+index 13be2acf..4cdb8f2d 100644
 --- a/framework/src/component-types-microts.ts
 +++ b/framework/src/component-types-microts.ts
-@@ -114,6 +114,7 @@ export interface MicroTsStyleProps {
+@@ -124,6 +124,7 @@ export interface MicroTsStyleProps {
    trimOffset?: MicroTsFloatInput;
    trimMode?: i32;
    morph?: MicroTsFloatInput;

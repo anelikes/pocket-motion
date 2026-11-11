@@ -1,7 +1,7 @@
 # An image wall pushed in — trilinear against nearest and bilinear, 2026-11-05
 
 Apple M4, Bun 1.3.11, the wasm rasteriser `scripts/vendor.ts` builds
-(patches 0001–0050 and 0058). Subject: `compositions/image-wall`, sixty 300×420
+(patches 0001–0050 and this one, now `0064`). Subject: `compositions/image-wall`, sixty 300×420
 synthetic covers drawn at 45×63 — 15% — in a 12×5 wall on a 1280×720 canvas,
 pushed in from 1× to 1.75× over 300 frames at 30 fps, linear. A cover is
 6.67 texels a pixel at the first frame and 3.81 at the last, so the push
