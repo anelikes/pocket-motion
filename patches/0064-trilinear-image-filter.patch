@@ -47,7 +47,8 @@ What the patch adds, by file:
   `texQuadMip` 72 and `texTriMip` 73. 221 because #24's colour filters and
   pixel origins hold 212-220, after the vector-path props' 211; 72 is the
   next op after 0042's PATH. Numbered 0064, after #27's 0063, in the merge
-  train that carries 0045-0046, 0051-0055 and 0059; refreshed onto them.
+  train that carries 0045-0046, 0051-0055, 0059 and 0063; refreshed onto
+  them.
 - `framework/compiler/tailwind.ts`: `image-filter-texture` (the default) and
   `image-filter-trilinear`; `tests/tailwind.test.ts` holds both and refuses
   any other filter word.
@@ -86,7 +87,7 @@ reduced for every trilinear draw
 
 `git apply` skips everything above the first `diff --git`.
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index feb77b49..dae96c5f 100644
+index b9845ee8..36246d82 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
 @@ -532,6 +532,14 @@ export const PROP = {
@@ -122,7 +123,7 @@ index feb77b49..dae96c5f 100644
    /**
     * Animation easing. Spring/SpringBouncy ignore durMs (physics decide);
     * OutBack overshoots ~10%. All tick at fixed dt = 1/60 s.
-@@ -1921,6 +1933,22 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+@@ -1996,6 +2008,22 @@ export const FONT_VECTOR_LAYER_GRADIENT = 0x4000_0000;
  //                           with X >= x), so two paths sharing an edge
  //                           partition its samples. The pixel blends at
  //                           `a * hits / 16`. Software rasteriser only.
@@ -145,7 +146,7 @@ index feb77b49..dae96c5f 100644
  //   TEXT_RUN    (8 + ceil(n/4) words):
  //                           op,
  //                           word1: bits 0-7 fontSlot,
-@@ -1979,6 +2007,8 @@ export const DRAW_OP = {
+@@ -2054,6 +2082,8 @@ export const DRAW_OP = {
    paintPush: 69,
    paintPop: 70,
    path: 71,
@@ -153,7 +154,7 @@ index feb77b49..dae96c5f 100644
 +  texTriMip: 73,
  } as const;
  
- /** Most colour stops one gradient paint carries: from, four vias, to. */
+ /** Most colour stops one PAINT_PUSH carries. A class literal's gradient holds
 diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
 index 667dae5d..ce488754 100644
 --- a/engine/core/src/compositor.rs
@@ -211,7 +212,7 @@ index 219f0adf..acce93a1 100644
              // A mask draws nothing itself; its bbox is a sound bound for the
              // span it shapes, and the ops inside carry their own.
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 1e9e3f28..70c064bf 100644
+index 460dac64..7283ccba 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
 @@ -212,7 +212,7 @@ enum Item3 {
@@ -240,7 +241,7 @@ index 1e9e3f28..70c064bf 100644
          },
      );
      if handle < 0 {
-@@ -1211,6 +1212,7 @@ pub fn build_root(
+@@ -1246,6 +1247,7 @@ pub fn build_root(
              0.0,
              1.0,
              1.0,
@@ -248,7 +249,7 @@ index 1e9e3f28..70c064bf 100644
          );
      }
      (target, drawn, provider_stale)
-@@ -1568,7 +1570,22 @@ impl<'a> Walker<'a> {
+@@ -1603,7 +1605,22 @@ impl<'a> Walker<'a> {
              } else {
                  (node.uv[0], node.uv[1], node.uv[2], node.uv[3])
              };
@@ -272,7 +273,7 @@ index 1e9e3f28..70c064bf 100644
          }
  
          // -- installed application surface -----------------------------------
-@@ -1673,13 +1690,38 @@ impl<'a> Walker<'a> {
+@@ -1708,13 +1725,38 @@ impl<'a> Walker<'a> {
                      let poly = pts.map(|(x, y)| ClipVert { x, y, color: unpack(color), u: 0.0, v: 0.0 });
                      clip_poly(&poly, clip, |verts| emit_poly(dl, verts, color, clip, self.screen));
                  }
@@ -313,7 +314,7 @@ index 1e9e3f28..70c064bf 100644
                      }
                  }
                  Item3::Run { slot, origin, opacity } => {
-@@ -1881,6 +1923,7 @@ impl<'a> Walker<'a> {
+@@ -1916,6 +1958,7 @@ impl<'a> Walker<'a> {
                      cell_end,
                      tex: node.tex as u32,
                      modulate,
@@ -321,7 +322,7 @@ index 1e9e3f28..70c064bf 100644
                  },
              ));
          }
-@@ -2602,7 +2645,7 @@ impl<'a> Walker<'a> {
+@@ -2637,7 +2680,7 @@ impl<'a> Walker<'a> {
          }
          let handle = crate::tex_alloc(self.textures, self.tex_free, crate::Texture {
              data, byte_len: (tw * th * 4) as usize, w: tw, h: th,
@@ -330,7 +331,7 @@ index 1e9e3f28..70c064bf 100644
          });
          if handle < 0 { return None; }
          self.paint_cache.borders.push((key, handle));
-@@ -2669,7 +2712,7 @@ impl<'a> Walker<'a> {
+@@ -2704,7 +2747,7 @@ impl<'a> Walker<'a> {
                      self.emit_tex_quad(dl, &world.then(&Affine::translate(x0, y0)), local_w, local_h,
                          texture, 1.0, clip, 0.0, 0.0,
                          local_w * self.raster_density as f32 / tw as f32,
@@ -339,7 +340,7 @@ index 1e9e3f28..70c064bf 100644
                      if dl.words.len() > before { *dl.words.last_mut().unwrap() = color; }
                      return;
                  }
-@@ -3134,6 +3177,7 @@ impl<'a> Walker<'a> {
+@@ -3169,6 +3212,7 @@ impl<'a> Walker<'a> {
          fv0: f32,
          fu1: f32,
          fv1: f32,
@@ -347,7 +348,7 @@ index 1e9e3f28..70c064bf 100644
      ) {
          if !world.is_axis_aligned() {
              // Rotated image: transform corners with their UVs, clip, fan into
-@@ -3150,7 +3194,7 @@ impl<'a> Walker<'a> {
+@@ -3185,7 +3229,7 @@ impl<'a> Walker<'a> {
                  ClipVert { x: sx, y: sy, color: [255.0; 4], u, v }
              });
              let modulate = scale_alpha(0xffff_ffff, op);
@@ -356,7 +357,7 @@ index 1e9e3f28..70c064bf 100644
              return;
          }
          let (sx0, sy0) = world.apply(0.0, 0.0);
-@@ -3175,7 +3219,7 @@ impl<'a> Walker<'a> {
+@@ -3210,7 +3254,7 @@ impl<'a> Walker<'a> {
          let u1 = fu0 + (c.x1 - sx0) / (sx1 - sx0) * du;
          let v0 = fv0 + (c.y0 - sy0) / (sy1 - sy0) * dv;
          let v1 = fv0 + (c.y1 - sy0) / (sy1 - sy0) * dv;
@@ -365,7 +366,7 @@ index 1e9e3f28..70c064bf 100644
          dl.words.push(tex);
          dl.words.push(xy_word(c.x0, c.y0));
          dl.words.push(wh_word(c.x1 - c.x0, c.y1 - c.y0));
-@@ -3184,6 +3228,36 @@ impl<'a> Walker<'a> {
+@@ -3219,6 +3263,36 @@ impl<'a> Walker<'a> {
          dl.words.push(u1.to_bits());
          dl.words.push(v1.to_bits());
          dl.words.push(scale_alpha(0xffff_ffff, op));
@@ -402,7 +403,7 @@ index 1e9e3f28..70c064bf 100644
      }
  
      /// Emit a native-compositor surface instruction. Unlike TEX_QUAD, full
-@@ -3403,7 +3477,7 @@ impl<'a> Walker<'a> {
+@@ -3452,7 +3526,7 @@ impl<'a> Walker<'a> {
                  let uv = page.uv(g.gid);
                  let glyph_world = world.then(&Affine::translate(g.x, g.y));
                  let before = dl.words.len();
@@ -410,8 +411,8 @@ index 1e9e3f28..70c064bf 100644
 +                self.emit_tex_quad(dl, &glyph_world, cell_w, cell_h, texture, 1.0, glyph_clip, uv[0], uv[1], uv[2], uv[3], None);
                  if dl.words.len() > before { *dl.words.last_mut().unwrap() = color; }
              }
-             if painted {
-@@ -3817,6 +3891,7 @@ fn emit_tex_tri(
+             if let Some(face) = colour {
+@@ -4056,6 +4130,7 @@ fn emit_tex_tri(
      v2: &ClipVert,
      clip: &Clip,
      screen: (f32, f32),
@@ -419,7 +420,7 @@ index 1e9e3f28..70c064bf 100644
  ) {
      let px = |v: &ClipVert| {
          (
-@@ -3831,7 +3906,7 @@ fn emit_tex_tri(
+@@ -4070,7 +4145,7 @@ fn emit_tex_tri(
      if area2 == 0.0 {
          return;
      }
@@ -428,7 +429,7 @@ index 1e9e3f28..70c064bf 100644
      dl.words.push(tex);
      for (xy, vert) in [((x0, y0), v0), ((x1, y1), v1), ((x2, y2), v2)] {
          dl.words.push(xy_word(xy.0, xy.1));
-@@ -3839,6 +3914,9 @@ fn emit_tex_tri(
+@@ -4078,6 +4153,9 @@ fn emit_tex_tri(
          dl.words.push(vert.v.to_bits());
      }
      dl.words.push(modulate);
@@ -439,7 +440,7 @@ index 1e9e3f28..70c064bf 100644
  
  /// Stack capacity for a clipped polygon: a convex quad gains at most one
 diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
-index 2960a9ce..85355358 100644
+index ef6cb192..5308dce9 100644
 --- a/engine/core/src/lib.rs
 +++ b/engine/core/src/lib.rs
 @@ -51,6 +51,7 @@ pub mod damage;
@@ -516,7 +517,7 @@ index 2960a9ce..85355358 100644
                  x if x == spec::draw_op::TEXT_RUN => {
                      let Some(bytes) = words.get(i + 7) else { break };
                      8 + (*bytes as usize).div_ceil(4)
-@@ -2455,6 +2483,19 @@ impl Ui {
+@@ -2462,6 +2490,19 @@ impl Ui {
          self.textures[slot as usize].tex.as_ref().map(Texture::view)
      }
  
@@ -1405,7 +1406,7 @@ index ebd8545b..7d617daf 100644
          Ui::font_atlas(self, slot).map(|atlas| FontView {
              bitmap: &atlas.bitmap,
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index a729eb00..753d5935 100644
+index 77378595..b9a76976 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
 @@ -239,6 +239,7 @@ pub mod prop {
@@ -1440,7 +1441,7 @@ index a729eb00..753d5935 100644
  /// animation easing. Spring/SpringBouncy ignore durMs (physics decide); OutBack overshoots ~10%.
  #[repr(u8)]
  #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-@@ -628,6 +637,8 @@ pub mod draw_op {
+@@ -642,6 +651,8 @@ pub mod draw_op {
      pub const PAINT_PUSH: u32 = 69;
      pub const PAINT_POP: u32 = 70;
      pub const PATH: u32 = 71;
@@ -1487,19 +1488,19 @@ index c490f529..396cb789 100644
              p::TEXT_STROKE_WIDTH => self.text_stroke_width.to_bits(),
              p::TEXT_STROKE_COLOR => self.text_stroke_color,
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 97f15bbe..b444c900 100644
+index ab2ac59a..ae9c02db 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -252,7 +252,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
+@@ -265,7 +265,7 @@ fn decode_wh(word: u32) -> (i32, i32) {
  /// Walk a DrawList asserting the pinned CPU-clip invariant: every coordinate
  /// in [0, SCREEN_W] x [0, SCREEN_H], rect extents in range, scissors
  /// balanced, only known ops. Returns per-op counts (indexed by op code).
--fn validate_drawlist(words: &[u32]) -> [u32; 72] {
-+fn validate_drawlist(words: &[u32]) -> [u32; 74] {
+-pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 72] {
++pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 74] {
      let (sw, sh) = (spec::SCREEN_W as i32, spec::SCREEN_H as i32);
      let xy_ok = |w: u32| {
          let (x, y) = decode_xy(w);
-@@ -264,7 +264,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -277,7 +277,7 @@ pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 72] {
          let (w, h) = decode_wh(whw);
          assert!(x + w <= sw && y + h <= sh, "rect exceeds screen: {x},{y} {w}x{h}");
      };
@@ -1508,7 +1509,7 @@ index 97f15bbe..b444c900 100644
      let mut depth = 0i32;
      let mut mask_depth = 0i32;
      let mut layer_depth = 0i32;
-@@ -300,6 +300,16 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -313,6 +313,16 @@ pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 72] {
                  }
                  i += 9;
              }
@@ -1525,7 +1526,7 @@ index 97f15bbe..b444c900 100644
              spec::draw_op::SURFACE_QUAD => {
                  for word in i + 2..i + 6 {
                      assert!(f32::from_bits(words[word]).is_finite());
-@@ -334,6 +344,14 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -347,6 +357,14 @@ pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 72] {
                  }
                  i += 12;
              }
@@ -1540,7 +1541,7 @@ index 97f15bbe..b444c900 100644
              spec::draw_op::PATH => {
                  // 1/256 px coordinates, clipped to the viewport grown by the
                  // 4 px guard band (exempt from the i16 guarantee, bounded).
-@@ -7651,3 +7669,149 @@ fn freeing_a_bound_texture_moves_the_raster_revision_and_not_the_draw_list() {
+@@ -7664,3 +7682,149 @@ fn freeing_a_bound_texture_moves_the_raster_revision_and_not_the_draw_list() {
      let _ = ui.draw();
      assert_eq!(ui.raster_revision(), revision);
  }
@@ -1703,7 +1704,7 @@ index 761a55c1..e21d4e97 100644
  pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
      ("View", &["class", "style", "focusable", "debug-name"]),
 diff --git a/engine/wasm/src/lib.rs b/engine/wasm/src/lib.rs
-index 2d4cf324..d463aacd 100644
+index b653d6bb..271c3229 100644
 --- a/engine/wasm/src/lib.rs
 +++ b/engine/wasm/src/lib.rs
 @@ -117,6 +117,7 @@ impl pocketjs_core::resources::RenderResources for AuxiliaryResources<'_> {
@@ -1715,10 +1716,10 @@ index 2d4cf324..d463aacd 100644
          pocketjs_core::resources::RenderResources::font_atlas(self.0, slot)
      }
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index 9d743ab4..079aa0de 100644
+index b64b0e70..8b948919 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
-@@ -559,6 +559,14 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+@@ -568,6 +568,14 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
        return true;
      }
    }
