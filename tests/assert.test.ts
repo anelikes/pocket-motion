@@ -351,6 +351,7 @@ describe("pinFrames", () => {
     covered: [],
     outsideBox: [],
     hasBox: onScreen,
+    truncated: [],
   });
 
   test("the frames between each node's first showing and the sample before it", () => {
@@ -379,14 +380,14 @@ describe("mergeSweeps", () => {
   test("joins each node's frames in order and keeps a node only one sweep saw", () => {
     const a = {
       nodes: new Map<string, SweptNode>([
-        ["x", { onScreen: [0, 20], covered: [], outsideBox: [20], hasBox: [0, 20] }],
+        ["x", { onScreen: [0, 20], covered: [], outsideBox: [20], hasBox: [0, 20], truncated: [] }],
       ]),
       named: ["x", "y"],
     };
     const b = {
       nodes: new Map<string, SweptNode>([
-        ["x", { onScreen: [10], covered: [15], outsideBox: [], hasBox: [10, 15] }],
-        ["y", { onScreen: [15], covered: [], outsideBox: [], hasBox: [15] }],
+        ["x", { onScreen: [10], covered: [15], outsideBox: [], hasBox: [10, 15], truncated: [] }],
+        ["y", { onScreen: [15], covered: [], outsideBox: [], hasBox: [15], truncated: [] }],
       ]),
       named: ["x", "y"],
     };
@@ -396,6 +397,7 @@ describe("mergeSweeps", () => {
       covered: [15],
       outsideBox: [20],
       hasBox: [0, 10, 15, 20],
+      truncated: [],
     });
     expect(merged.nodes.get("y")!.onScreen).toEqual([15]);
     expect(merged.named).toEqual(["x", "y"]);

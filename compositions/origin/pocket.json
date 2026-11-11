@@ -1,0 +1,15 @@
+{
+  "$schema": "https://pocketjs.dev/schema/pocket-2.json",
+  "pocket": 2,
+  "id": "dev.pocket-stack.motion-origin",
+  "name": "pocketjs-motion-origin",
+  "title": "PocketJS Motion: a transform origin anywhere, and moving",
+  "version": "0.0.0",
+  "engine": { "capabilities": { "requires": ["text.glyphs.baked"] } },
+  "app": {
+    "entry": "compositions/origin/main.tsx",
+    "output": "motion-origin",
+    "framework": "solid",
+    "viewport": { "fixed": { "logical": [640, 360], "presentation": "native" } }
+  }
+}

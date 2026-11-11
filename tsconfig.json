@@ -17,6 +17,6 @@
 
     "types": ["bun"]
   },
-  "include": ["src", "tests", "scripts", "compositions/**/*.ts"],
+  "include": ["src", "tests", "scripts", "evals", "compositions/**/*.ts"],
   "exclude": ["vendor", "**/dist", "compositions/**/pocket.config.ts"]
 }

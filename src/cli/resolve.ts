@@ -72,6 +72,8 @@ export interface ResolvedComposition {
     readonly regular: string;
     readonly bold: string;
     readonly faces?: Readonly<Record<string, { readonly regular: string; readonly bold: string }>>;
+    /** `fonts.fallback`, in order; present only when declared. */
+    readonly fallback?: readonly string[];
   };
   /** Exact build command that would produce the missing artifact. */
   readonly buildCommand: string;
@@ -299,6 +301,7 @@ export async function resolveComposition(
               ),
             }
           : {}),
+        ...(fonts.fallback !== undefined ? { fallback: fonts.fallback.map((f) => resolve(repoRoot, f)) } : {}),
       }
     : undefined;
 
@@ -315,6 +318,7 @@ export async function resolveComposition(
       `--font-face-regular=${name}=${f.regular}`,
       `--font-face-bold=${name}=${f.bold}`,
     ]),
+    ...(fonts?.fallback ?? []).map((f) => `--font-fallback=${f}`),
   ];
   const buildCommand = buildArgs.map(quoteArg).join(" ");
 
@@ -336,6 +340,7 @@ export async function resolveComposition(
             [`${name} regular`, f.regular],
             [`${name} bold`, f.bold],
           ]),
+          ...(fontPaths.fallback ?? []).map((f, i): [string, string] => [`fallback ${i}`, f]),
         ]
       : [];
     for (const [weight, path] of declaredFiles) {

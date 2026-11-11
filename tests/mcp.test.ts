@@ -342,6 +342,27 @@ describe("mcp — the protocol", () => {
     expect(existsSync(join(ROOT, "x.mp4"))).toBe(false);
   });
 
+  // Red with `glyphRefusal` removed from `render`: the job stages, builds
+  // and renders the tofu, and the result is a delivery.
+  test("render refuses a job whose faces lack a character, naming it, before anything is staged", async () => {
+    const spec = JSON.parse(readFileSync(join(ROOT, "compositions/lower-third/spec.default.json"), "utf8")) as {
+      copy: { name: string };
+    };
+    spec.copy.name = "Mumbai ₹ 1,299";
+    const job = join(scratch, "rupee.json");
+    writeFileSync(job, JSON.stringify(spec));
+    const out = join(scratch, "rupee.mp4");
+    const result = await client.call("render", { dir: "compositions/lower-third", spec: job, out });
+    expect(result.isError).toBe(true);
+    const body = structured(result);
+    expect(body.ok).toBe(false);
+    expect(body.missingGlyphs).toEqual([
+      { field: "/copy/name", char: "₹", codePoint: "U+20B9", face: "regular", file: "assets/fonts/NotoSansSC-Regular.otf" },
+      { field: "/copy/name", char: "₹", codePoint: "U+20B9", face: "bold", file: "assets/fonts/NotoSansSC-Bold.otf" },
+    ]);
+    expect(existsSync(out)).toBe(false);
+  });
+
   test("every line on stdout was one JSON-RPC message", () => {
     expect(client.garbage).toEqual([]);
   });

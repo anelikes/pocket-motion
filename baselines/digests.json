@@ -38,6 +38,10 @@
       "frames": 240,
       "digest": "b6395d0421ce2a0d6ec3911a43768eb2d4e3287d0aa713162e0d84ba172b44e0"
     },
+    "compositions/colour-filters": {
+      "frames": 30,
+      "digest": "d04027b2c33d3025441268ed34ccc4e33119938305bbeca20f8a6caf4e9fc4b2"
+    },
     "compositions/copy": {
       "frames": 1,
       "digest": "a32a0abcfdf2120b861af550cc74a19fd6d6eea34d23ae40dcf0fa327d65a964"
@@ -48,7 +52,7 @@
     },
     "compositions/curves-race": {
       "frames": 342,
-      "digest": "40ae1820615583beaaee3febc2b269e9b4bc312265cc75832cdaad20db02d283"
+      "digest": "4053bc35387ecd7ba9548ee1ff0c6d362968e3c544447cfef6ec1f0a03814e53"
     },
     "compositions/data-chart": {
       "frames": 120,
@@ -77,6 +81,14 @@
     "compositions/gradients": {
       "frames": 30,
       "digest": "bcc4f390bca5bceb7e0d032c4326f4f9c53a1f6c611edc249a897960b12dbdec"
+    },
+    "compositions/hero-type": {
+      "frames": 90,
+      "digest": "e813a7555f6d09b833b59fb6a2ee0d676419b8a0671c03e2f09f6bb8b2d9a9ec"
+    },
+    "compositions/image-wall": {
+      "frames": 300,
+      "digest": "59b2c13b7d8fa7edba837841f2f5b604155432207793d28654378128364fde58"
     },
     "compositions/images": {
       "frames": 1,
@@ -109,6 +121,10 @@
     "compositions/open": {
       "frames": 90,
       "digest": "fefd5493b8dd398734ffaf9b10a57bbb608b4f239c7519e3d4320504b54f0f04"
+    },
+    "compositions/origin": {
+      "frames": 30,
+      "digest": "5ed72f553b296ae1cc7d5785c74ed6867be98c10d7cf1bac2b92ffbc9f9dc726"
     },
     "compositions/path-primitives": {
       "frames": 150,
@@ -149,6 +165,10 @@
     "compositions/svg-import": {
       "frames": 150,
       "digest": "9f02354347bc2812f9471779ac63f3fd12512c0a36448c00c0e3e3a07f35c2bf"
+    },
+    "compositions/text-fit": {
+      "frames": 30,
+      "digest": "3b5e096c4a87152dfaab1dc9f4fe6ebffd5bb3eeb63574ed9feed9147ed01f53"
     },
     "compositions/textcmp-cjk": {
       "frames": 1,
