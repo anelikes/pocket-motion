@@ -132,6 +132,11 @@ export async function fit(spec: CopySpec): Promise<Fitted> {
 
   const measurer = await openMeasurer({
     face,
+    // An emoji in the copy measures at the fallback face's advance; one no
+    // face maps measures as the tofu box, and `render --spec` refuses the job
+    // at mount, naming the node.
+    fallback: (spec.fonts.fallback ?? []).map((f) => join(ROOT, f)),
+    missing: "tofu",
     sizes: [
       { px: EYEBROW_PX },
       { px: BODY_PX },
@@ -259,6 +264,7 @@ export function sidecarSource(spec: CopySpec): string {
         fonts: {
           regular: spec.fonts.regular,
           bold: spec.fonts.bold,
+          ...(spec.fonts.fallback !== undefined ? { fallback: spec.fonts.fallback } : {}),
         },
       },
       null,

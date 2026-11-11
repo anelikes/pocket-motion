@@ -129,6 +129,32 @@ that is said rather than implied.
   padded to the film (`src/sound/mix.ts`). `tests/format.test.ts` reads
   each back out of the file.
 
+- **An emoji drawn as an empty box with every gate green.** The hajibang
+  port's title carried an emoji no declared face mapped: the build baked what
+  the face had, the core laid the codepoint out and drew the tofu box,
+  counted the miss on a counter nothing read, and `lint`, `check`, `trace`
+  and the digest all passed — seen. A face that can supply such codepoints is
+  now declared, `fonts.fallback` (`--font-fallback`) — in a sidecar, and in
+  a `render --spec` job's `fonts`, which every template measures with and
+  writes into the staged sidecar — and never looked up on the host; the core keeps the distinct codepoints that missed
+  (`ui_glyph_missed`, `patches/0063`); `check` fails naming each codepoint
+  and every text node whose string carries it, `trace` and `render` print
+  them and put `missingGlyphs` in `--json`, and `render --spec` refuses the
+  job before its first frame reaches the encoder (`src/text/missing.ts`) —
+  behind `patches/0059`'s pre-check (`src/text/coverage.ts`), which reads the
+  job's faces' cmaps before anything is staged, counts what the first
+  fallback face mapping a character supplies, and asks the baker's own rule
+  (`leftOutBy`) whether the build would leave it out. A
+  glyph the core cannot draw as declared — a colour glyph with a composite
+  or a focal radial, a codepoint that is a picture only inside a shaped
+  sequence — is left out of the slot by name at build, so it takes the same
+  road. `tests/colour-glyphs.test.ts` holds it. Its first sweep of the tree
+  found two: `compositions/curves-race` drew ∝ (U+221D, not in Inter) as a
+  box in two panel titles since it was generated, now `= k ·`; and
+  `compositions/fit`'s committed probe output sets Chinese in HarmonyOS Sans,
+  a Latin-only cut, which is what `scripts/fit-probe.ts` builds it with too —
+  `check` fails on it, and is right to.
+
 Four defects are **not** instances of either invariant, and forcing them in
 would make both rules useless.
 
@@ -1169,6 +1195,46 @@ mechanisms with the file or test beside them.
   replaced by the opaque expression, three of them fail. What this does NOT
   change is the RGB565 targets, which have no alpha byte, and it does not
   reach the hosts upstream presents to — which is why it is class `motion`.
+- **A size the atlas cannot hold is baked as outlines, and the switch-over
+  is measured rather than assumed** (`patches/0063`, class `motion`; the
+  numbers and their reproducers in `baselines/vector-glyphs.md`). The FONT
+  ATLAS stores its cell, baseline, line height, advances and kern deltas in
+  bytes, so `patches/0002` refused a size whose cell passed 255 px, and its
+  cells stay upright under a rotation. A FONT VECTOR blob carries the same
+  quantities from the same formulas in u16/i16 fields and the glyphs as
+  outlines; `bakeAtlases` bakes one where the cell would pass 255 px or the
+  literal says `text-vector`, and the build says which and why. The core
+  lays the run out as an atlas run and fills each glyph's layers as PATH
+  ops through the node's world affine, rounding the anchor to a pixel
+  exactly where GLYPH_RUN rounds it, so the turn and the scale reach the
+  glyph and the static case lands where the atlas would. At each face's
+  ceiling — 176 px Noto Sans SC Bold, 211 px Inter — `tests/vector-glyphs.test.ts`
+  holds every advance, kern pair, baseline, cell and line height of the
+  vector slot equal to the atlas slot's over the whole collected charset,
+  and the drawn ink within a pixel at every edge and 0.5% apart pixel for
+  pixel with each cell's anchor half a pixel off the grid (the bound is
+  1.5%; left unrounded, the anchor measured 2.96%). One px past the ceiling bakes rather than
+  being refused. A face with COLR draws its glyphs as layers — solid, or a
+  gradient under PAINT_PUSH, whose stop bound went from 6 to 16 for Noto's
+  colour lines (a class literal's gradient keeps 6, its style props' count)
+  — in a vector slot as the glyph, and in an atlas slot as a supplement the
+  run draws after its cells. `colr.ts` flattens COLR v0 and v1 and refuses by
+  name what the core cannot draw: of Noto Color Emoji's 1,469 colour
+  codepoints 1,398 draw, and every other is listed by
+  `baselines/vector-glyphs/refused.ts`. The core's own tests
+  (`engine/core/src/vector_text_tests.rs`) hold the blob's refusals, the
+  wide metrics, the PATH emission, the turn, the supplement and the
+  gradient mapping. Every guard here and in `tests/colour-glyphs.test.ts`
+  was watched red by `baselines/vector-glyphs/redcheck.ts`.
+  `compositions/hero-type` is the fixture, in both ledgers: a 480 px CJK
+  hero rising scaled and turned, a turning `text-vector` character, a
+  turning colour glyph from a vector slot, and a 64 px title with two
+  emoji from the atlas slot's supplement, its sidecar asserting each is up.
+  With `patches/0059` a fitted run reads the same faces: a ladder rung
+  measures from whichever face owns its slot (`Fonts::metrics`), so a rung
+  past the ceiling or of a `text-vector` ladder fits as an atlas rung does,
+  and `text-vector` beside a `text-fit-[..]` ladder makes every rung a vector
+  slot (core `a_fit_ladder_measures_its_vector_rungs`, catalogue G6).
 - **A delivered file is read back the way a player reads it.** Frame
   digests are taken before the encoder, so nothing about the file itself was
   checked until `tests/format.test.ts`'s "delivered files, read back" drove
@@ -1683,6 +1749,38 @@ mechanisms with the file or test beside them.
   39,864 rasters over the default grid, about 4½ hours at its raster cost,
   against 3,322 and 20 minutes with `--read tick` — the reading that misses
   `peek`. `reel` declares no shutter.
+- **Text is not shaped, so an emoji sequence is refused rather than
+  formed.** A flag is two regional indicators joined by the font's GSUB, a
+  family is emoji joined by ZWJ, a skin tone and a keycap combine with what
+  precedes them; the core lays out one glyph per codepoint. Each such
+  codepoint is left out of the slot and reported as tofu, so the sequence
+  fails `check` instead of drawing as its pieces. Shaping
+  (`docs/text-shaping.design.md`) is what would form them.
+- **The slot's own face wins over the fallback chain, presentation selector
+  or not.** Noto Sans SC maps U+26A0 ⚠ and draws it in the text colour,
+  `fonts.fallback` declared or not, and U+FE0F asks for nothing here — it is
+  a codepoint like any other, drawn if a face maps it and reported if none
+  does. CSS's order, and the one a composition can predict from its faces.
+- **A vector glyph is flattened every frame, and every vector slot carries
+  the whole charset.** Nothing caches a glyph's flattened outline across
+  frames; the cost per frame is in `baselines/vector-glyphs.md`. The
+  collected charset is global, so each vector slot bakes the outline of
+  every codepoint its faces map: the fixture's 480 px slot is 50 KB for 112
+  glyphs, and a template that declares the 3,755 GB2312 characters would
+  carry them in every vector slot it uses.
+- **A text stroke on a vector run is outlined, not a distance field, and its
+  hollow outside form is drawn centred.** Outside with a fill is a stroke of
+  twice the width under the fill, centred is over it — `patches/0017`'s two
+  pictures. With no fill, the outside ring cannot be cut from a centred
+  stroke without a boolean, so it is drawn centred at the declared width,
+  half of it inside the glyph. Colour layers take no stroke in either kind
+  of slot. Nothing pins either picture.
+- **Colour glyphs are measured on one font.** `colr.ts` was written against
+  the COLR specification and validated on Noto Color Emoji alone; its
+  paints there are solid, linear and concentric radial gradients, transforms,
+  and the two composites it refuses. Another COLRv1 face may use a sweep
+  gradient, a variable paint or a reflecting colour line: each is refused by
+  name and its codepoints reported, never drawn otherwise.
 - **A path's trim, morph and dash offset do not blur, and nothing caches its
   geometry.** The shutter integrates transform tracks only, so a moving
   `<Path>` blurs and a draw-on's tip and a march do not. The geometry is rebuilt every frame — and
@@ -1793,22 +1891,20 @@ Stated rather than smoothed. Each is a known hole, not an oversight.
   `alpha_mode` tag — on a file the sound mux rewrote, `ALPHA_MODE`, and the
   element behind it is what the delivery test reads. A test asserting
   `pix_fmt=yuva420p` would be red on a correct file.
-- **The largest bakeable text size is a property of the face, not of the
-  format.** The FONT ATLAS header stores `cellH` as a u8, so
-  `patches/0002-loud-font-cell-limit.patch` refuses a size whose cell would
-  exceed 255 px and names the largest that fits:
-  `maxPx = floor(px * 255 / wantCellH)`, where `wantCellH` is
-  `round(ascender * px / unitsPerEm) + ceil(-descender * px / unitsPerEm)` and
-  so comes from that family's own `hhea`. Computed over the four faces in
-  `assets/fonts`: **Noto Sans SC bakes up to 176 px, HarmonyOS Sans up to
-  217 px** — CJK ascent and descent run taller against the same 1000 upem
-  (1160/−288 against 928/−244). The ceiling is a property of the family, not
-  the weight: Bold and Regular of each share an `hhea` and share a ceiling.
-  The message is correct at the moment it fires and carries the answer. What
-  nothing says, at the place it matters, is that **the number a composition
-  records beside a hero size is not transferable** — swapping the face changes
-  the ceiling, and a size that baked yesterday is refused today with no edit
-  to the size itself.
+- **Which sizes draw from the atlas is a property of the face, not of the
+  format.** The FONT ATLAS header stores `cellH` as a u8, so a size whose
+  cell — `round(ascender * px / unitsPerEm) + ceil(-descender * px /
+  unitsPerEm)`, from the family's own `hhea` — passes 255 px cannot be an
+  atlas: **Noto Sans SC up to 176 px, Inter up to 211, HarmonyOS Sans up to
+  217**, Bold and Regular of each sharing a ceiling. Above it the build now
+  bakes a vector slot (`patches/0063`) where `patches/0002` refused, and
+  0002's message fires only for a direct `bakeSlot` call. So swapping the
+  face moves the line between the two, and a size that drew from the atlas
+  yesterday may draw as outlines today with no edit to the size: the same
+  layout — the metrics are one set of formulas — a raster that differs at
+  the ink's edge, and the per-frame cost of a flatten and a PATH fill per
+  glyph. The build's `font: slot N (…) vector (over the atlas's 255px cell)`
+  line is what says which.
 - **A full ledger run's disk cost is set by the footage in the tree, and
   only the ledger can measure it.** Ingest decodes the span each footage
   artifact's tracks can show to raw RGBA next to the bundle and leaves it

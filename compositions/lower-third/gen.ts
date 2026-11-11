@@ -122,6 +122,11 @@ export async function fit(spec: LowerThirdSpec): Promise<Fitted> {
   const { name: nameText, title } = spec.copy;
   const measurer = await openMeasurer({
     face,
+    // An emoji in the copy measures at the fallback face's advance; one no
+    // face maps measures as the tofu box, and `render --spec` refuses the job
+    // at mount, naming the node.
+    fallback: (spec.fonts.fallback ?? []).map((f) => join(ROOT, f)),
+    missing: "tofu",
     sizes: [{ px: TITLE_PX }, ...NAME_LADDER.map((px) => ({ px, bold: true }))],
     texts: [nameText, title],
   });
@@ -267,6 +272,7 @@ export function sidecarSource(spec: LowerThirdSpec): string {
         fonts: {
           regular: spec.fonts.regular,
           bold: spec.fonts.bold,
+          ...(spec.fonts.fallback !== undefined ? { fallback: spec.fonts.fallback } : {}),
         },
         ...(footage ? { footage } : {}),
       },
