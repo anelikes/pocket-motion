@@ -1,0 +1,146 @@
+{
+  "measured": "2026-11-05",
+  "bun": "1.3.11",
+  "build": [
+    {
+      "charset": "latin",
+      "rungs": 1,
+      "sizes": [
+        88
+      ],
+      "pakBytes": 1186992,
+      "buildCpuMsMedian": 1291
+    },
+    {
+      "charset": "latin",
+      "rungs": 5,
+      "sizes": [
+        88,
+        76,
+        64,
+        56,
+        48
+      ],
+      "pakBytes": 3474640,
+      "buildCpuMsMedian": 1775
+    },
+    {
+      "charset": "latin",
+      "rungs": 8,
+      "sizes": [
+        88,
+        80,
+        72,
+        65,
+        59,
+        54,
+        49,
+        48
+      ],
+      "pakBytes": 5206960,
+      "buildCpuMsMedian": 1637
+    },
+    {
+      "charset": "cjk-1000",
+      "rungs": 1,
+      "sizes": [
+        88
+      ],
+      "pakBytes": 12813232,
+      "buildCpuMsMedian": 2242
+    },
+    {
+      "charset": "cjk-1000",
+      "rungs": 5,
+      "sizes": [
+        88,
+        76,
+        64,
+        56,
+        48
+      ],
+      "pakBytes": 37311168,
+      "buildCpuMsMedian": 3668
+    },
+    {
+      "charset": "cjk-1000",
+      "rungs": 8,
+      "sizes": [
+        88,
+        80,
+        72,
+        65,
+        59,
+        54,
+        49,
+        48
+      ],
+      "pakBytes": 55944720,
+      "buildCpuMsMedian": 5041
+    }
+  ],
+  "pixels": [
+    {
+      "rung": 76,
+      "scale": 0.8636,
+      "glyphMeanAbsCoverage": 14.91,
+      "glyphMaxMeanAbs": 29.58,
+      "glyphInkSizeDeltaPx": 4,
+      "runInkWidthLadder": 1114,
+      "runInkWidthScale": 1110
+    },
+    {
+      "rung": 64,
+      "scale": 0.7273,
+      "glyphMeanAbsCoverage": 9.68,
+      "glyphMaxMeanAbs": 24.54,
+      "glyphInkSizeDeltaPx": 2,
+      "runInkWidthLadder": 939,
+      "runInkWidthScale": 935
+    },
+    {
+      "rung": 56,
+      "scale": 0.6364,
+      "glyphMeanAbsCoverage": 19.05,
+      "glyphMaxMeanAbs": 29.14,
+      "glyphInkSizeDeltaPx": 2,
+      "runInkWidthLadder": 819,
+      "runInkWidthScale": 818
+    },
+    {
+      "rung": 48,
+      "scale": 0.5455,
+      "glyphMeanAbsCoverage": 21.01,
+      "glyphMaxMeanAbs": 32.13,
+      "glyphInkSizeDeltaPx": 2,
+      "runInkWidthLadder": 703,
+      "runInkWidthScale": 701
+    }
+  ],
+  "render": [
+    {
+      "mode": "ladder",
+      "runs": 40,
+      "msPerFrameMedian": null,
+      "samples": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    },
+    {
+      "mode": "scale",
+      "runs": 40,
+      "msPerFrameMedian": null,
+      "samples": [
+        null,
+        null,
+        null,
+        null,
+        null
+      ]
+    }
+  ]
+}

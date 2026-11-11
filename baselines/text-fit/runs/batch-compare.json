@@ -1,0 +1,105 @@
+{
+  "rows": 1000,
+  "verdicts": {
+    "generator": {
+      "refused": 95,
+      "pass": 777,
+      "fail": 128
+    },
+    "engine": {
+      "refused": 95,
+      "pass": 821,
+      "fail": 84
+    }
+  },
+  "pushedOutOfContainer": {
+    "generator": 83,
+    "gone": 0,
+    "goneTruncated": 44,
+    "stillOverflow": 39,
+    "otherFailure": 0,
+    "notRendered": 0
+  },
+  "stillOverflowRows": [
+    "r0021 price: escaped_container:price-badge",
+    "r0027 price: escaped_container:price-badge",
+    "r0030 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0042 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0055 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0060 price: escaped_container:price-badge",
+    "r0067 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0070 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0080 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0228 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0315 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0329 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0410 duplicate: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0429 price: escaped_container:price-badge",
+    "r0455 price: escaped_container:price-badge",
+    "r0477 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0492 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0568 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0578 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0599 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0622 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0691 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0712 price: escaped_container:price-badge",
+    "r0731 price: escaped_container:price-badge",
+    "r0738 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0744 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0747 near-duplicate: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0751 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0820 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0827 price: escaped_container:price-badge",
+    "r0839 price: content_overlap:hero content_overlap:price-badge escaped_container:price-badge",
+    "r0884 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0900 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0913 price: escaped_container:price-badge",
+    "r0920 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0936 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0962 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0966 price: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge",
+    "r0971 near-duplicate: content_overlap:hero content_overlap:price content_overlap:price-badge escaped_container:price-badge"
+  ],
+  "truncatedNodesAmongPushed": {
+    "name": 20,
+    "disclaimer": 24
+  },
+  "engineTruncated": {
+    "rows": 179,
+    "byNode": {
+      "name": 155,
+      "claim": 16,
+      "disclaimer": 24
+    },
+    "byCategory": {
+      "long-name": 71,
+      "german": 73,
+      "long-disclaimer": 24,
+      "duplicate": 9,
+      "near-duplicate": 2
+    }
+  },
+  "wordsCutBetweenLetters": {
+    "generatorRows": 85,
+    "engineRows": 78
+  },
+  "newlyFailing": [],
+  "moved": 44,
+  "cost": {
+    "generator": {
+      "pakBytesMedian": 2260992,
+      "buildWallMsMedian": 1295.36,
+      "fitWallMsMedian": 50.13,
+      "variantCpuMsMedian": 5098.978999999999,
+      "peakRssBytesMedian": 618496000
+    },
+    "engine": {
+      "pakBytesMedian": 5018144,
+      "buildWallMsMedian": 1402.78,
+      "fitWallMsMedian": 16.88,
+      "variantCpuMsMedian": 5370.658,
+      "peakRssBytesMedian": 684376064
+    }
+  }
+}

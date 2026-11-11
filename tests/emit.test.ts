@@ -18,8 +18,8 @@ import { describe, expect, test } from "bun:test";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 
-import { envelope, redactPaths, redactString } from "../src/cli/emit.ts";
-import { EXIT_OK } from "../src/cli/types.ts";
+import { envelope, jsonPayload, redactPaths, redactString } from "../src/cli/emit.ts";
+import { EXIT_FAIL, EXIT_OK } from "../src/cli/types.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const ROOTS = { repoRoot: "/home/u/checkout", home: "/home/u" };
@@ -105,6 +105,26 @@ async function jsonOf(
   ]);
   return { text, value: JSON.parse(text) as Record<string, unknown>, code };
 }
+
+// SKILL.md tells an agent every payload carries `ok` and to branch on it;
+// `trace --json` wrote `frames`, `digest` and `identity` and nothing else,
+// and an agent found that out by reading it (docs/agent-adoption-eval.md).
+describe("ok", () => {
+  test("a payload with no ok gets the exit code's reading of it, first", () => {
+    const passed = jsonPayload({ exitCode: EXIT_OK, json: { digest: "d", frames: [] } });
+    expect(passed).toEqual({ ok: true, digest: "d", frames: [] });
+    expect(Object.keys(passed as object)[0]).toBe("ok");
+    const failed = jsonPayload({ exitCode: EXIT_FAIL, json: { digest: "", error: "boom" } });
+    expect((failed as { ok: boolean }).ok).toBe(false);
+  });
+
+  test("a command's own ok is left as it wrote it", () => {
+    // verify exits 1 on a red gate and says ok:false; doctor --json exits 0
+    // and says ok:false when a check failed. Neither is the exit code's.
+    expect(jsonPayload({ exitCode: EXIT_OK, json: { ok: false, checks: [] } })).toEqual({ ok: false, checks: [] });
+    expect(jsonPayload({ exitCode: EXIT_FAIL, json: { ok: true } })).toEqual({ ok: true });
+  });
+});
 
 describe("a real --json envelope", () => {
   test("lint --json names no path under the home directory", async () => {

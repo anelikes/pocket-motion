@@ -128,7 +128,7 @@ describe("snapshot", () => {
     expect(json.files[0]?.annotated).toBe(join(markedDir, snapshotName(0, ".annotated")));
     // The fixture is one named node per code; the overlay is drawn from the
     // same findings `layout` prints.
-    expect(json.files[0]?.findings).toBe(10);
+    expect(json.files[0]?.findings).toBe(11);
   }, 120_000);
 
   test("--samples uses the grid `visibility` sweeps", async () => {

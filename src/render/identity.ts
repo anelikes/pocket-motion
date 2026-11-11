@@ -53,6 +53,9 @@ export interface IdentityInputs {
   /** Named faces' files (`fonts.faces`), keyed `font:<face>/<file>` so two
    *  faces whose files share a basename stay two components. */
   readonly faceFontPaths?: Readonly<Record<string, { readonly regular: string; readonly bold: string }>>;
+  /** Fallback faces' files (`fonts.fallback`), keyed `font:fallback/<i>/<file>`:
+   *  the chain is ordered, so the position is part of what is declared. */
+  readonly fallbackFontPaths?: readonly string[];
   /** Frozen footage artifacts (ingest output), by track id. */
   readonly footageHashes?: Readonly<Record<string, string>>;
   /** Viewport and rate — different values are a different render. */
@@ -197,6 +200,9 @@ export async function computeIdentity(inputs: IdentityInputs): Promise<InputIden
     for (const font of [face.regular, face.bold]) {
       components[`font:${name}/${font.slice(font.lastIndexOf("/") + 1)}`] = await fileDigest(font);
     }
+  }
+  for (const [i, font] of (inputs.fallbackFontPaths ?? []).entries()) {
+    components[`font:fallback/${i}/${font.slice(font.lastIndexOf("/") + 1)}`] = await fileDigest(font);
   }
   for (const [id, hash] of Object.entries(inputs.footageHashes ?? {})) {
     components[`footage:${id}`] = hash;
