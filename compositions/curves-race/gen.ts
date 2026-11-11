@@ -85,9 +85,9 @@ interface Panel {
 }
 
 const PANELS: readonly Panel[] = [
-  { id: "a", title: "ease-in-out · duration ∝ value", p: [0.4, 0, 0.6, 1],
+  { id: "a", title: "ease-in-out · duration = k · value", p: [0.4, 0, 0.6, 1],
     cost: "the shape you described. It inverts." },
-  { id: "b", title: "ease-out · duration ∝ value", p: [0.2, 0.7, 0.5, 1],
+  { id: "b", title: "ease-out · duration = k · value", p: [0.2, 0.7, 0.5, 1],
     cost: "what the reel uses. One finishes 6.6× sooner, on screen." },
   { id: "c", title: "ease-in-out · one shared duration", p: [0.7, 0, 0.3, 1], shared: 1700,
     cost: "any curve is admissible — but the finishing times stop being data." },
@@ -162,7 +162,7 @@ export default definePocketConfig({
 for (const p of PANELS) {
   const w = overtakeWindow(p.p, p.shared);
   console.log(
-    `  ${p.shared ? "shared " + p.shared + "ms" : "duration ∝ value"}  cubic-bezier(${p.p.join(",")}) -> ` +
+    `  ${p.shared ? "shared " + p.shared + "ms" : "duration = k · value"}  cubic-bezier(${p.p.join(",")}) -> ` +
       (w ? `OVERTAKE ${w[0]}..${w[1]} ms` : "ordering holds"),
   );
 }

@@ -48,16 +48,17 @@ red with it left out of the 3D path. `an_origin_animates_its_fraction_and_its_le
 with the two props not animatable. Vendored `tests/tailwind.test.ts` pins
 the compiler: the grammar, what CSS refuses, the variant rule, keyframes.
 
-Ledgers, measured when this was 0056 on main at 524173f, before
-0045-0059, against what main had recorded: no existing digest
-or `visibility` row moves — a keyword origin's record is the bytes it was.
-`compositions/origin` is new in both: 30 frames; 4 nodes, 4 named, every
-one shown.
+Ledgers, on `claude/merge-train-3` at 2884e13 (0001-0064) with 0065-0067
+on top, against what the train had recorded: all 50 digests and all 58
+`visibility` rows match, so no existing entry moves — a keyword origin's
+record is the bytes it was. The same held on main at 524173f when this was
+0056. `compositions/origin` is new in both: 30 frames, digest 5ed72f55…,
+the one first recorded at 524173f; 4 nodes, 4 named, every one shown.
 
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index a21cebc8..9d8405f2 100644
+index 1e336c1e..526ae79f 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
 @@ -413,7 +413,8 @@ export const PROP = {
@@ -79,10 +80,10 @@ index a21cebc8..9d8405f2 100644
 +  // 0 by default, so an origin named by keyword is the fraction alone.
 +  originXPx: 219, //       f32 px added to the origin's x
 +  originYPx: 220, //       f32 px added to the origin's y
- } as const;
- 
- export type PropName = keyof typeof PROP;
-@@ -638,6 +644,10 @@ export const ANIMATABLE: readonly PropName[] = [
+   // Image filter (pocket-motion): how an image node samples its texture.
+   // Texture (the default) is the texture's own flag — nearest, or bilinear
+   // under IMG_FLAG_LINEAR. Trilinear reads a mip chain the core builds from
+@@ -646,6 +652,10 @@ export const ANIMATABLE: readonly PropName[] = [
    "invert", //        70
    "saturate", //      71
    "sepia", //         72
@@ -93,19 +94,19 @@ index a21cebc8..9d8405f2 100644
  ];
  
  /** Anim bit index for a prop, or -1 if not animatable. */
-@@ -744,6 +754,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+@@ -752,6 +762,7 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
    brightness: VALUE_KIND.f32, contrast: VALUE_KIND.f32,
    grayscale: VALUE_KIND.f32, hueRotate: VALUE_KIND.f32,
    invert: VALUE_KIND.f32, saturate: VALUE_KIND.f32, sepia: VALUE_KIND.f32,
 +  originXPx: VALUE_KIND.f32, originYPx: VALUE_KIND.f32,
+   imageFilter: VALUE_KIND.int,
  };
  
- // ---------------------------------------------------------------------------
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 736eb306..29d755ed 100644
+index 41d167c9..b9aa6f91 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
-@@ -740,6 +740,14 @@ fn pow2_at_least(n: u32) -> u32 {
+@@ -741,6 +741,14 @@ fn pow2_at_least(n: u32) -> u32 {
      p
  }
  
@@ -120,7 +121,7 @@ index 736eb306..29d755ed 100644
  /// A node's local frame: layout position + translate, then rotate/scale
  /// about its transform origin. Shared by paint and hit_test so pointer
  /// geometry can never drift from painted geometry.
-@@ -747,8 +755,9 @@ fn local_affine(l: &crate::tree::LayoutRect, r: &style::Resolved) -> Affine {
+@@ -748,8 +756,9 @@ fn local_affine(l: &crate::tree::LayoutRect, r: &style::Resolved) -> Affine {
      let mut local = Affine::translate(l.x + r.translate_x, l.y + r.translate_y);
      if r.rotate != 0.0 || r.skew_x != 0.0 || r.scale != 1.0 || r.scale_x != 1.0 || r.scale_y != 1.0 {
          // Transform origin: node center offset by the origin fractions
@@ -132,7 +133,7 @@ index 736eb306..29d755ed 100644
          let rad = r.rotate * (PI / 180.0);
          // rotate == 0 keeps EXACT axis alignment (the trig polyfill is a
          // few ulp off at multiples of pi/2, which would silently demote
-@@ -1771,7 +1780,7 @@ impl<'a> Walker<'a> {
+@@ -1848,7 +1857,7 @@ impl<'a> Walker<'a> {
          // lists this models: translate/translateZ leftmost, then rotate,
          // rotateX, rotateY, skewX, with 2D scale innermost), conjugated
          // around the transform origin.
@@ -142,7 +143,7 @@ index 736eb306..29d755ed 100644
              .then(&Mat34::translate(ox, oy, 0.0));
          if r.rotate != 0.0 {
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index 5b3b8a87..d4d57895 100644
+index a4a44a3b..7f9339bc 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
 @@ -246,6 +246,8 @@ pub mod prop {
@@ -151,19 +152,19 @@ index 5b3b8a87..d4d57895 100644
      pub const SEPIA: u8 = 218;
 +    pub const ORIGIN_X_PX: u8 = 219;
 +    pub const ORIGIN_Y_PX: u8 = 220;
+     pub const IMAGE_FILTER: u8 = 221;
  }
  
- /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
-@@ -270,7 +272,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+@@ -271,7 +273,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
      0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
      0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
      0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
--    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
-+    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff,
+-    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x02, 0xff, 0xff,
++    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
  ];
-@@ -286,18 +288,18 @@ pub const ANIM_BIT: [u8; 256] = [
+@@ -287,18 +289,18 @@ pub const ANIM_BIT: [u8; 256] = [
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0x17, 0xff, 0xff, 0x18, 0x19, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -186,7 +187,7 @@ index 5b3b8a87..d4d57895 100644
  pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x000001fe00000000, 0x0000000000000000, 0x0000000000000000];
  
 diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
-index eceb45e5..8e7f4fb1 100644
+index d64af396..9447a529 100644
 --- a/engine/core/src/style.rs
 +++ b/engine/core/src/style.rs
 @@ -324,9 +324,12 @@ pub struct Resolved {
@@ -203,7 +204,7 @@ index eceb45e5..8e7f4fb1 100644
      /// 3D transform (degrees / px; meaningful under a perspective root).
      pub rotate_x: f32,
      pub rotate_y: f32,
-@@ -466,6 +469,8 @@ impl Default for Resolved {
+@@ -468,6 +471,8 @@ impl Default for Resolved {
              scale_y: 1.0,
              origin_x: 0.0,
              origin_y: 0.0,
@@ -212,7 +213,7 @@ index eceb45e5..8e7f4fb1 100644
              rotate_x: 0.0,
              rotate_y: 0.0,
              translate_z: 0.0,
-@@ -608,6 +613,8 @@ impl Resolved {
+@@ -611,6 +616,8 @@ impl Resolved {
              p::SCALE_Y => self.scale_y = f,
              p::ORIGIN_X => self.origin_x = f,
              p::ORIGIN_Y => self.origin_y = f,
@@ -221,7 +222,7 @@ index eceb45e5..8e7f4fb1 100644
              p::ROTATE_X => self.rotate_x = f,
              p::ROTATE_Y => self.rotate_y = f,
              p::TRANSLATE_Z => self.translate_z = f,
-@@ -743,6 +750,8 @@ impl Resolved {
+@@ -747,6 +754,8 @@ impl Resolved {
              p::SCALE_Y => self.scale_y.to_bits(),
              p::ORIGIN_X => self.origin_x.to_bits(),
              p::ORIGIN_Y => self.origin_y.to_bits(),
@@ -231,10 +232,10 @@ index eceb45e5..8e7f4fb1 100644
              p::ROTATE_Y => self.rotate_y.to_bits(),
              p::TRANSLATE_Z => self.translate_z.to_bits(),
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index af079e3d..628f7ea3 100644
+index ada7571e..c6c3cdc5 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -6847,6 +6847,75 @@ fn a_moving_stroke_redraws_incrementally_to_the_full_render() {
+@@ -6878,6 +6878,75 @@ fn a_moving_stroke_redraws_incrementally_to_the_full_render() {
      assert!(fb == full, "incremental redraw of a moved stroke differs from the full render");
  }
  
@@ -311,7 +312,7 @@ index af079e3d..628f7ea3 100644
  
  /// A 200x200 ground of `ground` with one absolute 40x40 box of `color` at
 diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
-index 73ab31ce..5e973503 100644
+index a9c099b6..577958eb 100644
 --- a/engine/crates/microts/src/spec.rs
 +++ b/engine/crates/microts/src/spec.rs
 @@ -136,6 +136,8 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
@@ -320,9 +321,9 @@ index 73ab31ce..5e973503 100644
      ("sepia", 218, "f32"),
 +    ("originXPx", 219, "f32"),
 +    ("originYPx", 220, "f32"),
+     ("imageFilter", 221, "i32"),
  ];
  pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
-     ("View", &["class", "style", "focusable", "debug-name"]),
 diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
 index 3d28167f..f94cc574 100644
 --- a/framework/compiler/animation.ts
@@ -437,7 +438,7 @@ index 3d28167f..f94cc574 100644
            const list = parseFilter(value, where);
            for (const fn of list.fns) filterUnion.add(fn);
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index 8d49eb40..23a22aab 100644
+index ec9930ca..7bc2c517 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
 @@ -49,6 +49,7 @@ import {
@@ -448,7 +449,7 @@ index 8d49eb40..23a22aab 100644
    resolveAnimation,
  } from "./animation.ts";
  
-@@ -316,6 +317,9 @@ interface VariantAcc {
+@@ -325,6 +326,9 @@ interface VariantAcc {
    bold?: boolean;
    trackingWide?: boolean;
    roundedFull?: boolean;
@@ -458,7 +459,7 @@ index 8d49eb40..23a22aab 100644
    pinnedW?: number;
    pinnedH?: number;
    sawBevel?: boolean;
-@@ -747,9 +751,25 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
+@@ -768,9 +772,25 @@ function parseUtility(tok: string, acc: VariantAcc): boolean {
        return true;
      }
      case "origin": {
@@ -484,7 +485,7 @@ index 8d49eb40..23a22aab 100644
        return true;
      }
      case "perspective": {
-@@ -1711,6 +1731,16 @@ export function parseClassLiteral(
+@@ -1748,6 +1768,16 @@ export function parseClassLiteral(
      }
    }
  
@@ -502,7 +503,7 @@ index 8d49eb40..23a22aab 100644
    const baseProps = dedupe(acc.base.decls);
    if (baseProps.length > 0) rec.base = baseProps;
 diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
-index d3a951ea..681470ce 100644
+index f9421633..b30bd5ba 100644
 --- a/framework/src/component-types-microts.ts
 +++ b/framework/src/component-types-microts.ts
 @@ -131,6 +131,8 @@ export interface MicroTsStyleProps {
@@ -511,11 +512,11 @@ index d3a951ea..681470ce 100644
    sepia?: MicroTsFloatInput;
 +  originXPx?: MicroTsFloatInput;
 +  originYPx?: MicroTsFloatInput;
+   imageFilter?: i32;
  }
  export interface MicroTsViewBaseProps {
-   "class"?: MicroTsValue<string>;
 diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
-index 62ccb15f..c98c6d48 100644
+index 68cdad6f..dc1530ee 100644
 --- a/tests/tailwind.test.ts
 +++ b/tests/tailwind.test.ts
 @@ -816,6 +816,55 @@ describe("filter layers (pocket-motion)", () => {

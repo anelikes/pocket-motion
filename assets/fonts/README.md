@@ -14,6 +14,7 @@ them costs 17 MB in every clone.
 | --- | --- | --- |
 | HarmonyOS Sans Regular + Bold | checked in, 290 KB | `compositions/reel` |
 | Noto Sans SC Regular + Bold | fetched, 17 MB | the only way to put Chinese on screen |
+| Noto Color Emoji (COLRv1) | fetched, 5 MB | colour emoji, declared per composition in `fonts.fallback` |
 
 ## HarmonyOS Sans (Regular, Bold)
 
@@ -114,3 +115,30 @@ Rendered as specimens at the reel's real sizes and strings before choosing:
 | **HarmonyOS Sans** | **chosen** — refined, clean raster, real bold |
 | GeistMono | thematically apt, but the variable file bakes at one weight, so no bold |
 | Montserrat | visible raster artefacts (stray ink above several glyphs) |
+
+## Noto Color Emoji (COLRv1)
+
+Used by `compositions/hero-type` through the sidecar's `fonts.fallback`, and by
+anything with emoji in its text. Its glyphs are COLR version 1 paint graphs —
+layered outlines in palette colours and linear and radial gradients — which
+the build flattens into the layers a FONT VECTOR blob carries and the core
+fills as PATH ops (`patches/0063`), at any size and under any transform. The
+bitmap build of the same font (CBDT, 136x128 strikes) was passed over because
+it softens above about 110 px; this one is outlines.
+
+- Copyright the Noto Project Authors
+- Licence: **SIL Open Font License 1.1**, vendored verbatim at
+  [`NotoColorEmoji_LICENSE.txt`](./NotoColorEmoji_LICENSE.txt). OFL asks
+  nothing of a rendered frame; redistributing the file means shipping the
+  licence with it.
+- Source: `googlefonts/noto-emoji` at tag `v2026-09-24-unicode18_0`,
+  `2D/fonts/Noto-COLRv1.ttf` (Emoji 18.0), 5,038,236 bytes, pinned by sha256 in
+  [`manifest.json`](./manifest.json)
+
+Of its 1,469 colour codepoints, 1,398 draw. The rest are left out of every
+slot by name, each then reported as tofu wherever text uses it:
+`baselines/vector-glyphs/refused.ts` lists them — the soft-light composite
+its subdivision-flag glyphs use, a src-in composite on 20 emoji, 9 radial
+gradients with a focal point, and the 70 codepoints that are a picture only
+inside a sequence the core does not shape (regional indicators, tags, skin
+tones, ZWJ, the keycap).

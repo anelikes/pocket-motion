@@ -46,6 +46,11 @@ size, inset, gap, padding, `bg-*`, four-direction linear gradients, `rounded`,
 Arbitrary values use brackets: `w-[880px]`, `text-[38px]`. The authoritative
 list is the compiler, `vendor/pocketjs/framework/compiler/tailwind.ts`; check
 there before assuming a familiar name is a typo.
+An `Image` drawn below about half its size — a wall of covers, a thumbnail
+strip, a poster pushed in on — takes `image-filter-trilinear`, or it shimmers
+as it moves: without it the texture is read nearest, or bilinear under
+`images.json`'s `linear`, and both alias past 2×
+(`compositions/image-wall`, `baselines/image-wall.md`).
 
 **Motion is baked timelines, not code.** Declare keyframes and named animations
 in `pocket.config.ts`, then reference them as `animate-<name>` in a class
@@ -93,16 +98,18 @@ job whose faces lack a character it draws, with `missingGlyphs[]`, before
 anything is built. Every font size is baked, so only sizes that appear in class
 literals get an atlas. An axis-aligned `scale` resizes glyphs by resampling
 the baked size, softer when magnified, so bake the size text is shown at; a
-rotated run, or one with a text stroke, moves without resizing. A size bakes
-only up to the face's ceiling — a glyph cell is at most 255 px, about 176 px
-of Noto Sans SC, 210 of Inter, 217 of HarmonyOS Sans — and the build refuses
-past it naming the number. Hero type larger than that is the face's glyph
-outlines in a `<Path>` (opentype.js `charToGlyph(c).getPath(x, y, px)` in a
-`gen.ts`; its contours carry no `Z`, which a fill does not need and a stroke
-or a morph does), filled at the size it is shown; a larger viewport, which the
-refusal suggests, is a larger film. opentype.js reads no kerning from Inter's
-GPOS (an extension lookup) and its `getPath` on a whole string throws on
-Inter's contextual substitutions; HarmonyOS Sans reads.
+rotated run, or one with a text stroke, moves without resizing. A size past
+the face's atlas ceiling (176 px for Noto Sans SC) bakes as outlines, up to
+4096 px, and `text-vector` beside a smaller size asks for the same: those
+glyphs scale and turn with their node (`patches/0063`).
+
+**Emoji come from a declared face**: `"fonts": { …, "fallback":
+["assets/fonts/Noto-COLRv1.ttf"] }` draws colour emoji as layered outlines —
+in a sidecar, and in a `render --spec` job's own `fonts`.
+A codepoint no declared face maps is drawn as the tofu box and reported —
+`check` fails naming it and the node, `render --spec` refuses the job — and so
+is one the core cannot draw (a flag, a ZWJ sequence, a skin tone: text is not
+shaped).
 
 **Paint beyond boxes and text**: `overflow-mask` (a window shaped by its
 outline), named font faces (`font-[name]` over the sidecar's `fonts.faces`),

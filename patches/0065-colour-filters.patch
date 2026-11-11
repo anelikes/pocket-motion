@@ -95,18 +95,20 @@ at 8 in compositor.rs, in damage.rs, and in lib.rs's
 blend word's new bits and every amount's range. Vendored
 `tests/tailwind.test.ts` pins the compiler, its refusals included.
 
-Ledgers, measured when this was 0055 on main at 524173f, before
-0045-0059, against what main had recorded: no existing digest
-and no existing `visibility` row moves — 42 compositions, `filters`,
-`bloom`, `stroke`, `shutter-blur` and every other one that draws a filter
-layer among them, so the column-bounded layer is byte-identical where it is
-used. `compositions/colour-filters` is new in both: 30 frames; 25 nodes, 13
-named, every one shown.
+Ledgers, on `claude/merge-train-3` at 2884e13 (0001-0064) with these
+three patches on top, against what the train had recorded: all 50 digests
+and all 58 `visibility` rows match, so no existing entry moves — `filters`,
+`bloom`, `stroke`, `shutter-blur` and every other composition that draws a
+filter layer among them, so the column-bounded layer is byte-identical
+where it is used. The same held on main at 524173f when this was 0055.
+`compositions/colour-filters` is new in both: 30 frames, digest
+d04027b2…, the one first recorded at 524173f; 25 nodes, 13 named, every one
+shown.
 
 `git apply` skips everything above the first `diff --git`.
 
 diff --git a/contracts/spec/gen-rust.ts b/contracts/spec/gen-rust.ts
-index 75801f20..62db8f83 100644
+index 218fa2f0..3e4f0400 100644
 --- a/contracts/spec/gen-rust.ts
 +++ b/contracts/spec/gen-rust.ts
 @@ -102,6 +102,8 @@ import {
@@ -118,7 +120,7 @@ index 75801f20..62db8f83 100644
    PAINT_MAX_STOPS,
    ENUMS,
    FIXED_DT,
-@@ -497,6 +499,13 @@ export function generateRust(): string {
+@@ -523,6 +525,13 @@ export function generateRust(): string {
    put(`    pub const STROKE_MAX_WIDTH: f32 = ${STROKE_MAX_WIDTH}.0;`);
    put(`    pub const LAYER_MAX_DEPTH: usize = ${LAYER_MAX_DEPTH};`);
    put(`    pub const BLUR_MAX: f32 = ${BLUR_MAX}.0;`);
@@ -133,7 +135,7 @@ index 75801f20..62db8f83 100644
    put("}");
    put("");
 diff --git a/contracts/spec/spec.ts b/contracts/spec/spec.ts
-index feb77b49..a21cebc8 100644
+index 36246d82..1e336c1e 100644
 --- a/contracts/spec/spec.ts
 +++ b/contracts/spec/spec.ts
 @@ -532,6 +532,19 @@ export const PROP = {
@@ -153,10 +155,10 @@ index feb77b49..a21cebc8 100644
 +  invert: 216, //          f32 0..1 (0 = identity)
 +  saturate: 217, //        f32 (1 = identity; >= 0, at most COLOR_FILTER_MAX)
 +  sepia: 218, //           f32 0..1 (0 = identity)
- } as const;
- 
- export type PropName = keyof typeof PROP;
-@@ -618,6 +631,13 @@ export const ANIMATABLE: readonly PropName[] = [
+   // Image filter (pocket-motion): how an image node samples its texture.
+   // Texture (the default) is the texture's own flag — nearest, or bilinear
+   // under IMG_FLAG_LINEAR. Trilinear reads a mip chain the core builds from
+@@ -626,6 +639,13 @@ export const ANIMATABLE: readonly PropName[] = [
    "trimOffset", //    63
    "morph", //         64
    "dashOffset", //    65
@@ -170,17 +172,17 @@ index feb77b49..a21cebc8 100644
  ];
  
  /** Anim bit index for a prop, or -1 if not animatable. */
-@@ -721,6 +741,9 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
+@@ -729,6 +749,9 @@ export const PROP_VALUE_KIND: Record<PropName, number> = {
    trimMode: VALUE_KIND.int, morph: VALUE_KIND.f32,
    dashCount: VALUE_KIND.int, dash0: VALUE_KIND.f32, dash1: VALUE_KIND.f32,
    dash2: VALUE_KIND.f32, dash3: VALUE_KIND.f32, dashOffset: VALUE_KIND.f32,
 +  brightness: VALUE_KIND.f32, contrast: VALUE_KIND.f32,
 +  grayscale: VALUE_KIND.f32, hueRotate: VALUE_KIND.f32,
 +  invert: VALUE_KIND.f32, saturate: VALUE_KIND.f32, sepia: VALUE_KIND.f32,
+   imageFilter: VALUE_KIND.int,
  };
  
- // ---------------------------------------------------------------------------
-@@ -1867,18 +1890,27 @@ export const FONT_FLAG_METRICS_ONLY = 1 << 1;
+@@ -1954,18 +1977,27 @@ export const FONT_VECTOR_LAYER_GRADIENT = 0x4000_0000;
  //                           edge offset (0.5 - coverage), so a width of 0 is
  //                           the glyph's own coverage. Width is clamped to
  //                           STROKE_MAX_WIDTH. Software rasteriser only.
@@ -212,7 +214,7 @@ index feb77b49..a21cebc8 100644
  //                           made from its alpha (offset rounded to whole
  //                           physical px, blurred, times gain, tinted), the
  //                           layer is composited over its shadow, and that
-@@ -1986,6 +2018,21 @@ export const PAINT_MAX_STOPS = 6;
+@@ -2098,6 +2130,21 @@ export const GRADIENT_LITERAL_MAX_STOPS = 6;
  
  /** Deepest nesting of filter layers (LAYER_PUSH). */
  export const LAYER_MAX_DEPTH = 4;
@@ -235,10 +237,10 @@ index feb77b49..a21cebc8 100644
   *  in logical px; larger is drawn at this. */
  export const BLUR_MAX = 128;
 diff --git a/engine/core/src/compositor.rs b/engine/core/src/compositor.rs
-index 667dae5d..c438efd8 100644
+index ce488754..fb5c80eb 100644
 --- a/engine/core/src/compositor.rs
 +++ b/engine/core/src/compositor.rs
-@@ -31,7 +31,7 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
+@@ -33,7 +33,7 @@ pub fn draw_op_len(words: &[u32], at: usize) -> Option<usize> {
          crate::spec::draw_op::MASK_PUSH => 2 + 2 * *words.get(at + 1)? as usize,
          crate::spec::draw_op::MASK_POP => 1,
          crate::spec::draw_op::GLYPH_STROKE => 5 + 2 * ((*words.get(at + 1)? >> 16) as usize),
@@ -248,10 +250,10 @@ index 667dae5d..c438efd8 100644
          crate::spec::draw_op::PAINT_PUSH => 9 + 2 * *words.get(at + 2)? as usize,
          crate::spec::draw_op::PAINT_POP => 1,
 diff --git a/engine/core/src/damage.rs b/engine/core/src/damage.rs
-index 219f0adf..3bccbd46 100644
+index acce93a1..6f76ef89 100644
 --- a/engine/core/src/damage.rs
 +++ b/engine/core/src/damage.rs
-@@ -462,7 +462,9 @@ impl<'a> DamageDecoder<'a> {
+@@ -464,7 +464,9 @@ impl<'a> DamageDecoder<'a> {
                      .checked_add(count.checked_mul(2).ok_or(())?)
                      .ok_or(())?
              }
@@ -263,7 +265,7 @@ index 219f0adf..3bccbd46 100644
              spec::draw_op::PAINT_PUSH => {
                  let n = self.words.get(start + 2).copied().ok_or(())? as usize;
 diff --git a/engine/core/src/draw.rs b/engine/core/src/draw.rs
-index 1e9e3f28..736eb306 100644
+index 7283ccba..41d167c9 100644
 --- a/engine/core/src/draw.rs
 +++ b/engine/core/src/draw.rs
 @@ -285,6 +285,36 @@ fn alpha(color: u32) -> u32 {
@@ -303,7 +305,7 @@ index 1e9e3f28..736eb306 100644
  #[inline]
  fn with_alpha_abgr(color: u32, a: u32) -> u32 {
      (color & 0x00ff_ffff) | ((a & 0xff) << 24)
-@@ -1289,7 +1319,8 @@ impl<'a> Walker<'a> {
+@@ -1326,7 +1356,8 @@ impl<'a> Walker<'a> {
          // scaled by `op`: the shadow is made from the layer's alpha, which
          // already carries it. Past LAYER_MAX_DEPTH the node paints unfiltered.
          let shadow = alpha(r.drop_shadow_color) > 0 && r.drop_shadow_gain > 0.0;
@@ -313,7 +315,7 @@ index 1e9e3f28..736eb306 100644
              && (self.layer_depth as usize) < spec::draw_op::LAYER_MAX_DEPTH;
          if layered {
              dl.words.push(spec::draw_op::LAYER_PUSH);
-@@ -1302,13 +1333,21 @@ impl<'a> Walker<'a> {
+@@ -1339,13 +1370,21 @@ impl<'a> Walker<'a> {
              } else {
                  0
              };
@@ -337,10 +339,10 @@ index 1e9e3f28..736eb306 100644
          }
          self.paint_body(slot, &r, world, op, clip, in_transform, dl);
 diff --git a/engine/core/src/lib.rs b/engine/core/src/lib.rs
-index 2960a9ce..d314cac4 100644
+index 5308dce9..613eaf15 100644
 --- a/engine/core/src/lib.rs
 +++ b/engine/core/src/lib.rs
-@@ -1299,7 +1299,10 @@ impl Ui {
+@@ -1327,7 +1327,10 @@ impl Ui {
                      let Some(meta) = words.get(i + 1) else { break };
                      5 + 2 * ((*meta >> 16) as usize)
                  }
@@ -353,10 +355,10 @@ index 2960a9ce..d314cac4 100644
                  x if x == spec::draw_op::PAINT_PUSH => {
                      let Some(n) = words.get(i + 2) else { break };
 diff --git a/engine/core/src/raster.rs b/engine/core/src/raster.rs
-index 09bf9d0a..1b71ff38 100644
+index eee9f7a8..cbf61138 100644
 --- a/engine/core/src/raster.rs
 +++ b/engine/core/src/raster.rs
-@@ -1074,22 +1074,26 @@ fn render_ops<T: RenderTarget>(
+@@ -1090,22 +1090,26 @@ fn render_ops<T: RenderTarget>(
                  i += 5 + 2 * n;
              }
              draw_op::LAYER_PUSH => {
@@ -391,7 +393,7 @@ index 09bf9d0a..1b71ff38 100644
                  pool.free.push(layer.bytes);
              }
              draw_op::PAINT_PUSH => {
-@@ -2294,6 +2298,13 @@ impl RenderTarget for Painted<'_> {
+@@ -2310,6 +2314,13 @@ impl RenderTarget for Painted<'_> {
  
  // ---- LAYER_PUSH / LAYER_POP: filter layers (pocket-motion patch 0018) ----------------
  
@@ -405,7 +407,7 @@ index 09bf9d0a..1b71ff38 100644
  /// A LAYER_PUSH's parameters, decoded (spec.ts DRAWLIST op format).
  struct LayerFx {
      blend: u32,
-@@ -2310,9 +2321,13 @@ struct LayerFx {
+@@ -2326,9 +2337,13 @@ struct LayerFx {
      luma: bool,
      /// Luma only: brightest-channel level, 0..=255, where emission starts.
      threshold: u32,
@@ -419,7 +421,7 @@ index 09bf9d0a..1b71ff38 100644
      fn decode(w: &[u32]) -> LayerFx {
          let finite = |x: f32| if x.is_finite() { x } else { 0.0 };
          LayerFx {
-@@ -2325,17 +2340,197 @@ impl LayerFx {
+@@ -2341,17 +2356,197 @@ impl LayerFx {
              shadow_blur: finite(f32::from_bits(w[4])).max(0.0).min(2.0 * spec::draw_op::BLUR_MAX),
              shadow_color: w[5],
              shadow_gain: finite(f32::from_bits(w[6])).max(0.0),
@@ -619,7 +621,7 @@ index 09bf9d0a..1b71ff38 100644
  }
  
  /// Transparent layer buffers reused within one render: a layer is handed
-@@ -2357,14 +2552,23 @@ impl LayerPool {
+@@ -2373,14 +2568,23 @@ impl LayerPool {
  }
  
  impl LayerTarget {
@@ -645,7 +647,7 @@ index 09bf9d0a..1b71ff38 100644
      }
  }
  
-@@ -2676,21 +2880,23 @@ fn composite_layer<T: RenderTarget>(
+@@ -2692,21 +2896,23 @@ fn composite_layer<T: RenderTarget>(
      clip: Clip,
      stride: i32,
      scale: i32,
@@ -674,7 +676,7 @@ index 09bf9d0a..1b71ff38 100644
              if row[x * 4 + 3] != 0 {
                  x0 = x0.min(x);
                  x1 = x1.max(x + 1);
-@@ -2756,7 +2962,18 @@ fn composite_layer<T: RenderTarget>(
+@@ -2772,7 +2978,18 @@ fn composite_layer<T: RenderTarget>(
          }
          content = region;
      }
@@ -695,7 +697,7 @@ index 09bf9d0a..1b71ff38 100644
      // Shadow: the layer's alpha, offset, blurred, times gain, tinted.
      let (sr, sg, sb, sa) = channels(fx.shadow_color);
 diff --git a/engine/core/src/spec.rs b/engine/core/src/spec.rs
-index a729eb00..5b3b8a87 100644
+index b9a76976..a4a44a3b 100644
 --- a/engine/core/src/spec.rs
 +++ b/engine/core/src/spec.rs
 @@ -239,6 +239,13 @@ pub mod prop {
@@ -709,19 +711,19 @@ index a729eb00..5b3b8a87 100644
 +    pub const INVERT: u8 = 216;
 +    pub const SATURATE: u8 = 217;
 +    pub const SEPIA: u8 = 218;
+     pub const IMAGE_FILTER: u8 = 221;
  }
  
- /// How a prop's u32 payload is interpreted (see spec.ts VALUE_KIND).
-@@ -263,7 +270,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
+@@ -264,7 +271,7 @@ pub const PROP_VALUE_KIND: [u8; 256] = [
      0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00,
      0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0x02, 0x02, 0x02, 0x02, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
      0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0x02, 0x01, 0x02, 0x01, 0x00, 0x02, 0x02, 0x00, 0x00,
--    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-+    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff,
+-    0x00, 0x00, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02, 0xff, 0xff,
++    0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x02, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
  ];
-@@ -284,13 +291,13 @@ pub const ANIM_BIT: [u8; 256] = [
+@@ -285,13 +292,13 @@ pub const ANIM_BIT: [u8; 256] = [
      0x27, 0x28, 0xff, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0xff, 0xff, 0x2f, 0x30, 0x31, 0x32, 0x33,
      0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
      0x41, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x3a, 0xff, 0x3b, 0x3c, 0xff, 0xff, 0xff, 0x3d,
@@ -737,7 +739,7 @@ index a729eb00..5b3b8a87 100644
  /// Bitset over prop ids: props whose change invalidates layout.
  pub const LAYOUT_DIRTY_BITS: [u64; 4] = [0x000000027fffff7e, 0x000001fe00000000, 0x0000000000000000, 0x0000000000000000];
  
-@@ -633,6 +640,17 @@ pub mod draw_op {
+@@ -658,6 +665,17 @@ pub mod draw_op {
      pub const STROKE_MAX_WIDTH: f32 = 64.0;
      pub const LAYER_MAX_DEPTH: usize = 4;
      pub const BLUR_MAX: f32 = 128.0;
@@ -752,14 +754,14 @@ index a729eb00..5b3b8a87 100644
 +    pub const COLOR_FILTER_SEPIA: u32 = 6;
 +    pub const COLOR_FILTER_COUNT: u32 = 7;
 +    pub const COLOR_FILTER_MAX: f32 = 256.0;
-     pub const PAINT_MAX_STOPS: usize = 6;
+     pub const PAINT_MAX_STOPS: usize = 16;
  }
  
 diff --git a/engine/core/src/style.rs b/engine/core/src/style.rs
-index c490f529..eceb45e5 100644
+index 396cb789..d64af396 100644
 --- a/engine/core/src/style.rs
 +++ b/engine/core/src/style.rs
-@@ -360,6 +360,16 @@ pub struct Resolved {
+@@ -362,6 +362,16 @@ pub struct Resolved {
      pub glow_mode: u8,
      /// Luma glow: the brightest-channel level (0..1) where emission starts.
      pub glow_threshold: f32,
@@ -776,7 +778,7 @@ index c490f529..eceb45e5 100644
      /// Gradient paint (pocket-motion; spec.ts PROP.gradKind..bgClip).
      /// spec::GradKind ordinal; Legacy keeps the gradDir path.
      pub grad_kind: u8,
-@@ -477,6 +487,13 @@ impl Default for Resolved {
+@@ -480,6 +490,13 @@ impl Default for Resolved {
              blend_mode: spec::BlendMode::Normal as u8,
              glow_mode: spec::GlowMode::Alpha as u8,
              glow_threshold: 0.5,
@@ -790,7 +792,7 @@ index c490f529..eceb45e5 100644
              grad_kind: spec::GradKind::Legacy as u8,
              grad_angle: 180.0,
              grad_from_pos: 0.0,
-@@ -612,6 +629,13 @@ impl Resolved {
+@@ -616,6 +633,13 @@ impl Resolved {
              p::BLEND_MODE => self.blend_mode = bits as u8,
              p::GLOW_MODE => self.glow_mode = bits as u8,
              p::GLOW_THRESHOLD => self.glow_threshold = f,
@@ -804,7 +806,7 @@ index c490f529..eceb45e5 100644
              p::GRAD_KIND => self.grad_kind = bits as u8,
              p::GRAD_ANGLE => self.grad_angle = f,
              p::GRAD_FROM_POS => self.grad_from_pos = f,
-@@ -740,6 +764,13 @@ impl Resolved {
+@@ -745,6 +769,13 @@ impl Resolved {
              p::BLEND_MODE => self.blend_mode as u32,
              p::GLOW_MODE => self.glow_mode as u32,
              p::GLOW_THRESHOLD => self.glow_threshold.to_bits(),
@@ -819,10 +821,10 @@ index c490f529..eceb45e5 100644
              p::GRAD_ANGLE => self.grad_angle.to_bits(),
              p::GRAD_FROM_POS => self.grad_from_pos.to_bits(),
 diff --git a/engine/core/src/tests.rs b/engine/core/src/tests.rs
-index 97f15bbe..af079e3d 100644
+index ae9c02db..ada7571e 100644
 --- a/engine/core/src/tests.rs
 +++ b/engine/core/src/tests.rs
-@@ -397,12 +397,37 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -428,12 +428,37 @@ pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 74] {
              spec::draw_op::LAYER_PUSH => {
                  assert!(i + 8 <= words.len(), "truncated LAYER_PUSH");
                  // Blend mode in the low byte; GlowMode and its threshold
@@ -863,7 +865,7 @@ index 97f15bbe..af079e3d 100644
                  }
                  for k in 2..=5 {
                      let f = f32::from_bits(words[i + k]);
-@@ -410,7 +435,7 @@ fn validate_drawlist(words: &[u32]) -> [u32; 72] {
+@@ -441,7 +466,7 @@ pub(crate) fn validate_drawlist(words: &[u32]) -> [u32; 74] {
                  }
                  layer_depth += 1;
                  assert!(layer_depth as usize <= spec::draw_op::LAYER_MAX_DEPTH, "layers nested too deep");
@@ -872,7 +874,7 @@ index 97f15bbe..af079e3d 100644
              }
              spec::draw_op::PAINT_PUSH => {
                  let n = words[i + 2] as usize;
-@@ -7080,6 +7105,430 @@ fn a_reused_layer_buffer_carries_nothing_from_the_layer_before() {
+@@ -7111,6 +7136,430 @@ fn a_reused_layer_buffer_carries_nothing_from_the_layer_before() {
      }
  }
  
@@ -1304,7 +1306,7 @@ index 97f15bbe..af079e3d 100644
  
  /// A 200x40 box at (0, 100) over white, painted by a gradient.
 diff --git a/engine/crates/microts/src/spec.rs b/engine/crates/microts/src/spec.rs
-index 761a55c1..73ab31ce 100644
+index e21d4e97..a9c099b6 100644
 --- a/engine/crates/microts/src/spec.rs
 +++ b/engine/crates/microts/src/spec.rs
 @@ -129,6 +129,13 @@ pub const STYLE_PROPS: &[(&str, u8, &str)] = &[
@@ -1318,9 +1320,9 @@ index 761a55c1..73ab31ce 100644
 +    ("invert", 216, "f32"),
 +    ("saturate", 217, "f32"),
 +    ("sepia", 218, "f32"),
+     ("imageFilter", 221, "i32"),
  ];
  pub const HOST_ATTRIBUTES: &[(&str, &[&str])] = &[
-     ("View", &["class", "style", "focusable", "debug-name"]),
 diff --git a/framework/compiler/animation.ts b/framework/compiler/animation.ts
 index 5bc6a71d..3d28167f 100644
 --- a/framework/compiler/animation.ts
@@ -1594,7 +1596,7 @@ index 5bc6a71d..3d28167f 100644
    for (const [prop, m] of mentions) {
      if (!ANIMATABLE_IDS.has(prop)) err(`${where}: prop id ${prop} is not animatable.`);
 diff --git a/framework/compiler/tailwind.ts b/framework/compiler/tailwind.ts
-index 9d743ab4..8d49eb40 100644
+index 8b948919..ec9930ca 100644
 --- a/framework/compiler/tailwind.ts
 +++ b/framework/compiler/tailwind.ts
 @@ -42,7 +42,15 @@ import {
@@ -1614,7 +1616,7 @@ index 9d743ab4..8d49eb40 100644
  
  // ---------------------------------------------------------------------------
  // Font slots (build-assigned, pinned here — bake-font.ts uses the same table)
-@@ -947,11 +955,21 @@ function arbPx(part: string): number | null {
+@@ -968,11 +976,21 @@ function arbPx(part: string): number | null {
   *                     luma: a bloom from the bright pixels' own colour,
   *                     added over the content (pocket-motion patch 0033)
   *   mix-blend-normal|multiply|screen|overlay|plus-lighter|add
@@ -1636,7 +1638,7 @@ index 9d743ab4..8d49eb40 100644
    if (tok in BLUR_STEPS) { D.push([PROP.blur, px(BLUR_STEPS[tok]!)]); return true; }
    if (tok.startsWith("blur-[")) {
      const v = arbPx(tok.slice(5));
-@@ -1025,6 +1043,37 @@ function parseFilterUtility(tok: string, D: Decl[]): boolean {
+@@ -1046,6 +1064,37 @@ function parseFilterUtility(tok: string, D: Decl[]): boolean {
    return false;
  }
  
@@ -1675,7 +1677,7 @@ index 9d743ab4..8d49eb40 100644
  const DIR_ANGLE: Record<number, number> = {
    [ENUMS.GradDir.ToTop]: 0, [ENUMS.GradDir.ToRight]: 90,
 diff --git a/framework/src/component-types-microts.ts b/framework/src/component-types-microts.ts
-index 13be2acf..d3a951ea 100644
+index 4cdb8f2d..f9421633 100644
 --- a/framework/src/component-types-microts.ts
 +++ b/framework/src/component-types-microts.ts
 @@ -124,6 +124,13 @@ export interface MicroTsStyleProps {
@@ -1689,11 +1691,11 @@ index 13be2acf..d3a951ea 100644
 +  invert?: MicroTsFloatInput;
 +  saturate?: MicroTsFloatInput;
 +  sepia?: MicroTsFloatInput;
+   imageFilter?: i32;
  }
  export interface MicroTsViewBaseProps {
-   "class"?: MicroTsValue<string>;
 diff --git a/tests/tailwind.test.ts b/tests/tailwind.test.ts
-index fce557ce..62ccb15f 100644
+index f9fb9707..68cdad6f 100644
 --- a/tests/tailwind.test.ts
 +++ b/tests/tailwind.test.ts
 @@ -816,6 +816,76 @@ describe("filter layers (pocket-motion)", () => {

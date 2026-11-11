@@ -23,7 +23,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
 import { rename, rm } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import { render as renderComposition } from "../../render/render.ts";
+import { MissingGlyphError, render as renderComposition } from "../../render/render.ts";
+import { codepointLabel, missingGlyphLines, mountedMissingGlyphs, nodesCarrying } from "../../text/missing.ts";
 import {
   OUTPUT_FORMATS,
   assertEncoderSupported,
@@ -111,6 +112,10 @@ export interface RenderJson {
   /** Frames delivered as the frame before's pixels, without a raster.
    *  Absent for `--workers`, whose segments rendered in other processes. */
   reusedFrames?: number;
+  /** Codepoints drawn as the tofu box (`src/text/missing.ts`), as `U+XXXX`.
+   *  Present, and non-empty, only when there were some; a `--spec` job with
+   *  any is refused instead. Absent for `--workers`. */
+  missingGlyphs?: string[];
   shutter?: SidecarShutter;
   soundSkipped?: string;
   sound?: SoundJson;
@@ -378,6 +383,8 @@ export async function run(
   const signal = context.signal;
   const cancelled = (): boolean => signal?.aborted === true;
   let staged: { dir: string; dispose: () => Promise<void> } | undefined;
+  /** The job's composition, for naming the nodes behind a refused glyph. */
+  let resolvedForGlyphs: ResolvedComposition | undefined;
   if (options.spec) {
     const refusal = await glyphRefusal(options.dir, options.spec);
     if (refusal !== null) return refusal;
@@ -442,6 +449,7 @@ export async function run(
     }
 
     const c = resolved.value;
+    resolvedForGlyphs = c;
     const outputPath = resolve(options.out);
     const format = options.format ?? "mp4";
     if (options.range && options.range[1] >= c.durationFrames) {
@@ -484,6 +492,11 @@ export async function run(
           };
         }
       }
+      // A job's text comes from data nobody looked at: a glyph no declared
+      // face carries is refused here, before a frame is encoded, whether the
+      // film renders in this process or in `--workers`' children.
+      const missing = await mountedMissingGlyphs(c);
+      if (missing.length > 0) throw new MissingGlyphError(missing);
     }
     if (format === "png-seq") {
       wrote.madeFrameDir = !existsSync(outputPath);
@@ -550,6 +563,7 @@ export async function run(
         encoder: options.encoder,
         preset: options.preset,
         reuse: options.reuse,
+        refuseMissingGlyphs: options.spec !== undefined,
         encodePNG,
         ...(options.range ? { range: [options.range[0], options.range[1] + 1] as const } : {}),
         setup: declared
@@ -624,6 +638,7 @@ export async function run(
       msPerFrame: result.msPerFrame,
       ...(encoder ? { encoder } : {}),
       ...(rendered ? { reusedFrames: rendered.reusedFrames } : {}),
+      ...(rendered && rendered.missingGlyphs.length > 0 ? { missingGlyphs: rendered.missingGlyphs.map(codepointLabel) } : {}),
       ...(c.shutter ? { shutter: c.shutter } : {}),
       ...split,
     };
@@ -648,6 +663,12 @@ export async function run(
         ? [`shutter ${describeShutter(c.shutter)} — every frame is an exposure of ${c.shutter.samples} renders`]
         : []),
     ];
+    if (rendered && rendered.missingGlyphs.length > 0) {
+      stdoutLines.push(
+        `glyphs: ${rendered.missingGlyphs.length} codepoint(s) drawn as the tofu box — no glyph in the slot's face or any fonts.fallback face`,
+        ...missingGlyphLines(rendered.missingGlyphs, nodesCarrying(await scratchTree(c), rendered.missingGlyphs)),
+      );
+    }
     if (result.alphaFloor !== undefined) {
       // Reported every time: the number is the evidence. The rasteriser
       // clears to transparent black (patch 0014), so 255 now means the
@@ -688,6 +709,18 @@ export async function run(
       return cancelledResult(signal);
     }
     if (e instanceof UsageError) throw e;
+    if (e instanceof MissingGlyphError && staged !== undefined && resolvedForGlyphs !== undefined) {
+      // A job whose text has a glyph no declared face carries: refused, the
+      // nodes named, nothing delivered (the `finally` removes the partial).
+      const nodes = nodesCarrying(await scratchTree(resolvedForGlyphs), e.codepoints);
+      const error = `the job's text has ${e.codepoints.length} codepoint(s) no declared face carries`;
+      return {
+        exitCode: EXIT_FAIL,
+        json: { ok: false, error, missingGlyphs: e.codepoints.map(codepointLabel), missingGlyphNodes: nodes },
+        stderrLines: ["declare a face that maps them in the template's fonts.fallback, or take them out of the job's text"],
+        stdoutLines: [`render refused — ${error}, which would be drawn as the tofu box`, ...missingGlyphLines(e.codepoints, nodes)],
+      };
+    }
     const message = errMsg(e);
     return {
       exitCode: EXIT_FAIL,

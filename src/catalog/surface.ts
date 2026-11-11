@@ -1015,6 +1015,41 @@ export const SURFACE: readonly CapabilityRow[] = [
     ],
     pinned: [],
   },
+  {
+    id: "fonts.fallback",
+    group: "fonts",
+    declaredIn: "pocket-motion.json",
+    key: "fallback",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "optional array of 1 to 4 relative paths beside `regular` and `bold` (which `fonts` always needs), tried in order for a codepoint the slot's own face does not map (the build's `--font-fallback`); same path rules as footage src, no path twice. A face here with COLR colour glyphs draws them as layered outlines (patches/0064). The files are identity components `font:fallback/<i>/<file>` and count toward the 64 MiB the declared font files may total. A codepoint no face in the chain maps is drawn as the tofu box and reported: `check` fails naming the codepoint and the text nodes carrying it, `trace` and `render` print it, `render --spec` refuses the job",
+    source: "src/manifest/sidecar.ts",
+    verification: "probed",
+    diagnostics: [
+      "sidecar.fonts.fallback.notArray",
+      "sidecar.fonts.fallback.count",
+      "sidecar.fonts.fallback.notString",
+      "sidecar.fonts.fallback.empty",
+      "sidecar.fonts.fallback.absolute",
+      "sidecar.fonts.fallback.traversal",
+      "sidecar.fonts.fallback.duplicate",
+    ],
+    probes: [
+      { code: "sidecar.fonts.fallback.notArray", input: withFonts({ ...FACE, fallback: "emoji.ttf" }) },
+      { code: "sidecar.fonts.fallback.count", input: withFonts({ ...FACE, fallback: [] }) },
+      {
+        code: "sidecar.fonts.fallback.count",
+        input: withFonts({ ...FACE, fallback: ["a.ttf", "b.ttf", "c.ttf", "d.ttf", "e.ttf"] }),
+      },
+      { code: "sidecar.fonts.fallback.notString", input: withFonts({ ...FACE, fallback: [7] }) },
+      { code: "sidecar.fonts.fallback.empty", input: withFonts({ ...FACE, fallback: [""] }) },
+      { code: "sidecar.fonts.fallback.absolute", input: withFonts({ ...FACE, fallback: ["/e.ttf"] }) },
+      { code: "sidecar.fonts.fallback.traversal", input: withFonts({ ...FACE, fallback: ["../e.ttf"] }) },
+      { code: "sidecar.fonts.fallback.duplicate", input: withFonts({ ...FACE, fallback: ["e.ttf", "e.ttf"] }) },
+    ],
+    pinned: [],
+  },
 
   // -------------------------------------------------------------------------
   // Sound
@@ -2557,6 +2592,73 @@ export const SURFACE: readonly CapabilityRow[] = [
   },
 
   {
+    id: "paint.text-vector",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-vector",
+    required: false,
+    defaultValue: "atlas cells below the face's ceiling",
+    constraint:
+      "draws this literal's text size as outlines (a FONT VECTOR slot, patches/0063): each glyph's layers filled as PATH ops through the node's world affine, so the run scales without resampling a bitmap and its glyphs turn with the node, where an atlas run turns its anchors and keeps upright cells. Must sit beside a text size or a `text-fit-[..]` ladder in the same literal — a font slot is declared per literal and nothing inherits one — and is refused without one; beside a ladder every rung is a vector slot, which layout measures from its outlines' metrics as it measures an atlas rung. Allocates a dynamic slot of its own, never the atlas slot of its size. At a size the atlas also holds, the vector slot carries the atlas's baseline, cell height, line height, every advance and every kern pair (tests/vector-glyphs.test.ts, at each face's ceiling). A text stroke is outlined from the same outlines; the hollow outside form is drawn centred",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "text-vector beside a size takes a dynamic slot of its own",
+        literals: ["text-[120px] text-vector"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fontSlot", value: 21 } },
+      },
+      {
+        what: "text-vector with no size beside it is refused",
+        literals: ["text-vector text-white"],
+        fromClassAttribute: true,
+        outcome: { refuses: "has no text size beside it" },
+      },
+      {
+        what: "beside a text-fit ladder every rung is a vector slot of its own",
+        literals: ["text-fit-[96,48] text-vector"],
+        fromClassAttribute: true,
+        // 96 vector is the node's slot, 21, and the first rung; 48 vector is
+        // 22. Rungs allocated without the flag would be 22 and 23 instead.
+        outcome: { declares: { prop: "textFit0", value: 22 | (23 << 8) } },
+      },
+    ],
+  },
+  {
+    id: "paint.text-size-ceiling",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "text-[Npx]",
+    required: false,
+    defaultValue: null,
+    constraint:
+      "any size from above 0 to 4096 px. A size whose atlas cell — round(ascender * px / upm) + ceil(-descender * px / upm), from the face's hhea — would pass the FONT ATLAS header's 255 px is baked as a FONT VECTOR slot rather than refused (patches/0063; 176 px for Noto Sans SC, 211 for Inter, 217 for HarmonyOS Sans); the build prints `vector (over the atlas's 255px cell)` for it. Its metrics are the atlas's formulas in u16/i16 fields",
+    source: "vendor/pocketjs/framework/compiler/bake-font.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: ["atlasCellHeight(font, px) > 255"],
+    bakeProbes: [
+      {
+        what: "4096 px, the largest size a literal takes",
+        literals: ["text-[4096px]"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "fontSlot", value: 21 } },
+      },
+      {
+        what: "one px past it is not a utility, and is refused",
+        literals: ["text-[4097px] text-white"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`text-[4097px]`" },
+      },
+    ],
+  },
+
+  {
     id: "paint.text-stroke",
     group: "paint",
     declaredIn: "class literal",
@@ -3105,6 +3207,42 @@ export const SURFACE: readonly CapabilityRow[] = [
         literals: ["w-[80px] h-[80px] bg-white arc-sweep-[90] arc-width-[40] arc-cap-square"],
         fromClassAttribute: true,
         outcome: { refuses: "`arc-cap-square` in class" },
+      },
+    ],
+  },
+
+  {
+    id: "paint.image-filter",
+    group: "paint",
+    declaredIn: "class literal",
+    key: "image-filter-texture | image-filter-trilinear",
+    required: false,
+    defaultValue: "texture",
+    constraint:
+      "how an Image samples its texture. `image-filter-texture` reads it the way the texture says — nearest, or bilinear when `images.json` marks it `linear` (or a footage track) — and is the default, so an image without the class draws as it always did. `image-filter-trilinear` reads a mip chain the core reduces from the texture's bytes the first time a draw needs it, each level the last halved by an exact area average: the drawn footprint (texels per pixel, from the unrounded transform, under any rotation, scale or perspective) picks two levels, each read bilinearly, blended. At or above the image's own size the read is bilinear and nothing is reduced. Costs a third of the texture's RGBA bytes (two thirds for a 16-bit texture) for every texture drawn below its size, and per pixel two bilinear reads instead of one. Not inherited; not animatable (an enum, PROP `imageFilter` 221). patches/0064, class motion; `compositions/image-wall` and `baselines/image-wall.md`",
+    source: "vendor/pocketjs/framework/compiler/tailwind.ts",
+    verification: "probed",
+    diagnostics: [],
+    probes: [],
+    pinned: [],
+    bakeProbes: [
+      {
+        what: "image-filter-trilinear compiles to ImageFilter.Trilinear (1)",
+        literals: ["w-[45px] h-[63px] image-filter-trilinear"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "imageFilter", value: 1 } },
+      },
+      {
+        what: "image-filter-texture compiles to ImageFilter.Texture (0)",
+        literals: ["w-[45px] h-[63px] image-filter-texture"],
+        fromClassAttribute: true,
+        outcome: { declares: { prop: "imageFilter", value: 0 } },
+      },
+      {
+        what: "a filter the core does not draw is refused",
+        literals: ["w-[45px] h-[63px] image-filter-bicubic"],
+        fromClassAttribute: true,
+        outcome: { refuses: "`image-filter-bicubic` in class" },
       },
     ],
   },

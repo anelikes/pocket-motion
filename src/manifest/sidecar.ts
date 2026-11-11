@@ -66,6 +66,13 @@ export interface SidecarFonts {
    * the default pair. Every face is an input to identity like the pair is.
    */
   readonly faces?: Readonly<Record<string, SidecarFace>>;
+  /**
+   * Faces tried in order for a codepoint the slot's own face does not map —
+   * the declared fallback chain (`--font-fallback`, patches/0064). A colour
+   * face here (COLR) draws its glyphs as layered outlines. Absent when the
+   * composition declares none; nothing is ever looked up on the host.
+   */
+  readonly fallback?: readonly string[];
 }
 
 /** One named face: the files `font-[name]` bakes from. */
@@ -368,7 +375,7 @@ export const ASSERTION_PREDICATES = [
   "before",
 ] as const;
 
-export const FONT_KEYS = new Set(["regular", "bold", "faces"]);
+export const FONT_KEYS = new Set(["regular", "bold", "faces", "fallback"]);
 
 /** The two weights every face declares — the default pair and each named one. */
 export const FONT_WEIGHT_KEYS = ["regular", "bold"] as const;
@@ -386,6 +393,12 @@ export const FONT_FACE_NAME_RE = /^[a-z][a-z0-9-]*$/;
  * table (MAX_FONT_SLOTS, 128, shared by every face and size).
  */
 export const FONT_FACES_MAX = 8;
+
+/**
+ * Most fallback faces one composition may declare (`fonts.fallback`). Every
+ * slot looks a missing codepoint up in each, in order, at build time.
+ */
+export const FONT_FALLBACK_MAX = 4;
 
 /**
  * Most bytes the declared font files may total, default pair included, each
@@ -619,6 +632,61 @@ function parseFaces(
       out[name] = { regular: parts.regular, bold: parts.bold };
     }
   }
+  return ok ? out : undefined;
+}
+
+/**
+ * `fonts.fallback`: repo-relative paths, tried in the order written for a
+ * codepoint the slot's face does not map. A path listed twice is refused: the
+ * second could never supply a glyph the first did not, so it is a slip.
+ */
+function parseFallback(raw: unknown, diagnostics: Diagnostic[]): string[] | undefined {
+  if (!Array.isArray(raw)) {
+    diagnostics.push(
+      diag(
+        "sidecar.fonts.fallback.notArray",
+        "/fonts/fallback",
+        `\`fonts.fallback\` must be an array of font file paths; got ${describeType(raw)}`,
+      ),
+    );
+    return undefined;
+  }
+  if (raw.length === 0 || raw.length > FONT_FALLBACK_MAX) {
+    diagnostics.push(
+      diag(
+        "sidecar.fonts.fallback.count",
+        "/fonts/fallback",
+        `\`fonts.fallback\` lists ${raw.length} faces; it must list 1 to ${FONT_FALLBACK_MAX}`,
+      ),
+    );
+    return undefined;
+  }
+  const out: string[] = [];
+  let ok = true;
+  raw.forEach((value, i) => {
+    const at = `/fonts/fallback/${i}`;
+    if (typeof value !== "string") {
+      diagnostics.push(
+        diag("sidecar.fonts.fallback.notString", at, `\`fonts.fallback[${i}]\` must be a string path; got ${describeType(value)}`),
+      );
+      ok = false;
+      return;
+    }
+    const issue = pathIssue(value, `fonts.fallback[${i}]`, "sidecar.fonts.fallback");
+    if (issue) {
+      diagnostics.push(diag(issue.code, at, issue.message));
+      ok = false;
+      return;
+    }
+    if (out.includes(value)) {
+      diagnostics.push(
+        diag("sidecar.fonts.fallback.duplicate", at, `\`fonts.fallback\` lists ${JSON.stringify(value)} twice`),
+      );
+      ok = false;
+      return;
+    }
+    out.push(value);
+  });
   return ok ? out : undefined;
 }
 
@@ -860,11 +928,13 @@ export function parseSidecar(input: unknown): ParseResult {
         else parts[key] = value;
       }
       const faces = "faces" in obj ? parseFaces(obj.faces, diagnostics) : undefined;
+      const fallback = "fallback" in obj ? parseFallback(obj.fallback, diagnostics) : undefined;
       if (parts.regular !== undefined && parts.bold !== undefined) {
         fonts = {
           regular: parts.regular,
           bold: parts.bold,
           ...(faces !== undefined ? { faces } : {}),
+          ...(fallback !== undefined ? { fallback } : {}),
         };
       }
     }
