@@ -23,7 +23,6 @@ import { TICKS_PER_SECOND, hardenedBootWorld, type BootedWorld } from "../src/ru
 
 const ROOT = resolve(import.meta.dir, "..");
 const DIR = join(ROOT, "compositions", "colour-filters");
-process.env.POCKETJS_ROOT = join(ROOT, "vendor", "pocketjs");
 
 type Rgb = [number, number, number];
 

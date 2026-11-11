@@ -104,4 +104,27 @@ describe("POCKETJS_ROOT", () => {
       expect(out).not.toContain("probe ran");
     }
   }, 60_000);
+
+  /**
+   * The preload refuses an inherited value, and a test file can still write
+   * one at its top level: every later file then runs under it, and a probe
+   * spawned with `{ ...process.env }` stops in the preload. Which file runs
+   * later is the runner's order, so the suite went red on Linux and stayed
+   * green on macOS — twice, from two branches. The default the boot falls back
+   * to is the vendored tree beside the source, which is what such a line set.
+   */
+  test("no test file writes it into its own process", () => {
+    const self = relative(ROOT, import.meta.path);
+    const parts: string[] = [];
+    for (const name of readdirSync(join(ROOT, "tests"), { recursive: true }) as string[]) {
+      if (!name.endsWith(".ts")) continue;
+      const file = join("tests", name);
+      if (file === self) continue;
+      const src = readFileSync(join(ROOT, file), "utf8");
+      for (const m of src.matchAll(/process\.env(?:\.POCKETJS_ROOT|\[\s*["'`]POCKETJS_ROOT["'`]\s*\])\s*(?:=(?!=)|\?\?=|\|\|=)/g)) {
+        parts.push(`${file}:${src.slice(0, m.index).split("\n").length}: ${m[0].trim()} — the boot already defaults to vendor/pocketjs`);
+      }
+    }
+    expect(parts, parts.join("\n") || "clean").toEqual([]);
+  });
 });

@@ -20,7 +20,6 @@ import { TICKS_PER_SECOND, hardenedBootWorld } from "../src/runtime/boot.ts";
 
 const ROOT = resolve(import.meta.dir, "..");
 const DIR = join(ROOT, "compositions", "origin");
-process.env.POCKETJS_ROOT = join(ROOT, "vendor", "pocketjs");
 
 let c: ResolvedComposition;
 const FRAMES = [0, 14, 29] as const;
