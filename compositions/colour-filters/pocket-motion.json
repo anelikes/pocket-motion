@@ -1,0 +1,19 @@
+{
+  "motion": 1,
+  "durationFrames": 30,
+  "fps": 30,
+  "supersample": 1,
+  "fonts": {
+    "regular": "assets/fonts/HarmonyOS_Sans_Regular.ttf",
+    "bold": "assets/fonts/HarmonyOS_Sans_Bold.ttf"
+  },
+  "assertions": [
+    { "node": "ref", "inPicture": [0, 29] },
+    { "node": "grayscale", "inPicture": [0, 29] },
+    { "node": "hue-rotate", "inPicture": [0, 29] },
+    { "node": "colour-in", "inPicture": [0, 29] },
+    { "node": "flash", "inPicture": [0, 29] },
+    { "node": "hue-cycle", "inPicture": [0, 29] },
+    { "node": "glow-kept", "inPicture": [0, 29] }
+  ]
+}

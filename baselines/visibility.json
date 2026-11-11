@@ -64,6 +64,13 @@
       "neverShown": 0,
       "buriedAfterShown": 0
     },
+    "compositions/colour-filters": {
+      "failures": [],
+      "nodes": 25,
+      "named": 13,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
     "compositions/copy": {
       "failures": [],
       "nodes": 3,
@@ -242,6 +249,13 @@
       "failures": [],
       "nodes": 8,
       "named": 8,
+      "neverShown": 0,
+      "buriedAfterShown": 0
+    },
+    "compositions/origin": {
+      "failures": [],
+      "nodes": 4,
+      "named": 4,
       "neverShown": 0,
       "buriedAfterShown": 0
     },

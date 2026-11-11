@@ -267,8 +267,10 @@ Three node types: `View`, `Text`, `Image` (from
 layout (flex, size, inset, gap, padding), color/gradient (`bg-*`,
 `from-*`/`via-*`/`to-*` with positions, any angle, radial, arbitrary
 `linear-gradient()`, gradient text with `bg-clip-text`), `rounded`, `opacity`, `border`,
-`shadow`, 2D/3D transforms, named font faces (`font-[name]`), text stroke,
-filters (`blur-*`, `drop-shadow-*`, `glow-*`), blend modes (`mix-blend-*`),
+`shadow`, 2D/3D transforms about any origin (`origin-[x_y]`), named font
+faces (`font-[name]`), text stroke, filters (`blur-*`, `drop-shadow-*`,
+`glow-*`, and the colour filters `brightness-*`, `contrast-*`, `grayscale`,
+`hue-rotate-*`, `invert`, `saturate-*`, `sepia`), blend modes (`mix-blend-*`),
 and an arc primitive
 (`arc-start-[deg] arc-sweep-[deg] arc-width-[px]`). Arbitrary values use
 bracket syntax: `w-[880px]`, `text-[38px]`. The authoritative list of
@@ -387,6 +389,21 @@ on a wrapper, where opacities multiply instead of contending
 (`compositions/transitions` did). Neither reading fails the command; both are
 in its `--json` under `partialCuts` and `contended`, and `late-anim` carries
 one of each.
+
+**A transform turns about any point, and the point can move.** Besides the
+nine keywords (`origin-top-left`, …), `origin-[x_y]` takes CSS's
+`transform-origin` with `_` for a space: percentages (`origin-[25%_75%]`),
+px from the top-left corner (`origin-[12px_0]`), keywords in either order
+(`origin-[top_right]`), and `calc()` of a percentage and a length
+(`origin-[calc(100%_-_20px)_bottom]`, 20 px in from the right edge whatever
+width the box takes). One value is x with y centred, as in CSS; a third
+(z) is refused. The origin animates — `transformOrigin: "20% 30%"` in a
+keyframe, or `originX`/`originY` (fractions from the centre) and
+`originXPx`/`originYPx` by name — which is how a zoom travels across a
+picture: hold `scale-200` and move the origin, and the magnified card pans
+by the origin's path, a product of two motions no eased translate carries
+(`compositions/origin`). Under a declared shutter the origin is sampled
+between ticks like a translate (`patches/0066`, `0067`).
 
 **A window has a shape.** `overflow-hidden` clips children to the node's
 axis-aligned box; `overflow-mask` clips them, and the node's own ground, to
@@ -570,6 +587,42 @@ unfiltered. What each costs per frame is measured in
 about 10 ms at 1080p. Drawn by this repository's rasteriser only
 (`patches/0018`).
 
+**Colour filters grade a node and its subtree.** `grayscale`, `sepia`,
+`invert`, `brightness-150`, `contrast-200`, `saturate-50`, `hue-rotate-90`
+(and `-hue-rotate-15`) are CSS's colour filter functions under Tailwind's
+names: a step is a percentage (`brightness-150` is 1.5) or degrees, and
+`[x]` takes a CSS amount (`grayscale-[30%]`, `saturate-[2.5]`) or a CSS angle
+(`hue-rotate-[0.5turn]`). Each is the Filter Effects matrix on the node's
+filter layer, applied after the blur and before the shadow, in Tailwind's
+order whatever order the classes are written in — brightness, contrast,
+grayscale, hue-rotate, invert, saturate, sepia — and each result is clamped
+before the next, so `brightness-200 contrast-50` flattens the highlights
+the first step clipped rather than undoing it (`compositions/colour-filters`
+shows it). Alpha is left alone, so a greyed node's glow or shadow keeps its
+own colour. All seven animate, under their own names (`grayscale`,
+`hueRotate`, …) or in a `filter` list — the fade from grey, the flash and
+the hue cycle in `compositions/colour-filters` are:
+
+```ts
+"colour-in": { from: { filter: "grayscale(100%)" }, to: { filter: "grayscale(0%)" } },
+flash: { "0%, 100%": { brightness: "1" }, "40%": { brightness: "3" } },
+"hue-cycle": { from: { hueRotate: "0deg" }, to: { hueRotate: "1turn" } },
+```
+
+A `filter` list must be written in the order above (blur first, drop-shadow
+last); the build refuses another order rather than reorder it, because with
+a clamp between steps the order is in the picture. Keyframes interpolate
+their lists as CSS does: a list pins every function any keyframe names,
+padded with its identity (`none` too), and two neighbouring lists CSS would
+switch between discretely — `grayscale(1)` and `sepia(1)` — are refused;
+write `grayscale(1) sepia(0)` and `grayscale(0) sepia(1)`. A colour filter
+is always a layer, even on a node with one solid colour, where recolouring
+at draw time would cost nothing: that is exact only for a subtree of one op,
+and the layer costs about half a millisecond for a line of 96 px text at
+1080p. Grading a whole 1080p frame costs 20-30 ms; both are measured in
+`baselines/colour-filters.md` with the rest of the decision. Drawn by this
+repository's rasteriser only (`patches/0065`).
+
 **Gradients take any number of stops up to six, any angle, and text.**
 `bg-gradient-to-r from-red-500 to-blue-500` is the two-stop gradient it
 always was, drawn the way it always was. Add `via-white` (50% unless
@@ -605,10 +658,11 @@ frame's duration (180 of 360 degrees), centred on the frame's own tick, and
 averaged in integers by the core (`patches/0034`). What a sample moves is
 narrow, and each limit is a rule rather than a tuning:
 
-- Only translate, scale, rotate and skew timelines are evaluated between
-  ticks. Opacity, colour, size, insets and every paint value keep the frame's
-  own tick in every sample, so a 34 ms gate opens on the frame it opens on
-  without a shutter, and a fade reads the same.
+- Only translate, scale, rotate, skew and transform-origin timelines are
+  evaluated between ticks. Opacity, colour, size, insets and every paint value,
+  colour filters included, keep the frame's own tick in every sample, so a
+  34 ms gate opens on the frame it opens on without a shutter, and a fade
+  reads the same.
 - A sample never crosses a jump: a one-tick segment, a zero-length keyframe
   interval (`50%` beside `50.01%`), a start or end with no fill, a loop or
   iteration wrap whose two sides differ. A cut stays a cut. `keyframes` lists
